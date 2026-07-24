@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.codex-remote-attachments/
 .codex-spec-render/
 .codex-vite*.log
 .vite-*
