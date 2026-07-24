@@ -31,101 +31,150 @@ export class ArenaWorld {
   constructor(scene, seed = "BLAST-01") {
     this.scene = scene;
     this.seed = seed;
-    this.size = 31;
+    this.size = 112;
+    this.height = 78;
     this.group = new THREE.Group();
     this.obstacles = [];
     this.destructibles = [];
     this.anchors = [];
+    this.platforms = [];
+    this.boostPads = [];
     scene.add(this.group);
     this.build();
   }
 
   build() {
     const random = seededRandom(seedFromText(this.seed));
-    const floor = box(this.size * 2, .35, this.size * 2, 0x16283a, 0, -.2, 0);
-    this.group.add(floor);
+    this.group.add(box(this.size * 2, .5, this.size * 2, 0x102234, 0, -.28, 0));
 
-    const grid = new THREE.GridHelper(this.size * 2, 24, 0x1fd7ff, 0x244b67);
+    const grid = new THREE.GridHelper(this.size * 2, 44, 0x1fd7ff, 0x244b67);
     grid.position.y = .01;
-    grid.material.opacity = .34;
+    grid.material.opacity = .3;
     grid.material.transparent = true;
     this.group.add(grid);
 
-    const wallColor = 0x334a62;
     for (const [x, z, w, d] of [
-      [0, -this.size, this.size * 2, .7], [0, this.size, this.size * 2, .7],
-      [-this.size, 0, .7, this.size * 2], [this.size, 0, .7, this.size * 2]
-    ]) this.addBox(x, z, w, d, 4.5, wallColor, false);
+      [0, -this.size, this.size * 2, 1.2], [0, this.size, this.size * 2, 1.2],
+      [-this.size, 0, 1.2, this.size * 2], [this.size, 0, 1.2, this.size * 2]
+    ]) this.addBox(x, z, w, d, this.height, 0x263d53);
 
-    this.addBox(0, 0, 8, 8, 2.2, 0x263e55, false);
-    for (let i = 0; i < 4; i++) {
-      const angle = i * Math.PI / 2 + Math.PI / 4;
-      const x = Math.cos(angle) * 18;
-      const z = Math.sin(angle) * 18;
-      this.addBox(x, z, 3.2, 3.2, 8, 0x29445e, false, true);
-    }
+    // Four real combat elevations plus a 70-metre central grapple spire.
+    this.addPlatform(0, 15, 0, 42, 42, 1.5, 0x203d55);
+    this.addPlatform(42, 31, -22, 34, 26, 1.5, 0x263f58);
+    this.addPlatform(-42, 47, 30, 32, 28, 1.5, 0x263f58);
+    this.addPlatform(0, 66, 0, 28, 28, 1.7, 0x294b65);
 
-    for (let i = 0; i < 15; i++) {
+    this.addPlatform(-52, 15, -48, 34, 26, 1.4, 0x203d55);
+    this.addPlatform(53, 15, 49, 34, 26, 1.4, 0x203d55);
+    this.addPlatform(54, 31, 33, 30, 22, 1.4, 0x203d55);
+    this.addPlatform(-53, 47, -27, 30, 22, 1.4, 0x203d55);
+
+    // Long aerial bridges turn the map into a navigable volume, not stacked islands.
+    this.addPlatform(-26, 15, -24, 50, 5, 1, 0x35566d);
+    this.addPlatform(28, 15, 24, 54, 5, 1, 0x35566d);
+    this.addPlatform(31, 31, 4, 5, 48, 1, 0x35566d);
+    this.addPlatform(-30, 47, 14, 5, 48, 1, 0x35566d);
+    this.addPlatform(0, 66, 28, 5, 30, 1, 0x35566d);
+
+    for (const [x, z, h] of [
+      [0, 0, 70], [-72, -66, 40], [72, 66, 54], [70, -62, 72], [-68, 66, 62],
+      [42, -22, 45], [-42, 30, 59]
+    ]) this.addBox(x, z, 7, 7, h, 0x1d344b, false, true);
+
+    // Alternate ascent routes for players who miss a grapple.
+    for (const pad of [
+      [-18, 0, -18, 24], [18, 0, 18, 24], [-66, 0, 22, 29], [66, 0, -22, 29],
+      [-52, 15, -48, 26], [53, 15, 49, 26], [42, 31, -22, 27], [-42, 47, 30, 28]
+    ]) this.addBoostPad(...pad);
+
+    for (let i = 0; i < 34; i++) {
       const angle = random() * Math.PI * 2;
-      const distance = 9 + random() * 17;
+      const distance = 24 + random() * 74;
       const x = Math.cos(angle) * distance;
       const z = Math.sin(angle) * distance;
-      const wide = 1.8 + random() * 2.8;
-      const deep = 1.8 + random() * 2.8;
-      const height = 1.4 + random() * 2.4;
-      this.addBox(x, z, wide, deep, height, i % 3 ? 0xd54f5f : 0xeaa53b, true);
-    }
-
-    for (const [x, z] of [[0, -24], [0, 24], [-24, 0], [24, 0]]) {
-      const pad = new THREE.Mesh(
-        new THREE.CylinderGeometry(2.2, 2.2, .2, 28),
-        material(0x0e89b8, 0x2be4ff, .86)
-      );
-      pad.position.set(x, .12, z);
-      this.group.add(pad);
+      const w = 3 + random() * 5;
+      const d = 3 + random() * 5;
+      const h = 2.5 + random() * 5;
+      this.addBox(x, z, w, d, h, i % 3 ? 0xd54f5f : 0xeaa53b, true);
     }
 
     const haze = new THREE.Mesh(
-      new THREE.CylinderGeometry(this.size + 3, this.size + 3, 13, 48, 1, true),
-      material(0x1a3750, 0, .18)
+      new THREE.CylinderGeometry(this.size + 5, this.size + 5, this.height + 24, 64, 1, true),
+      material(0x173149, 0, .16)
     );
     haze.material.side = THREE.BackSide;
-    haze.position.y = 6;
+    haze.position.y = (this.height + 24) / 2;
     this.group.add(haze);
   }
 
-  addBox(x, z, w, d, h, color, destructible = false, anchor = false) {
-    const mesh = box(w, h, d, color, x, h / 2, z);
+  addBox(x, z, w, d, h, color, destructible = false, anchor = false, baseY = 0) {
+    const mesh = box(w, h, d, color, x, baseY + h / 2, z);
     this.group.add(mesh);
-    const obstacle = { x, z, w, d, h, mesh, destructible };
+    const obstacle = { x, z, w, d, h, baseY, top: baseY + h, mesh, destructible };
     this.obstacles.push(obstacle);
     if (destructible) this.destructibles.push(obstacle);
-    if (anchor) {
-      const point = new THREE.Vector3(x, h + .45, z);
-      const orb = new THREE.Mesh(
-        new THREE.SphereGeometry(.34, 12, 9),
-        material(0x67f4ff, 0x67f4ff)
-      );
-      orb.position.copy(point);
-      this.group.add(orb);
-      this.anchors.push({ point, mesh: orb });
-    }
+    if (anchor) this.addAnchor(x, baseY + h + .55, z);
+    return obstacle;
+  }
+
+  addPlatform(x, top, z, w, d, thickness, color) {
+    const platform = this.addBox(x, z, w, d, thickness, color, false, false, top - thickness);
+    this.platforms.push(platform);
+    return platform;
+  }
+
+  addAnchor(x, y, z) {
+    const point = new THREE.Vector3(x, y, z);
+    const orb = new THREE.Mesh(
+      new THREE.SphereGeometry(.55, 14, 10),
+      material(0x67f4ff, 0x67f4ff)
+    );
+    orb.position.copy(point);
+    this.group.add(orb);
+    this.anchors.push({ point, mesh: orb });
+  }
+
+  addBoostPad(x, y, z, strength) {
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.5, 2.5, .22, 28),
+      material(0x0e89b8, 0x2be4ff, .9)
+    );
+    mesh.position.set(x, y + .12, z);
+    this.group.add(mesh);
+    this.boostPads.push({ position: new THREE.Vector3(x, y, z), radius: 2.5, strength, mesh });
   }
 
   spawnPoints() {
     return [
-      new THREE.Vector3(-23, 0, -23),
-      new THREE.Vector3(23, 0, 23),
-      new THREE.Vector3(23, 0, -23),
-      new THREE.Vector3(-23, 0, 23)
+      new THREE.Vector3(-88, 0, -88),
+      new THREE.Vector3(88, 0, 88),
+      new THREE.Vector3(-52, 15, -48),
+      new THREE.Vector3(54, 31, 33)
     ];
   }
 
-  resolve(position, radius) {
-    const edge = this.size - radius - .8;
+  surfaceHeightAt(position, ceiling = position.y + .5) {
+    let height = 0;
+    for (const item of this.obstacles) {
+      const inside = Math.abs(position.x - item.x) <= item.w / 2 && Math.abs(position.z - item.z) <= item.d / 2;
+      if (inside && item.top <= ceiling && item.top > height) height = item.top;
+    }
+    return height;
+  }
+
+  resolve(position, radius, previous = position) {
+    const edge = this.size - radius - 1;
     position.x = THREE.MathUtils.clamp(position.x, -edge, edge);
     position.z = THREE.MathUtils.clamp(position.z, -edge, edge);
+
+    const floor = this.surfaceHeightAt(position, previous.y + .35);
+    const grounded = position.y <= floor && previous.y >= floor - .35;
+    if (grounded) position.y = floor;
+
     for (const item of this.obstacles) {
+      if (grounded && Math.abs(position.y - item.top) < .08) continue;
+      const verticallyOverlaps = position.y < item.top - .08 && position.y + 2.25 > item.baseY + .08;
+      if (!verticallyOverlaps) continue;
       const cx = THREE.MathUtils.clamp(position.x, item.x - item.w / 2, item.x + item.w / 2);
       const cz = THREE.MathUtils.clamp(position.z, item.z - item.d / 2, item.z + item.d / 2);
       const dx = position.x - cx;
@@ -136,75 +185,78 @@ export class ArenaWorld {
         position.z += dz / distance * (radius - distance);
       }
     }
+    return { grounded, floor };
+  }
+
+  boostAt(position) {
+    return this.boostPads.find((pad) =>
+      Math.abs(position.y - pad.position.y) < .35 &&
+      Math.hypot(position.x - pad.position.x, position.z - pad.position.z) < pad.radius
+    );
   }
 
   projectileHit(position, radius = .2) {
-    if (Math.abs(position.x) >= this.size || Math.abs(position.z) >= this.size || position.y <= 0) return true;
+    if (Math.abs(position.x) >= this.size || Math.abs(position.z) >= this.size || position.y <= 0 || position.y >= this.height + 18) return true;
     return this.obstacles.some((item) =>
       position.x + radius > item.x - item.w / 2 &&
       position.x - radius < item.x + item.w / 2 &&
       position.z + radius > item.z - item.d / 2 &&
       position.z - radius < item.z + item.d / 2 &&
-      position.y - radius < item.h
+      position.y + radius > item.baseY &&
+      position.y - radius < item.top
     );
   }
 
   destroy(position, radius) {
-    const removed = [];
+    let removed = 0;
     for (const item of [...this.destructibles]) {
-      const distance = Math.hypot(position.x - item.x, position.z - item.z);
-      if (distance > radius + Math.max(item.w, item.d) / 2) continue;
+      const center = new THREE.Vector3(item.x, item.baseY + item.h / 2, item.z);
+      if (center.distanceTo(position) > radius + Math.max(item.w, item.d, item.h) / 2) continue;
       this.group.remove(item.mesh);
       this.obstacles.splice(this.obstacles.indexOf(item), 1);
       this.destructibles.splice(this.destructibles.indexOf(item), 1);
-      removed.push(item);
+      removed += 1;
     }
-    return removed.length;
+    return removed;
   }
 
   grapplePoint(origin, direction) {
+    const flatDirection = direction.clone().setY(0).normalize();
     let best = null;
     let bestScore = -Infinity;
     for (const anchor of this.anchors) {
       const offset = anchor.point.clone().sub(origin);
+      const horizontal = offset.clone().setY(0);
       const distance = offset.length();
-      const alignment = offset.normalize().dot(direction);
-      const score = alignment * 2 - distance / 60;
-      if (alignment > .48 && distance < 48 && score > bestScore) {
+      const alignment = horizontal.lengthSq() ? horizontal.normalize().dot(flatDirection) : .75;
+      const score = alignment * 2 + THREE.MathUtils.clamp(offset.y / 80, -.4, .8) - distance / 210;
+      if (alignment > .18 && distance < 165 && score > bestScore) {
         best = anchor.point.clone();
         bestScore = score;
       }
     }
     if (best) return best;
-    const fallback = origin.clone().addScaledVector(direction, 14);
-    fallback.x = THREE.MathUtils.clamp(fallback.x, -this.size + 1, this.size - 1);
-    fallback.z = THREE.MathUtils.clamp(fallback.z, -this.size + 1, this.size - 1);
-    fallback.y = 4.2;
+    const fallback = origin.clone().addScaledVector(flatDirection, 28);
+    fallback.x = THREE.MathUtils.clamp(fallback.x, -this.size + 2, this.size - 2);
+    fallback.z = THREE.MathUtils.clamp(fallback.z, -this.size + 2, this.size - 2);
+    fallback.y = THREE.MathUtils.clamp(origin.y + 18, 8, this.height);
     return fallback;
   }
 
   lineOfSight(a, b) {
-    const start = a.clone().setY(0);
-    const end = b.clone().setY(0);
+    const start = a.clone();
+    const end = b.clone();
     return !this.obstacles.some((item) => {
-      const center = new THREE.Vector3(item.x, 0, item.z);
-      return segmentCircle(start, end, center, Math.hypot(item.w, item.d) / 2);
+      const minY = Math.min(start.y, end.y);
+      const maxY = Math.max(start.y, end.y) + 2;
+      if (item.top < minY || item.baseY > maxY) return false;
+      return segmentCircle(
+        start.clone().setY(0),
+        end.clone().setY(0),
+        new THREE.Vector3(item.x, 0, item.z),
+        Math.hypot(item.w, item.d) / 2
+      );
     });
-  }
-
-  nearestCover(from, against) {
-    let best;
-    let score = Infinity;
-    for (const item of this.obstacles) {
-      const center = new THREE.Vector3(item.x, 0, item.z);
-      const point = center.clone().add(center.clone().sub(against).setY(0).normalize().multiplyScalar(Math.max(item.w, item.d) / 2 + 1.6));
-      const distance = point.distanceToSquared(from);
-      if (distance < score) {
-        score = distance;
-        best = point;
-      }
-    }
-    return best;
   }
 
   dispose() {

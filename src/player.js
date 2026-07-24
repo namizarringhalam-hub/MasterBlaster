@@ -163,14 +163,21 @@ export class Fighter {
     this.velocity.x = THREE.MathUtils.damp(this.velocity.x, desired.x, 11, dt);
     this.velocity.z = THREE.MathUtils.damp(this.velocity.z, desired.z, 11, dt);
     this.velocity.y -= 19 * dt;
+    const previous = this.position.clone();
     this.position.addScaledVector(this.velocity, dt);
 
-    if (this.position.y <= 0) {
-      this.position.y = 0;
+    const collision = world.resolve(this.position, this.radius, previous);
+    if (collision.grounded && this.velocity.y <= 0) {
       this.velocity.y = 0;
       this.grounded = true;
+    } else {
+      this.grounded = false;
     }
-    world.resolve(this.position, this.radius);
+    const boost = this.grounded ? world.boostAt(this.position) : null;
+    if (boost) {
+      this.velocity.y = boost.strength;
+      this.grounded = false;
+    }
 
     const angle = Math.atan2(this.aim.x, this.aim.z);
     this.group.rotation.y = THREE.MathUtils.damp(this.group.rotation.y, angle, 15, dt);

@@ -38,8 +38,8 @@ class BlasterBattle {
     this.renderer.shadowMap.enabled = true;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x07111d);
-    this.scene.fog = new THREE.FogExp2(0x07111d, .018);
-    this.camera = new THREE.PerspectiveCamera(58, 1, .1, 150);
+    this.scene.fog = new THREE.FogExp2(0x07111d, .006);
+    this.camera = new THREE.PerspectiveCamera(62, 1, .1, 520);
     this.clock = new THREE.Clock();
     this.raycaster = new THREE.Raycaster();
     this.mousePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -76,7 +76,7 @@ class BlasterBattle {
     key.position.set(-22, 40, 18);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
-    Object.assign(key.shadow.camera, { left: -44, right: 44, top: 44, bottom: -44, near: 1, far: 100 });
+    Object.assign(key.shadow.camera, { left: -135, right: 135, top: 135, bottom: -135, near: 1, far: 260 });
     this.scene.add(key);
     const rim = new THREE.DirectionalLight(0xff315f, 2);
     rim.position.set(22, 15, -25);
@@ -460,6 +460,7 @@ class BlasterBattle {
   }
 
   mouseAim(player) {
+    this.mousePlane.constant = -player.position.y;
     this.raycaster.setFromCamera(this.input.mouse, this.camera);
     const point = new THREE.Vector3();
     this.raycaster.ray.intersectPlane(this.mousePlane, point);
@@ -577,7 +578,7 @@ class BlasterBattle {
         if (this.world.projectileHit(shot.mesh.position, shot.radius)) {
           if (shot.weapon.type === "grenade" && shot.bounces < 2 && shot.life > .2) {
             shot.bounces += 1;
-            shot.mesh.position.y = Math.max(.35, shot.mesh.position.y);
+            shot.mesh.position.y = Math.max(.35, this.world.surfaceHeightAt(shot.mesh.position) + shot.radius);
             shot.velocity.y = Math.abs(shot.velocity.y) * .62 + 2.5;
             shot.velocity.x *= -.55;
             shot.velocity.z *= -.55;
@@ -731,9 +732,9 @@ class BlasterBattle {
       this.camera.lookAt(0, 0, 0);
       return;
     }
-    const desired = player.position.clone().add(new THREE.Vector3(0, 10.5, 0)).addScaledVector(player.aim, -13.5);
+    const desired = player.position.clone().add(new THREE.Vector3(0, 13.5, 0)).addScaledVector(player.aim, -17.5);
     this.camera.position.lerp(desired, .11);
-    const focus = player.position.clone().add(new THREE.Vector3(0, 1.3, 0)).addScaledVector(player.aim, 7);
+    const focus = player.position.clone().add(new THREE.Vector3(0, 2.4, 0)).addScaledVector(player.aim, 10);
     this.camera.lookAt(focus);
   }
 

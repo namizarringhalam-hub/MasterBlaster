@@ -35,6 +35,14 @@ const obstacleLayoutB = worldB.obstacles.map(({ x, z, w, d }) => [x, z, w, d]);
 assert.deepEqual(obstacleLayoutA, obstacleLayoutB, "seeded arenas generate the same collision layout");
 assert.equal(worldB.spawnPoints().length, 4, "the arena provides fair spawn candidates");
 assert.ok(worldB.grapplePoint(new THREE.Vector3(), new THREE.Vector3(1, 0, 0)), "the arena always offers a grapple point");
+assert.ok(worldB.size >= 100, "the arena spans a large horizontal combat area");
+assert.ok(worldB.height >= 70, "the arena spans a large vertical combat area");
+assert.ok(Math.max(...worldB.platforms.map((platform) => platform.top)) >= 60, "combat platforms reach the upper arena");
+assert.ok(Math.max(...worldB.anchors.map((anchor) => anchor.point.y)) >= 70, "grapple anchors use the full arena height");
+assert.ok(worldB.spawnPoints().some((point) => point.y >= 30), "respawns include elevated combat levels");
+const upperSpawn = worldB.spawnPoints().find((point) => point.y >= 30);
+const fallingOntoUpperSpawn = upperSpawn.clone().setY(upperSpawn.y - .1);
+assert.ok(worldB.resolve(fallingOntoUpperSpawn, .72, upperSpawn.clone().setY(upperSpawn.y + .2)).grounded, "players land on elevated platforms");
 
 const fighter = new Fighter(
   worldScene,
