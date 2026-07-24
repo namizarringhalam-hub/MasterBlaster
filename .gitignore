@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.codex-spec-render/
+.codex-vite*.log
+.vite-*
+*.log

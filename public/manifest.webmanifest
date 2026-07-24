@@ -1,0 +1,10 @@
+{
+  "name": "Blaster Battle",
+  "short_name": "Blaster Battle",
+  "description": "Fast browser-native 3D arena combat.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "background_color": "#07111d",
+  "theme_color": "#07111d",
+  "orientation": "landscape"
+}

@@ -1,0 +1,16 @@
+{
+  "name": "blaster-battle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build && node scripts/prepare-sites.mjs",
+    "dev": "vite --host 127.0.0.1",
+    "start": "npm run build && node server.mjs",
+    "test": "node tests/smoke.mjs"
+  },
+  "dependencies": {
+    "three": "0.165.0",
+    "vite": "^8.0.16"
+  }
+}
