@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import * as THREE from "three";
 import { chooseBotSlot, botFireChance } from "../src/botBrain.js";
-import { DEFAULT_LOADOUT, LOADOUT_SLOTS, seededRandom, seedFromText, WEAPONS } from "../src/gameData.js";
+import { DEFAULT_LOADOUT, LOADOUT_SLOTS, projectileStepCount, seededRandom, seedFromText, WEAPONS } from "../src/gameData.js";
 import { shouldCaptureGameKey } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, boostGrappleRelease, Fighter, projectileTouchesPlayer } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
@@ -14,6 +14,12 @@ assert.deepEqual(
   ["blaster", "grenade_launcher", "machine_gun", "mine", "plasma_cannon", "railgun", "rocket_launcher", "shotgun"],
   "weapon IDs match the specification"
 );
+assert.equal(WEAPONS.grenade_launcher.projectileSpeed, 13, "grenades keep their deliberate throwing arc");
+assert.ok(WEAPONS.railgun.projectileSpeed >= WEAPONS.grenade_launcher.projectileSpeed * 30, "the railgun feels almost instant beside a grenade");
+assert.ok(WEAPONS.machine_gun.projectileSpeed > WEAPONS.blaster.projectileSpeed, "rifle-class bullets outrun visible blaster bolts");
+assert.ok(WEAPONS.blaster.projectileSpeed > WEAPONS.plasma_cannon.projectileSpeed, "heavy plasma remains slower than a standard bolt");
+assert.ok(WEAPONS.plasma_cannon.projectileSpeed > WEAPONS.rocket_launcher.projectileSpeed, "rockets remain the slower guided explosive");
+assert.ok(projectileStepCount(WEAPONS.railgun.projectileSpeed, 1 / 60, .11) > 1, "fast shots use swept stepping instead of tunnelling");
 
 const randomA = seededRandom(seedFromText("BLAST-01"));
 const randomB = seededRandom(seedFromText("BLAST-01"));

@@ -4,7 +4,7 @@ import { SoundBoard } from "./audio.js";
 import { ArenaWorld } from "./world.js";
 import { Fighter, aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, projectileTouchesPlayer } from "./player.js";
 import { InputManager } from "./input.js";
-import { DEFAULT_LOADOUT, loadSettings, MAP_THEMES, saveSettings, WEAPONS } from "./gameData.js";
+import { DEFAULT_LOADOUT, loadSettings, MAP_THEMES, projectileStepCount, saveSettings, WEAPONS } from "./gameData.js";
 import { botFireChance, chooseBotSlot } from "./botBrain.js";
 
 const canvas = document.querySelector("#game-canvas");
@@ -562,31 +562,38 @@ class BlasterBattle {
         if (target && shot.age > .45) shot.life = 0;
       } else {
         if (shot.weapon.type === "grenade") shot.velocity.y -= 17 * dt;
-        shot.mesh.position.addScaledVector(shot.velocity, dt);
-        const target = this.players.find((player) => player !== shot.owner && projectileTouchesPlayer(player, shot.mesh.position, shot.radius));
-        if (target) {
-          if (explosive) {
-            this.explode(shot);
-          } else {
-            this.damagePlayer(target, shot.weapon.damage, shot.velocity.clone().normalize().multiplyScalar(shot.weapon.recoil * 1.7), shot.owner);
-            this.spawnImpact(shot.mesh.position, target);
-          }
-          this.removeProjectile(index);
-          continue;
-        }
-        if (this.world.projectileHit(shot.mesh.position, shot.radius)) {
-          if (shot.weapon.type === "grenade" && shot.bounces < 2 && shot.life > .2) {
-            shot.bounces += 1;
-            shot.mesh.position.y = Math.max(.35, this.world.surfaceHeightAt(shot.mesh.position) + shot.radius);
-            shot.velocity.y = Math.abs(shot.velocity.y) * .62 + 2.5;
-            shot.velocity.x *= -.55;
-            shot.velocity.z *= -.55;
-          } else {
-            if (explosive) this.explode(shot);
+        const steps = projectileStepCount(shot.velocity.length(), dt, shot.radius);
+        let removed = false;
+        for (let step = 0; step < steps; step++) {
+          shot.mesh.position.addScaledVector(shot.velocity, dt / steps);
+          const target = this.players.find((player) => player !== shot.owner && projectileTouchesPlayer(player, shot.mesh.position, shot.radius));
+          if (target) {
+            if (explosive) {
+              this.explode(shot);
+            } else {
+              this.damagePlayer(target, shot.weapon.damage, shot.velocity.clone().normalize().multiplyScalar(shot.weapon.recoil * 1.7), shot.owner);
+              this.spawnImpact(shot.mesh.position, target);
+            }
             this.removeProjectile(index);
-            continue;
+            removed = true;
+            break;
+          }
+          if (this.world.projectileHit(shot.mesh.position, shot.radius)) {
+            if (shot.weapon.type === "grenade" && shot.bounces < 2 && shot.life > .2) {
+              shot.bounces += 1;
+              shot.mesh.position.y = Math.max(.35, this.world.surfaceHeightAt(shot.mesh.position) + shot.radius);
+              shot.velocity.y = Math.abs(shot.velocity.y) * .62 + 2.5;
+              shot.velocity.x *= -.55;
+              shot.velocity.z *= -.55;
+            } else {
+              if (explosive) this.explode(shot);
+              this.removeProjectile(index);
+              removed = true;
+            }
+            break;
           }
         }
+        if (removed) continue;
       }
       if (shot.life <= 0) {
         if (explosive) this.explode(shot);
