@@ -2,7 +2,7 @@ import * as THREE from "three";
 import "./styles.css";
 import { SoundBoard } from "./audio.js";
 import { ArenaWorld } from "./world.js";
-import { Fighter, aimWithSpread, cameraRelative, directionFromKeys, projectileTouchesPlayer } from "./player.js";
+import { Fighter, aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, projectileTouchesPlayer } from "./player.js";
 import { InputManager } from "./input.js";
 import { DEFAULT_LOADOUT, loadSettings, MAP_THEMES, saveSettings, WEAPONS } from "./gameData.js";
 import { botFireChance, chooseBotSlot } from "./botBrain.js";
@@ -453,7 +453,7 @@ class BlasterBattle {
     if (distance < preferred - 3) move.addScaledVector(forward, -1);
     bot.update(dt, move, forward, { jump: Math.random() < dt * .45 }, this.world);
     if (!bot.grapple && distance > 22 && Math.random() < dt * .35) this.toggleGrapple(bot);
-    if (bot.grapple && (distance < 11 || Math.random() < dt * .18)) this.releaseGrapple(bot);
+    if (bot.grapple && (distance < 11 || Math.random() < dt * .18)) this.releaseGrapple(bot, true);
     this.updateGrapple(bot, dt);
     const difficulty = this.botDifficulty === "veteran" ? 1.45 : this.botDifficulty === "rookie" ? .58 : 1;
     if (Math.random() < botFireChance(distance, visible, bot.weapon) * difficulty) this.tryFire(bot);
@@ -472,32 +472,31 @@ class BlasterBattle {
 
   toggleGrapple(player) {
     if (!player.alive) return;
-    if (player.grapple) return this.releaseGrapple(player);
+    if (player.grapple) return this.releaseGrapple(player, true);
     const start = player.position.clone().add(new THREE.Vector3(0, 1.4, 0));
     const anchor = this.world.grapplePoint(start, player.aim);
     const geometry = new THREE.BufferGeometry().setFromPoints([start, anchor]);
     const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: player.accent }));
     this.scene.add(line);
-    player.grapple = { anchor, line, ropeLength: Math.max(4, start.distanceTo(anchor) * .78) };
+    player.grapple = { anchor, line, ropeLength: Math.max(5, start.distanceTo(anchor) * .92) };
+    const direction = anchor.clone().sub(start).normalize();
+    const approachSpeed = player.velocity.dot(direction);
+    if (approachSpeed < 12) player.velocity.addScaledVector(direction, 12 - approachSpeed);
     this.sound.play("power");
   }
 
   updateGrapple(player, dt) {
     if (!player.grapple || !player.alive) return;
+    applyGrapplePhysics(player, dt);
     const chest = player.position.clone().add(new THREE.Vector3(0, 1.4, 0));
-    const pull = player.grapple.anchor.clone().sub(chest);
-    const distance = pull.length();
-    if (distance > player.grapple.ropeLength) {
-      player.velocity.addScaledVector(pull.normalize(), (distance - player.grapple.ropeLength) * 13 * dt + 12 * dt);
-      player.velocity.multiplyScalar(1 - dt * .35);
-    }
     player.grapple.line.geometry.setFromPoints([chest, player.grapple.anchor]);
   }
 
-  releaseGrapple(player) {
+  releaseGrapple(player, boost = false) {
     if (!player?.grapple) return;
     this.removeObject(player.grapple.line);
     player.grapple = null;
+    if (boost && player.alive) boostGrappleRelease(player);
   }
 
   tryFire(player) {
@@ -697,7 +696,7 @@ class BlasterBattle {
     const seconds = Math.floor(this.matchTime % 60).toString().padStart(2, "0");
     this.hud.time.textContent = `${minutes}:${seconds}`;
     const player = this.players[0];
-    this.hud.grapple.textContent = player.grapple ? "GRAPPLE ATTACHED · E TO RELEASE" : "GRAPPLE READY · E / RIGHT CLICK";
+    this.hud.grapple.textContent = player.grapple ? "GRAPPLE PULLING · RELEASE TO SLINGSHOT" : "GRAPPLE READY · E / RIGHT CLICK";
     this.hud.slots.forEach((slot, index) => slot.classList.toggle("selected", index === player.slotIndex));
     this.hud.ammo.forEach((node, index) => {
       const weapon = WEAPONS[player.loadout[index]];

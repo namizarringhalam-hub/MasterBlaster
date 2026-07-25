@@ -34,6 +34,7 @@ export class Fighter {
     this.position = this.group.position;
     this.position.copy(position);
     this.velocity = new THREE.Vector3();
+    this.controlMove = new THREE.Vector3();
     this.aim = new THREE.Vector3(0, 0, 1);
     this.radius = .72;
     this.health = 100;
@@ -159,9 +160,22 @@ export class Fighter {
     }
 
     const moving = move.lengthSq() > .001;
+    this.controlMove.copy(move);
     const desired = moving ? move.clone().normalize().multiplyScalar(9) : new THREE.Vector3();
-    this.velocity.x = THREE.MathUtils.damp(this.velocity.x, desired.x, 11, dt);
-    this.velocity.z = THREE.MathUtils.damp(this.velocity.z, desired.z, 11, dt);
+    if (this.grounded) {
+      this.velocity.x = THREE.MathUtils.damp(this.velocity.x, desired.x, 11, dt);
+      this.velocity.z = THREE.MathUtils.damp(this.velocity.z, desired.z, 11, dt);
+    } else {
+      const acceleration = this.grapple ? 15 : 7;
+      this.velocity.x += desired.x / 9 * acceleration * dt;
+      this.velocity.z += desired.z / 9 * acceleration * dt;
+      const horizontalSpeed = Math.hypot(this.velocity.x, this.velocity.z);
+      const limit = this.grapple ? 44 : 16;
+      if (horizontalSpeed > limit) {
+        this.velocity.x *= limit / horizontalSpeed;
+        this.velocity.z *= limit / horizontalSpeed;
+      }
+    }
     this.velocity.y -= 19 * dt;
     const previous = this.position.clone();
     this.position.addScaledVector(this.velocity, dt);
@@ -205,6 +219,36 @@ export class Fighter {
       child.material?.dispose?.();
     });
   }
+}
+
+export function applyGrapplePhysics(player, dt) {
+  if (!player.grapple) return;
+  const chest = player.position.clone().add(new THREE.Vector3(0, 1.4, 0));
+  const towardAnchor = player.grapple.anchor.clone().sub(chest);
+  const distance = towardAnchor.length();
+  if (distance < .01) return;
+
+  const direction = towardAnchor.multiplyScalar(1 / distance);
+  player.grapple.ropeLength = Math.max(5, player.grapple.ropeLength - 18 * dt);
+  const stretch = Math.max(0, distance - player.grapple.ropeLength);
+  player.velocity.addScaledVector(direction, (30 + stretch * 11) * dt);
+
+  // A taut rope cancels only outward velocity. Tangential speed survives and becomes the swing.
+  if (stretch > 0) {
+    const radialSpeed = player.velocity.dot(direction);
+    if (radialSpeed < 0) player.velocity.addScaledVector(direction, -radialSpeed * .96);
+  }
+
+  const steering = player.controlMove.clone().sub(direction.clone().multiplyScalar(player.controlMove.dot(direction)));
+  if (steering.lengthSq() > .01) player.velocity.addScaledVector(steering.normalize(), 14 * dt);
+  if (player.velocity.length() > 48) player.velocity.setLength(48);
+}
+
+export function boostGrappleRelease(player) {
+  const speed = player.velocity.length();
+  if (speed < 5) return;
+  player.velocity.multiplyScalar(1 + Math.min(.28, 6 / speed));
+  player.velocity.y += 2.2;
 }
 
 export function directionFromKeys(input) {

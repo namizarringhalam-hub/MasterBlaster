@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { chooseBotSlot, botFireChance } from "../src/botBrain.js";
 import { DEFAULT_LOADOUT, LOADOUT_SLOTS, seededRandom, seedFromText, WEAPONS } from "../src/gameData.js";
 import { shouldCaptureGameKey } from "../src/input.js";
-import { aimWithSpread, Fighter, projectileTouchesPlayer } from "../src/player.js";
+import { aimWithSpread, applyGrapplePhysics, boostGrappleRelease, Fighter, projectileTouchesPlayer } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
 
 assert.equal(Object.keys(WEAPONS).length, 8, "the prototype exposes all eight specified weapons");
@@ -56,6 +56,15 @@ fighter.recoil(2);
 assert.ok(fighter.velocity.z < 0, "weapon recoil contributes to movement");
 assert.ok(projectileTouchesPlayer(fighter, new THREE.Vector3(0, 1.15, 0)), "projectiles collide with the fighter volume");
 assert.ok(aimWithSpread(new THREE.Vector3(0, 0, 1), .02, () => .5).equals(new THREE.Vector3(0, 0, 1)), "centered spread preserves aim");
+fighter.velocity.set(0, 0, 8);
+fighter.grapple = { anchor: new THREE.Vector3(20, 20, 0), ropeLength: 24 };
+const ropeBefore = fighter.grapple.ropeLength;
+applyGrapplePhysics(fighter, .1);
+assert.ok(fighter.velocity.x > 0 && fighter.velocity.y > 0, "the grapple actively pulls toward elevated anchors");
+assert.ok(fighter.grapple.ropeLength < ropeBefore, "the grapple reels in while attached");
+const speedBeforeRelease = fighter.velocity.length();
+boostGrappleRelease(fighter);
+assert.ok(fighter.velocity.length() > speedBeforeRelease, "releasing a fast swing adds a slingshot boost");
 
 fighter.dispose();
 worldB.dispose();
