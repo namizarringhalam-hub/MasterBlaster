@@ -153,7 +153,7 @@ export class Fighter {
     if (reloading && this.reloadTimer === 0) this.ammo[this.weapon.id] = this.weapon.ammo;
     this.hitTimer = Math.max(0, this.hitTimer - dt);
 
-    if (look.lengthSq() > .001) this.aim.copy(look).setY(0).normalize();
+    if (look.lengthSq() > .001) this.aim.copy(look).normalize();
     if (actions.jump && this.grounded) {
       this.velocity.y = 7.5;
       this.grounded = false;
@@ -195,6 +195,7 @@ export class Fighter {
 
     const angle = Math.atan2(this.aim.x, this.aim.z);
     this.group.rotation.y = THREE.MathUtils.damp(this.group.rotation.y, angle, 15, dt);
+    this.weaponGroup.rotation.x = -Math.asin(clamp(this.aim.y, -1, 1));
     const time = performance.now() * .009;
     const swing = moving ? Math.sin(time) * .55 : .06;
     this.leftLeg.rotation.x = swing;

@@ -13,7 +13,8 @@ Open `http://127.0.0.1:5173/`.
 ## Controls
 
 - Move: `WASD`
-- Aim/fire: mouse / left click
+- Camera/aim: click the arena, then move the mouse
+- Fire: left click
 - Grapple: `E` or right click
 - Jump: `Space`
 - Weapons: `1`–`5` or `Q`

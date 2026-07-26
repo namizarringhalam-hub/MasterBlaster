@@ -12,12 +12,19 @@ export function shouldCaptureGameKey(event, active) {
   return active && GAME_KEYS.has(event.code) && !shortcut && !editableTarget(event.target);
 }
 
+export function updateOrbit(yaw, pitch, movementX, movementY, sensitivity = .0022) {
+  return {
+    yaw: yaw + movementX * sensitivity,
+    pitch: Math.max(-.75, Math.min(.65, pitch - movementY * sensitivity))
+  };
+}
+
 export class InputManager {
-  constructor(canvas, shouldCapture = () => true) {
+  constructor(canvas, shouldCapture = () => true, onPointerUnlock = () => {}) {
     this.shouldCapture = shouldCapture;
     this.keys = new Set();
     this.pressed = new Set();
-    this.mouse = { x: 0, y: 0, left: false, right: false };
+    this.mouse = { left: false, right: false, movementX: 0, movementY: 0, locked: false };
 
     addEventListener("keydown", (event) => {
       if (!shouldCaptureGameKey(event, this.shouldCapture())) return;
@@ -33,21 +40,30 @@ export class InputManager {
       this.keys.clear();
       this.mouse.left = false;
       this.mouse.right = false;
+      this.mouse.movementX = 0;
+      this.mouse.movementY = 0;
     });
     addEventListener("pointermove", (event) => {
-      if (event.pointerType === "touch") return;
-      const rect = canvas.getBoundingClientRect();
-      this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      this.mouse.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
+      if (event.pointerType === "touch" || document.pointerLockElement !== canvas) return;
+      this.mouse.movementX += Math.max(-80, Math.min(80, event.movementX));
+      this.mouse.movementY += Math.max(-80, Math.min(80, event.movementY));
+    });
+    document.addEventListener("pointerlockchange", () => {
+      const wasLocked = this.mouse.locked;
+      this.mouse.locked = document.pointerLockElement === canvas;
+      this.mouse.movementX = 0;
+      this.mouse.movementY = 0;
+      if (!this.mouse.locked) this.mouse.left = this.mouse.right = false;
+      if (wasLocked && !this.mouse.locked) onPointerUnlock();
     });
     canvas.addEventListener("pointerdown", (event) => {
       if (!this.shouldCapture()) return;
+      if (document.pointerLockElement !== canvas) canvas.requestPointerLock?.();
       if (event.button === 0) this.mouse.left = true;
       if (event.button === 2) {
         this.mouse.right = true;
         this.pressed.add("MouseRight");
       }
-      canvas.setPointerCapture?.(event.pointerId);
       event.preventDefault();
     });
     addEventListener("pointerup", (event) => {
@@ -59,5 +75,15 @@ export class InputManager {
 
   down(code) { return this.keys.has(code); }
   tapped(code) { return this.pressed.has(code); }
-  endFrame() { this.pressed.clear(); }
+  consumeLook() {
+    const movement = { x: this.mouse.movementX, y: this.mouse.movementY };
+    this.mouse.movementX = 0;
+    this.mouse.movementY = 0;
+    return movement;
+  }
+  releasePointer() { if (document.pointerLockElement) document.exitPointerLock?.(); }
+  endFrame() {
+    this.pressed.clear();
+    if (!this.shouldCapture()) this.consumeLook();
+  }
 }

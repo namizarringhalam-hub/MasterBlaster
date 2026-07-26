@@ -3,7 +3,7 @@ import "./styles.css";
 import { SoundBoard } from "./audio.js";
 import { ArenaWorld } from "./world.js";
 import { Fighter, aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, projectileTouchesPlayer } from "./player.js";
-import { InputManager } from "./input.js";
+import { InputManager, updateOrbit } from "./input.js";
 import { DEFAULT_LOADOUT, loadSettings, MAP_THEMES, projectileStepCount, saveSettings, WEAPONS } from "./gameData.js";
 import { botFireChance, chooseBotSlot } from "./botBrain.js";
 
@@ -41,9 +41,13 @@ class BlasterBattle {
     this.scene.fog = new THREE.FogExp2(0x07111d, .006);
     this.camera = new THREE.PerspectiveCamera(62, 1, .1, 520);
     this.clock = new THREE.Clock();
-    this.raycaster = new THREE.Raycaster();
-    this.mousePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    this.input = new InputManager(canvas, () => this.state === "play" && !this.paused);
+    this.input = new InputManager(
+      canvas,
+      () => this.state === "play" && !this.paused,
+      () => { if (this.state === "play" && !this.paused) this.togglePause(); }
+    );
+    this.cameraYaw = 0;
+    this.cameraPitch = -.08;
     this.sound = new SoundBoard();
     this.settings = loadSettings();
     this.state = "menu";
@@ -90,6 +94,7 @@ class BlasterBattle {
   }
 
   clearMatch() {
+    this.input.releasePointer();
     this.world?.dispose();
     for (const player of this.players) {
       this.releaseGrapple(player);
@@ -288,6 +293,8 @@ class BlasterBattle {
       new Fighter(this.scene, { id: "p1", name: this.settings.displayName, ...PLAYER_COLORS[0] }, playerLoadout, spawns[0]),
       new Fighter(this.scene, { id: "p2", name: this.mode === "quick" ? "Region Bot 07" : "Atlas Bot", ...PLAYER_COLORS[1] }, botLoadout, spawns[1], true)
     ];
+    this.cameraYaw = Math.atan2(this.players[0].aim.x, this.players[0].aim.z);
+    this.cameraPitch = -.08;
     this.renderHud();
     this.sound.startMusic();
   }
@@ -370,6 +377,7 @@ class BlasterBattle {
   togglePause() {
     if (this.state !== "play") return;
     this.paused = !this.paused;
+    if (this.paused) this.input.releasePointer();
     ui.querySelector(".overlay")?.remove();
     if (!this.paused) return;
     ui.insertAdjacentHTML("beforeend", `
@@ -414,15 +422,17 @@ class BlasterBattle {
 
   updateHuman(dt) {
     const player = this.players[0];
+    const look = this.input.consumeLook();
+    ({ yaw: this.cameraYaw, pitch: this.cameraPitch } = updateOrbit(this.cameraYaw, this.cameraPitch, look.x, look.y));
     if (!player.alive) return;
-    let move = cameraRelative(directionFromKeys(this.input), Math.atan2(this.camera.position.x - player.position.x, this.camera.position.z - player.position.z));
+    let move = cameraRelative(directionFromKeys(this.input), this.cameraYaw + Math.PI);
     move.add(new THREE.Vector3(
       (this.touch.right ? 1 : 0) - (this.touch.left ? 1 : 0),
       0,
       (this.touch.down ? 1 : 0) - (this.touch.up ? 1 : 0)
     ).applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 4));
     if (move.lengthSq() > 1) move.normalize();
-    const aim = this.mouseAim(player);
+    const aim = this.mouseAim();
     player.update(dt, move, aim, { jump: this.input.tapped("Space") || this.touch.jumpTap }, this.world);
     this.touch.jumpTap = false;
     if (this.input.tapped("KeyE") || this.input.tapped("MouseRight") || this.touch.grappleTap) this.toggleGrapple(player);
@@ -459,15 +469,13 @@ class BlasterBattle {
     if (Math.random() < botFireChance(distance, visible, bot.weapon) * difficulty) this.tryFire(bot);
   }
 
-  mouseAim(player) {
-    this.mousePlane.constant = -player.position.y;
-    this.raycaster.setFromCamera(this.input.mouse, this.camera);
-    const point = new THREE.Vector3();
-    this.raycaster.ray.intersectPlane(this.mousePlane, point);
-    const aim = point.sub(player.position).setY(0);
-    if (aim.lengthSq() > .1) return aim.normalize();
-    const target = this.players[1];
-    return target?.alive ? target.position.clone().sub(player.position).setY(0).normalize() : player.aim.clone();
+  mouseAim() {
+    const horizontal = Math.cos(this.cameraPitch);
+    return new THREE.Vector3(
+      Math.sin(this.cameraYaw) * horizontal,
+      Math.sin(this.cameraPitch),
+      Math.cos(this.cameraYaw) * horizontal
+    );
   }
 
   toggleGrapple(player) {
@@ -716,6 +724,7 @@ class BlasterBattle {
     if (this.state !== "play") return;
     this.state = "results";
     this.paused = true;
+    this.input.releasePointer();
     const winnerIndex = this.scores[0] === this.scores[1] ? -1 : this.scores[0] > this.scores[1] ? 0 : 1;
     const headline = winnerIndex < 0 ? "Draw match" : `${escapeHtml(this.players[winnerIndex].name)} wins`;
     ui.insertAdjacentHTML("beforeend", `
@@ -738,9 +747,16 @@ class BlasterBattle {
       this.camera.lookAt(0, 0, 0);
       return;
     }
-    const desired = player.position.clone().add(new THREE.Vector3(0, 13.5, 0)).addScaledVector(player.aim, -17.5);
-    this.camera.position.lerp(desired, .11);
-    const focus = player.position.clone().add(new THREE.Vector3(0, 2.4, 0)).addScaledVector(player.aim, 10);
+    const forward = player.aim.clone();
+    const flatForward = forward.clone().setY(0).normalize();
+    const right = new THREE.Vector3(flatForward.z, 0, -flatForward.x);
+    const pivot = player.position.clone().add(new THREE.Vector3(0, 1.65, 0));
+    const desired = pivot.clone()
+      .addScaledVector(flatForward, -10)
+      .addScaledVector(right, 1.15)
+      .add(new THREE.Vector3(0, 3.5 - this.cameraPitch * 2.2, 0));
+    this.camera.position.lerp(desired, .16);
+    const focus = pivot.addScaledVector(forward, 28);
     this.camera.lookAt(focus);
   }
 
