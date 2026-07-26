@@ -483,6 +483,7 @@ class BlasterBattle {
     if (player.grapple) return this.releaseGrapple(player, true);
     const start = player.position.clone().add(new THREE.Vector3(0, 1.4, 0));
     const anchor = this.world.grapplePoint(start, player.aim);
+    if (!anchor) return;
     const geometry = new THREE.BufferGeometry().setFromPoints([start, anchor]);
     const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: player.accent }));
     this.scene.add(line);

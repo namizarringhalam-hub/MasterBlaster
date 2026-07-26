@@ -45,7 +45,8 @@ export class ArenaWorld {
 
   build() {
     const random = seededRandom(seedFromText(this.seed));
-    this.group.add(box(this.size * 2, .5, this.size * 2, 0x102234, 0, -.28, 0));
+    this.ground = box(this.size * 2, .5, this.size * 2, 0x102234, 0, -.28, 0);
+    this.group.add(this.ground);
 
     const grid = new THREE.GridHelper(this.size * 2, 44, 0x1fd7ff, 0x244b67);
     grid.position.y = .01;
@@ -221,26 +222,16 @@ export class ArenaWorld {
   }
 
   grapplePoint(origin, direction) {
-    const flatDirection = direction.clone().setY(0).normalize();
-    let best = null;
-    let bestScore = -Infinity;
-    for (const anchor of this.anchors) {
-      const offset = anchor.point.clone().sub(origin);
-      const horizontal = offset.clone().setY(0);
-      const distance = offset.length();
-      const alignment = horizontal.lengthSq() ? horizontal.normalize().dot(flatDirection) : .75;
-      const score = alignment * 2 + THREE.MathUtils.clamp(offset.y / 80, -.4, .8) - distance / 210;
-      if (alignment > .18 && distance < 165 && score > bestScore) {
-        best = anchor.point.clone();
-        bestScore = score;
-      }
-    }
-    if (best) return best;
-    const fallback = origin.clone().addScaledVector(flatDirection, 28);
-    fallback.x = THREE.MathUtils.clamp(fallback.x, -this.size + 2, this.size - 2);
-    fallback.z = THREE.MathUtils.clamp(fallback.z, -this.size + 2, this.size - 2);
-    fallback.y = THREE.MathUtils.clamp(origin.y + 18, 8, this.height);
-    return fallback;
+    if (!direction.lengthSq()) return null;
+    this.group.updateMatrixWorld(true);
+    const surfaces = [
+      this.ground,
+      ...this.obstacles.map((item) => item.mesh),
+      ...this.anchors.map((anchor) => anchor.mesh),
+      ...this.boostPads.map((pad) => pad.mesh)
+    ];
+    const ray = new THREE.Raycaster(origin, direction.clone().normalize(), .25, 165);
+    return ray.intersectObjects(surfaces, false)[0]?.point.clone() ?? null;
   }
 
   lineOfSight(a, b) {
