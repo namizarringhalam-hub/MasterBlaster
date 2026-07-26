@@ -14,7 +14,7 @@ export function shouldCaptureGameKey(event, active) {
 
 export function updateOrbit(yaw, pitch, movementX, movementY, sensitivity = .0022) {
   return {
-    yaw: yaw + movementX * sensitivity,
+    yaw: yaw - movementX * sensitivity,
     pitch: Math.max(-.75, Math.min(.65, pitch - movementY * sensitivity))
   };
 }
