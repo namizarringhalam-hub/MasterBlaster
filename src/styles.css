@@ -44,12 +44,18 @@ button.primary:hover:not(:disabled) { background: #ff4862; border-color: #fff; }
 
 .menu-shell {
   width: min(1180px, calc(100% - 48px));
-  min-height: 100%;
+  height: 100%;
+  min-height: 0;
   margin: auto;
   display: grid;
   grid-template-columns: minmax(0, 760px) 280px;
   gap: clamp(28px, 7vw, 90px);
   align-items: center;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y pinch-zoom;
   pointer-events: auto;
 }
 
@@ -117,11 +123,16 @@ button.primary:hover:not(:disabled) { background: #ff4862; border-color: #fff; }
 .feature-rail small { display: block; color: #8298a8; margin-top: 7px; line-height: 1.35; }
 
 .screen {
-  min-height: 100%;
+  height: 100%;
+  min-height: 0;
   padding: 32px;
   display: grid;
   place-items: center;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y pinch-zoom;
   pointer-events: auto;
   background: rgba(4, 10, 18, .88);
 }
@@ -262,7 +273,7 @@ input, select {
 .scoreboard h2 { margin: 0 0 18px; font: 900 32px "Barlow Condensed", sans-serif; text-transform: uppercase; }
 .scoreboard p { display: flex; justify-content: space-between; padding: 13px; border-top: 1px solid #274159; }
 
-.overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(3, 9, 16, .78); pointer-events: auto; backdrop-filter: blur(8px); }
+.overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y pinch-zoom; background: rgba(3, 9, 16, .78); pointer-events: auto; backdrop-filter: blur(8px); }
 .pause-dialog, .results-dialog { width: min(460px, 100%); text-align: center; }
 .pause-dialog button, .results-dialog button { display: block; width: 100%; margin-top: 10px; }
 .pause-dialog h1, .results-dialog h1 { font-size: 56px; }
@@ -273,12 +284,13 @@ input, select {
 .touch-controls { display: none; }
 
 @media (max-width: 820px) {
-  .menu-shell { grid-template-columns: 1fr; width: min(620px, calc(100% - 28px)); padding: 70px 0 30px; overflow: auto; }
+  .menu-shell { grid-template-columns: 1fr; width: min(620px, calc(100% - 28px)); padding: max(30px, env(safe-area-inset-top)) 0 max(30px, env(safe-area-inset-bottom)); }
   .feature-rail { display: none; }
   .hero-panel h1 { font-size: clamp(54px, 18vw, 84px); }
   .primary-actions { grid-template-columns: 1fr; }
   .primary-actions button { min-height: 72px; }
   .screen { padding: 12px; align-items: start; }
+  .overlay { padding: 12px; place-items: start center; }
   .dialog { margin: 12px 0; padding: 22px; }
   .setup-form { grid-template-columns: 1fr; }
   .weapon-grid { grid-template-columns: repeat(2, 1fr); }
