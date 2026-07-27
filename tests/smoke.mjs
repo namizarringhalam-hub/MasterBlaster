@@ -1,10 +1,20 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import * as THREE from "three";
 import { chooseBotSlot, botFireChance } from "../src/botBrain.js";
 import { DEFAULT_LOADOUT, LOADOUT_SLOTS, projectileStepCount, seededRandom, seedFromText, WEAPONS } from "../src/gameData.js";
 import { shouldCaptureGameKey, updateOrbit } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, boostGrappleRelease, Fighter, projectileTouchesPlayer } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
+
+const [mainSource, serviceWorkerSource] = await Promise.all([
+  readFile(new URL("../src/main.js", import.meta.url), "utf8"),
+  readFile(new URL("../public/sw.js", import.meta.url), "utf8")
+]);
+assert.doesNotMatch(mainSource, /serviceWorker\.register/, "the game no longer installs the stale offline cache");
+assert.match(serviceWorkerSource, /caches\.delete/, "the replacement worker clears old cached builds");
+assert.match(serviceWorkerSource, /clients\.claim/, "the replacement worker takes control before refreshing old clients");
+assert.match(serviceWorkerSource, /registration\.unregister/, "the replacement worker removes itself after cleanup");
 
 assert.equal(Object.keys(WEAPONS).length, 8, "the prototype exposes all eight specified weapons");
 assert.equal(LOADOUT_SLOTS.length, 5, "players carry five main weapons");
