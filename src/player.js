@@ -273,7 +273,7 @@ export function directionFromTouch(touch) {
 export function cameraRelative(vector, yaw) {
   if (!vector.lengthSq()) return vector;
   const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
-  const right = new THREE.Vector3(forward.z, 0, -forward.x);
+  const right = new THREE.Vector3(-forward.z, 0, forward.x);
   return right.multiplyScalar(vector.x).addScaledVector(forward, -vector.z);
 }
 

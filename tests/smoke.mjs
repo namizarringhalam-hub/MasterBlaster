@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { chooseBotSlot, botFireChance } from "../src/botBrain.js";
 import { DEFAULT_LOADOUT, LOADOUT_SLOTS, projectileStepCount, seededRandom, seedFromText, WEAPONS } from "../src/gameData.js";
 import { InputManager, shouldCaptureGameKey, touchLookDelta, updateOrbit } from "../src/input.js";
-import { aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromTouch, Fighter, projectileTouchesPlayer } from "../src/player.js";
+import { aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, projectileTouchesPlayer } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
 
 const [mainSource, serviceWorkerSource] = await Promise.all([
@@ -43,8 +43,10 @@ assert.equal(updateOrbit(0, .6, 0, -1000).pitch, .65, "vertical camera aim is cl
 assert.deepEqual(touchLookDelta(20, 30, 70, 5), { x: 50, y: -25 }, "dragging right and up produces rightward and upward touch look");
 assert.ok(cameraRelative(directionFromTouch({ up: true }), 0).distanceTo(new THREE.Vector3(0, 0, 1)) < .001, "touch up moves forward with the camera");
 assert.ok(cameraRelative(directionFromTouch({ down: true }), 0).distanceTo(new THREE.Vector3(0, 0, -1)) < .001, "touch down moves backward from the camera");
-assert.ok(cameraRelative(directionFromTouch({ left: true }), 0).distanceTo(new THREE.Vector3(-1, 0, 0)) < .001, "touch left strafes left relative to the camera");
-assert.ok(cameraRelative(directionFromTouch({ right: true }), 0).distanceTo(new THREE.Vector3(1, 0, 0)) < .001, "touch right strafes right relative to the camera");
+assert.ok(cameraRelative(directionFromTouch({ left: true }), 0).distanceTo(new THREE.Vector3(1, 0, 0)) < .001, "touch left follows screen-left relative to the camera");
+assert.ok(cameraRelative(directionFromTouch({ right: true }), 0).distanceTo(new THREE.Vector3(-1, 0, 0)) < .001, "touch right follows screen-right relative to the camera");
+assert.ok(cameraRelative(directionFromKeys({ down: (code) => code === "KeyA" }), 0).distanceTo(new THREE.Vector3(1, 0, 0)) < .001, "keyboard A follows screen-left");
+assert.ok(cameraRelative(directionFromKeys({ down: (code) => code === "KeyD" }), 0).distanceTo(new THREE.Vector3(-1, 0, 0)) < .001, "keyboard D follows screen-right");
 
 const previousAddEventListener = globalThis.addEventListener;
 const previousDocument = globalThis.document;
