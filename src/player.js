@@ -261,8 +261,20 @@ export function directionFromKeys(input) {
   return value.lengthSq() ? value.normalize() : value;
 }
 
+export function directionFromTouch(touch) {
+  const value = new THREE.Vector3(
+    (touch.right ? 1 : 0) - (touch.left ? 1 : 0),
+    0,
+    (touch.down ? 1 : 0) - (touch.up ? 1 : 0)
+  );
+  return value.lengthSq() ? value.normalize() : value;
+}
+
 export function cameraRelative(vector, yaw) {
-  return vector.lengthSq() ? vector.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw) : vector;
+  if (!vector.lengthSq()) return vector;
+  const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+  const right = new THREE.Vector3(forward.z, 0, -forward.x);
+  return right.multiplyScalar(vector.x).addScaledVector(forward, -vector.z);
 }
 
 export function aimWithSpread(aim, spread, random = Math.random) {

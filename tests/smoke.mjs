@@ -3,8 +3,8 @@ import { readFile } from "node:fs/promises";
 import * as THREE from "three";
 import { chooseBotSlot, botFireChance } from "../src/botBrain.js";
 import { DEFAULT_LOADOUT, LOADOUT_SLOTS, projectileStepCount, seededRandom, seedFromText, WEAPONS } from "../src/gameData.js";
-import { shouldCaptureGameKey, updateOrbit } from "../src/input.js";
-import { aimWithSpread, applyGrapplePhysics, boostGrappleRelease, Fighter, projectileTouchesPlayer } from "../src/player.js";
+import { InputManager, shouldCaptureGameKey, touchLookDelta, updateOrbit } from "../src/input.js";
+import { aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromTouch, Fighter, projectileTouchesPlayer } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
 
 const [mainSource, serviceWorkerSource] = await Promise.all([
@@ -40,6 +40,33 @@ assert.ok(shouldCaptureGameKey({ code: "Digit5", target: null }, true), "the fif
 assert.ok(!shouldCaptureGameKey({ code: "KeyR", ctrlKey: true, target: null }, true), "browser shortcuts are preserved");
 assert.deepEqual(updateOrbit(0, 0, 100, -50), { yaw: -.22, pitch: .11 }, "mouse-right turns the third-person camera right without reversing vertical aim");
 assert.equal(updateOrbit(0, .6, 0, -1000).pitch, .65, "vertical camera aim is clamped before it can flip");
+assert.deepEqual(touchLookDelta(20, 30, 70, 5), { x: 50, y: -25 }, "dragging right and up produces rightward and upward touch look");
+assert.ok(cameraRelative(directionFromTouch({ up: true }), 0).distanceTo(new THREE.Vector3(0, 0, 1)) < .001, "touch up moves forward with the camera");
+assert.ok(cameraRelative(directionFromTouch({ down: true }), 0).distanceTo(new THREE.Vector3(0, 0, -1)) < .001, "touch down moves backward from the camera");
+assert.ok(cameraRelative(directionFromTouch({ left: true }), 0).distanceTo(new THREE.Vector3(-1, 0, 0)) < .001, "touch left strafes left relative to the camera");
+assert.ok(cameraRelative(directionFromTouch({ right: true }), 0).distanceTo(new THREE.Vector3(1, 0, 0)) < .001, "touch right strafes right relative to the camera");
+
+const previousAddEventListener = globalThis.addEventListener;
+const previousDocument = globalThis.document;
+const windowListeners = {};
+const canvasListeners = {};
+globalThis.addEventListener = (type, listener) => { windowListeners[type] = listener; };
+globalThis.document = { pointerLockElement: null, addEventListener() {} };
+const touchInput = new InputManager({
+  addEventListener(type, listener) { canvasListeners[type] = listener; },
+  setPointerCapture() {}
+});
+canvasListeners.pointerdown({ pointerType: "touch", pointerId: 7, clientX: 20, clientY: 30, preventDefault() {} });
+windowListeners.pointermove({ pointerType: "touch", pointerId: 7, clientX: 70, clientY: 5, preventDefault() {} });
+assert.deepEqual(touchInput.consumeLook(), { x: 50, y: -25 }, "dragging the gameplay view feeds horizontal and vertical camera look");
+assert.equal(touchInput.mouse.left, false, "touching the gameplay view does not fire the weapon");
+windowListeners.pointerup({ pointerType: "touch", pointerId: 7 });
+assert.equal(touchInput.touchLook, null, "lifting the look finger ends the drag");
+if (previousAddEventListener) globalThis.addEventListener = previousAddEventListener;
+else delete globalThis.addEventListener;
+if (previousDocument) globalThis.document = previousDocument;
+else delete globalThis.document;
+
 assert.equal(chooseBotSlot(["shotgun", "railgun"], 5, () => 0), 0, "bot prefers shotgun up close");
 assert.equal(chooseBotSlot(["shotgun", "railgun"], 30, () => 0), 1, "bot prefers railgun at range");
 assert.ok(botFireChance(10, true, WEAPONS.blaster) > 0, "bot can fire visible projectiles");

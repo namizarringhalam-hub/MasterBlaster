@@ -2,7 +2,7 @@ import * as THREE from "three";
 import "./styles.css";
 import { SoundBoard } from "./audio.js";
 import { ArenaWorld } from "./world.js";
-import { Fighter, aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, projectileTouchesPlayer } from "./player.js";
+import { Fighter, aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, projectileTouchesPlayer } from "./player.js";
 import { InputManager, updateOrbit } from "./input.js";
 import { DEFAULT_LOADOUT, loadSettings, MAP_THEMES, projectileStepCount, saveSettings, WEAPONS } from "./gameData.js";
 import { botFireChance, chooseBotSlot } from "./botBrain.js";
@@ -425,12 +425,8 @@ class BlasterBattle {
     const look = this.input.consumeLook();
     ({ yaw: this.cameraYaw, pitch: this.cameraPitch } = updateOrbit(this.cameraYaw, this.cameraPitch, look.x, look.y));
     if (!player.alive) return;
-    let move = cameraRelative(directionFromKeys(this.input), this.cameraYaw + Math.PI);
-    move.add(new THREE.Vector3(
-      (this.touch.right ? 1 : 0) - (this.touch.left ? 1 : 0),
-      0,
-      (this.touch.down ? 1 : 0) - (this.touch.up ? 1 : 0)
-    ).applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 4));
+    let move = cameraRelative(directionFromKeys(this.input), this.cameraYaw);
+    move.add(cameraRelative(directionFromTouch(this.touch), this.cameraYaw));
     if (move.lengthSq() > 1) move.normalize();
     const aim = this.mouseAim();
     player.update(dt, move, aim, { jump: this.input.tapped("Space") || this.touch.jumpTap }, this.world);

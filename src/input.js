@@ -19,12 +19,20 @@ export function updateOrbit(yaw, pitch, movementX, movementY, sensitivity = .002
   };
 }
 
+export function touchLookDelta(fromX, fromY, toX, toY) {
+  return {
+    x: Math.max(-80, Math.min(80, toX - fromX)),
+    y: Math.max(-80, Math.min(80, toY - fromY))
+  };
+}
+
 export class InputManager {
   constructor(canvas, shouldCapture = () => true, onPointerUnlock = () => {}) {
     this.shouldCapture = shouldCapture;
     this.keys = new Set();
     this.pressed = new Set();
     this.mouse = { left: false, right: false, movementX: 0, movementY: 0, locked: false };
+    this.touchLook = null;
 
     addEventListener("keydown", (event) => {
       if (!shouldCaptureGameKey(event, this.shouldCapture())) return;
@@ -42,9 +50,20 @@ export class InputManager {
       this.mouse.right = false;
       this.mouse.movementX = 0;
       this.mouse.movementY = 0;
+      this.touchLook = null;
     });
     addEventListener("pointermove", (event) => {
-      if (event.pointerType === "touch" || document.pointerLockElement !== canvas) return;
+      if (event.pointerType === "touch") {
+        if (this.touchLook?.id !== event.pointerId) return;
+        const movement = touchLookDelta(this.touchLook.x, this.touchLook.y, event.clientX, event.clientY);
+        this.mouse.movementX += movement.x;
+        this.mouse.movementY += movement.y;
+        this.touchLook.x = event.clientX;
+        this.touchLook.y = event.clientY;
+        event.preventDefault();
+        return;
+      }
+      if (document.pointerLockElement !== canvas) return;
       this.mouse.movementX += Math.max(-80, Math.min(80, event.movementX));
       this.mouse.movementY += Math.max(-80, Math.min(80, event.movementY));
     });
@@ -58,6 +77,12 @@ export class InputManager {
     });
     canvas.addEventListener("pointerdown", (event) => {
       if (!this.shouldCapture()) return;
+      if (event.pointerType === "touch") {
+        this.touchLook = { id: event.pointerId, x: event.clientX, y: event.clientY };
+        canvas.setPointerCapture?.(event.pointerId);
+        event.preventDefault();
+        return;
+      }
       if (document.pointerLockElement !== canvas) canvas.requestPointerLock?.();
       if (event.button === 0) this.mouse.left = true;
       if (event.button === 2) {
@@ -67,8 +92,15 @@ export class InputManager {
       event.preventDefault();
     });
     addEventListener("pointerup", (event) => {
+      if (event.pointerType === "touch") {
+        if (this.touchLook?.id === event.pointerId) this.touchLook = null;
+        return;
+      }
       if (event.button === 0) this.mouse.left = false;
       if (event.button === 2) this.mouse.right = false;
+    });
+    addEventListener("pointercancel", (event) => {
+      if (this.touchLook?.id === event.pointerId) this.touchLook = null;
     });
     canvas.addEventListener("contextmenu", (event) => event.preventDefault());
   }
