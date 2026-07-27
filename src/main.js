@@ -2,7 +2,7 @@ import * as THREE from "three";
 import "./styles.css";
 import { SoundBoard } from "./audio.js";
 import { ArenaWorld } from "./world.js";
-import { Fighter, aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, projectileTouchesPlayer } from "./player.js";
+import { Fighter, aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, grappleSightline, projectileTouchesPlayer } from "./player.js";
 import { InputManager, updateOrbit } from "./input.js";
 import { DEFAULT_LOADOUT, loadSettings, MAP_THEMES, projectileLifetime, projectileStepCount, saveSettings, WEAPONS } from "./gameData.js";
 import { botFireChance, chooseBotSlot } from "./botBrain.js";
@@ -478,7 +478,8 @@ class BlasterBattle {
     if (!player.alive) return;
     if (player.grapple) return this.releaseGrapple(player, true);
     const start = player.position.clone().add(new THREE.Vector3(0, 1.4, 0));
-    const anchor = this.world.grapplePoint(start, player.aim);
+    const sightline = grappleSightline(player, this.camera);
+    const anchor = this.world.grapplePoint(sightline.origin, sightline.direction);
     if (!anchor) return;
     const geometry = new THREE.BufferGeometry().setFromPoints([start, anchor]);
     const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: player.accent }));

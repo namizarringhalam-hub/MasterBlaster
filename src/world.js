@@ -247,7 +247,7 @@ export class ArenaWorld {
       ...this.anchors.map((anchor) => anchor.mesh),
       ...this.boostPads.map((pad) => pad.mesh)
     ];
-    const ray = new THREE.Raycaster(origin, direction.clone().normalize(), .25, 165);
+    const ray = new THREE.Raycaster(origin, direction.clone().normalize(), .05);
     return ray.intersectObjects(surfaces, false)[0]?.point.clone() ?? null;
   }
 

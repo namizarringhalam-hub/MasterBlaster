@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { chooseBotSlot, botFireChance } from "../src/botBrain.js";
 import { DEFAULT_LOADOUT, LOADOUT_SLOTS, projectileLifetime, projectileStepCount, seededRandom, seedFromText, WEAPONS } from "../src/gameData.js";
 import { InputManager, shouldCaptureGameKey, touchLookDelta, updateOrbit } from "../src/input.js";
-import { aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, projectileTouchesPlayer } from "../src/player.js";
+import { aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, grappleSightline, projectileTouchesPlayer } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
 
 const [mainSource, serviceWorkerSource] = await Promise.all([
@@ -52,6 +52,15 @@ assert.ok(cameraRelative(directionFromTouch({ right: true }), 0).distanceTo(new 
 assert.ok(cameraRelative(directionFromKeys({ down: (code) => code === "KeyA" }), 0).distanceTo(new THREE.Vector3(1, 0, 0)) < .001, "keyboard A follows screen-left");
 assert.ok(cameraRelative(directionFromKeys({ down: (code) => code === "KeyD" }), 0).distanceTo(new THREE.Vector3(-1, 0, 0)) < .001, "keyboard D follows screen-right");
 
+const sightCamera = new THREE.PerspectiveCamera();
+const sightTarget = new THREE.Vector3(4, 7, 18);
+sightCamera.position.set(-6, 5, -9);
+sightCamera.lookAt(sightTarget);
+sightCamera.updateMatrixWorld(true);
+const sightline = grappleSightline({ isBot: false }, sightCamera);
+const sightDistance = sightTarget.clone().sub(sightline.origin).dot(sightline.direction);
+assert.ok(sightline.origin.clone().addScaledVector(sightline.direction, sightDistance).distanceTo(sightTarget) < .001, "the grapple follows the exact center-camera reticle ray");
+
 const previousAddEventListener = globalThis.addEventListener;
 const previousDocument = globalThis.document;
 const windowListeners = {};
@@ -91,6 +100,7 @@ assert.ok(wallGrapple && Math.abs(wallGrapple.x - 111.4) < .01 && wallGrapple.y 
 const blockGrapple = worldB.grapplePoint(new THREE.Vector3(12, 20, 0), new THREE.Vector3(-1, 0, 0));
 assert.ok(blockGrapple && Math.abs(blockGrapple.x - 3.5) < .01 && blockGrapple.y === 20, "the grapple attaches to ordinary blocks, not only anchor spheres");
 assert.equal(worldB.grapplePoint(new THREE.Vector3(90, 10, 90), new THREE.Vector3(0, 1, 0)), null, "a missed grapple does not snap to an unrelated anchor");
+assert.ok(worldB.grapplePoint(new THREE.Vector3(-300, 10, 0), new THREE.Vector3(1, 0, 0)), "the grapple ray has no hidden distance cutoff");
 const blockedCamera = worldB.constrainCamera(new THREE.Vector3(100, 10, 0), new THREE.Vector3(120, 10, 0));
 assert.ok(Math.abs(blockedCamera.x - 110.95) < .01, "the camera stops before entering a wall");
 assert.ok(worldB.constrainCamera(new THREE.Vector3(100, 10, 0), new THREE.Vector3(95, 10, 0)).equals(new THREE.Vector3(95, 10, 0)), "the camera keeps its full distance when the view is clear");

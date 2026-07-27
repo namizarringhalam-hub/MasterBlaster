@@ -252,6 +252,19 @@ export function boostGrappleRelease(player) {
   player.velocity.y += 2.2;
 }
 
+export function grappleSightline(player, camera) {
+  if (player.isBot) {
+    return {
+      origin: player.position.clone().add(new THREE.Vector3(0, 1.4, 0)),
+      direction: player.aim.clone()
+    };
+  }
+  return {
+    origin: camera.position.clone(),
+    direction: camera.getWorldDirection(new THREE.Vector3())
+  };
+}
+
 export function directionFromKeys(input) {
   const value = new THREE.Vector3(
     (input.down("KeyD") ? 1 : 0) - (input.down("KeyA") ? 1 : 0),
