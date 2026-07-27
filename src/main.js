@@ -4,7 +4,7 @@ import { SoundBoard } from "./audio.js";
 import { ArenaWorld } from "./world.js";
 import { Fighter, aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, projectileTouchesPlayer } from "./player.js";
 import { InputManager, updateOrbit } from "./input.js";
-import { DEFAULT_LOADOUT, loadSettings, MAP_THEMES, projectileStepCount, saveSettings, WEAPONS } from "./gameData.js";
+import { DEFAULT_LOADOUT, loadSettings, MAP_THEMES, projectileLifetime, projectileStepCount, saveSettings, WEAPONS } from "./gameData.js";
 import { botFireChance, chooseBotSlot } from "./botBrain.js";
 
 const canvas = document.querySelector("#game-canvas");
@@ -536,7 +536,7 @@ class BlasterBattle {
     this.scene.add(mesh);
     this.projectiles.push({
       mesh, owner: player, weapon, velocity, radius,
-      life: weapon.type === "grenade" ? weapon.fuse : weapon.range / weapon.projectileSpeed,
+      life: projectileLifetime(weapon),
       age: 0, bounces: 0
     });
   }
@@ -550,7 +550,7 @@ class BlasterBattle {
     this.scene.add(mesh);
     this.projectiles.push({
       mesh, owner: player, weapon, velocity: new THREE.Vector3(), radius: .35,
-      life: weapon.fuse, age: 0, mine: true
+      life: projectileLifetime(weapon), age: 0, mine: true
     });
   }
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import * as THREE from "three";
 import { chooseBotSlot, botFireChance } from "../src/botBrain.js";
-import { DEFAULT_LOADOUT, LOADOUT_SLOTS, projectileStepCount, seededRandom, seedFromText, WEAPONS } from "../src/gameData.js";
+import { DEFAULT_LOADOUT, LOADOUT_SLOTS, projectileLifetime, projectileStepCount, seededRandom, seedFromText, WEAPONS } from "../src/gameData.js";
 import { InputManager, shouldCaptureGameKey, touchLookDelta, updateOrbit } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, projectileTouchesPlayer } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
@@ -30,6 +30,10 @@ assert.ok(WEAPONS.machine_gun.projectileSpeed > WEAPONS.blaster.projectileSpeed,
 assert.ok(WEAPONS.blaster.projectileSpeed > WEAPONS.plasma_cannon.projectileSpeed, "heavy plasma remains slower than a standard bolt");
 assert.ok(WEAPONS.plasma_cannon.projectileSpeed > WEAPONS.rocket_launcher.projectileSpeed, "rockets remain the slower guided explosive");
 assert.ok(projectileStepCount(WEAPONS.railgun.projectileSpeed, 1 / 60, .11) > 1, "fast shots use swept stepping instead of tunnelling");
+assert.ok(Object.values(WEAPONS).every((weapon) => !("range" in weapon)), "weapons have no artificial range limit");
+assert.ok(Object.values(WEAPONS).filter((weapon) => !weapon.fuse).every((weapon) => projectileLifetime(weapon) === Infinity), "straight projectiles persist until they hit something");
+assert.equal(projectileLifetime(WEAPONS.grenade_launcher), WEAPONS.grenade_launcher.fuse, "grenades keep their physical fuse");
+assert.ok(WEAPONS.machine_gun.spread < .03, "machine-gun rounds remain accurate across the arena");
 
 const randomA = seededRandom(seedFromText("BLAST-01"));
 const randomB = seededRandom(seedFromText("BLAST-01"));
@@ -72,6 +76,7 @@ else delete globalThis.document;
 assert.equal(chooseBotSlot(["shotgun", "railgun"], 5, () => 0), 0, "bot prefers shotgun up close");
 assert.equal(chooseBotSlot(["shotgun", "railgun"], 30, () => 0), 1, "bot prefers railgun at range");
 assert.ok(botFireChance(10, true, WEAPONS.blaster) > 0, "bot can fire visible projectiles");
+assert.ok(botFireChance(100, true, WEAPONS.machine_gun) > 0, "bots do not treat straight weapons as range-limited");
 
 const worldScene = new THREE.Scene();
 const worldA = new ArenaWorld(worldScene, "SAME-SEED");

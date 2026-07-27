@@ -21,5 +21,5 @@ export function botFireChance(distance, visible, weapon) {
   if (weapon.type === "mine") return distance < 7 ? .045 : 0;
   if (weapon.type === "spread") return distance < 15 ? .18 : .015;
   if (weapon.type === "rail") return .025;
-  return distance < weapon.range ? .09 : 0;
+  return .09;
 }
