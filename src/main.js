@@ -4,7 +4,7 @@ import { SoundBoard } from "./audio.js";
 import { ArenaWorld } from "./world.js";
 import { Fighter, aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, grappleSightline, projectileTouchesPlayer } from "./player.js";
 import { InputManager, updateOrbit } from "./input.js";
-import { DEFAULT_LOADOUT, loadSettings, MAP_THEMES, projectileLifetime, projectileStepCount, saveSettings, WEAPONS } from "./gameData.js";
+import { DEFAULT_LOADOUT, loadSettings, projectileLifetime, projectileStepCount, saveSettings, WEAPONS } from "./gameData.js";
 import { botFireChance, chooseBotSlot, clampBotCount, nearestTarget, safestSpawn } from "./botBrain.js";
 
 const canvas = document.querySelector("#game-canvas");
@@ -136,7 +136,7 @@ class BlasterBattle {
         <aside class="feature-rail">
           <span>01</span><div><b>GRAPPLE</b><small>Momentum is your weapon</small></div>
           <span>02</span><div><b>8 WEAPONS</b><small>Carry five into combat</small></div>
-          <span>03</span><div><b>SEEDED ARENAS</b><small>Share the same battleground</small></div>
+          <span>03</span><div><b>DYNAMIC ARENAS</b><small>Moving routes, portals, and hazards</small></div>
         </aside>
       </main>`;
     this.bindUi();
@@ -311,7 +311,7 @@ class BlasterBattle {
           <div class="health"><i data-health="0"></i></div>
         </section>
         <section class="match-state">
-          <small>${this.mode.toUpperCase()} · ${escapeHtml(this.seed)}</small>
+          <small>${escapeHtml(this.world.theme.name)} · ${this.mode.toUpperCase()} · ${escapeHtml(this.seed)}</small>
           <strong data-time>03:00</strong>
           <span>FIRST TO ${this.targetScore}</span>
         </section>
@@ -410,6 +410,7 @@ class BlasterBattle {
 
   update(dt) {
     this.matchTime = Math.max(0, this.matchTime - dt);
+    this.world.update(dt, this.players);
     this.handleWeaponSwitch();
     this.updateHuman(dt);
     for (let index = 1; index < this.players.length; index++) this.updateBot(this.players[index], dt);

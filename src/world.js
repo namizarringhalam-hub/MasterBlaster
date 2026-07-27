@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { seededRandom, seedFromText } from "./gameData.js";
+import { MAP_THEMES, seededRandom, seedFromText } from "./gameData.js";
 
 function material(color, emissive = 0, opacity = 1) {
   return new THREE.MeshStandardMaterial({
@@ -31,6 +31,7 @@ export class ArenaWorld {
   constructor(scene, seed = "BLAST-01") {
     this.scene = scene;
     this.seed = seed;
+    this.theme = MAP_THEMES[seedFromText(seed) % MAP_THEMES.length];
     this.size = 112;
     this.height = 78;
     this.group = new THREE.Group();
@@ -39,16 +40,20 @@ export class ArenaWorld {
     this.anchors = [];
     this.platforms = [];
     this.boostPads = [];
+    this.movers = [];
+    this.portals = [];
+    this.sweepers = [];
+    this.time = 0;
     scene.add(this.group);
     this.build();
   }
 
   build() {
     const random = seededRandom(seedFromText(this.seed));
-    this.ground = box(this.size * 2, .5, this.size * 2, 0x102234, 0, -.28, 0);
+    this.ground = box(this.size * 2, .5, this.size * 2, this.theme.ground, 0, -.28, 0);
     this.group.add(this.ground);
 
-    const grid = new THREE.GridHelper(this.size * 2, 44, 0x1fd7ff, 0x244b67);
+    const grid = new THREE.GridHelper(this.size * 2, 44, this.theme.grid, 0x244b67);
     grid.position.y = .01;
     grid.material.opacity = .3;
     grid.material.transparent = true;
@@ -88,6 +93,15 @@ export class ArenaWorld {
       [-52, 15, -48, 26], [53, 15, 49, 26], [42, 31, -22, 27], [-42, 47, 30, 28]
     ]) this.addBoostPad(...pad);
 
+    this.addMovingPlatform(-80, 18, 0, 12, 10, "y", 11, .85, 0);
+    this.addMovingPlatform(80, 25, 0, 12, 10, "y", 15, .7, Math.PI);
+    this.addMovingPlatform(0, 34, -82, 11, 11, "x", 25, .62, Math.PI / 2);
+    this.addMovingPlatform(0, 51, 82, 11, 11, "x", 25, .55, -Math.PI / 2);
+    this.addPortalPair(new THREE.Vector3(-96, 0, 0), new THREE.Vector3(0, 66, -10));
+    this.addPortalPair(new THREE.Vector3(96, 0, 0), new THREE.Vector3(0, 66, 10));
+    this.addSweeper(-70, 0, 48, 20, 1.15);
+    this.addSweeper(70, 0, -48, 24, -.9);
+
     for (let i = 0; i < 34; i++) {
       const angle = random() * Math.PI * 2;
       const distance = 24 + random() * 74;
@@ -96,12 +110,12 @@ export class ArenaWorld {
       const w = 3 + random() * 5;
       const d = 3 + random() * 5;
       const h = 2.5 + random() * 5;
-      this.addBox(x, z, w, d, h, i % 3 ? 0xd54f5f : 0xeaa53b, true);
+      this.addBox(x, z, w, d, h, i % 3 ? this.theme.danger : this.theme.accent, true);
     }
 
     const haze = new THREE.Mesh(
       new THREE.CylinderGeometry(this.size + 5, this.size + 5, this.height + 24, 64, 1, true),
-      material(0x173149, 0, .16)
+      material(this.theme.haze, 0, .16)
     );
     haze.material.side = THREE.BackSide;
     haze.position.y = (this.height + 24) / 2;
@@ -128,7 +142,7 @@ export class ArenaWorld {
     const point = new THREE.Vector3(x, y, z);
     const orb = new THREE.Mesh(
       new THREE.SphereGeometry(.55, 14, 10),
-      material(0x67f4ff, 0x67f4ff)
+      material(this.theme.accent, this.theme.accent)
     );
     orb.position.copy(point);
     this.group.add(orb);
@@ -138,11 +152,102 @@ export class ArenaWorld {
   addBoostPad(x, y, z, strength) {
     const mesh = new THREE.Mesh(
       new THREE.CylinderGeometry(2.5, 2.5, .22, 28),
-      material(0x0e89b8, 0x2be4ff, .9)
+      material(this.theme.grid, this.theme.accent, .9)
     );
     mesh.position.set(x, y + .12, z);
     this.group.add(mesh);
     this.boostPads.push({ position: new THREE.Vector3(x, y, z), radius: 2.5, strength, mesh });
+  }
+
+  addMovingPlatform(x, top, z, w, d, axis, travel, speed, phase) {
+    const obstacle = this.addPlatform(x, top, z, w, d, 1, this.theme.grid);
+    obstacle.mesh.material.emissive.setHex(this.theme.accent);
+    obstacle.mesh.material.emissiveIntensity = .45;
+    this.movers.push({ obstacle, baseX: x, baseTop: top, axis, travel, speed, phase });
+  }
+
+  addPortalPair(a, b) {
+    const pair = [a, b].map((position) => {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(2.35, .25, 10, 36),
+        material(this.theme.accent, this.theme.accent, .9)
+      );
+      ring.rotation.x = Math.PI / 2;
+      ring.position.copy(position).setY(position.y + .22);
+      this.group.add(ring);
+      const portal = { position: position.clone(), ring, pair: null };
+      this.portals.push(portal);
+      return portal;
+    });
+    pair[0].pair = pair[1];
+    pair[1].pair = pair[0];
+  }
+
+  addSweeper(x, y, z, length, speed) {
+    const group = new THREE.Group();
+    group.position.set(x, y + 1, z);
+    const arm = box(length, .36, .72, this.theme.danger, 0, 0, 0, this.theme.danger);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(.8, .8, 1.1, 18), material(this.theme.accent, this.theme.accent));
+    group.add(arm, hub);
+    this.group.add(group);
+    this.sweepers.push({ group, position: new THREE.Vector3(x, y, z), length, speed });
+  }
+
+  update(dt, players) {
+    this.time += dt;
+    for (const mover of this.movers) {
+      const item = mover.obstacle;
+      const oldX = item.x;
+      const oldTop = item.top;
+      const offset = Math.sin(this.time * mover.speed + mover.phase) * mover.travel;
+      if (mover.axis === "x") item.x = mover.baseX + offset;
+      else {
+        item.top = mover.baseTop + offset;
+        item.baseY = item.top - item.h;
+      }
+      const dx = item.x - oldX;
+      const dy = item.top - oldTop;
+      item.mesh.position.set(item.x, item.baseY + item.h / 2, item.z);
+      for (const player of players) {
+        if (!player.alive || !player.grounded || Math.abs(player.position.y - oldTop) > .4) continue;
+        if (Math.abs(player.position.x - oldX) <= item.w / 2 && Math.abs(player.position.z - item.z) <= item.d / 2) {
+          player.position.x += dx;
+          player.position.y += dy;
+        }
+      }
+    }
+
+    for (const portal of this.portals) {
+      portal.ring.rotation.z += dt * 1.8;
+      portal.ring.material.emissiveIntensity = .75 + Math.sin(this.time * 4) * .25;
+    }
+    for (const player of players) {
+      player.portalCooldown = Math.max(0, (player.portalCooldown || 0) - dt);
+      player.sweeperCooldown = Math.max(0, (player.sweeperCooldown || 0) - dt);
+      if (!player.alive || player.portalCooldown > 0) continue;
+      const portal = this.portals.find((entry) =>
+        Math.abs(player.position.y - entry.position.y) < 1.4 &&
+        Math.hypot(player.position.x - entry.position.x, player.position.z - entry.position.z) < 2.15
+      );
+      if (!portal) continue;
+      player.position.copy(portal.pair.position).setY(portal.pair.position.y + .35);
+      player.velocity.y = Math.max(player.velocity.y, 5);
+      player.portalCooldown = 1.2;
+    }
+
+    for (const sweeper of this.sweepers) {
+      sweeper.group.rotation.y += dt * sweeper.speed;
+      for (const player of players) {
+        if (!player.alive || player.sweeperCooldown > 0 || Math.abs(player.position.y - sweeper.position.y) > 2.4) continue;
+        const local = player.position.clone().sub(sweeper.position).applyAxisAngle(new THREE.Vector3(0, 1, 0), -sweeper.group.rotation.y);
+        if (Math.abs(local.x) > sweeper.length / 2 || Math.abs(local.z) > 1) continue;
+        const push = player.position.clone().sub(sweeper.position).setY(0);
+        if (!push.lengthSq()) push.set(1, 0, 0);
+        player.velocity.addScaledVector(push.normalize(), 18);
+        player.velocity.y = Math.max(player.velocity.y, 8);
+        player.sweeperCooldown = .8;
+      }
+    }
   }
 
   spawnPoints() {

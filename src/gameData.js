@@ -1,7 +1,9 @@
 const SAVE_KEY = "blaster-battle-settings-v1";
 
 export const MAP_THEMES = [
-  { id: "foundry", name: "Neon Foundry", description: "Vertical cover, blastable crates, and bright grapple anchors." }
+  { id: "foundry", name: "Neon Foundry", ground: 0x102234, grid: 0x1fd7ff, accent: 0x67f4ff, danger: 0xff416c, haze: 0x173149 },
+  { id: "solar", name: "Solar Rift", ground: 0x2a1d24, grid: 0xffc857, accent: 0xffd166, danger: 0xff5d4a, haze: 0x4a2033 },
+  { id: "ion", name: "Ion Garden", ground: 0x11282a, grid: 0x54ffb4, accent: 0x6effcf, danger: 0xff4fd8, haze: 0x173b3d }
 ];
 
 export const LOADOUT_SLOTS = [
