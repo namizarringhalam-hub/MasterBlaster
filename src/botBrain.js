@@ -1,5 +1,30 @@
 import { WEAPONS } from "./gameData.js";
 
+export function clampBotCount(value) {
+  return Math.min(15, Math.max(1, Math.round(Number(value) || 1)));
+}
+
+export function nearestTarget(bot, players) {
+  let target = null;
+  let closest = Infinity;
+  for (const player of players) {
+    if (player === bot || !player.alive) continue;
+    const distance = bot.position.distanceToSquared(player.position);
+    if (distance < closest) {
+      closest = distance;
+      target = player;
+    }
+  }
+  return target;
+}
+
+export function safestSpawn(spawns, players, respawningPlayer) {
+  const opponents = players.filter((player) => player !== respawningPlayer && player.alive);
+  if (!opponents.length) return spawns[0];
+  const safety = (spawn) => Math.min(...opponents.map((player) => spawn.distanceToSquared(player.position)));
+  return [...spawns].sort((a, b) => safety(b) - safety(a))[0];
+}
+
 export function chooseBotSlot(loadout, distance, random = Math.random) {
   const scored = loadout.map((id, index) => {
     const weapon = WEAPONS[id];

@@ -94,6 +94,7 @@ function defaults() {
     shake: 60,
     reducedMotion: false,
     volume: 70,
+    botCount: 1,
     loadout: [...DEFAULT_LOADOUT]
   };
 }

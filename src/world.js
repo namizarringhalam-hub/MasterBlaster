@@ -150,7 +150,19 @@ export class ArenaWorld {
       new THREE.Vector3(-88, 0, -88),
       new THREE.Vector3(88, 0, 88),
       new THREE.Vector3(-52, 15, -48),
-      new THREE.Vector3(54, 31, 33)
+      new THREE.Vector3(54, 31, 33),
+      new THREE.Vector3(-88, 0, 88),
+      new THREE.Vector3(88, 0, -88),
+      new THREE.Vector3(-14, 15, -14),
+      new THREE.Vector3(14, 15, -14),
+      new THREE.Vector3(-14, 15, 14),
+      new THREE.Vector3(14, 15, 14),
+      new THREE.Vector3(-10, 66, -10),
+      new THREE.Vector3(10, 66, -10),
+      new THREE.Vector3(-10, 66, 10),
+      new THREE.Vector3(10, 66, 10),
+      new THREE.Vector3(53, 15, 49),
+      new THREE.Vector3(-52, 47, 20)
     ];
   }
 

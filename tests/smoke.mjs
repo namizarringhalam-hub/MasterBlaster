@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import * as THREE from "three";
-import { chooseBotSlot, botFireChance } from "../src/botBrain.js";
+import { chooseBotSlot, botFireChance, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
 import { DEFAULT_LOADOUT, LOADOUT_SLOTS, projectileLifetime, projectileStepCount, seededRandom, seedFromText, WEAPONS } from "../src/gameData.js";
 import { InputManager, shouldCaptureGameKey, touchLookDelta, updateOrbit } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, grappleSightline, projectileTouchesPlayer } from "../src/player.js";
@@ -86,6 +86,13 @@ assert.equal(chooseBotSlot(["shotgun", "railgun"], 5, () => 0), 0, "bot prefers 
 assert.equal(chooseBotSlot(["shotgun", "railgun"], 30, () => 0), 1, "bot prefers railgun at range");
 assert.ok(botFireChance(10, true, WEAPONS.blaster) > 0, "bot can fire visible projectiles");
 assert.ok(botFireChance(100, true, WEAPONS.machine_gun) > 0, "bots do not treat straight weapons as range-limited");
+assert.equal(clampBotCount(99), 15, "matches allow at most fifteen bots");
+assert.equal(clampBotCount(0), 1, "matches always include at least one bot");
+const botStub = { alive: true, position: new THREE.Vector3() };
+const nearStub = { alive: true, position: new THREE.Vector3(2, 0, 0) };
+const farStub = { alive: true, position: new THREE.Vector3(20, 0, 0) };
+assert.equal(nearestTarget(botStub, [botStub, farStub, nearStub]), nearStub, "each bot targets its nearest living opponent");
+assert.ok(safestSpawn([new THREE.Vector3(1, 0, 0), new THREE.Vector3(30, 0, 0)], [botStub, nearStub], botStub).x === 30, "respawns maximize distance from all living opponents");
 
 const worldScene = new THREE.Scene();
 const worldA = new ArenaWorld(worldScene, "SAME-SEED");
@@ -94,7 +101,7 @@ worldA.dispose();
 const worldB = new ArenaWorld(new THREE.Scene(), "SAME-SEED");
 const obstacleLayoutB = worldB.obstacles.map(({ x, z, w, d }) => [x, z, w, d]);
 assert.deepEqual(obstacleLayoutA, obstacleLayoutB, "seeded arenas generate the same collision layout");
-assert.equal(worldB.spawnPoints().length, 4, "the arena provides fair spawn candidates");
+assert.equal(worldB.spawnPoints().length, 16, "the arena provides one spawn candidate for every possible combatant");
 const wallGrapple = worldB.grapplePoint(new THREE.Vector3(100, 10, 0), new THREE.Vector3(1, 0, 0));
 assert.ok(wallGrapple && Math.abs(wallGrapple.x - 111.4) < .01 && wallGrapple.y === 10, "the grapple attaches exactly where aimed on a wall");
 const blockGrapple = worldB.grapplePoint(new THREE.Vector3(12, 20, 0), new THREE.Vector3(-1, 0, 0));

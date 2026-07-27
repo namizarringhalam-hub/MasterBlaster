@@ -5,7 +5,7 @@ import { ArenaWorld } from "./world.js";
 import { Fighter, aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, grappleSightline, projectileTouchesPlayer } from "./player.js";
 import { InputManager, updateOrbit } from "./input.js";
 import { DEFAULT_LOADOUT, loadSettings, MAP_THEMES, projectileLifetime, projectileStepCount, saveSettings, WEAPONS } from "./gameData.js";
-import { botFireChance, chooseBotSlot } from "./botBrain.js";
+import { botFireChance, chooseBotSlot, clampBotCount, nearestTarget, safestSpawn } from "./botBrain.js";
 
 const canvas = document.querySelector("#game-canvas");
 const ui = document.querySelector("#ui-root");
@@ -59,8 +59,8 @@ class BlasterBattle {
     this.players = [];
     this.projectiles = [];
     this.effects = [];
-    this.respawnTimers = [0, 0];
-    this.scores = [0, 0];
+    this.respawnTimers = [];
+    this.scores = [];
     this.matchTime = 180;
     this.targetScore = 10;
     this.touch = {};
@@ -125,7 +125,7 @@ class BlasterBattle {
           <div class="primary-actions">
             <button class="primary" data-mode="quick"><span>QUICK PLAY</span><small>Regional practice queue</small></button>
             <button data-mode="private"><span>PRIVATE ROOM</span><small>Create or join by code</small></button>
-            <button data-mode="training"><span>TRAINING</span><small>Fight an adaptive bot</small></button>
+            <button data-mode="training"><span>TRAINING</span><small>Fight up to 15 adaptive bots</small></button>
           </div>
           <div class="secondary-actions">
             <button data-screen="settings">Settings</button>
@@ -146,10 +146,10 @@ class BlasterBattle {
     this.mode = mode;
     const title = mode === "quick" ? "Quick Play" : mode === "private" ? "Private Room" : "Training";
     const detail = mode === "quick"
-      ? "Enter the regional practice queue. The MVP fills the opposing slot with an authoritative bot."
+      ? "Enter the regional practice queue with up to fifteen AI combatants."
       : mode === "private"
         ? "Use a short room code as the deterministic arena seed."
-        : "Tune the bot and master movement, trajectories, recoil, and grappling.";
+        : "Choose up to fifteen bots and master movement, trajectories, recoil, and grappling.";
     ui.innerHTML = `
       <main class="screen">
         <section class="dialog setup-dialog">
@@ -164,6 +164,7 @@ class BlasterBattle {
                 ${["rookie", "normal", "veteran"].map((level) => `<option ${this.botDifficulty === level ? "selected" : ""}>${level}</option>`).join("")}
               </select>
             </label>
+            <label>Number of bots<input id="bot-count" type="number" min="1" max="15" step="1" value="${clampBotCount(this.settings.botCount)}"></label>
           </div>
           <section class="loadout-builder">
             <div><h2>Choose five weapons</h2><span data-loadout-count>${this.settings.loadout.length}/5 selected</span></div>
@@ -265,6 +266,7 @@ class BlasterBattle {
     this.settings.displayName = ui.querySelector("#display-name")?.value.trim() || "Rookie";
     this.seed = ui.querySelector("#map-seed")?.value.trim().toUpperCase() || "BLAST-01";
     this.botDifficulty = ui.querySelector("#bot-difficulty")?.value || "normal";
+    this.settings.botCount = clampBotCount(ui.querySelector("#bot-count")?.value);
     saveSettings(this.settings);
     this.startMatch();
   }
@@ -282,17 +284,19 @@ class BlasterBattle {
     this.clearMatch();
     this.state = "play";
     this.paused = false;
-    this.scores = [0, 0];
-    this.respawnTimers = [0, 0];
     this.matchTime = 180;
     this.world = new ArenaWorld(this.scene, this.seed);
     const spawns = this.world.spawnPoints();
     const playerLoadout = this.settings.loadout.length === 5 ? this.settings.loadout : DEFAULT_LOADOUT;
     const botLoadout = ["machine_gun", "shotgun", "rocket_launcher", "grenade_launcher", "railgun"];
-    this.players = [
-      new Fighter(this.scene, { id: "p1", name: this.settings.displayName, ...PLAYER_COLORS[0] }, playerLoadout, spawns[0]),
-      new Fighter(this.scene, { id: "p2", name: this.mode === "quick" ? "Region Bot 07" : "Atlas Bot", ...PLAYER_COLORS[1] }, botLoadout, spawns[1], true)
-    ];
+    this.players = [new Fighter(this.scene, { id: "p1", name: this.settings.displayName, ...PLAYER_COLORS[0] }, playerLoadout, spawns[0])];
+    for (let index = 0; index < clampBotCount(this.settings.botCount); index++) {
+      const number = String(index + 1).padStart(2, "0");
+      const name = this.mode === "quick" ? `Region Bot ${number}` : `Atlas Bot ${number}`;
+      this.players.push(new Fighter(this.scene, { id: `p${index + 2}`, name, ...PLAYER_COLORS[1] }, botLoadout, spawns[index + 1], true));
+    }
+    this.scores = this.players.map(() => 0);
+    this.respawnTimers = this.players.map(() => 0);
     this.cameraYaw = Math.atan2(this.players[0].aim.x, this.players[0].aim.z);
     this.cameraPitch = -.08;
     this.renderHud();
@@ -312,8 +316,8 @@ class BlasterBattle {
           <span>FIRST TO ${this.targetScore}</span>
         </section>
         <section class="combatant right">
-          <div><span data-score="1">0</span><b>${escapeHtml(this.players[1].name)}</b></div>
-          <div class="health"><i data-health="1"></i></div>
+          <div><b data-leader-name>${escapeHtml(this.players[0].name)}</b><span data-leader-score>0</span></div>
+          <small>${this.players.length} FIGHTERS · ARENA LEADER</small>
         </section>
         <div class="reticle" aria-hidden="true"><i></i></div>
         <div class="weapon-strip">
@@ -326,8 +330,9 @@ class BlasterBattle {
         <button class="pause" data-action="pause" aria-label="Pause">Ⅱ</button>
         <div class="scoreboard" data-scoreboard>
           <h2>Deathmatch</h2>
-          <p><b>${escapeHtml(this.players[0].name)}</b><span data-board-score="0">0</span></p>
-          <p><b>${escapeHtml(this.players[1].name)}</b><span data-board-score="1">0</span></p>
+          <div class="score-list">
+            ${this.players.map((player, index) => `<p><b>${escapeHtml(player.name)}</b><span data-board-score="${index}">0</span></p>`).join("")}
+          </div>
         </div>
         <div class="touch-controls" aria-label="Touch controls">
           <div class="touch-move">
@@ -341,9 +346,11 @@ class BlasterBattle {
         </div>
       </div>`;
     this.hud = {
-      health: [...ui.querySelectorAll("[data-health]")],
-      score: [...ui.querySelectorAll("[data-score]")],
+      health: ui.querySelector('[data-health="0"]'),
+      score: ui.querySelector('[data-score="0"]'),
       boardScore: [...ui.querySelectorAll("[data-board-score]")],
+      leaderName: ui.querySelector("[data-leader-name]"),
+      leaderScore: ui.querySelector("[data-leader-score]"),
       time: ui.querySelector("[data-time]"),
       grapple: ui.querySelector("[data-grapple]"),
       scoreboard: ui.querySelector("[data-scoreboard]"),
@@ -405,7 +412,7 @@ class BlasterBattle {
     this.matchTime = Math.max(0, this.matchTime - dt);
     this.handleWeaponSwitch();
     this.updateHuman(dt);
-    this.updateBot(dt);
+    for (let index = 1; index < this.players.length; index++) this.updateBot(this.players[index], dt);
     this.updateProjectiles(dt);
     this.updateEffects(dt);
     this.updateRespawns(dt);
@@ -438,10 +445,10 @@ class BlasterBattle {
     if (this.input.mouse.left || this.touch.fire) this.tryFire(player);
   }
 
-  updateBot(dt) {
-    const bot = this.players[1];
-    const target = this.players[0];
-    if (!bot.alive || !target.alive) return;
+  updateBot(bot, dt) {
+    if (!bot.alive) return;
+    const target = nearestTarget(bot, this.players);
+    if (!target) return;
     const offset = target.position.clone().sub(bot.position).setY(0);
     const distance = offset.length();
     const visible = this.world.lineOfSight(bot.position, target.position);
@@ -691,24 +698,23 @@ class BlasterBattle {
       if (this.players[index].alive || this.respawnTimers[index] <= 0) continue;
       this.respawnTimers[index] -= dt;
       if (this.respawnTimers[index] <= 0) {
-        const spawns = this.world.spawnPoints();
-        const opponent = this.players[1 - index];
-        spawns.sort((a, b) => b.distanceToSquared(opponent.position) - a.distanceToSquared(opponent.position));
-        this.players[index].respawn(spawns[0]);
+        const player = this.players[index];
+        player.respawn(safestSpawn(this.world.spawnPoints(), this.players, player));
       }
     }
   }
 
   updateHud() {
-    this.players.forEach((player, index) => {
-      this.hud.health[index].style.width = `${player.health}%`;
-      this.hud.score[index].textContent = this.scores[index];
-      this.hud.boardScore[index].textContent = this.scores[index];
-    });
+    const player = this.players[0];
+    this.hud.health.style.width = `${player.health}%`;
+    this.hud.score.textContent = this.scores[0];
+    this.hud.boardScore.forEach((node, index) => { node.textContent = this.scores[index]; });
+    const leaderIndex = this.scores.indexOf(Math.max(...this.scores));
+    this.hud.leaderName.textContent = this.players[leaderIndex].name;
+    this.hud.leaderScore.textContent = this.scores[leaderIndex];
     const minutes = Math.floor(this.matchTime / 60).toString().padStart(2, "0");
     const seconds = Math.floor(this.matchTime % 60).toString().padStart(2, "0");
     this.hud.time.textContent = `${minutes}:${seconds}`;
-    const player = this.players[0];
     this.hud.grapple.textContent = player.grapple ? "GRAPPLE PULLING · RELEASE TO SLINGSHOT" : "GRAPPLE READY · E / RIGHT CLICK";
     this.hud.slots.forEach((slot, index) => slot.classList.toggle("selected", index === player.slotIndex));
     this.hud.ammo.forEach((node, index) => {
@@ -723,13 +729,15 @@ class BlasterBattle {
     this.state = "results";
     this.paused = true;
     this.input.releasePointer();
-    const winnerIndex = this.scores[0] === this.scores[1] ? -1 : this.scores[0] > this.scores[1] ? 0 : 1;
-    const headline = winnerIndex < 0 ? "Draw match" : `${escapeHtml(this.players[winnerIndex].name)} wins`;
+    const winningScore = Math.max(...this.scores);
+    const winners = this.scores.map((score, index) => score === winningScore ? index : -1).filter((index) => index >= 0);
+    const headline = winners.length > 1 ? "Draw match" : `${escapeHtml(this.players[winners[0]].name)} wins`;
+    const ranking = this.players.map((player, index) => ({ player, score: this.scores[index] })).sort((a, b) => b.score - a.score);
     ui.insertAdjacentHTML("beforeend", `
       <div class="overlay results">
         <section class="dialog results-dialog">
           <p>MATCH COMPLETE</p><h1>${headline}</h1>
-          <div class="final-score"><span>${this.scores[0]}</span><i>—</i><span>${this.scores[1]}</span></div>
+          <div class="results-ranking">${ranking.slice(0, 5).map(({ player, score }) => `<p><b>${escapeHtml(player.name)}</b><span>${score}</span></p>`).join("")}</div>
           <button class="primary" data-action="rematch">REMATCH · SAME SEED</button>
           <button data-screen="main">RETURN TO MENU</button>
         </section>
