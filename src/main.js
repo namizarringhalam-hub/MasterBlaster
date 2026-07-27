@@ -752,7 +752,8 @@ class BlasterBattle {
       .addScaledVector(flatForward, -10)
       .addScaledVector(right, 1.15)
       .add(new THREE.Vector3(0, 3.5 - this.cameraPitch * 2.2, 0));
-    this.camera.position.lerp(desired, .16);
+    this.camera.position.lerp(this.world.constrainCamera(pivot, desired), .16);
+    this.camera.position.copy(this.world.constrainCamera(pivot, this.camera.position));
     const focus = pivot.addScaledVector(forward, 28);
     this.camera.lookAt(focus);
   }

@@ -86,6 +86,9 @@ assert.ok(wallGrapple && Math.abs(wallGrapple.x - 111.4) < .01 && wallGrapple.y 
 const blockGrapple = worldB.grapplePoint(new THREE.Vector3(12, 20, 0), new THREE.Vector3(-1, 0, 0));
 assert.ok(blockGrapple && Math.abs(blockGrapple.x - 3.5) < .01 && blockGrapple.y === 20, "the grapple attaches to ordinary blocks, not only anchor spheres");
 assert.equal(worldB.grapplePoint(new THREE.Vector3(90, 10, 90), new THREE.Vector3(0, 1, 0)), null, "a missed grapple does not snap to an unrelated anchor");
+const blockedCamera = worldB.constrainCamera(new THREE.Vector3(100, 10, 0), new THREE.Vector3(120, 10, 0));
+assert.ok(Math.abs(blockedCamera.x - 110.95) < .01, "the camera stops before entering a wall");
+assert.ok(worldB.constrainCamera(new THREE.Vector3(100, 10, 0), new THREE.Vector3(95, 10, 0)).equals(new THREE.Vector3(95, 10, 0)), "the camera keeps its full distance when the view is clear");
 assert.ok(worldB.size >= 100, "the arena spans a large horizontal combat area");
 assert.ok(worldB.height >= 70, "the arena spans a large vertical combat area");
 assert.ok(Math.max(...worldB.platforms.map((platform) => platform.top)) >= 60, "combat platforms reach the upper arena");

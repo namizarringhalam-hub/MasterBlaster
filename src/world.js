@@ -208,6 +208,23 @@ export class ArenaWorld {
     );
   }
 
+  constrainCamera(origin, desired, clearance = .45) {
+    const direction = desired.clone().sub(origin);
+    const distance = direction.length();
+    if (!distance) return desired.clone();
+    const ray = new THREE.Ray(origin, direction.normalize());
+    const box = new THREE.Box3();
+    const hit = new THREE.Vector3();
+    let safeDistance = distance;
+    for (const item of this.obstacles) {
+      box.min.set(item.x - item.w / 2 - clearance, item.baseY - clearance, item.z - item.d / 2 - clearance);
+      box.max.set(item.x + item.w / 2 + clearance, item.top + clearance, item.z + item.d / 2 + clearance);
+      if (box.containsPoint(origin)) continue;
+      if (ray.intersectBox(box, hit)) safeDistance = Math.min(safeDistance, origin.distanceTo(hit));
+    }
+    return origin.clone().addScaledVector(direction, safeDistance);
+  }
+
   destroy(position, radius) {
     let removed = 0;
     for (const item of [...this.destructibles]) {
