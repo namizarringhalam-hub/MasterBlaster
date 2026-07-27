@@ -179,8 +179,9 @@ input, select {
 .weapon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; margin-top: 14px; }
 .weapon-choice { min-height: 112px; text-align: left; position: relative; overflow: hidden; }
 .weapon-choice i { position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--weapon); opacity: .8; }
-.weapon-choice b, .weapon-choice small { display: block; }
+.weapon-choice b, .weapon-choice em, .weapon-choice small { display: block; }
 .weapon-choice b { font: 800 17px/1 "Barlow Condensed", sans-serif; text-transform: uppercase; }
+.weapon-choice em { margin-top: 5px; color: var(--weapon); font-size: 8px; font-style: normal; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .weapon-choice small { margin-top: 8px; color: #849bab; font-size: 10px; line-height: 1.35; letter-spacing: 0; }
 .weapon-choice.selected { border-color: var(--weapon, #4fe9ff); background: #172d42; box-shadow: inset 0 0 0 1px #4fe9ff; }
 .weapon-choice.selected::after { content: "✓"; position: absolute; right: 9px; top: 7px; color: #4fe9ff; }

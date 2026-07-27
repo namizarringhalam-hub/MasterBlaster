@@ -58,6 +58,8 @@ class BlasterBattle {
     this.world = null;
     this.players = [];
     this.projectiles = [];
+    this.hazards = [];
+    this.decoys = [];
     this.effects = [];
     this.respawnTimers = [];
     this.scores = [];
@@ -101,10 +103,14 @@ class BlasterBattle {
       player.dispose();
     }
     for (const shot of this.projectiles) this.removeObject(shot.mesh);
+    for (const hazard of this.hazards) this.removeObject(hazard.mesh);
+    for (const decoy of this.decoys) this.removeObject(decoy.mesh);
     for (const effect of this.effects) this.removeObject(effect.mesh);
     this.world = null;
     this.players = [];
     this.projectiles = [];
+    this.hazards = [];
+    this.decoys = [];
     this.effects = [];
   }
 
@@ -135,7 +141,7 @@ class BlasterBattle {
         </section>
         <aside class="feature-rail">
           <span>01</span><div><b>GRAPPLE</b><small>Momentum is your weapon</small></div>
-          <span>02</span><div><b>8 WEAPONS</b><small>Carry five into combat</small></div>
+          <span>02</span><div><b>45 WEAPONS</b><small>Carry five into combat</small></div>
           <span>03</span><div><b>DYNAMIC ARENAS</b><small>Moving routes, portals, and hazards</small></div>
         </aside>
       </main>`;
@@ -170,9 +176,9 @@ class BlasterBattle {
             <div><h2>Choose five weapons</h2><span data-loadout-count>${this.settings.loadout.length}/5 selected</span></div>
             <div class="weapon-grid">
               ${Object.values(WEAPONS).map((weapon) => `
-                <button class="weapon-choice ${this.settings.loadout.includes(weapon.id) ? "selected" : ""}" data-weapon-choice="${weapon.id}">
-                  <i style="--weapon:#${weapon.color.toString(16).padStart(6, "0")}"></i>
-                  <b>${weapon.name}</b><small>${weapon.description}</small>
+                <button class="weapon-choice ${this.settings.loadout.includes(weapon.id) ? "selected" : ""}" data-weapon-choice="${weapon.id}" style="--weapon:#${weapon.color.toString(16).padStart(6, "0")}">
+                  <i></i>
+                  <b>${weapon.name}</b><em>${weapon.category}</em><small>${weapon.description}</small>
                 </button>`).join("")}
             </div>
           </section>
@@ -288,11 +294,12 @@ class BlasterBattle {
     this.world = new ArenaWorld(this.scene, this.seed);
     const spawns = this.world.spawnPoints();
     const playerLoadout = this.settings.loadout.length === 5 ? this.settings.loadout : DEFAULT_LOADOUT;
-    const botLoadout = ["machine_gun", "shotgun", "rocket_launcher", "grenade_launcher", "railgun"];
+    const weaponIds = Object.keys(WEAPONS);
     this.players = [new Fighter(this.scene, { id: "p1", name: this.settings.displayName, ...PLAYER_COLORS[0] }, playerLoadout, spawns[0])];
     for (let index = 0; index < clampBotCount(this.settings.botCount); index++) {
       const number = String(index + 1).padStart(2, "0");
       const name = this.mode === "quick" ? `Region Bot ${number}` : `Atlas Bot ${number}`;
+      const botLoadout = Array.from({ length: 5 }, (_, slot) => weaponIds[(8 + index * 5 + slot) % weaponIds.length]);
       this.players.push(new Fighter(this.scene, { id: `p${index + 2}`, name, ...PLAYER_COLORS[1] }, botLoadout, spawns[index + 1], true));
     }
     this.scores = this.players.map(() => 0);
@@ -415,6 +422,8 @@ class BlasterBattle {
     this.updateHuman(dt);
     for (let index = 1; index < this.players.length; index++) this.updateBot(this.players[index], dt);
     this.updateProjectiles(dt);
+    this.updateHazards(dt);
+    this.updateDecoys(dt);
     this.updateEffects(dt);
     this.updateRespawns(dt);
     this.updateHud();
@@ -448,7 +457,7 @@ class BlasterBattle {
 
   updateBot(bot, dt) {
     if (!bot.alive) return;
-    const target = nearestTarget(bot, this.players);
+    const target = nearestTarget(bot, [...this.players, ...this.decoys]);
     if (!target) return;
     const offset = target.position.clone().sub(bot.position).setY(0);
     const distance = offset.length();
@@ -461,7 +470,7 @@ class BlasterBattle {
     }
     const forward = offset.lengthSq() ? offset.clone().normalize() : new THREE.Vector3();
     const side = new THREE.Vector3(-forward.z, 0, forward.x).multiplyScalar(bot.botDodge);
-    const preferred = bot.weapon.type === "spread" ? 8 : bot.weapon.type === "rail" ? 24 : 15;
+    const preferred = bot.weapon.type === "melee" ? bot.weapon.reach * .8 : bot.weapon.type === "spread" ? 8 : ["rail", "beam", "chain"].includes(bot.weapon.type) ? 24 : 15;
     const move = side.multiplyScalar(.62);
     if (distance > preferred + 3) move.add(forward);
     if (distance < preferred - 3) move.addScaledVector(forward, -1);
@@ -516,6 +525,19 @@ class BlasterBattle {
   tryFire(player) {
     const weapon = player.weapon;
     if (!player.alive || player.attackTimer > 0 || player.reloadTimer > 0) return;
+    if (weapon.type === "remote") {
+      const charges = this.projectiles
+        .map((shot, index) => ({ shot, index }))
+        .filter(({ shot }) => shot.owner === player && shot.weapon.id === weapon.id);
+      if (charges.length) {
+        player.attackTimer = weapon.cooldown;
+        for (const { shot, index } of charges.reverse()) {
+          this.explode(shot);
+          this.removeProjectile(index);
+        }
+        return;
+      }
+    }
     if (player.ammo[weapon.id] <= 0) {
       player.reload();
       return;
@@ -523,31 +545,110 @@ class BlasterBattle {
     player.attackTimer = weapon.cooldown;
     player.ammo[weapon.id] -= 1;
     player.recoil();
-    this.sound.play(weapon.type === "rail" ? "impact" : "power");
+    this.sound.play(["rail", "beam", "chain", "melee"].includes(weapon.type) ? "impact" : "power");
     if (weapon.type === "spread") {
       for (let i = 0; i < weapon.pellets; i++) this.spawnProjectile(player, weapon, aimWithSpread(player.aim, weapon.spread));
       return;
     }
     if (weapon.type === "mine") return this.spawnMine(player, weapon);
+    if (weapon.type === "beam") return this.fireBeam(player, weapon);
+    if (weapon.type === "chain") return this.fireChain(player, weapon);
+    if (weapon.type === "melee") return this.fireMelee(player, weapon);
     this.spawnProjectile(player, weapon, aimWithSpread(player.aim, weapon.spread));
   }
 
-  spawnProjectile(player, weapon, direction) {
-    const radius = weapon.type === "rocket" ? .25 : weapon.type === "plasma" ? .42 : weapon.type === "grenade" ? .28 : .11;
+  spawnProjectile(player, weapon, direction, position = null) {
+    const radius = weapon.projectileRadius ?? (weapon.type === "rocket" ? .25 : weapon.type === "plasma" ? .42 : weapon.type === "grenade" ? .28 : .11);
+    const geometry = weapon.returning
+      ? new THREE.TorusGeometry(radius, radius * .28, 6, 14)
+      : weapon.type === "rail"
+        ? new THREE.BoxGeometry(.09, .09, 1.5)
+        : new THREE.SphereGeometry(radius, 10, 8);
     const mesh = new THREE.Mesh(
-      weapon.type === "rail" ? new THREE.BoxGeometry(.09, .09, 1.5) : new THREE.SphereGeometry(radius, 10, 8),
+      geometry,
       new THREE.MeshStandardMaterial({ color: weapon.color, emissive: weapon.color, emissiveIntensity: 1.2 })
     );
-    mesh.position.copy(player.forwardPoint(1.2));
+    mesh.position.copy(position || player.forwardPoint(1.2));
     if (weapon.type === "rail") mesh.lookAt(mesh.position.clone().add(direction));
     const velocity = direction.clone().multiplyScalar(weapon.projectileSpeed);
-    if (weapon.type === "grenade") velocity.y = 7.5;
+    if (weapon.arcLift) velocity.y += weapon.arcLift;
     this.scene.add(mesh);
     this.projectiles.push({
       mesh, owner: player, weapon, velocity, radius,
       life: projectileLifetime(weapon),
-      age: 0, bounces: 0
+      age: 0, bounces: 0, hitTargets: new Set(),
+      remainingPenetration: weapon.penetration || 0,
+      remainingTerrainPenetration: weapon.terrainPenetration || 0,
+      remote: weapon.type === "remote"
     });
+  }
+
+  fireBeam(player, weapon) {
+    const start = player.forwardPoint(1.05);
+    const direction = aimWithSpread(player.aim, weapon.spread).normalize();
+    const wall = this.world.grapplePoint(start, direction);
+    const end = wall || start.clone().addScaledVector(direction, 1000);
+    const distance = start.distanceTo(end);
+    const targets = [...this.players, ...this.decoys]
+      .filter((target) => target !== player && target.alive)
+      .map((target) => {
+        const offset = target.position.clone().add(new THREE.Vector3(0, 1.1, 0)).sub(start);
+        const along = offset.dot(direction);
+        const miss = offset.addScaledVector(direction, -along).length();
+        return { target, along, miss };
+      })
+      .filter(({ target, along, miss }) => along > 0 && along < distance && miss < target.radius + .45)
+      .sort((a, b) => a.along - b.along)
+      .slice(0, (weapon.penetration || 0) + 1);
+    for (const { target } of targets) {
+      const push = weapon.beamPull
+        ? player.position.clone().sub(target.position).normalize().multiplyScalar(weapon.beamPull)
+        : direction.clone().multiplyScalar(weapon.recoil * 1.7);
+      this.damageTarget(target, weapon.damage, push, player, weapon);
+    }
+    if (weapon.terrainRadius && wall) this.world.destroy(wall, weapon.terrainRadius);
+    this.spawnTracer(start, end, weapon.color, .13);
+  }
+
+  fireChain(player, weapon) {
+    const origin = player.forwardPoint(.9);
+    const candidates = [...this.players, ...this.decoys]
+      .filter((target) => target !== player && target.alive)
+      .filter((target) => {
+        const offset = target.position.clone().sub(origin);
+        return offset.length() <= weapon.reach && offset.normalize().dot(player.aim) > .45 && this.world.lineOfSight(player.position, target.position);
+      });
+    let from = origin;
+    let remaining = [...candidates];
+    for (let jump = 0; jump < weapon.chains && remaining.length; jump++) {
+      remaining.sort((a, b) => a.position.distanceToSquared(from) - b.position.distanceToSquared(from));
+      const target = remaining.shift();
+      if (jump > 0 && target.position.distanceTo(from) > 14) break;
+      const end = target.position.clone().add(new THREE.Vector3(0, 1.05, 0));
+      this.spawnTracer(from, end, weapon.color, .18);
+      this.damageTarget(target, Math.ceil(weapon.damage * Math.pow(.72, jump)), target.position.clone().sub(from).normalize().multiplyScalar(weapon.recoil * 1.5), player, weapon);
+      from = end;
+    }
+    if (!candidates.length) this.spawnTracer(origin, origin.clone().addScaledVector(player.aim, 8), weapon.color, .1);
+  }
+
+  fireMelee(player, weapon) {
+    const origin = player.position.clone().add(new THREE.Vector3(0, 1.15, 0));
+    const end = origin.clone().addScaledVector(player.aim, weapon.reach);
+    for (const target of [...this.players, ...this.decoys]) {
+      if (target === player || !target.alive) continue;
+      const offset = target.position.clone().add(new THREE.Vector3(0, 1, 0)).sub(origin);
+      if (offset.length() > weapon.reach + target.radius || offset.normalize().dot(player.aim) < 1 - weapon.arc) continue;
+      this.damageTarget(target, weapon.damage, player.aim.clone().multiplyScalar(weapon.recoil * 1.8).setY(weapon.recoil * .45), player, weapon);
+    }
+    this.spawnTracer(origin, end, weapon.color, .12, Math.max(.12, weapon.arc * .35));
+  }
+
+  spawnTracer(start, end, color, life = .15, linewidth = 1) {
+    const geometry = new THREE.BufferGeometry().setFromPoints([start.clone(), end.clone()]);
+    const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color, transparent: true, opacity: .9, linewidth }));
+    this.scene.add(line);
+    this.effects.push({ mesh: line, velocity: new THREE.Vector3(), life, beam: true });
   }
 
   spawnMine(player, weapon) {
@@ -555,7 +656,9 @@ class BlasterBattle {
       new THREE.CylinderGeometry(.32, .42, .18, 10),
       new THREE.MeshStandardMaterial({ color: weapon.color, emissive: weapon.color, emissiveIntensity: .8 })
     );
-    mesh.position.copy(player.forwardPoint(1.3)).setY(.12);
+    const placement = player.forwardPoint(1.3);
+    placement.y = this.world.surfaceHeightAt(placement, player.position.y + 1.5) + .12;
+    mesh.position.copy(placement);
     this.scene.add(mesh);
     this.projectiles.push({
       mesh, owner: player, weapon, velocity: new THREE.Vector3(), radius: .35,
@@ -568,40 +671,79 @@ class BlasterBattle {
       const shot = this.projectiles[index];
       shot.age += dt;
       shot.life -= dt;
-      const explosive = ["rocket", "grenade", "plasma", "mine"].includes(shot.weapon.type);
+      const explosive = Boolean(shot.weapon.radius);
 
       if (shot.mine) {
         shot.mesh.rotation.y += dt * 2;
-        const target = this.players.find((player) => player !== shot.owner && player.alive && player.position.distanceTo(shot.mesh.position) < 3.1);
+        const target = [...this.players, ...this.decoys].find((player) => player !== shot.owner && player.alive && player.position.distanceTo(shot.mesh.position) < 3.1);
         if (target && shot.age > .45) shot.life = 0;
-      } else {
-        if (shot.weapon.type === "grenade") shot.velocity.y -= 17 * dt;
+      } else if (!shot.stuck) {
+        if (shot.weapon.returning && shot.age >= shot.weapon.returning) {
+          const home = shot.owner.position.clone().add(new THREE.Vector3(0, 1.2, 0));
+          if (shot.mesh.position.distanceTo(home) < 1.1) {
+            this.removeProjectile(index);
+            continue;
+          }
+          shot.velocity.lerp(home.sub(shot.mesh.position).normalize().multiplyScalar(shot.weapon.projectileSpeed), Math.min(1, dt * 6));
+        }
+        if (shot.weapon.gravity) shot.velocity.y -= shot.weapon.gravity * dt;
         const steps = projectileStepCount(shot.velocity.length(), dt, shot.radius);
         let removed = false;
         for (let step = 0; step < steps; step++) {
+          const previous = shot.mesh.position.clone();
           shot.mesh.position.addScaledVector(shot.velocity, dt / steps);
-          const target = this.players.find((player) => player !== shot.owner && projectileTouchesPlayer(player, shot.mesh.position, shot.radius));
+          if (shot.weapon.returning) shot.mesh.rotation.y += dt * 18 / steps;
+          const target = [...this.players, ...this.decoys].find((player) =>
+            player !== shot.owner && player.alive && !shot.hitTargets.has(player.id) && projectileTouchesPlayer(player, shot.mesh.position, shot.radius)
+          );
           if (target) {
-            if (explosive) {
-              this.explode(shot);
+            if (shot.weapon.type === "wall") {
+              this.world.addTemporaryWall(target.position, shot.velocity, shot.weapon.color, shot.weapon.wallDuration);
+              this.removeProjectile(index);
+            } else if (shot.weapon.type === "decoy") {
+              this.spawnDecoy(target.position, shot.owner, shot.weapon);
+              this.removeProjectile(index);
+            } else if (explosive) {
+              this.finishProjectile(index, shot);
             } else {
-              this.damagePlayer(target, shot.weapon.damage, shot.velocity.clone().normalize().multiplyScalar(shot.weapon.recoil * 1.7), shot.owner);
-              this.spawnImpact(shot.mesh.position, target);
+              this.damageTarget(target, shot.weapon.damage, shot.velocity.clone().normalize().multiplyScalar(shot.weapon.recoil * 1.7), shot.owner, shot.weapon);
+              shot.hitTargets.add(target.id);
+              if (shot.remainingPenetration > 0) {
+                shot.remainingPenetration -= 1;
+                continue;
+              }
+              this.removeProjectile(index);
             }
-            this.removeProjectile(index);
             removed = true;
             break;
           }
           if (this.world.projectileHit(shot.mesh.position, shot.radius)) {
-            if (shot.weapon.type === "grenade" && shot.bounces < 2 && shot.life > .2) {
-              shot.bounces += 1;
-              shot.mesh.position.y = Math.max(.35, this.world.surfaceHeightAt(shot.mesh.position) + shot.radius);
-              shot.velocity.y = Math.abs(shot.velocity.y) * .62 + 2.5;
-              shot.velocity.x *= -.55;
-              shot.velocity.z *= -.55;
-            } else {
-              if (explosive) this.explode(shot);
+            if (shot.weapon.type === "wall") {
+              this.world.addTemporaryWall(previous, shot.velocity, shot.weapon.color, shot.weapon.wallDuration);
               this.removeProjectile(index);
+              removed = true;
+            } else if (shot.weapon.type === "decoy") {
+              this.spawnDecoy(previous, shot.owner, shot.weapon);
+              this.removeProjectile(index);
+              removed = true;
+            } else if (shot.weapon.effect === "teleport") {
+              this.teleportOwner(shot.owner, previous, shot.velocity);
+              this.removeProjectile(index);
+              removed = true;
+            } else if (shot.remainingTerrainPenetration > 0 && this.world.destroy(shot.mesh.position, shot.weapon.terrainRadius || 2)) {
+              shot.remainingTerrainPenetration -= 1;
+              shot.mesh.position.copy(previous).addScaledVector(shot.velocity.clone().normalize(), shot.radius * 3);
+            } else if (shot.weapon.sticky || shot.remote) {
+              shot.mesh.position.copy(previous);
+              shot.velocity.set(0, 0, 0);
+              shot.stuck = true;
+              break;
+            } else if (shot.bounces < (shot.weapon.bounces || 0) && shot.life > .15) {
+              shot.bounces += 1;
+              this.bounceProjectile(shot, previous);
+              break;
+            } else {
+              this.finishProjectile(index, shot);
               removed = true;
             }
             break;
@@ -610,34 +752,187 @@ class BlasterBattle {
         if (removed) continue;
       }
       if (shot.life <= 0) {
-        if (explosive) this.explode(shot);
-        this.removeProjectile(index);
+        this.finishProjectile(index, shot);
       }
     }
   }
 
+  bounceProjectile(shot, previous) {
+    const movement = shot.mesh.position.clone().sub(previous);
+    shot.mesh.position.copy(previous);
+    let reflected = false;
+    for (const axis of ["x", "y", "z"]) {
+      const probe = previous.clone();
+      probe[axis] += movement[axis];
+      if (!this.world.projectileHit(probe, shot.radius)) continue;
+      shot.velocity[axis] *= -1;
+      reflected = true;
+    }
+    if (!reflected) shot.velocity.multiplyScalar(-1);
+    shot.velocity.multiplyScalar(shot.weapon.bounceEnergy ?? .62);
+    if (shot.weapon.type === "grenade") shot.velocity.y = Math.max(2.5, shot.velocity.y);
+  }
+
+  finishProjectile(index, shot) {
+    if (shot.weapon.split && !shot.split) this.splitProjectile(shot);
+    else if (shot.weapon.radius) this.explode(shot);
+    this.removeProjectile(index);
+  }
+
+  splitProjectile(shot) {
+    shot.split = true;
+    const count = shot.weapon.split;
+    const child = {
+      ...shot.weapon, id: `${shot.weapon.id}_bomblet`, type: "grenade", split: 0,
+      damage: Math.max(14, shot.weapon.damage), projectileSpeed: 18,
+      radius: 2.8, terrainRadius: 2.2, fuse: .62, gravity: 15,
+      bounces: 1, bounceEnergy: .55, arcLift: 0, projectileRadius: .16
+    };
+    for (let i = 0; i < count; i++) {
+      const angle = i / count * Math.PI * 2;
+      const direction = new THREE.Vector3(Math.cos(angle), .55 + (i % 2) * .25, Math.sin(angle)).normalize();
+      this.spawnProjectile(shot.owner, child, direction, shot.mesh.position.clone().add(new THREE.Vector3(0, .35, 0)));
+    }
+    this.spawnBurst(shot.mesh.position, shot.weapon.color, count * 2);
+  }
+
   explode(shot) {
     const position = shot.mesh.position.clone();
-    for (const player of this.players) {
-      if (!player.alive) continue;
-      const distance = player.position.distanceTo(position);
+    for (const target of [...this.players, ...this.decoys]) {
+      if (!target.alive) continue;
+      const distance = target.position.distanceTo(position);
       if (distance > shot.weapon.radius) continue;
       const factor = 1 - distance / shot.weapon.radius;
-      const selfScale = player === shot.owner ? .35 : 1;
-      const push = player.position.clone().sub(position).setY(.18).normalize().multiplyScalar((8 + shot.weapon.recoil) * factor);
-      this.damagePlayer(player, Math.ceil(shot.weapon.damage * factor * selfScale), push, shot.owner);
+      const selfScale = target === shot.owner ? .35 : 1;
+      const push = target.position.clone().sub(position).setY(.18).normalize().multiplyScalar((8 + shot.weapon.recoil) * factor * (shot.weapon.pull ? -1 : 1));
+      this.damageTarget(target, Math.ceil(shot.weapon.damage * factor * selfScale), push, shot.owner, shot.weapon);
+      if (shot.weapon.grappleDisrupt && target.grapple) this.releaseGrapple(target);
     }
-    this.world.destroy(position, shot.weapon.terrainRadius || 0);
+    if (shot.weapon.terrainRadius > 0) this.world.destroy(position, shot.weapon.terrainRadius);
+    if (shot.weapon.hazard) this.spawnHazard(position, shot.owner, shot.weapon);
     this.spawnBurst(position, shot.weapon.color, this.settings.reducedMotion ? 8 : 18);
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(.5, .72, 34),
       new THREE.MeshBasicMaterial({ color: shot.weapon.color, transparent: true, opacity: .72, side: THREE.DoubleSide })
     );
     ring.rotation.x = -Math.PI / 2;
-    ring.position.copy(position).setY(.08);
+    ring.position.copy(position).setY(Math.max(.08, position.y));
     this.scene.add(ring);
     this.effects.push({ mesh: ring, velocity: new THREE.Vector3(), life: .45, ring: true, maxScale: shot.weapon.radius * 1.8 });
     this.sound.play("impact");
+  }
+
+  damageTarget(target, damage, push, attacker, weapon) {
+    if (target.isDecoy) {
+      target.health -= damage;
+      this.spawnImpact(target.position, target);
+      if (target.health <= 0) this.removeDecoy(target);
+      return;
+    }
+    this.damagePlayer(target, damage, push, attacker);
+    if (weapon.effect === "freeze") target.slowTimer = Math.max(target.slowTimer || 0, weapon.effectDuration || 2);
+    if (weapon.effect === "steal" && target.alive) {
+      target.ammo[target.weapon.id] = 0;
+      attacker.ammo[attacker.weapon.id] = attacker.weapon.ammo;
+    }
+    if (weapon.effect === "teleport") this.teleportOwner(attacker, target.position, attacker.aim);
+  }
+
+  teleportOwner(player, point, direction) {
+    if (!player?.alive) return;
+    this.releaseGrapple(player);
+    const destination = point.clone().addScaledVector(direction.clone().normalize(), -1.35);
+    destination.y = Math.max(.2, destination.y);
+    const previous = player.position.clone();
+    player.position.copy(destination);
+    this.world.resolve(player.position, player.radius, previous);
+    player.velocity.set(0, 2.5, 0);
+    this.spawnBurst(player.position, 0x43ffd1, 14);
+  }
+
+  spawnHazard(position, owner, weapon) {
+    const hazardRadius = weapon.hazard === "black_hole" ? 9 : weapon.hazard === "tornado" ? 7 : 6;
+    const mesh = new THREE.Mesh(
+      new THREE.TorusGeometry(hazardRadius * .48, .22, 8, 34),
+      new THREE.MeshBasicMaterial({ color: weapon.color, transparent: true, opacity: .65, side: THREE.DoubleSide })
+    );
+    mesh.rotation.x = Math.PI / 2;
+    mesh.position.copy(position).setY(Math.max(.18, position.y));
+    this.scene.add(mesh);
+    this.hazards.push({ mesh, owner, weapon, radius: hazardRadius, life: weapon.hazardDuration, tick: 0 });
+  }
+
+  updateHazards(dt) {
+    for (let index = this.hazards.length - 1; index >= 0; index--) {
+      const hazard = this.hazards[index];
+      hazard.life -= dt;
+      hazard.tick -= dt;
+      hazard.mesh.rotation.z += dt * (hazard.weapon.hazard === "tornado" ? 5 : 1.8);
+      const pulse = 1 + Math.sin(hazard.life * 7) * .08;
+      hazard.mesh.scale.setScalar(pulse);
+      if (hazard.tick <= 0) {
+        hazard.tick = .22;
+        for (const player of this.players) {
+          if (!player.alive) continue;
+          const offset = player.position.clone().sub(hazard.mesh.position);
+          const distance = offset.length();
+          if (distance > hazard.radius) continue;
+          const factor = 1 - distance / hazard.radius;
+          let damage = 0;
+          const push = new THREE.Vector3();
+          if (hazard.weapon.hazard === "napalm") {
+            damage = 4;
+            push.set(0, 1.2, 0);
+          } else if (hazard.weapon.hazard === "black_hole") {
+            damage = 2;
+            push.copy(offset).normalize().multiplyScalar(-14 * factor);
+          } else {
+            damage = 1;
+            push.set(-offset.z, 8, offset.x).normalize().multiplyScalar(13 * factor).setY(7 * factor);
+          }
+          this.damagePlayer(player, Math.ceil(damage * (player === hazard.owner ? .35 : 1)), push, hazard.owner);
+        }
+      }
+      if (hazard.life <= 0) {
+        this.removeObject(hazard.mesh);
+        this.hazards.splice(index, 1);
+      }
+    }
+  }
+
+  spawnDecoy(position, owner, weapon) {
+    const mesh = new THREE.Mesh(
+      new THREE.CapsuleGeometry(.55, 1.25, 5, 10),
+      new THREE.MeshStandardMaterial({ color: weapon.color, emissive: weapon.color, emissiveIntensity: .7, transparent: true, opacity: .72 })
+    );
+    const feet = position.clone();
+    feet.y = this.world.surfaceHeightAt(feet, position.y + 1);
+    mesh.position.copy(feet).add(new THREE.Vector3(0, 1.15, 0));
+    this.scene.add(mesh);
+    this.decoys.push({
+      id: `decoy-${Math.random().toString(36).slice(2)}`,
+      isDecoy: true, alive: true, health: 55, radius: .72,
+      owner, weapon, mesh, position: feet, life: weapon.decoyDuration
+    });
+    this.spawnBurst(mesh.position, weapon.color, 10);
+  }
+
+  updateDecoys(dt) {
+    for (let index = this.decoys.length - 1; index >= 0; index--) {
+      const decoy = this.decoys[index];
+      decoy.life -= dt;
+      decoy.mesh.rotation.y += dt * 1.4;
+      decoy.mesh.material.opacity = .58 + Math.sin(decoy.life * 9) * .14;
+      if (decoy.life <= 0) this.removeDecoy(decoy);
+    }
+  }
+
+  removeDecoy(decoy) {
+    const index = this.decoys.indexOf(decoy);
+    if (index < 0) return;
+    decoy.alive = false;
+    this.removeObject(decoy.mesh);
+    this.decoys.splice(index, 1);
   }
 
   damagePlayer(target, damage, push, attacker) {
@@ -678,7 +973,9 @@ class BlasterBattle {
     for (let index = this.effects.length - 1; index >= 0; index--) {
       const effect = this.effects[index];
       effect.life -= dt;
-      if (effect.ring) {
+      if (effect.beam) {
+        effect.mesh.material.opacity *= .72;
+      } else if (effect.ring) {
         const scale = THREE.MathUtils.lerp(effect.mesh.scale.x, effect.maxScale, dt * 9);
         effect.mesh.scale.setScalar(scale);
         effect.mesh.material.opacity *= .9;
@@ -781,8 +1078,11 @@ class BlasterBattle {
   removeObject(object) {
     if (!object) return;
     this.scene.remove(object);
-    object.geometry?.dispose?.();
-    object.material?.dispose?.();
+    object.traverse?.((child) => {
+      child.geometry?.dispose?.();
+      if (Array.isArray(child.material)) child.material.forEach((entry) => entry.dispose?.());
+      else child.material?.dispose?.();
+    });
   }
 }
 

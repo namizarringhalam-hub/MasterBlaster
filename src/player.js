@@ -43,6 +43,7 @@ export class Fighter {
     this.reloadTimer = 0;
     this.attackTimer = 0;
     this.hitTimer = 0;
+    this.slowTimer = 0;
     this.grounded = true;
     this.alive = true;
     this.deaths = 0;
@@ -92,8 +93,15 @@ export class Fighter {
     const weapon = this.weapon;
     const glow = material(weapon.color, weapon.color);
     const dark = material(0x111c2c);
-    if (weapon.type === "mine") {
+    if (weapon.type === "mine" || weapon.type === "remote") {
       this.weaponGroup.add(part(new THREE.CylinderGeometry(.28, .34, .18, 10), glow, .05, .08, .2));
+      return;
+    }
+    if (weapon.type === "melee") {
+      const reachScale = Math.min(1.5, weapon.reach / 3.5);
+      const blade = part(new THREE.BoxGeometry(.12, .12, 1.15 * reachScale), glow, .08, .04, .48);
+      const grip = part(new THREE.BoxGeometry(.18, .28, .2), dark, .08, -.08, -.08);
+      this.weaponGroup.add(blade, grip);
       return;
     }
     const scale = weapon.type === "rocket" || weapon.type === "plasma" ? 1.18 : .82;
@@ -142,6 +150,7 @@ export class Fighter {
     this.group.visible = true;
     this.reloadTimer = 0;
     this.attackTimer = .7;
+    this.slowTimer = 0;
     this.grapple = null;
   }
 
@@ -152,6 +161,7 @@ export class Fighter {
     this.reloadTimer = Math.max(0, this.reloadTimer - dt);
     if (reloading && this.reloadTimer === 0) this.ammo[this.weapon.id] = this.weapon.ammo;
     this.hitTimer = Math.max(0, this.hitTimer - dt);
+    this.slowTimer = Math.max(0, this.slowTimer - dt);
 
     if (look.lengthSq() > .001) this.aim.copy(look).normalize();
     if (actions.jump && this.grounded) {
@@ -161,12 +171,13 @@ export class Fighter {
 
     const moving = move.lengthSq() > .001;
     this.controlMove.copy(move);
-    const desired = moving ? move.clone().normalize().multiplyScalar(9) : new THREE.Vector3();
+    const movementScale = this.slowTimer > 0 ? .48 : 1;
+    const desired = moving ? move.clone().normalize().multiplyScalar(9 * movementScale) : new THREE.Vector3();
     if (this.grounded) {
       this.velocity.x = THREE.MathUtils.damp(this.velocity.x, desired.x, 11, dt);
       this.velocity.z = THREE.MathUtils.damp(this.velocity.z, desired.z, 11, dt);
     } else {
-      const acceleration = this.grapple ? 15 : 7;
+      const acceleration = (this.grapple ? 15 : 7) * movementScale;
       this.velocity.x += desired.x / 9 * acceleration * dt;
       this.velocity.z += desired.z / 9 * acceleration * dt;
       const horizontalSpeed = Math.hypot(this.velocity.x, this.velocity.z);
@@ -230,9 +241,10 @@ export function applyGrapplePhysics(player, dt) {
   if (distance < .01) return;
 
   const direction = towardAnchor.multiplyScalar(1 / distance);
-  player.grapple.ropeLength = Math.max(5, player.grapple.ropeLength - 18 * dt);
+  const movementScale = player.slowTimer > 0 ? .55 : 1;
+  player.grapple.ropeLength = Math.max(5, player.grapple.ropeLength - 18 * movementScale * dt);
   const stretch = Math.max(0, distance - player.grapple.ropeLength);
-  player.velocity.addScaledVector(direction, (30 + stretch * 11) * dt);
+  player.velocity.addScaledVector(direction, (30 + stretch * 11) * movementScale * dt);
 
   // A taut rope cancels only outward velocity. Tangential speed survives and becomes the swing.
   if (stretch > 0) {
@@ -241,7 +253,7 @@ export function applyGrapplePhysics(player, dt) {
   }
 
   const steering = player.controlMove.clone().sub(direction.clone().multiplyScalar(player.controlMove.dot(direction)));
-  if (steering.lengthSq() > .01) player.velocity.addScaledVector(steering.normalize(), 14 * dt);
+  if (steering.lengthSq() > .01) player.velocity.addScaledVector(steering.normalize(), 14 * movementScale * dt);
   if (player.velocity.length() > 48) player.velocity.setLength(48);
 }
 

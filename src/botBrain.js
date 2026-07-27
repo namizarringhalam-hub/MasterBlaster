@@ -29,11 +29,13 @@ export function chooseBotSlot(loadout, distance, random = Math.random) {
   const scored = loadout.map((id, index) => {
     const weapon = WEAPONS[id];
     let score = random() * .25;
-    if (weapon.type === "spread") score += distance < 11 ? 1.4 : -.6;
+    if (weapon.type === "melee") score += distance <= weapon.reach + 1 ? 1.7 : -1.2;
+    else if (weapon.type === "spread") score += distance < 11 ? 1.4 : -.6;
     else if (weapon.type === "mine") score += distance < 8 ? .9 : -.8;
     else if (weapon.type === "grenade") score += distance > 9 && distance < 24 ? 1.05 : 0;
     else if (weapon.type === "rocket" || weapon.type === "plasma") score += distance > 10 ? .9 : -.7;
-    else if (weapon.type === "rail") score += distance > 18 ? 1.15 : 0;
+    else if (["rail", "beam", "chain"].includes(weapon.type)) score += distance > 16 ? 1.15 : 0;
+    else if (["wall", "decoy", "remote"].includes(weapon.type)) score += .35;
     else score += .65;
     return { index, score };
   });
@@ -43,8 +45,10 @@ export function chooseBotSlot(loadout, distance, random = Math.random) {
 
 export function botFireChance(distance, visible, weapon) {
   if (!visible && weapon.type !== "grenade") return 0;
+  if (weapon.type === "melee") return distance <= weapon.reach + 1 ? .28 : 0;
   if (weapon.type === "mine") return distance < 7 ? .045 : 0;
   if (weapon.type === "spread") return distance < 15 ? .18 : .015;
-  if (weapon.type === "rail") return .025;
+  if (["rail", "beam", "chain"].includes(weapon.type)) return .025;
+  if (["wall", "decoy", "remote"].includes(weapon.type)) return .035;
   return .09;
 }

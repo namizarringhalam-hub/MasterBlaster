@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import * as THREE from "three";
 import { chooseBotSlot, botFireChance, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
-import { DEFAULT_LOADOUT, LOADOUT_SLOTS, projectileLifetime, projectileStepCount, seededRandom, seedFromText, WEAPONS } from "../src/gameData.js";
+import { DEFAULT_LOADOUT, LOADOUT_SLOTS, projectileLifetime, projectileStepCount, seededRandom, seedFromText, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
 import { InputManager, shouldCaptureGameKey, touchLookDelta, updateOrbit } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, grappleSightline, projectileTouchesPlayer } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
@@ -16,14 +16,36 @@ assert.match(serviceWorkerSource, /caches\.delete/, "the replacement worker clea
 assert.match(serviceWorkerSource, /clients\.claim/, "the replacement worker takes control before refreshing old clients");
 assert.match(serviceWorkerSource, /registration\.unregister/, "the replacement worker removes itself after cleanup");
 
-assert.equal(Object.keys(WEAPONS).length, 8, "the prototype exposes all eight specified weapons");
+const documentedWeaponIds = [
+  "arc_lightning", "black_hole_generator", "blaster", "boomerang_blade", "bouncing_bomb", "burst_rifle",
+  "chainsaw", "charged_energy_rifle", "cluster_grenade", "decoy_launcher", "disintegration_weapon", "drill_missile",
+  "energy_sword", "freeze_gun", "grapple_disrupting_pulse", "gravity_beam", "gravity_grenade", "grenade_launcher",
+  "hammer", "implosion_bomb", "knife", "laser_beam", "machine_gun", "mine", "minigun", "mortar",
+  "napalm_launcher", "needle_launcher", "plasma_cannon", "plasma_repeater", "pulse_cannon", "punch_glove",
+  "railgun", "remote_explosive", "ricochet_cannon", "rocket_launcher", "shock_baton", "shotgun", "spear",
+  "sticky_launcher", "submachine_gun", "teleport_projectile", "temporary_wall", "tornado_generator", "weapon_stealing_projectile"
+];
+assert.equal(Object.keys(WEAPONS).length, 45, "the game exposes the prototype and complete documented weapon library");
 assert.equal(LOADOUT_SLOTS.length, 5, "players carry five main weapons");
 assert.equal(DEFAULT_LOADOUT.length, 5, "the default loadout is match-ready");
 assert.deepEqual(
   Object.keys(WEAPONS).sort(),
-  ["blaster", "grenade_launcher", "machine_gun", "mine", "plasma_cannon", "railgun", "rocket_launcher", "shotgun"],
+  documentedWeaponIds,
   "weapon IDs match the specification"
 );
+assert.equal(WEAPON_GROUPS.reduce((total, group) => total + group.ids.length, 0), 45, "every documented weapon belongs to one menu category");
+assert.ok(WEAPON_GROUPS.every((group) => group.ids.every((id) => WEAPONS[id])), "weapon categories contain no missing entries");
+assert.ok(Object.values(WEAPONS).every((weapon) => weapon.name && weapon.description && weapon.category), "every weapon has complete menu metadata");
+assert.equal(WEAPONS.cluster_grenade.split, 6, "cluster grenades create secondary bomblets");
+assert.equal(WEAPONS.sticky_launcher.sticky, true, "sticky charges adhere to surfaces");
+assert.equal(WEAPONS.remote_explosive.type, "remote", "remote explosives use place-and-detonate behavior");
+assert.equal(WEAPONS.laser_beam.type, "beam", "laser weapons use instant beams");
+assert.equal(WEAPONS.arc_lightning.type, "chain", "arc lightning chains between targets");
+assert.equal(WEAPONS.hammer.type, "melee", "the melee library uses direct close-range attacks");
+assert.equal(WEAPONS.temporary_wall.type, "wall", "the wall projectile creates physical cover");
+assert.equal(WEAPONS.decoy_launcher.type, "decoy", "decoy rounds deploy bot targets");
+assert.equal(WEAPONS.teleport_projectile.effect, "teleport", "teleport projectiles relocate their shooter");
+assert.equal(WEAPONS.grapple_disrupting_pulse.grappleDisrupt, true, "disrupting pulses release grapples");
 assert.equal(WEAPONS.grenade_launcher.projectileSpeed, 13, "grenades keep their deliberate throwing arc");
 assert.ok(WEAPONS.railgun.projectileSpeed >= WEAPONS.grenade_launcher.projectileSpeed * 30, "the railgun feels almost instant beside a grenade");
 assert.ok(WEAPONS.machine_gun.projectileSpeed > WEAPONS.blaster.projectileSpeed, "rifle-class bullets outrun visible blaster bolts");

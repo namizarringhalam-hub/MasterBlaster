@@ -43,6 +43,7 @@ export class ArenaWorld {
     this.movers = [];
     this.portals = [];
     this.sweepers = [];
+    this.temporaryWalls = [];
     this.time = 0;
     scene.add(this.group);
     this.build();
@@ -193,8 +194,41 @@ export class ArenaWorld {
     this.sweepers.push({ group, position: new THREE.Vector3(x, y, z), length, speed });
   }
 
+  addTemporaryWall(position, direction, color, lifetime = 10) {
+    const alongX = Math.abs(direction.x) > Math.abs(direction.z);
+    const baseY = this.surfaceHeightAt(position, position.y + 1);
+    const obstacle = this.addBox(
+      THREE.MathUtils.clamp(position.x, -this.size + 2, this.size - 2),
+      THREE.MathUtils.clamp(position.z, -this.size + 2, this.size - 2),
+      alongX ? 1.1 : 8,
+      alongX ? 8 : 1.1,
+      5.5,
+      color,
+      false,
+      false,
+      baseY
+    );
+    obstacle.mesh.material.transparent = true;
+    obstacle.mesh.material.opacity = .72;
+    obstacle.mesh.material.emissive.setHex(color);
+    obstacle.mesh.material.emissiveIntensity = .5;
+    this.temporaryWalls.push({ obstacle, life: lifetime });
+    return obstacle;
+  }
+
   update(dt, players) {
     this.time += dt;
+    for (let index = this.temporaryWalls.length - 1; index >= 0; index--) {
+      const wall = this.temporaryWalls[index];
+      wall.life -= dt;
+      wall.obstacle.mesh.material.opacity = Math.min(.72, wall.life * .5);
+      if (wall.life > 0) continue;
+      this.group.remove(wall.obstacle.mesh);
+      this.obstacles.splice(this.obstacles.indexOf(wall.obstacle), 1);
+      wall.obstacle.mesh.geometry.dispose();
+      wall.obstacle.mesh.material.dispose();
+      this.temporaryWalls.splice(index, 1);
+    }
     for (const mover of this.movers) {
       const item = mover.obstacle;
       const oldX = item.x;
