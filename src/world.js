@@ -178,6 +178,8 @@ export class ArenaWorld {
     this.destructibles = [];
     this.anchors = [];
     this.platforms = [];
+    this.cameraOccluders = [];
+    this.cameraRaycaster = new THREE.Raycaster();
     this.boostPads = [];
     this.movers = [];
     this.portals = [];
@@ -330,6 +332,15 @@ export class ArenaWorld {
     pools.instanceColor.needsUpdate = true;
     pools.computeBoundingSphere();
     this.group.add(pools);
+
+    // Four restrained pools give each route quadrant its own readable lighting hierarchy.
+    positions.forEach(([x, z], index) => {
+      const light = new THREE.PointLight(this.districtColors[index], 42, 68, 2);
+      light.name = `District ${index + 1} route light`;
+      light.position.set(x, 23, z);
+      light.castShadow = false;
+      this.group.add(light);
+    });
   }
 
   addGroundTreatment() {
@@ -439,70 +450,103 @@ export class ArenaWorld {
 
   addDistantSkyline() {
     const random = seededRandom(seedFromText(`${this.seed}-skyline`));
-    const count = 44;
+    const count = 52;
     const specs = [];
     for (let index = 0; index < count; index++) {
-      const angle = index / count * TAU + (random() - .5) * .08;
+      const angle = index / count * TAU + (random() - .5) * .065;
+      const layer = index % 3;
+      const district = this.districtIndexAt(Math.cos(angle), Math.sin(angle));
       specs.push({
-        type: index % 3,
+        district,
+        layer,
         angle,
-        radius: this.size + 20 + random() * 22,
-        width: 5 + random() * 11,
-        depth: 5 + random() * 12,
-        height: 22 + random() * 82
+        radius: this.size + 13 + layer * 15 + random() * 7,
+        width: 6 + random() * 10 + (district === 2 ? 5 : 0),
+        depth: 6 + random() * 9,
+        height: 25 + random() * (layer === 0 ? 58 : 42) + district * 3
       });
     }
 
-    const silhouettes = [
-      { name: "Stepped skyline blocks", geometry: new THREE.BoxGeometry(1, 1, 1) },
-      { name: "Faceted skyline prisms", geometry: new THREE.CylinderGeometry(.62, 1, 1, 5) },
-      { name: "Tapered skyline needles", geometry: new THREE.CylinderGeometry(.13, 1, 1, 6) }
+    const families = [
+      {
+        name: "Cyan relay arcologies",
+        base: new THREE.BoxGeometry(1, 1, 1),
+        crown: new THREE.BoxGeometry(1, 1, 1),
+        baseScale: (spec) => [spec.width * .58, spec.height, spec.depth * .5],
+        crownScale: (spec) => [spec.width * 1.05, .72, spec.depth * .22]
+      },
+      {
+        name: "Rose split-prism towers",
+        base: new THREE.CylinderGeometry(.72, .92, 1, 4),
+        crown: new THREE.BoxGeometry(1, 1, 1),
+        baseScale: (spec) => [spec.width * .34, spec.height * .82, spec.depth * .5],
+        crownScale: (spec) => [spec.width * .28, spec.height * .58, spec.depth * .46]
+      },
+      {
+        name: "Amber foundry stacks",
+        base: new THREE.BoxGeometry(1, 1, 1),
+        crown: new THREE.CylinderGeometry(.19, .25, 1, 6),
+        baseScale: (spec) => [spec.width, spec.height * .64, spec.depth * .78],
+        crownScale: (spec) => [spec.width * .12, 7 + spec.height * .2, spec.depth * .12]
+      },
+      {
+        name: "Violet crystal habitats",
+        base: new THREE.CylinderGeometry(.66, .92, 1, 8),
+        crown: new THREE.CylinderGeometry(1, 1, 1, 8),
+        baseScale: (spec) => [spec.width * .56, spec.height * .72, spec.depth * .56],
+        crownScale: (spec) => [spec.width * .72, 1.4 + spec.width * .08, spec.depth * .72]
+      }
     ];
     const marker = new THREE.Object3D();
-    for (const silhouette of silhouettes) {
-      const entries = specs.filter((spec) => spec.type === silhouettes.indexOf(silhouette));
-      const mesh = new THREE.InstancedMesh(
-        silhouette.geometry,
-        new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: .78, metalness: .38, emissive: 0x030a11, emissiveIntensity: .2 }),
+    families.forEach((family, district) => {
+      const entries = specs.filter((spec) => spec.district === district);
+      const base = new THREE.InstancedMesh(
+        family.base,
+        new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: .82, metalness: .28, emissive: 0x02070c, emissiveIntensity: .14 }),
+        entries.length
+      );
+      const crowns = new THREE.InstancedMesh(
+        family.crown,
+        new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: .66, metalness: .42, emissive: 0x02070c, emissiveIntensity: .22 }),
         entries.length
       );
       entries.forEach((spec, index) => {
-        const { angle, radius, width, depth, height, type } = spec;
-        marker.position.set(Math.cos(angle) * radius, height / 2 - 3, Math.sin(angle) * radius);
+        const { angle, radius, height, layer, width } = spec;
+        const value = [.23, .115, .052][layer];
+        const tint = new THREE.Color(this.districtColors[district]).multiplyScalar(value).addScalar(.012 + (2 - layer) * .006);
+        const tangentX = -Math.sin(angle);
+        const tangentZ = Math.cos(angle);
+        const splitOffset = district === 1 ? width * .24 : 0;
+        marker.position.set(
+          Math.cos(angle) * radius + tangentX * splitOffset,
+          height / 2 - 4,
+          Math.sin(angle) * radius + tangentZ * splitOffset
+        );
         marker.rotation.set(0, Math.PI / 2 - angle, 0);
-        marker.scale.set(type ? width * .58 : width, height, type ? depth * .58 : depth);
+        marker.scale.set(...family.baseScale(spec));
         marker.updateMatrix();
-        mesh.setMatrixAt(index, marker.matrix);
-        const district = this.districtIndexAt(Math.cos(angle), Math.sin(angle));
-        mesh.setColorAt(index, new THREE.Color(this.districtColors[district]).multiplyScalar(.11).addScalar(.012));
-      });
-      mesh.name = silhouette.name;
-      mesh.instanceMatrix.needsUpdate = true;
-      mesh.instanceColor.needsUpdate = true;
-      mesh.computeBoundingSphere();
-      this.group.add(mesh);
-    }
+        base.setMatrixAt(index, marker.matrix);
+        base.setColorAt(index, tint);
 
-    const blockSpecs = specs.filter((spec) => spec.type === 0);
-    const roofline = new THREE.InstancedMesh(
-      new THREE.ConeGeometry(1, 1, 4),
-      new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: .72, metalness: .42 }),
-      blockSpecs.length
-    );
-    blockSpecs.forEach((spec, index) => {
-      const district = this.districtIndexAt(Math.cos(spec.angle), Math.sin(spec.angle));
-      marker.position.set(Math.cos(spec.angle) * spec.radius, spec.height - 1.5, Math.sin(spec.angle) * spec.radius);
-      marker.rotation.set(0, -spec.angle, 0);
-      marker.scale.set(spec.width * .32, 2.5 + spec.width * .16, spec.depth * .32);
-      marker.updateMatrix();
-      roofline.setMatrixAt(index, marker.matrix);
-      roofline.setColorAt(index, new THREE.Color(this.districtColors[district]).multiplyScalar(.14).addScalar(.012));
+        marker.position.set(
+          Math.cos(angle) * radius - tangentX * splitOffset,
+          district === 1 ? height * .29 - 4 : district === 3 ? height * .86 - 3.2 : height - (district === 2 ? 2 : 3),
+          Math.sin(angle) * radius - tangentZ * splitOffset
+        );
+        marker.rotation.set(0, district === 1 ? Math.PI / 4 - angle : -angle, district === 0 ? (index % 2 ? .12 : -.12) : 0);
+        marker.scale.set(...family.crownScale(spec));
+        marker.updateMatrix();
+        crowns.setMatrixAt(index, marker.matrix);
+        crowns.setColorAt(index, tint.clone().multiplyScalar(1.35));
+      });
+      base.name = `${family.name} — layered bodies`;
+      crowns.name = `${family.name} — authored crowns`;
+      base.instanceMatrix.needsUpdate = crowns.instanceMatrix.needsUpdate = true;
+      base.instanceColor.needsUpdate = crowns.instanceColor.needsUpdate = true;
+      base.computeBoundingSphere();
+      crowns.computeBoundingSphere();
+      this.group.add(base, crowns);
     });
-    roofline.name = "Skyline rooftop crowns";
-    roofline.instanceMatrix.needsUpdate = true;
-    roofline.instanceColor.needsUpdate = true;
-    roofline.computeBoundingSphere();
-    this.group.add(roofline);
 
     const geometry = new THREE.BoxGeometry(1, 1, 1);
     const lightStrips = new THREE.InstancedMesh(
@@ -518,18 +562,18 @@ export class ArenaWorld {
       }),
       count
     );
-    specs.forEach(({ angle, radius, width, depth, height }, index) => {
-      const district = this.districtIndexAt(Math.cos(angle), Math.sin(angle));
+    specs.forEach(({ angle, radius, width, depth, height, district, layer }, index) => {
       const color = new THREE.Color(this.districtColors[district]);
       marker.position.set(
         Math.cos(angle) * (radius - depth / 2 - .1),
         height * .52,
         Math.sin(angle) * (radius - depth / 2 - .1)
       );
-      marker.scale.set(Math.max(.12, width * .055), height * .68, .12);
+      marker.rotation.set(0, Math.PI / 2 - angle, 0);
+      marker.scale.set(Math.max(.1, width * .045), height * (.52 - layer * .08), .09);
       marker.updateMatrix();
       lightStrips.setMatrixAt(index, marker.matrix);
-      lightStrips.setColorAt(index, color);
+      lightStrips.setColorAt(index, color.multiplyScalar([1, .62, .38][layer]));
     });
     lightStrips.name = "Procedural horizon lights";
     lightStrips.instanceMatrix.needsUpdate = true;
@@ -654,18 +698,23 @@ export class ArenaWorld {
     if (central) this.addCentralTowerArchitecture(tower);
     const root = new THREE.Group();
     root.name = central ? "Central prism crown" : `District landmark ${index}`;
-    root.position.set(tower.x, tower.top + .55, tower.z);
+    root.position.set(tower.x, tower.top + (central ? -.48 : .55), tower.z);
 
     const outer = new THREE.Mesh(
-      new THREE.TorusGeometry(central ? 4.65 : 3.5, central ? .1 : .08, 8, 48),
+      new THREE.TorusGeometry(central ? 2.5 : 3.5, central ? .1 : .08, 8, 48),
       material(0x06111b, color, .58, { roughness: .34, metalness: .6, emissiveIntensity: central ? .42 : .56 })
     );
     outer.rotation.x = Math.PI / 2;
+    if (central) outer.position.x = -2.25;
     const inner = new THREE.Mesh(
-      new THREE.TorusGeometry(central ? 3.15 : 2.4, .065, 6, 40),
+      new THREE.TorusGeometry(central ? 1.65 : 2.4, .065, 6, 40),
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity: central ? .22 : .28, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })
     );
-    inner.rotation.y = Math.PI / 2;
+    if (central) {
+      inner.rotation.x = Math.PI / 2;
+      inner.position.x = 2.65;
+    }
+    else inner.rotation.y = Math.PI / 2;
     const shape = central
       ? new THREE.IcosahedronGeometry(1.25, 0)
       : [
@@ -678,7 +727,41 @@ export class ArenaWorld {
       shape,
       material(0x07131f, color, .92, { roughness: .3, metalness: .55, emissiveIntensity: central ? .72 : .9 })
     );
-    core.position.y = central ? 2.3 : 1.75;
+    core.position.set(central ? 2.65 : 0, central ? .32 : 1.75, 0);
+    if (central) core.scale.setScalar(.58);
+
+    const crownBase = new THREE.Mesh(
+      new THREE.CylinderGeometry(central ? 4.2 : 4, central ? 3.85 : 3.35, central ? .48 : .82, central ? 8 : 6),
+      material(0x030910, color, 1, { roughness: .5, metalness: .72, emissiveIntensity: central ? .15 : .1 })
+    );
+    crownBase.name = central ? "Central reactor crown chassis" : "Route landmark chassis";
+    crownBase.position.y = central ? .15 : .05;
+    crownBase.castShadow = true;
+
+    const wayfinderGeometry = central
+      ? new THREE.BoxGeometry(.42, .72, .76)
+      : new THREE.BoxGeometry(.38, 2.8, .72);
+    const wayfinders = new THREE.InstancedMesh(
+      wayfinderGeometry,
+      material(0x040a12, color, 1, { roughness: .4, metalness: .68, emissiveIntensity: .28 }),
+      central ? 4 : 4
+    );
+    const wayfinderMarker = new THREE.Object3D();
+    const wayfinderCount = 4;
+    const centralWayfinders = [[-3.5, -.7], [-3.5, .7], [3.5, -.7], [3.5, .7]];
+    for (let prong = 0; prong < wayfinderCount; prong++) {
+      const angle = prong / wayfinderCount * TAU + Math.PI / 4;
+      const radius = central ? 3.72 : 3.45;
+      if (central) wayfinderMarker.position.set(centralWayfinders[prong][0], .28, centralWayfinders[prong][1]);
+      else wayfinderMarker.position.set(Math.cos(angle) * radius, 1.35, Math.sin(angle) * radius);
+      wayfinderMarker.rotation.set(0, central ? 0 : -angle, central ? (prong % 2 ? .1 : -.1) : 0);
+      wayfinderMarker.scale.set(central ? .86 : 1, central && prong % 2 ? .74 : 1, 1);
+      wayfinderMarker.updateMatrix();
+      wayfinders.setMatrixAt(prong, wayfinderMarker.matrix);
+    }
+    wayfinders.name = central ? "Central route crown blades" : "District wayfinder blades";
+    wayfinders.instanceMatrix.needsUpdate = true;
+    wayfinders.computeBoundingSphere();
     if (!central) {
       const district = this.districtIndexAt(tower.x, tower.z);
       const silhouetteGeometry = district === 0
@@ -708,7 +791,7 @@ export class ArenaWorld {
       root.add(silhouette);
     }
     const beam = new THREE.Mesh(
-      new THREE.CylinderGeometry(.08, central ? .42 : .28, central ? 14 : 9, 12, 1, true),
+      new THREE.CylinderGeometry(.08, central ? .24 : .28, central ? 1.5 : 9, 12, 1, true),
       new THREE.MeshBasicMaterial({
         color,
         transparent: true,
@@ -719,17 +802,17 @@ export class ArenaWorld {
         toneMapped: false
       })
     );
-    beam.position.y = central ? 7 : 4.5;
-    const glow = this.glowSprite(color, central ? 8 : 6, central ? .12 : .11);
-    glow.position.y = core.position.y;
-    root.add(outer, inner, beam, glow, core);
+    beam.position.set(central ? 2.65 : 0, central ? .75 : 4.5, 0);
+    const glow = this.glowSprite(color, central ? 3 : 6, central ? .075 : .11);
+    glow.position.copy(core.position);
+    root.add(crownBase, wayfinders, outer, inner, beam, glow, core);
     this.group.add(root);
     this.rotors.push(
-      { object: outer, x: 0, y: central ? .22 : .38, z: central ? .31 : -.24 },
-      { object: inner, x: central ? .19 : -.31, y: -.28, z: .12 },
+      { object: outer, x: 0, y: central ? .22 : .38, z: central ? 0 : -.24 },
+      { object: inner, x: central ? 0 : -.31, y: -.28, z: central ? 0 : .12 },
       { object: core, x: .18, y: central ? .7 : .48, z: .1 }
     );
-    this.pulsers.push({ object: glow, base: central ? 8 : 6, amplitude: .055, speed: central ? 1.8 : 2.25, phase: index });
+    this.pulsers.push({ object: glow, base: central ? 3 : 6, amplitude: .055, speed: central ? 1.8 : 2.25, phase: index });
   }
 
   addCentralTowerArchitecture(tower) {
@@ -758,6 +841,7 @@ export class ArenaWorld {
       facade.castShadow = true;
       facade.receiveShadow = true;
       structure.add(facade);
+      this.cameraOccluders.push(facade);
     }
 
     const bands = new THREE.InstancedMesh(
@@ -802,6 +886,7 @@ export class ArenaWorld {
     );
     base.position.y = 15.45;
     structure.add(base, bands, fins);
+    this.cameraOccluders.push(base);
     this.group.add(structure);
   }
 
@@ -824,8 +909,134 @@ export class ArenaWorld {
     edges.name = "Readable platform silhouette";
     edges.renderOrder = 2;
     platform.mesh.add(edges);
+    if (platform.top >= 65 && Math.abs(platform.x) < 1 && Math.abs(platform.z) < 1) this.addHeroDeckComposition(platform, district, color);
+    if (Math.min(platform.w, platform.d) >= 12) this.addDeckInterruptions(platform, district, color);
     if (Math.min(platform.w, platform.d) >= 18) this.addPlatformUnderstructure(platform, color);
     else if (Math.min(platform.w, platform.d) <= 8 && Math.max(platform.w, platform.d) >= 20) this.addTraversalConduits(platform, color);
+  }
+
+  addHeroDeckComposition(platform, district, color) {
+    const top = platform.h / 2;
+    const channelMaterial = material(0x01040a, color, 1, { roughness: .82, metalness: .28, emissiveIntensity: .035 });
+    const channels = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), channelMaterial, 8);
+    const marker = new THREE.Object3D();
+    const armLengthX = platform.w * .31;
+    const armLengthZ = platform.d * .31;
+    const arms = [
+      [-platform.w * .325, 0, armLengthX, 3.25], [platform.w * .325, 0, armLengthX, 3.25],
+      [0, -platform.d * .325, 3.25, armLengthZ], [0, platform.d * .325, 3.25, armLengthZ]
+    ];
+    const bays = [
+      [-platform.w * .29, -platform.d * .29], [platform.w * .29, -platform.d * .29],
+      [-platform.w * .29, platform.d * .29], [platform.w * .29, platform.d * .29]
+    ];
+    arms.forEach(([x, z, w, d], index) => {
+      marker.position.set(x, top + .027, z);
+      marker.rotation.set(0, 0, 0);
+      marker.scale.set(w, .045, d);
+      marker.updateMatrix();
+      channels.setMatrixAt(index, marker.matrix);
+    });
+    bays.forEach(([x, z], offset) => {
+      marker.position.set(x, top + .03, z);
+      marker.rotation.set(0, Math.PI / 4, 0);
+      marker.scale.set(4.6, .055, 4.6);
+      marker.updateMatrix();
+      channels.setMatrixAt(offset + 4, marker.matrix);
+    });
+    channels.name = "Upper-deck shadow channels and service bays";
+    channels.instanceMatrix.needsUpdate = true;
+    channels.computeBoundingSphere();
+
+    const lanes = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: .72, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
+      4
+    );
+    arms.forEach(([x, z, w, d], index) => {
+      marker.position.set(x, top + .064, z);
+      marker.scale.set(w * .82, .055, Math.min(w, d) * .075);
+      if (d > w) marker.scale.set(Math.min(w, d) * .075, .055, d * .82);
+      marker.updateMatrix();
+      lanes.setMatrixAt(index, marker.matrix);
+    });
+    lanes.name = "Contrasting upper-deck traversal lanes";
+    lanes.instanceMatrix.needsUpdate = true;
+    lanes.computeBoundingSphere();
+
+    const serviceNodes = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(1.1, 1.28, .12, 6),
+      material(0x02070d, color, 1, { roughness: .34, metalness: .78, emissiveIntensity: .24 }),
+      4
+    );
+    bays.forEach(([x, z], index) => {
+      marker.position.set(x, top + .085, z);
+      marker.rotation.set(0, index * Math.PI / 6, 0);
+      marker.scale.setScalar(index % 2 ? .82 : 1);
+      marker.updateMatrix();
+      serviceNodes.setMatrixAt(index, marker.matrix);
+    });
+    serviceNodes.name = "Flush upper-deck route relays";
+    serviceNodes.instanceMatrix.needsUpdate = true;
+    serviceNodes.computeBoundingSphere();
+
+    const frame = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      material(0x02060c, color, 1, { roughness: .5, metalness: .74, emissiveIntensity: .12 }),
+      12
+    );
+    let instance = 0;
+    for (const side of [-1, 1]) for (const offset of [-.32, 0, .32]) {
+      marker.position.set(platform.w * offset, top + .07, side * (platform.d / 2 - .42));
+      marker.rotation.set(0, 0, 0);
+      marker.scale.set(2.55, .14, .72);
+      marker.updateMatrix();
+      frame.setMatrixAt(instance++, marker.matrix);
+      marker.position.set(side * (platform.w / 2 - .42), top + .07, platform.d * offset);
+      marker.rotation.set(0, Math.PI / 2, 0);
+      marker.updateMatrix();
+      frame.setMatrixAt(instance++, marker.matrix);
+    }
+    frame.name = "Upper-deck perimeter framing";
+    frame.instanceMatrix.needsUpdate = true;
+    frame.computeBoundingSphere();
+    platform.mesh.add(channels, lanes, serviceNodes, frame);
+  }
+
+  addDeckInterruptions(platform, district, color) {
+    const geometry = district === 0
+      ? new THREE.CylinderGeometry(.78, .78, .05, 12)
+      : district === 1
+        ? new THREE.BoxGeometry(1.55, .05, .62)
+        : district === 2
+          ? new THREE.CylinderGeometry(.78, .78, .05, 6)
+          : new THREE.OctahedronGeometry(.76, 0);
+    const panels = new THREE.InstancedMesh(
+      geometry,
+      material(0x02070d, color, 1, { roughness: .38, metalness: .72, emissiveIntensity: .18 }),
+      8
+    );
+    const marker = new THREE.Object3D();
+    const positions = [
+      [-.36, -.35], [0, -.39], [.36, -.35],
+      [-.4, 0], [.4, 0],
+      [-.36, .35], [0, .39], [.36, .35]
+    ];
+    positions.forEach(([xUnit, zUnit], index) => {
+      marker.position.set(xUnit * platform.w, platform.h / 2 + .035, zUnit * platform.d);
+      marker.rotation.set(0, district === 1 ? (index % 2 ? -.48 : .48) : index * Math.PI / 4, 0);
+      marker.scale.set(
+        district === 3 ? 1.05 : .82 + (index % 3) * .14,
+        district === 3 ? .075 : 1,
+        district === 3 ? 1.05 : .82 + (index % 2) * .16
+      );
+      marker.updateMatrix();
+      panels.setMatrixAt(index, marker.matrix);
+    });
+    panels.name = ["Turbine deck hatches", "Shield deck blades", "Power-cell deck plates", "Reactor crystal insets"][district];
+    panels.instanceMatrix.needsUpdate = true;
+    panels.computeBoundingSphere();
+    platform.mesh.add(panels);
   }
 
   addPlatformUnderstructure(platform, color) {
@@ -893,6 +1104,37 @@ export class ArenaWorld {
     modules.computeBoundingSphere();
     platform.mesh.add(modules);
 
+    const facadeGeometry = district === 0
+      ? new THREE.CylinderGeometry(.38, .38, 1, 8)
+      : district === 1
+        ? new THREE.OctahedronGeometry(.52, 0)
+        : district === 2
+          ? new THREE.BoxGeometry(1, 1, 1)
+          : new THREE.CylinderGeometry(.44, .64, 1, 5);
+    const facadeModules = new THREE.InstancedMesh(
+      facadeGeometry,
+      material(0x030910, color, 1, { roughness: .48, metalness: .7, emissiveIntensity: .2 }),
+      12
+    );
+    instance = 0;
+    for (const side of [-1, 1]) for (const offset of [-.28, 0, .28]) {
+      marker.position.set(platform.w * offset, -platform.h / 2 - .12, side * (platform.d / 2 + .08));
+      marker.rotation.set(district === 0 ? Math.PI / 2 : 0, 0, district === 1 ? Math.PI / 4 : 0);
+      marker.scale.set(district === 2 ? 1.8 : 1, district === 2 ? .58 : 1.22, district === 2 ? .18 : .62);
+      marker.updateMatrix();
+      facadeModules.setMatrixAt(instance++, marker.matrix);
+
+      marker.position.set(side * (platform.w / 2 + .08), -platform.h / 2 - .12, platform.d * offset);
+      marker.rotation.set(district === 0 ? 0 : Math.PI / 2, 0, district === 1 ? Math.PI / 4 : Math.PI / 2);
+      marker.scale.set(district === 2 ? .18 : .62, district === 2 ? .58 : 1.22, district === 2 ? 1.8 : 1);
+      marker.updateMatrix();
+      facadeModules.setMatrixAt(instance++, marker.matrix);
+    }
+    facadeModules.name = ["Cyan cooling drums", "Rose shield relays", "Amber ventilation banks", "Violet reactor canisters"][district];
+    facadeModules.instanceMatrix.needsUpdate = true;
+    facadeModules.computeBoundingSphere();
+    platform.mesh.add(facadeModules);
+
     const supportLength = platform.baseY <= 18 ? platform.baseY : Math.min(10, 4 + platform.baseY * .11);
     const supports = new THREE.InstancedMesh(
       new THREE.CylinderGeometry(.34, .82, 1, 4),
@@ -911,6 +1153,7 @@ export class ArenaWorld {
     supports.instanceMatrix.needsUpdate = true;
     supports.computeBoundingSphere();
     platform.mesh.add(supports);
+    this.cameraOccluders.push(ribs, modules, facadeModules, supports);
 
     if (platform.baseY > 18) return;
     const contact = new THREE.Group();
@@ -1009,6 +1252,37 @@ export class ArenaWorld {
     edges.name = "Destructible silhouette";
     edges.renderOrder = 2;
     mesh.add(edges);
+
+    const { width, height, depth } = mesh.geometry.parameters;
+    const slats = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), this.routeMaterials[district], 4);
+    const marker = new THREE.Object3D();
+    for (let index = 0; index < 4; index++) {
+      const offset = (index - 1.5) / 4;
+      if (district === 0) {
+        marker.position.set(offset * width, 0, depth / 2 + .018);
+        marker.rotation.set(0, 0, 0);
+        marker.scale.set(.075, height * .68, .025);
+      } else if (district === 1) {
+        marker.position.set(offset * width, 0, depth / 2 + .018);
+        marker.rotation.set(0, 0, index % 2 ? -.58 : .58);
+        marker.scale.set(.095, Math.min(height * .78, width * .48), .025);
+      } else if (district === 2) {
+        marker.position.set(0, offset * height, depth / 2 + .018);
+        marker.rotation.set(0, 0, 0);
+        marker.scale.set(width * .68, .07, .025);
+      } else {
+        marker.position.set(0, 0, depth / 2 + .018 + index * .001);
+        marker.rotation.set(0, 0, index % 2 ? Math.PI / 4 : -Math.PI / 4);
+        marker.scale.set(.08, Math.min(width, height) * (.54 + index * .06), .025);
+      }
+      marker.updateMatrix();
+      slats.setMatrixAt(index, marker.matrix);
+    }
+    slats.name = ["Capacitor cover ribs", "Shield-crate diagonals", "Vent cover louvers", "Reactor cover lattice"][district];
+    slats.instanceMatrix.needsUpdate = true;
+    slats.computeBoundingSphere();
+    mesh.name = ["Cyan capacitor cover", "Rose shield cover", "Amber vent machinery", "Violet reactor cover"][district];
+    mesh.add(slats);
   }
 
   addBox(x, z, w, d, h, color, destructible = false, anchor = false, baseY = 0) {
@@ -1125,7 +1399,7 @@ export class ArenaWorld {
       root.position.copy(position);
       const ring = new THREE.Mesh(
         new THREE.TorusGeometry(2.35, .25, 10, 36),
-        material(0x0b1c29, pairColor, .95, { roughness: .28, metalness: .48, emissiveIntensity: 1.05 })
+        material(0x0b1c29, pairColor, .95, { roughness: .28, metalness: .48, emissiveIntensity: .62 })
       );
       ring.rotation.x = Math.PI / 2;
       ring.position.y = .22;
@@ -1146,7 +1420,40 @@ export class ArenaWorld {
         new THREE.MeshBasicMaterial({ color: pairColor, transparent: true, opacity: .045, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })
       );
       column.position.y = 2.05;
-      root.add(ring, inner, disc, column);
+      const chassis = new THREE.InstancedMesh(
+        new THREE.BoxGeometry(1, 1, 1),
+        material(0x02070d, pairColor, 1, { roughness: .46, metalness: .78, emissiveIntensity: .13 }),
+        8
+      );
+      const chassisMarker = new THREE.Object3D();
+      for (let index = 0; index < 8; index++) {
+        const angle = index / 8 * TAU;
+        chassisMarker.position.set(Math.cos(angle) * 2.55, .2, Math.sin(angle) * 2.55);
+        chassisMarker.rotation.set(0, -angle, 0);
+        chassisMarker.scale.set(1.45, .38, .56);
+        chassisMarker.updateMatrix();
+        chassis.setMatrixAt(index, chassisMarker.matrix);
+      }
+      chassis.name = "Octagonal portal chassis";
+      chassis.instanceMatrix.needsUpdate = true;
+      chassis.computeBoundingSphere();
+
+      const pylons = new THREE.InstancedMesh(
+        new THREE.ConeGeometry(.42, 2.8, 4),
+        material(0x030911, pairColor, 1, { roughness: .4, metalness: .7, emissiveIntensity: .28 }),
+        4
+      );
+      [[-2.65, -2.65], [2.65, -2.65], [2.65, 2.65], [-2.65, 2.65]].forEach(([x, z], index) => {
+        chassisMarker.position.set(x, 1.28, z);
+        chassisMarker.rotation.set(Math.PI, index * Math.PI / 2 + Math.PI / 4, 0);
+        chassisMarker.scale.set(index % 2 ? .82 : 1, 1, index % 2 ? 1 : .82);
+        chassisMarker.updateMatrix();
+        pylons.setMatrixAt(index, chassisMarker.matrix);
+      });
+      pylons.name = "Portal navigation pylons";
+      pylons.instanceMatrix.needsUpdate = true;
+      pylons.computeBoundingSphere();
+      root.add(chassis, pylons, ring, inner, disc, column);
       this.group.add(root);
       const portal = { position: position.clone(), ring, inner, disc, column, pair: null };
       this.portals.push(portal);
@@ -1288,19 +1595,19 @@ export class ArenaWorld {
   spawnPoints() {
     return [
       new THREE.Vector3(-12, 66, 12),
-      new THREE.Vector3(88, 0, 88),
+      new THREE.Vector3(-8, 66, 6),
+      new THREE.Vector3(-4, 66, 11),
+      new THREE.Vector3(4, 66, 10),
+      new THREE.Vector3(10, 66, 5),
+      new THREE.Vector3(8, 66, -8),
       new THREE.Vector3(-14, 15, -14),
-      new THREE.Vector3(54, 31, 33),
+      new THREE.Vector3(14, 15, -14),
+      new THREE.Vector3(88, 0, 88),
       new THREE.Vector3(-88, 0, 88),
       new THREE.Vector3(88, 0, -88),
       new THREE.Vector3(-88, 0, -88),
-      new THREE.Vector3(14, 15, -14),
-      new THREE.Vector3(-14, 15, 14),
-      new THREE.Vector3(14, 15, 14),
-      new THREE.Vector3(-10, 66, -10),
-      new THREE.Vector3(10, 66, -10),
       new THREE.Vector3(-52, 15, -48),
-      new THREE.Vector3(10, 66, 10),
+      new THREE.Vector3(54, 31, 33),
       new THREE.Vector3(53, 15, 49),
       new THREE.Vector3(-52, 47, 20)
     ];
@@ -1386,8 +1693,16 @@ export class ArenaWorld {
       box.min.set(item.x - item.w / 2 - clearance, item.baseY - clearance, item.z - item.d / 2 - clearance);
       box.max.set(item.x + item.w / 2 + clearance, item.top + clearance, item.z + item.d / 2 + clearance);
       if (box.containsPoint(origin)) continue;
-      if (ray.intersectBox(box, hit)) safeDistance = Math.min(safeDistance, origin.distanceTo(hit));
+      if (ray.intersectBox(box, hit)) {
+        const contactDistance = origin.distanceTo(hit);
+        safeDistance = Math.min(safeDistance, contactDistance);
+      }
     }
+    this.cameraRaycaster.set(origin, direction);
+    this.cameraRaycaster.near = .05;
+    this.cameraRaycaster.far = safeDistance;
+    const visualHit = this.cameraRaycaster.intersectObjects(this.cameraOccluders, false)[0];
+    if (visualHit) safeDistance = Math.min(safeDistance, Math.max(.18, visualHit.distance - clearance));
     return origin.clone().addScaledVector(direction, safeDistance);
   }
 

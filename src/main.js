@@ -1,5 +1,9 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import "./styles.css";
 import { SoundBoard } from "./audio.js";
 import { CombatVisuals } from "./combatVisuals.js";
@@ -74,6 +78,11 @@ class BlasterBattle {
     this.cameraFocus = new THREE.Vector3();
     this.sound = new SoundBoard();
     this.settings = loadSettings();
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .34, .36, .78);
+    this.composer.addPass(this.bloomPass);
+    this.composer.addPass(new OutputPass());
     this.state = "menu";
     this.paused = false;
     this.mode = "training";
@@ -91,6 +100,7 @@ class BlasterBattle {
     this.matchTime = 180;
     this.targetScore = 10;
     this.touch = {};
+    this.performanceSample = this.freshPerformanceSample();
     this.setupLights();
     this.renderMain();
     this.resize();
@@ -116,6 +126,7 @@ class BlasterBattle {
 
   resize() {
     this.renderer.setSize(innerWidth, innerHeight, false);
+    this.composer?.setSize(innerWidth, innerHeight);
     this.camera.aspect = innerWidth / innerHeight;
     this.camera.updateProjectionMatrix();
   }
@@ -323,6 +334,7 @@ class BlasterBattle {
     this.state = "play";
     this.paused = false;
     this.matchTime = 180;
+    this.performanceSample = this.freshPerformanceSample();
     this.world = new ArenaWorld(this.scene, this.seed);
     this.combatVisuals = new CombatVisuals(this.scene, {
       reducedMotion: this.settings.reducedMotion,
@@ -343,6 +355,8 @@ class BlasterBattle {
     this.respawnTimers = this.players.map(() => 0);
     this.cameraYaw = Math.atan2(this.players[0].aim.x, this.players[0].aim.z);
     this.cameraPitch = this.players[0].position.y > 50 ? -.38 : -.08;
+    this.cameraFocus.set(0, 0, 0);
+    this.updateCamera(1);
     this.renderHud();
     this.sound.startMusic();
   }
@@ -364,15 +378,17 @@ class BlasterBattle {
           <small>${this.players.length} FIGHTERS · ARENA LEADER</small>
         </section>
         <div class="damage-vignette" data-damage-vignette></div>
+        <div class="motion-vignette" data-motion-vignette></div>
         <div class="reticle" data-reticle aria-hidden="true"><i></i></div>
         <div class="combat-log" data-combat-log aria-live="polite"></div>
         <div class="weapon-strip">
           ${this.players[0].loadout.map((id, index) => `
-            <button data-weapon-slot="${index}" class="${index === 0 ? "selected" : ""}">
-              <span>${index + 1}</span><b>${WEAPONS[id].name}</b><small data-ammo-slot="${index}"></small>
+            <button data-weapon-slot="${index}" data-category="${WEAPONS[id].category.toLowerCase().replaceAll(" ", "-")}" class="${index === 0 ? "selected" : ""}" style="--weapon:#${WEAPONS[id].color.toString(16).padStart(6, "0")}">
+              <span>${index + 1}</span><i aria-hidden="true"></i><b>${WEAPONS[id].name}</b><small data-ammo-slot="${index}"></small>
             </button>`).join("")}
         </div>
         <div class="grapple-readout" data-grapple>GRAPPLE READY · E / RIGHT CLICK</div>
+        <div class="perf-readout" data-perf>MEASURING FRAME PACE</div>
         <button class="pause" data-action="pause" aria-label="Pause">Ⅱ</button>
         <div class="scoreboard" data-scoreboard>
           <h2>Deathmatch</h2>
@@ -392,6 +408,7 @@ class BlasterBattle {
         </div>
       </div>`;
     this.hud = {
+      root: ui.querySelector(".hud"),
       health: ui.querySelector('[data-health="0"]'),
       score: ui.querySelector('[data-score="0"]'),
       boardScore: [...ui.querySelectorAll("[data-board-score]")],
@@ -399,9 +416,11 @@ class BlasterBattle {
       leaderScore: ui.querySelector("[data-leader-score]"),
       time: ui.querySelector("[data-time]"),
       grapple: ui.querySelector("[data-grapple]"),
+      performance: ui.querySelector("[data-perf]"),
       scoreboard: ui.querySelector("[data-scoreboard]"),
       reticle: ui.querySelector("[data-reticle]"),
       damageVignette: ui.querySelector("[data-damage-vignette]"),
+      motionVignette: ui.querySelector("[data-motion-vignette]"),
       combatLog: ui.querySelector("[data-combat-log]"),
       slots: [...ui.querySelectorAll("[data-weapon-slot]")],
       ammo: [...ui.querySelectorAll("[data-ammo-slot]")]
@@ -448,11 +467,17 @@ class BlasterBattle {
     this.bindUi();
   }
 
+  freshPerformanceSample() {
+    return { elapsed: 0, frames: 0, windowElapsed: 0, windowFrames: 0, fps: 0, minimum: Infinity, total: 0, samples: 0 };
+  }
+
   frame() {
-    const dt = Math.min(.033, this.clock.getDelta());
+    const rawDt = Math.min(.25, this.clock.getDelta());
+    const dt = Math.min(.033, rawDt);
     if (this.state === "play" && this.input.tapped("Escape")) this.togglePause();
     if (this.state === "play" && !this.paused) this.update(dt);
     this.renderScene();
+    if (this.state === "play" && !this.paused) this.updatePerformanceSample(rawDt);
     this.input.endFrame();
     requestAnimationFrame(() => this.frame());
   }
@@ -501,7 +526,10 @@ class BlasterBattle {
 
   updateBot(bot, dt) {
     if (!bot.alive) return;
-    const target = nearestTarget(bot, [...this.players, ...this.decoys]);
+    const human = this.players[0];
+    const target = human?.alive && bot.position.distanceToSquared(human.position) < 28 ** 2
+      ? human
+      : nearestTarget(bot, [...this.players, ...this.decoys]);
     if (!target) return;
     const offset = target.position.clone().sub(bot.position).setY(0);
     const distance = offset.length();
@@ -518,6 +546,10 @@ class BlasterBattle {
     const move = side.multiplyScalar(.62);
     if (distance > preferred + 3) move.add(forward);
     if (distance < preferred - 3) move.addScaledVector(forward, -1);
+    if (bot.grounded && move.lengthSq() > .01) {
+      const probe = bot.position.clone().addScaledVector(move.clone().normalize(), 2.8);
+      if (this.world.surfaceHeightAt(probe, bot.position.y + 2) < bot.position.y - 1.5) move.multiplyScalar(-.75);
+    }
     bot.update(dt, move, forward, { jump: Math.random() < dt * .45 }, this.world);
     if (!bot.grapple && distance > 22 && Math.random() < dt * .35) this.toggleGrapple(bot);
     if (bot.grapple && (distance < 11 || Math.random() < dt * .18)) this.releaseGrapple(bot, true);
@@ -855,7 +887,7 @@ class BlasterBattle {
     }
     if (shot.weapon.terrainRadius > 0) this.world.destroy(position, shot.weapon.terrainRadius);
     if (shot.weapon.hazard) this.spawnHazard(position, shot.owner, shot.weapon);
-    this.combatVisuals?.impact(position, shot.weapon, shot.owner, { size: shot.weapon.radius * 1.35, explosive: true });
+    this.combatVisuals?.impact(position, shot.weapon, shot.owner, { size: Math.min(2.6, Math.max(1.35, shot.weapon.radius * .42)), explosive: true });
     this.sound.play("impact");
   }
 
@@ -981,7 +1013,7 @@ class BlasterBattle {
     const attackerIndex = this.players.indexOf(attacker);
     const targetIndex = this.players.indexOf(target);
     if (attackerIndex >= 0 && attacker !== target) this.scores[attackerIndex] += 1;
-    this.respawnTimers[targetIndex] = 2.2;
+    this.respawnTimers[targetIndex] = 2.8;
   }
 
   showCombatFeedback(target, attacker, weapon, killed) {
@@ -1058,17 +1090,31 @@ class BlasterBattle {
 
   updateRespawns(dt) {
     for (let index = 0; index < this.players.length; index++) {
-      if (this.players[index].alive || this.respawnTimers[index] <= 0) continue;
+      const player = this.players[index];
+      if (player.alive) continue;
+      player.updateDeath(dt);
+      if (this.respawnTimers[index] <= 0) continue;
       this.respawnTimers[index] -= dt;
       if (this.respawnTimers[index] <= 0) {
-        const player = this.players[index];
         player.respawn(safestSpawn(this.world.spawnPoints(), this.players, player));
+        if (index === 0) {
+          this.cameraFocus.set(0, 0, 0);
+          this.updateCamera(1);
+        }
       }
     }
   }
 
   updateHud() {
     const player = this.players[0];
+    const actionState = !player.alive ? "death"
+      : player.hitTimer > 0 ? "hit"
+        : player.attackTimer > player.weapon.cooldown * .35 || player.recoilVisual > .02 ? "firing"
+          : player.grapple ? "grapple"
+            : player.landTimer > 0 ? "landing"
+              : !player.grounded ? "airborne"
+                : player.controlMove.lengthSq() > .01 ? "running" : "idle";
+    this.hud.root.dataset.playerState = actionState;
     this.hud.health.style.width = `${player.health}%`;
     this.hud.score.textContent = this.scores[0];
     this.hud.boardScore.forEach((node, index) => { node.textContent = this.scores[index]; });
@@ -1085,6 +1131,35 @@ class BlasterBattle {
       node.textContent = index === player.slotIndex && player.reloadTimer > 0 ? "RELOAD" : `${player.ammo[weapon.id]}/${weapon.ammo}`;
     });
     this.hud.scoreboard.classList.toggle("visible", this.input.down("Tab"));
+    this.hud.motionVignette.style.setProperty("--motion", clamp((player.velocity.length() - 14) / 30, 0, 1).toFixed(3));
+    this.hud.motionVignette.classList.toggle("grappling", Boolean(player.grapple));
+  }
+
+  updatePerformanceSample(dt) {
+    const sample = this.performanceSample;
+    sample.elapsed += dt;
+    sample.frames++;
+    sample.windowElapsed += dt;
+    sample.windowFrames++;
+    if (sample.windowElapsed < 1) return;
+    sample.fps = sample.windowFrames / sample.windowElapsed;
+    sample.minimum = Math.min(sample.minimum, sample.fps);
+    sample.total += sample.fps;
+    sample.samples++;
+    sample.windowElapsed = 0;
+    sample.windowFrames = 0;
+    const node = this.hud?.performance;
+    if (!node) return;
+    const seconds = Math.min(60, Math.floor(sample.elapsed));
+    const average = sample.total / sample.samples;
+    node.textContent = `${Math.round(sample.fps)} FPS · ${this.renderer.info.render.calls} DRAWS · ${this.players.length} FIGHTERS · ${seconds}/60 SEC`;
+    node.dataset.fps = sample.fps.toFixed(1);
+    node.dataset.averageFps = average.toFixed(1);
+    node.dataset.minimumFps = sample.minimum.toFixed(1);
+    node.dataset.sampleSeconds = sample.elapsed.toFixed(1);
+    node.dataset.complete = sample.elapsed >= 60 ? "true" : "false";
+    node.dataset.cameraDistance = (this.cameraClearance?.actual || 0).toFixed(2);
+    node.dataset.cameraTargetDistance = (this.cameraClearance?.target || 0).toFixed(2);
   }
 
   finishMatch() {
@@ -1132,8 +1207,22 @@ class BlasterBattle {
     const targetFov = 62 + Math.min(11, Math.max(0, speed - 8) * .34) + (player.grapple ? 2.5 : 0);
     this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, cameraBlend);
     this.camera.updateProjectionMatrix();
-    this.camera.position.lerp(this.world.constrainCamera(pivot, desired), cameraBlend);
+    let cameraTarget = this.world.constrainCamera(pivot, desired);
+    if (cameraTarget.distanceTo(pivot) < 5.5) {
+      const offset = desired.clone().sub(pivot);
+      const alternatives = [-2.35, -1.57, -.78, .78, 1.57, 2.35, Math.PI].map((angle) =>
+        this.world.constrainCamera(pivot, pivot.clone().add(offset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), angle)))
+      );
+      alternatives.push(
+        this.world.constrainCamera(pivot, desired.clone().add(new THREE.Vector3(0, 5.2, 0))),
+        this.world.constrainCamera(pivot, desired.clone().add(new THREE.Vector3(0, -3.2, 0)))
+      );
+      for (const candidate of alternatives) if (candidate.distanceTo(pivot) > cameraTarget.distanceTo(pivot)) cameraTarget = candidate;
+    }
+    this.camera.position.lerp(cameraTarget, cameraBlend);
     this.camera.position.copy(this.world.constrainCamera(pivot, this.camera.position));
+    if (this.camera.position.distanceTo(pivot) < 3.2 && cameraTarget.distanceTo(pivot) > 4) this.camera.position.copy(cameraTarget);
+    this.cameraClearance = { actual: this.camera.position.distanceTo(pivot), target: cameraTarget.distanceTo(pivot) };
     const motionLead = player.velocity.clone().setY(0).multiplyScalar(.08);
     const focus = pivot.addScaledVector(forward, 28).add(motionLead);
     if (this.cameraFocus.lengthSq() === 0) this.cameraFocus.copy(focus);
@@ -1144,7 +1233,7 @@ class BlasterBattle {
 
   renderScene() {
     if (this.state !== "play" || this.paused) this.updateCamera();
-    this.renderer.render(this.scene, this.camera);
+    this.composer.render();
   }
 
   removeProjectile(index) {

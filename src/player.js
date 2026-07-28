@@ -96,6 +96,23 @@ function limb(geometry, mat, x, y, z) {
   return pivot;
 }
 
+function articulatedArm(dark, armor, accent, x) {
+  const upper = new THREE.Group();
+  upper.position.set(x, 1.67, 0);
+  const upperArmor = part(new THREE.BoxGeometry(.27, .55, .3), dark, 0, -.28, 0);
+  const upperStripe = part(new THREE.BoxGeometry(.285, .08, .32), accent, 0, -.19, .012, false);
+  const forearm = new THREE.Group();
+  forearm.position.y = -.55;
+  const bracer = part(new THREE.BoxGeometry(.34, .5, .38), armor, 0, -.24, .035);
+  bracer.scale.set(.92, 1, 1.06);
+  const wristLight = part(new THREE.BoxGeometry(.25, .075, .4), accent, 0, -.43, .04, false);
+  const hand = part(new THREE.BoxGeometry(.25, .22, .29), dark, 0, -.58, .05);
+  const knuckle = part(new THREE.BoxGeometry(.2, .055, .18), accent, 0, -.59, .19, false);
+  forearm.add(bracer, wristLight, hand, knuckle);
+  upper.add(upperArmor, upperStripe, forearm);
+  return { upper, forearm, hand };
+}
+
 function disposeChildren(group) {
   const geometries = new Set();
   const materials = new Set();
@@ -132,10 +149,12 @@ export class Fighter {
     this.reloadTimer = 0;
     this.attackTimer = 0;
     this.hitTimer = 0;
+    this.hitStagger = 1;
     this.slowTimer = 0;
     this.landTimer = 0;
     this.landStrength = 0;
     this.recoilVisual = 0;
+    this.deathTimer = 0;
     this.gaitPhase = 0;
     this.grounded = true;
     this.ledgeContact = null;
@@ -170,22 +189,41 @@ export class Fighter {
     chest.scale.z = .76;
     const pelvis = part(new THREE.BoxGeometry(.72, .23, .45), armor, 0, .91, -.01);
     const spine = part(new THREE.BoxGeometry(.38, .56, .18), armor, 0, 1.38, -.37);
+    const breastplate = part(new THREE.BoxGeometry(.62, .42, .12), armor, 0, 1.51, .31);
+    breastplate.rotation.x = -.08;
+    const sternum = part(new THREE.OctahedronGeometry(.13, 0), accent, 0, 1.51, .405, false);
+    sternum.scale.set(.72, 1.3, .5);
     const chestLight = part(new THREE.BoxGeometry(.48, .075, .055), accent, 0, 1.47, .36, false);
     chestLight.rotation.z = -.18;
     const helmet = part(new THREE.SphereGeometry(.47, 12, 8), dark, 0, 2.08, 0);
     helmet.scale.set(1, .92, .94);
     const visor = part(new THREE.BoxGeometry(.72, .16, .12), accent, 0, 2.1, .43, false);
+    this.helmet = helmet;
+    this.visor = visor;
     const brow = part(new THREE.BoxGeometry(.78, .1, .16), armor, 0, 2.27, .3);
     brow.rotation.x = -.18;
+    const helmetCrest = part(new THREE.BoxGeometry(.13, .34, .48), armor, 0, 2.35, -.08);
+    helmetCrest.rotation.x = -.32;
+    const leftEar = part(new THREE.CylinderGeometry(.12, .12, .09, 8), accent, -.47, 2.08, 0, false);
+    const rightEar = part(new THREE.CylinderGeometry(.12, .12, .09, 8), accent, .47, 2.08, 0, false);
+    leftEar.rotation.z = rightEar.rotation.z = Math.PI / 2;
 
-    this.leftArm = limb(new THREE.BoxGeometry(.25, .7, .28), dark, -.59, 1.64, 0);
-    this.rightArm = limb(new THREE.BoxGeometry(.25, .7, .28), dark, .59, 1.64, 0);
+    const leftArmRig = articulatedArm(dark, armor, accent, -.61);
+    const rightArmRig = articulatedArm(dark, armor, accent, .61);
+    this.leftArm = leftArmRig.upper;
+    this.rightArm = rightArmRig.upper;
+    this.leftForearm = leftArmRig.forearm;
+    this.rightForearm = rightArmRig.forearm;
+    this.leftHand = leftArmRig.hand;
+    this.rightHand = rightArmRig.hand;
     this.leftLeg = limb(new THREE.BoxGeometry(.3, .78, .34), dark, -.23, .82, 0);
     this.rightLeg = limb(new THREE.BoxGeometry(.3, .78, .34), dark, .23, .82, 0);
-    this.leftArm.add(part(new THREE.BoxGeometry(.31, .34, .34), armor, 0, -.51, .025));
-    this.rightArm.add(part(new THREE.BoxGeometry(.31, .34, .34), armor, 0, -.51, .025));
     this.leftLeg.add(part(new THREE.BoxGeometry(.255, .4, .39), armor, 0, -.54, .035));
     this.rightLeg.add(part(new THREE.BoxGeometry(.255, .4, .39), armor, 0, -.54, .035));
+    const leftKnee = part(new THREE.BoxGeometry(.29, .18, .13), accent, 0, -.39, .23, false);
+    const rightKnee = part(new THREE.BoxGeometry(.29, .18, .13), accent, 0, -.39, .23, false);
+    this.leftLeg.add(leftKnee);
+    this.rightLeg.add(rightKnee);
     const leftShoulder = part(new THREE.BoxGeometry(.34, .27, .48), armor, -.57, 1.62, -.02);
     const rightShoulder = part(new THREE.BoxGeometry(.34, .27, .48), armor, .57, 1.62, -.02);
     leftShoulder.rotation.z = -.16;
@@ -194,14 +232,20 @@ export class Fighter {
     const rightFin = part(new THREE.ConeGeometry(.13, .48, 4), accent, .46, 1.83, -.25, false);
     leftFin.rotation.z = -.42;
     rightFin.rotation.z = .42;
+    const backpack = part(new THREE.BoxGeometry(.58, .72, .25), dark, 0, 1.42, -.43);
+    const packLight = part(new THREE.BoxGeometry(.38, .32, .055), accent, 0, 1.42, -.58, false);
+    const leftThruster = part(new THREE.ConeGeometry(.105, .36, 6, 1, true), accent, -.2, 1.02, -.49, false);
+    const rightThruster = part(new THREE.ConeGeometry(.105, .36, 6, 1, true), accent, .2, 1.02, -.49, false);
+    leftThruster.rotation.x = rightThruster.rotation.x = Math.PI;
+    this.thrusterLights = [leftThruster, rightThruster];
     this.rig.add(
-      torso, chest, pelvis, spine, chestLight, helmet, visor, brow,
+      torso, chest, breastplate, sternum, pelvis, spine, chestLight, helmet, visor, brow, helmetCrest, leftEar, rightEar,
       this.leftArm, this.rightArm, this.leftLeg, this.rightLeg,
-      leftShoulder, rightShoulder, leftFin, rightFin
+      leftShoulder, rightShoulder, leftFin, rightFin, backpack, packLight, leftThruster, rightThruster
     );
 
     this.weaponGroup = new THREE.Group();
-    this.weaponGroup.position.set(.58, 1.4, .28);
+    this.weaponGroup.position.set(.38, 1.4, .28);
     this.rig.add(this.weaponGroup);
 
     const shadowMaterial = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: .28, depthWrite: false });
@@ -267,13 +311,44 @@ export class Fighter {
     }
     if (weapon.type === "melee") {
       const reachScale = Math.min(1.5, weapon.reach / 3.5);
-      const bladeLength = 1.12 * reachScale;
-      const blade = part(new THREE.BoxGeometry(.1, .11, bladeLength), glow, .06, .04, .43 + bladeLength * .35, false);
       const grip = part(new THREE.CylinderGeometry(.07, .085, .34, 8), dark, .06, -.01, .03);
       grip.rotation.x = Math.PI / 2;
-      const guard = part(new THREE.BoxGeometry(.38, .09, .1), identity, .06, .04, .18, false);
-      this.weaponGroup.add(blade, grip, guard);
-      this.weaponMuzzleDistance = .55 + bladeLength;
+      this.weaponGroup.add(grip);
+      if (weapon.id === "hammer") {
+        const shaft = part(new THREE.CylinderGeometry(.06, .075, 1.28, 8), dark, .06, .04, .62);
+        shaft.rotation.x = Math.PI / 2;
+        const head = part(new THREE.BoxGeometry(.72, .42, .4), glow, .06, .04, 1.28, false);
+        const face = part(new THREE.BoxGeometry(.82, .2, .24), identity, .06, .04, 1.28, false);
+        this.weaponGroup.add(shaft, head, face);
+        this.weaponMuzzleDistance = 1.72;
+      } else if (weapon.id === "punch_glove") {
+        const piston = part(new THREE.CylinderGeometry(.1, .13, .55, 8), dark, .06, .04, .35);
+        piston.rotation.x = Math.PI / 2;
+        const fist = part(new THREE.DodecahedronGeometry(.31, 0), glow, .06, .04, .72, false);
+        const knuckles = part(new THREE.BoxGeometry(.52, .13, .19), identity, .06, .1, .88, false);
+        this.weaponGroup.add(piston, fist, knuckles);
+        this.weaponMuzzleDistance = 1.05;
+      } else if (weapon.id === "chainsaw") {
+        const body = part(new THREE.BoxGeometry(.34, .34, .55), dark, .06, .04, .37);
+        const blade = part(new THREE.BoxGeometry(.15, .12, 1.1), glow, .06, .04, 1.1, false);
+        const teeth = part(new THREE.TorusGeometry(.17, .05, 4, 12), identity, .06, .04, 1.65, false);
+        teeth.rotation.x = Math.PI / 2;
+        this.weaponGroup.add(body, blade, teeth);
+        this.weaponMuzzleDistance = 1.88;
+      } else if (weapon.id === "spear") {
+        const shaft = part(new THREE.CylinderGeometry(.045, .065, 1.9 * reachScale, 8), dark, .06, .04, .78);
+        shaft.rotation.x = Math.PI / 2;
+        const blade = part(new THREE.ConeGeometry(.16, .62, 5), glow, .06, .04, 1.76 * reachScale, false);
+        blade.rotation.x = Math.PI / 2;
+        this.weaponGroup.add(shaft, blade);
+        this.weaponMuzzleDistance = 2.05 * reachScale;
+      } else {
+        const bladeLength = (weapon.id === "knife" ? .62 : weapon.id === "shock_baton" ? .92 : 1.12) * reachScale;
+        const blade = part(new THREE.BoxGeometry(weapon.id === "knife" ? .16 : .1, .11, bladeLength), glow, .06, .04, .43 + bladeLength * .35, false);
+        const guard = part(new THREE.BoxGeometry(.38, .09, .1), identity, .06, .04, .18, false);
+        this.weaponGroup.add(blade, guard);
+        this.weaponMuzzleDistance = .55 + bladeLength;
+      }
       return;
     }
     const heavy = ["rocket", "plasma", "grenade"].includes(weapon.type);
@@ -287,7 +362,9 @@ export class Fighter {
       const tube = part(new THREE.CylinderGeometry(.17, .2, .92, 10), glow, .05, .06, .72);
       tube.rotation.x = Math.PI / 2;
       const muzzle = part(new THREE.TorusGeometry(.23, .055, 5, 12), identity, .05, .06, 1.17, false);
-      this.weaponGroup.add(tube, muzzle);
+      const sight = part(new THREE.BoxGeometry(.12, .16, .46), identity, -.17, .2, .61, false);
+      const fin = part(new THREE.BoxGeometry(.42, .08, .28), dark, .05, -.09, .72);
+      this.weaponGroup.add(tube, muzzle, sight, fin);
       this.weaponMuzzleDistance = 1.28;
     } else if (weapon.type === "plasma") {
       const chamber = part(new THREE.IcosahedronGeometry(.24, 1), glow, .05, .07, .58, false);
@@ -296,20 +373,66 @@ export class Fighter {
       const cage = part(new THREE.IcosahedronGeometry(.3, 1), cageMaterial, .05, .07, .58, false);
       const barrel = part(new THREE.CylinderGeometry(.08, .13, .55, 8), dark, .05, .07, .92);
       barrel.rotation.x = Math.PI / 2;
-      this.weaponGroup.add(chamber, cage, barrel);
+      const prongA = part(new THREE.BoxGeometry(.07, .08, .5), identity, -.15, .08, .94, false);
+      const prongB = part(new THREE.BoxGeometry(.07, .08, .5), identity, .25, .08, .94, false);
+      this.weaponGroup.add(chamber, cage, barrel, prongA, prongB);
       this.weaponMuzzleDistance = 1.21;
     } else if (weapon.type === "rail") {
       const railA = part(new THREE.BoxGeometry(.08, .1, 1.18), glow, -.055, .08, .78, false);
       const railB = part(new THREE.BoxGeometry(.08, .1, 1.18), glow, .155, .08, .78, false);
       const bridge = part(new THREE.BoxGeometry(.31, .08, .16), identity, .05, .08, 1.19, false);
-      this.weaponGroup.add(railA, railB, bridge);
+      const capacitor = part(new THREE.CylinderGeometry(.17, .17, .38, 10), identity, .05, .19, .46, false);
+      capacitor.rotation.z = Math.PI / 2;
+      const stock = part(new THREE.BoxGeometry(.28, .22, .42), dark, .05, .01, -.14);
+      this.weaponGroup.add(railA, railB, bridge, capacitor, stock);
       this.weaponMuzzleDistance = 1.42;
+    } else if (weapon.type === "beam" || weapon.type === "chain") {
+      const emitter = part(new THREE.CylinderGeometry(.1, .16, .92, 8), dark, .05, .06, .69);
+      emitter.rotation.x = Math.PI / 2;
+      const coil = part(new THREE.TorusGeometry(.21, .065, 5, 12), glow, .05, .06, .61, false);
+      const forkA = part(new THREE.BoxGeometry(.07, .08, .62), identity, -.13, .07, .93, false);
+      const forkB = part(new THREE.BoxGeometry(.07, .08, .62), identity, .23, .07, .93, false);
+      if (weapon.type === "chain") {
+        forkA.rotation.y = -.15;
+        forkB.rotation.y = .15;
+      }
+      this.weaponGroup.add(emitter, coil, forkA, forkB);
+      this.weaponMuzzleDistance = 1.31;
+    } else if (weapon.type === "spread") {
+      const barrelA = part(new THREE.CylinderGeometry(.08, .11, .82, 8), glow, -.07, .08, .74);
+      const barrelB = part(new THREE.CylinderGeometry(.08, .11, .82, 8), glow, .17, .08, .74);
+      barrelA.rotation.x = barrelB.rotation.x = Math.PI / 2;
+      const shroud = part(new THREE.BoxGeometry(.42, .17, .62), dark, .05, .04, .61);
+      const pump = part(new THREE.BoxGeometry(.46, .11, .3), identity, .05, -.07, .63, false);
+      this.weaponGroup.add(shroud, barrelA, barrelB, pump);
+      this.weaponMuzzleDistance = 1.19;
+    } else if (weapon.id === "minigun" || weapon.id === "machine_gun") {
+      const barrelCount = weapon.id === "minigun" ? 4 : 2;
+      for (let index = 0; index < barrelCount; index++) {
+        const angle = index / barrelCount * Math.PI * 2;
+        const barrel = part(new THREE.CylinderGeometry(.045, .06, .86, 6), glow, .05 + Math.cos(angle) * .11, .06 + Math.sin(angle) * .11, .72, false);
+        barrel.rotation.x = Math.PI / 2;
+        this.weaponGroup.add(barrel);
+      }
+      const drum = part(new THREE.CylinderGeometry(.2, .2, .32, 10), identity, .05, -.11, .34, false);
+      drum.rotation.z = Math.PI / 2;
+      this.weaponGroup.add(drum);
+      this.weaponMuzzleDistance = 1.17;
     } else {
       const scale = weapon.type === "grenade" ? 1.15 : .82;
       const barrel = part(new THREE.CylinderGeometry(.095 * scale, .135 * scale, .76 * scale, 9), glow, .05, .06, .69);
       barrel.rotation.x = Math.PI / 2;
       const muzzle = part(new THREE.TorusGeometry(.13 * scale, .035, 4, 10), identity, .05, .06, .98, false);
       this.weaponGroup.add(barrel, muzzle);
+      if (weapon.type === "grenade") {
+        const drum = part(new THREE.CylinderGeometry(.22, .22, .36, 10), dark, .05, -.12, .39);
+        drum.rotation.z = Math.PI / 2;
+        this.weaponGroup.add(drum);
+      } else if (weapon.id === "needle_launcher") {
+        const needle = part(new THREE.ConeGeometry(.08, .52, 5), identity, .05, .06, 1.16, false);
+        needle.rotation.x = Math.PI / 2;
+        this.weaponGroup.add(needle);
+      }
       this.weaponMuzzleDistance = 1.08;
     }
   }
@@ -330,19 +453,45 @@ export class Fighter {
 
   recoil(amount = this.weapon.recoil) {
     this.velocity.addScaledVector(this.aim, -amount);
-    this.recoilVisual = Math.max(this.recoilVisual, clamp(amount * .11, .12, .72));
+    this.recoilVisual = Math.max(this.recoilVisual, clamp(.15 + amount * .12, .18, .9));
   }
 
   takeHit(amount, push = null) {
     if (!this.alive) return false;
     this.health = clamp(this.health - amount, 0, 100);
-    this.hitTimer = .18;
+    this.hitTimer = .5;
+    this.hitStagger = push?.lengthSq()
+      ? Math.sign(push.x * this.aim.z - push.z * this.aim.x) || 1
+      : (Number(String(this.id).match(/\d+/)?.[0] || 1) % 2 ? 1 : -1);
     if (push) this.velocity.add(push);
     if (this.health > 0) return false;
     this.alive = false;
     this.deaths += 1;
-    this.group.visible = false;
+    this.deathTimer = 1.4;
     return true;
+  }
+
+  updateDeath(dt) {
+    if (this.alive || this.deathTimer <= 0) return;
+    this.deathTimer = Math.max(0, this.deathTimer - dt);
+    const progress = 1 - this.deathTimer / 1.4;
+    const side = Number(String(this.id).match(/\d+/)?.[0] || 1) % 2 ? 1 : -1;
+    const burst = Math.sin(progress * Math.PI);
+    const fade = 1 - progress;
+    this.rig.rotation.set(progress * .88, side * progress * 1.5, side * progress * 1.28);
+    this.rig.position.y = burst * .28 - progress * .78;
+    this.leftArm.rotation.z = .72 + side * progress * .7;
+    this.rightArm.rotation.z = -.72 + side * progress * .5;
+    this.leftLeg.rotation.x = .35 + progress * .9;
+    this.rightLeg.rotation.x = -.2 - progress * .7;
+    this.group.scale.setScalar(1 + burst * .1 - progress * .78);
+    this.armorMaterial.emissiveIntensity = 1.65 * fade;
+    this.accentMaterial.emissiveIntensity = 2.8 * fade;
+    this.darkMaterial.emissiveIntensity = .5 * burst;
+    this.identityRing.material.opacity = .62 * fade;
+    this.readabilityHalo.material.opacity = .32 * burst * fade;
+    this.identityBeacon.material.opacity = fade;
+    if (this.deathTimer === 0) this.group.visible = false;
   }
 
   respawn(position) {
@@ -350,14 +499,30 @@ export class Fighter {
     this.velocity.set(0, 0, 0);
     this.health = 100;
     this.alive = true;
+    this.deathTimer = 0;
     this.grounded = true;
     this.group.visible = true;
+    this.group.scale.setScalar(1);
+    this.rig.position.y = 0;
+    this.rig.rotation.set(0, 0, 0);
+    this.rig.scale.set(1.07, 1.04, 1.07);
+    this.leftArm.rotation.set(0, 0, 0);
+    this.rightArm.rotation.set(0, 0, 0);
+    this.leftLeg.rotation.set(0, 0, 0);
+    this.rightLeg.rotation.set(0, 0, 0);
+    this.armorMaterial.emissiveIntensity = .16;
+    this.accentMaterial.emissiveIntensity = 1.25;
+    this.darkMaterial.emissiveIntensity = .025;
+    this.identityRing.material.opacity = .46;
+    this.readabilityHalo.material.opacity = .14;
+    this.identityBeacon.material.opacity = .94;
     this.reloadTimer = 0;
     this.attackTimer = .7;
     this.slowTimer = 0;
     this.landTimer = 0;
     this.landStrength = 0;
     this.recoilVisual = 0;
+    this.hitStagger = 1;
     this.grapple = null;
     this.ledgeContact = null;
   }
@@ -372,7 +537,7 @@ export class Fighter {
     this.hitTimer = Math.max(0, this.hitTimer - dt);
     this.slowTimer = Math.max(0, this.slowTimer - dt);
     this.landTimer = Math.max(0, this.landTimer - dt);
-    this.recoilVisual = THREE.MathUtils.damp(this.recoilVisual, 0, 13, dt);
+    this.recoilVisual = THREE.MathUtils.damp(this.recoilVisual, 0, 8, dt);
 
     if (look.lengthSq() > .001) this.aim.copy(look).normalize();
     if (actions.jump && this.grounded) {
@@ -433,18 +598,27 @@ export class Fighter {
       ? this.landStrength * Math.sin((1 - this.landTimer / .22) * Math.PI)
       : 0;
     const grappled = Boolean(this.grapple);
+    const hitProgress = 1 - clamp(this.hitTimer / .5, 0, 1);
+    const hitWave = this.hitTimer > 0 ? Math.sin(hitProgress * Math.PI) : 0;
+    let grappleSide = 0;
+    if (grappled) {
+      const anchor = this.grapple.wraps?.[0] || this.grapple.anchor;
+      const dx = anchor.x - this.position.x;
+      const dz = anchor.z - this.position.z;
+      grappleSide = (dx * this.aim.z - dz * this.aim.x) / Math.max(1, Math.hypot(dx, dz));
+    }
     let leftLegTarget;
     let rightLegTarget;
     if (this.grounded) {
-      leftLegTarget = moving ? gait * (.42 + locomotion * .26) + landing * .42 : landing * .42;
-      rightLegTarget = moving ? -gait * (.42 + locomotion * .26) + landing * .42 : landing * .42;
+      leftLegTarget = moving ? gait * (.5 + locomotion * .34) + landing * .8 : landing * .8;
+      rightLegTarget = moving ? -gait * (.5 + locomotion * .34) + landing * .8 : landing * .8;
     } else if (grappled) {
-      leftLegTarget = .48 + clamp(-this.velocity.y * .018, -.2, .24);
-      rightLegTarget = -.16 + clamp(-this.velocity.y * .012, -.14, .2);
+      leftLegTarget = .94 + clamp(-this.velocity.y * .024, -.28, .34) - grappleSide * .18;
+      rightLegTarget = -.52 + clamp(-this.velocity.y * .018, -.2, .28) + grappleSide * .18;
     } else {
       const tuck = clamp(Math.abs(this.velocity.y) / 18, .12, .52);
-      leftLegTarget = .16 + tuck;
-      rightLegTarget = -.08 + tuck * .72;
+      leftLegTarget = this.velocity.y > 0 ? .48 + tuck * .55 : .18 + tuck;
+      rightLegTarget = this.velocity.y > 0 ? -.32 + tuck * .38 : -.14 + tuck * .78;
     }
     this.leftLeg.rotation.x = THREE.MathUtils.damp(this.leftLeg.rotation.x, leftLegTarget, 15, dt);
     this.rightLeg.rotation.x = THREE.MathUtils.damp(this.rightLeg.rotation.x, rightLegTarget, 15, dt);
@@ -452,22 +626,42 @@ export class Fighter {
     const aimPitch = Math.asin(clamp(this.aim.y, -1, 1));
     const melee = this.weapon.type === "melee";
     const attacking = this.attackTimer > this.weapon.cooldown * .55;
-    let leftArmTarget = -1.06 - aimPitch * .65 - gait * locomotion * .035;
-    let rightArmTarget = -1.24 - aimPitch * .72 + this.recoilVisual * .68;
-    let leftArmRoll = .38;
-    let rightArmRoll = -.1;
+    const attackPhase = this.weapon.cooldown > 0 ? clamp(this.attackTimer / this.weapon.cooldown, 0, 1) : 0;
+    const attackSwing = attacking ? Math.sin((1 - attackPhase) * Math.PI) : 0;
+    const reloadingPose = this.reloadTimer > 0 ? 1 : 0;
+    let leftArmTarget = -1.06 - aimPitch * .65 - gait * locomotion * .075;
+    let rightArmTarget = -1.24 - aimPitch * .72 + this.recoilVisual * 1.06 + gait * locomotion * .045;
+    let leftArmRoll = .64;
+    let rightArmRoll = -.18;
     if (melee) {
       leftArmTarget = -.42;
-      rightArmTarget = attacking ? -1.72 : -.48;
+      rightArmTarget = attacking ? -1.72 + attackSwing * .46 : -.48;
       leftArmRoll = .1;
-      rightArmRoll = -.2;
+      rightArmRoll = -.2 - attackSwing * .78;
     } else if (grappled) {
       const anchor = this.grapple.wraps?.[0] || this.grapple.anchor;
       const ropeLength = anchor ? this.position.distanceTo(anchor) : 1;
       const ropePitch = anchor ? Math.asin(clamp((anchor.y - this.position.y - 1.4) / Math.max(.01, ropeLength), -1, 1)) : 0;
-      leftArmTarget = -1.48 - ropePitch * .72;
-      leftArmRoll = .5;
-      rightArmTarget -= .08;
+      leftArmTarget = -1.78 - ropePitch * .82;
+      leftArmRoll = .5 + grappleSide * .3;
+      rightArmTarget -= .22;
+    } else if (reloadingPose) {
+      leftArmTarget = -.58;
+      rightArmTarget = -.82;
+      leftArmRoll = .72;
+      rightArmRoll = -.38;
+    }
+    if (landing > .05) {
+      leftArmTarget -= landing * .24;
+      rightArmTarget -= landing * .2;
+      leftArmRoll += landing * .18;
+      rightArmRoll -= landing * .18;
+    }
+    if (hitWave > .01) {
+      leftArmTarget += hitWave * .24;
+      rightArmTarget -= hitWave * .2;
+      leftArmRoll += this.hitStagger * hitWave * .34;
+      rightArmRoll += this.hitStagger * hitWave * .28;
     }
     this.leftArm.rotation.x = THREE.MathUtils.damp(this.leftArm.rotation.x, leftArmTarget, 19, dt);
     this.rightArm.rotation.x = THREE.MathUtils.damp(this.rightArm.rotation.x, rightArmTarget, 19, dt);
@@ -476,28 +670,67 @@ export class Fighter {
     this.leftArm.rotation.y = THREE.MathUtils.damp(this.leftArm.rotation.y, melee ? 0 : -.26, 17, dt);
     this.rightArm.rotation.y = THREE.MathUtils.damp(this.rightArm.rotation.y, melee ? .15 : .08, 17, dt);
 
-    this.weaponGroup.rotation.x = THREE.MathUtils.damp(this.weaponGroup.rotation.x, -aimPitch + this.recoilVisual * .22, 22, dt);
-    this.weaponGroup.rotation.z = THREE.MathUtils.damp(this.weaponGroup.rotation.z, grappled ? Math.sin(time * .42) * .035 : 0, 13, dt);
-    this.weaponGroup.position.y = THREE.MathUtils.damp(this.weaponGroup.position.y, 1.4 - landing * .07, 20, dt);
-    this.weaponGroup.position.z = THREE.MathUtils.damp(this.weaponGroup.position.z, .28 - this.recoilVisual * .22, 24, dt);
-    const bob = this.grounded && moving ? Math.abs(gait) * .055 : Math.sin(time * .45) * .018;
-    this.rig.position.y = bob - landing * .13;
-    this.rig.scale.set(1.07 + landing * .07, 1.04 - landing * .11, 1.07 + landing * .07);
+    let leftElbow = melee ? -.22 : -.78 - aimPitch * .16;
+    let rightElbow = melee ? -.18 : -.42 - aimPitch * .12 + this.recoilVisual * .48;
+    let leftElbowRoll = melee ? .08 : -.18;
+    let rightElbowRoll = melee ? -.05 : .12;
+    if (grappled) {
+      leftElbow = .08;
+      leftElbowRoll = .03;
+      rightElbow = -.55;
+    } else if (reloadingPose) {
+      leftElbow = -1.08;
+      rightElbow = -.72;
+      leftElbowRoll = -.38;
+      rightElbowRoll = .26;
+    } else if (landing > .05) {
+      leftElbow -= landing * .38;
+      rightElbow -= landing * .38;
+      leftElbowRoll -= landing * .24;
+      rightElbowRoll += landing * .24;
+    }
+    this.leftForearm.rotation.x = THREE.MathUtils.damp(this.leftForearm.rotation.x, leftElbow, 22, dt);
+    this.rightForearm.rotation.x = THREE.MathUtils.damp(this.rightForearm.rotation.x, rightElbow, 22, dt);
+    this.leftForearm.rotation.z = THREE.MathUtils.damp(this.leftForearm.rotation.z, leftElbowRoll, 18, dt);
+    this.rightForearm.rotation.z = THREE.MathUtils.damp(this.rightForearm.rotation.z, rightElbowRoll, 18, dt);
+
+    this.weaponGroup.rotation.x = THREE.MathUtils.damp(this.weaponGroup.rotation.x, -aimPitch + this.recoilVisual * .46, 22, dt);
+    this.weaponGroup.rotation.y = THREE.MathUtils.damp(this.weaponGroup.rotation.y, melee ? attackSwing * .72 : 0, 19, dt);
+    this.weaponGroup.rotation.z = THREE.MathUtils.damp(this.weaponGroup.rotation.z, melee ? -.18 - attackSwing * .85 : grappled ? Math.sin(time * .42) * .035 : 0, 16, dt);
+    this.weaponGroup.position.x = THREE.MathUtils.damp(this.weaponGroup.position.x, melee ? .45 : reloadingPose ? .22 : .38, 18, dt);
+    this.weaponGroup.position.y = THREE.MathUtils.damp(this.weaponGroup.position.y, 1.4 - landing * .11 + (this.grounded && moving ? gait * .025 : 0), 20, dt);
+    this.weaponGroup.position.z = THREE.MathUtils.damp(this.weaponGroup.position.z, .28 - this.recoilVisual * .46, 24, dt);
+    this.weaponGroup.scale.set(1 + this.recoilVisual * .04, 1 + this.recoilVisual * .04, 1 - this.recoilVisual * .08);
+    const bob = this.grounded && moving ? Math.abs(gait) * .075 : Math.sin(time * .45) * .018;
+    this.rig.position.y = bob - landing * .27;
+    const airStretch = this.grounded ? 0 : clamp(Math.abs(this.velocity.y) / 36, 0, .09);
+    this.rig.scale.set(1.07 + landing * .14 - airStretch * .35, 1.04 - landing * .27 + airStretch, 1.07 + landing * .14 - airStretch * .35);
     const strafe = this.velocity.x * this.aim.z - this.velocity.z * this.aim.x;
-    this.rig.rotation.z = THREE.MathUtils.damp(this.rig.rotation.z, clamp(-strafe * .025, -.14, .14), 9, dt);
+    const bodyRoll = clamp(-strafe * .032, -.2, .2) + grappleSide * .36 + this.hitStagger * hitWave * .4;
+    this.rig.rotation.z = THREE.MathUtils.damp(this.rig.rotation.z, bodyRoll, 12, dt);
     const bodyPitch = grappled
-      ? clamp(-.1 - this.velocity.y * .012, -.28, .12)
-      : moving ? -.045 * locomotion : 0;
-    this.rig.rotation.x = THREE.MathUtils.damp(this.rig.rotation.x, bodyPitch, 9, dt);
+      ? clamp(-.38 - this.velocity.y * .02, -.62, .12)
+      : !this.grounded ? clamp(-this.velocity.y * .015, -.18, .2)
+        : moving ? -.1 * locomotion + landing * .12 : landing * .12;
+    this.rig.rotation.x = THREE.MathUtils.damp(this.rig.rotation.x, bodyPitch + hitWave * .2, 11, dt);
+    this.rig.rotation.y = THREE.MathUtils.damp(this.rig.rotation.y, melee ? -attackSwing * .34 : clamp(-strafe * .009, -.09, .09) - this.recoilVisual * .12, 12, dt);
+    const legBrace = landing * .22 + (this.grounded && !moving ? .025 : 0) + (grappled ? Math.abs(grappleSide) * .08 : 0);
+    this.leftLeg.rotation.z = THREE.MathUtils.damp(this.leftLeg.rotation.z, legBrace, 14, dt);
+    this.rightLeg.rotation.z = THREE.MathUtils.damp(this.rightLeg.rotation.z, -legBrace, 14, dt);
+    this.helmet.rotation.x = THREE.MathUtils.damp(this.helmet.rotation.x, -aimPitch * .18 + landing * .07, 12, dt);
+    this.visor.rotation.x = this.helmet.rotation.x;
+    const thrust = landing > .05 ? 1.7 + landing * .7 : grappled ? 1.8 : this.grounded ? .65 : 1.2 + clamp(horizontalSpeed / 32, 0, .65);
+    for (const thruster of this.thrusterLights) thruster.scale.y = THREE.MathUtils.damp(thruster.scale.y, thrust, 11, dt);
     const hit = this.hitTimer > 0;
-    this.armorMaterial.emissiveIntensity = hit ? 1.45 : .16;
-    this.accentMaterial.emissiveIntensity = hit ? 2.15 : 1.25;
-    this.darkMaterial.emissiveIntensity = hit ? .48 : .025;
+    const hitFlash = hit ? .55 + hitWave * .95 : 0;
+    this.armorMaterial.emissiveIntensity = .16 + hitFlash * 1.45;
+    this.accentMaterial.emissiveIntensity = 1.25 + hitFlash * 1.15;
+    this.darkMaterial.emissiveIntensity = .025 + hitFlash * .44;
     const pulse = .5 + Math.sin(time * .55 + this.id.length) * .5;
-    this.identityRing.material.opacity = hit ? .85 : .34 + pulse * .17;
+    this.identityRing.material.opacity = hit ? .62 + hitWave * .32 : .34 + pulse * .17;
     this.identityRing.scale.setScalar(1 + pulse * .045);
     this.identityRing.rotation.z += dt * .32;
-    this.readabilityHalo.material.opacity = hit ? .32 : .12 + locomotion * .06;
+    this.readabilityHalo.material.opacity = hit ? .22 + hitWave * .18 : .12 + locomotion * .06;
     this.identityBeacon.position.y = 2.82 + Math.sin(time * .7) * .04;
     this.identityBeacon.material.opacity = hit ? 1 : .86 + pulse * .12;
     this.identityBeacon.scale.setScalar((hit ? .041 : .034) * (1 + pulse * .06));

@@ -5,6 +5,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 const FORWARD = new THREE.Vector3(0, 0, 1);
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 const BLACK = new THREE.Color(0x000000);
+const WHITE = new THREE.Color(0xffffff);
 
 function glowMaterial(opacity = 1) {
   return new THREE.MeshBasicMaterial({
@@ -76,6 +77,10 @@ function addScreenTrail(group, radius, length, color) {
         vUv = uv;
         vec4 headView = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
         vec4 tailView = modelViewMatrix * vec4(0.0, 0.0, -1.0, 1.0);
+        if (headView.z > -0.11 || tailView.z > -0.11) {
+          gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+          return;
+        }
         vec4 headClip = projectionMatrix * headView;
         vec4 tailClip = projectionMatrix * tailView;
         vec2 axis = headClip.xy / headClip.w - tailClip.xy / tailClip.w;
@@ -92,9 +97,13 @@ function addScreenTrail(group, radius, length, color) {
       uniform vec3 color;
       varying vec2 vUv;
       void main() {
-        float edge = 1.0 - smoothstep(0.48, 1.0, abs(vUv.x * 2.0 - 1.0));
-        float history = pow(max(0.0, 1.0 - vUv.y), 0.42);
-        gl_FragColor = vec4(color, edge * history * 0.82);
+        float lateral = abs(vUv.x * 2.0 - 1.0);
+        float edge = 1.0 - smoothstep(0.28, 1.0, lateral);
+        float spine = 1.0 - smoothstep(0.0, 0.22, lateral);
+        float history = pow(max(0.0, 1.0 - vUv.y), 0.48);
+        float dart = smoothstep(0.68, 1.0, history);
+        vec3 hot = mix(color, vec3(1.0), spine * (0.58 + dart * 0.42));
+        gl_FragColor = vec4(hot, edge * history * (0.72 + spine * 0.28));
       }
     `,
     transparent: true,
@@ -119,6 +128,7 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
   const radius = Math.max(.08, collisionRadius);
   const family = mine ? "grenade" : projectileFamily(weapon);
   const core = new THREE.MeshBasicMaterial({ color: weapon.color, toneMapped: false });
+  const hot = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
   const shotIdentity = ownerColor(owner, weapon);
   let identity;
   const identityMaterial = () => {
@@ -141,10 +151,13 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
   const speedTail = clamp((weapon.projectileSpeed || 22) * .02, .65, 5.4);
 
   if (family === "rail") {
-    addScreenTrail(group, Math.max(.12, radius * 1.1), Math.max(3.5, speedTail), shotIdentity);
-    const needle = visualMesh(new THREE.BoxGeometry(radius * .62, radius * .62, 2.35), core);
+    addScreenTrail(group, Math.max(.14, radius * 1.18), Math.max(4.2, speedTail), shotIdentity);
+    const needle = visualMesh(new THREE.BoxGeometry(radius * .72, radius * .72, 2.45), hot);
     needle.position.z = -.55;
-    group.add(needle);
+    const railHalo = visualMesh(new THREE.OctahedronGeometry(radius * 1.18, 0), core);
+    railHalo.scale.z = 2.1;
+    group.add(needle, railHalo);
+    pulseParts.push(railHalo);
   } else if (family === "rocket") {
     const dark = new THREE.MeshStandardMaterial({ color: 0x07101c, roughness: .32, metalness: .65 });
     const body = visualMesh(new THREE.CylinderGeometry(radius * .68, radius * .9, radius * 2.7, 8), dark);
@@ -154,8 +167,11 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
     nose.position.z = radius * 1.85;
     const band = visualMesh(new THREE.TorusGeometry(radius * .83, radius * .15, 5, 12), identityMaterial());
     band.position.z = -.1;
-    group.add(body, nose, band);
-    pulseParts.push(addTail(group, radius * 1.45, Math.max(1.45, speedTail), soft()));
+    const flame = visualMesh(new THREE.ConeGeometry(radius * .62, radius * 1.2, 6), hot);
+    flame.rotation.x = -Math.PI / 2;
+    flame.position.z = -radius * 1.76;
+    group.add(body, nose, band, flame);
+    pulseParts.push(flame, addTail(group, radius * 1.6, Math.max(1.65, speedTail), soft()));
   } else if (family === "grenade") {
     const shell = visualMesh(new THREE.IcosahedronGeometry(radius, 0), core);
     const cageMaterial = identityMaterial().clone();
@@ -163,9 +179,11 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
     const cage = visualMesh(new THREE.IcosahedronGeometry(radius * 1.36, 1), cageMaterial);
     const belt = visualMesh(new THREE.TorusGeometry(radius * 1.08, radius * .13, 5, 12), identityMaterial());
     belt.rotation.x = Math.PI / 2;
-    group.add(shell, cage, belt);
+    const fuse = visualMesh(new THREE.OctahedronGeometry(radius * .33, 0), hot);
+    fuse.position.y = radius * 1.2;
+    group.add(shell, cage, belt, fuse);
     movingParts.push(cage, belt);
-    pulseParts.push(cage);
+    pulseParts.push(cage, fuse);
     if (!mine) {
       for (let index = 0; index < 3; index++) {
         const dot = visualMesh(new THREE.SphereGeometry(radius * (.42 - index * .07), 6, 4), soft());
@@ -175,27 +193,32 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
     }
   } else if (family === "plasma") {
     const orb = visualMesh(new THREE.SphereGeometry(radius, 10, 8), core);
+    const hotOrb = visualMesh(new THREE.OctahedronGeometry(radius * .48, 1), hot);
     const cageMaterial = identityMaterial().clone();
     cageMaterial.wireframe = true;
     const cage = visualMesh(new THREE.IcosahedronGeometry(radius * 1.38, 1), cageMaterial);
     const orbit = visualMesh(new THREE.TorusGeometry(radius * 1.55, radius * .08, 4, 16), identityMaterial());
     orbit.rotation.x = Math.PI / 2;
-    group.add(orb, cage, orbit);
+    group.add(orb, hotOrb, cage, orbit);
     movingParts.push(cage, orbit);
     pulseParts.push(cage, orbit, addTail(group, radius * .8, Math.max(.65, speedTail * .75), soft()));
   } else if (family === "disc") {
     const blade = visualMesh(new THREE.TorusGeometry(radius * 1.15, radius * .28, 6, 16), core);
     const rim = visualMesh(new THREE.TorusGeometry(radius * 1.52, radius * .09, 5, 18), identityMaterial());
     blade.rotation.x = rim.rotation.x = Math.PI / 2;
-    group.add(blade, rim);
+    const hub = visualMesh(new THREE.OctahedronGeometry(radius * .48, 0), hot);
+    group.add(blade, rim, hub);
     movingParts.push(blade, rim);
     pulseParts.push(addTail(group, radius * .45, speedTail, soft()));
   } else {
     const length = Math.max(.18, radius * 2.8);
-    const bolt = visualMesh(new THREE.CapsuleGeometry(radius * .56, length, 2, 6), core);
+    const bolt = visualMesh(new THREE.CapsuleGeometry(radius * .62, length, 2, 6), hot);
     bolt.rotation.x = Math.PI / 2;
+    const tip = visualMesh(new THREE.ConeGeometry(radius * .92, Math.max(.22, radius * 2), 5), core);
+    tip.rotation.x = Math.PI / 2;
+    tip.position.z = Math.max(.12, radius * 1.4);
     const fast = weapon.projectileSpeed >= 135 || weapon.cooldown <= .12 || weapon.type === "spread";
-    group.add(bolt);
+    group.add(bolt, tip);
     const trailRadius = Math.max(radius * .82, weapon.projectileSpeed >= 140 ? .12 : .09);
     if (fast) {
       addScreenTrail(group, trailRadius, speedTail, shotIdentity);
@@ -258,9 +281,12 @@ export class CombatVisuals {
     this.flashOuter = instancedLayer(new THREE.ConeGeometry(1, 1, 6, 1, true), flashCapacity, .42);
     this.flashInner = instancedLayer(new THREE.ConeGeometry(1, 1, 6), flashCapacity, 1);
     this.tracerOuter = instancedLayer(new THREE.CylinderGeometry(1, 1, 1, 6, 1, true), tracerCapacity, .44);
+    this.tracerOuter.material.blending = THREE.NormalBlending;
+    this.tracerOuter.material.opacity = .62;
+    this.tracerOuter.renderOrder = 7;
     this.tracerInner = instancedLayer(new THREE.CylinderGeometry(1, 1, 1, 6), tracerCapacity, .96);
-    this.ringOuter = instancedLayer(new THREE.TorusGeometry(1, .075, 5, 24), ringCapacity, .5);
-    this.ringInner = instancedLayer(new THREE.TorusGeometry(1, .035, 4, 24), ringCapacity, 1);
+    this.ringOuter = instancedLayer(new THREE.TorusGeometry(1, .052, 5, 24), ringCapacity, .34);
+    this.ringInner = instancedLayer(new THREE.TorusGeometry(1, .026, 4, 24), ringCapacity, .78);
     this.sparkLayer = instancedLayer(new THREE.OctahedronGeometry(1, 0), sparkCapacity, .92);
     this.group.add(this.flashOuter, this.flashInner, this.tracerOuter, this.tracerInner, this.ringOuter, this.ringInner, this.sparkLayer);
 
@@ -312,14 +338,15 @@ export class CombatVisuals {
     if (!owner || !weapon || !direction?.lengthSq()) return;
     const slot = this.flashes[this.cursors.flash++ % this.flashes.length];
     const heavy = ["rocket", "plasma", "grenade", "rail"].includes(weapon.type);
+    const precision = weapon.type === "rail" || weapon.type === "beam";
     const rapid = weapon.projectileSpeed >= 140 || weapon.cooldown <= .12 || weapon.type === "spread";
-    slot.life = slot.maxLife = this.reducedMotion ? .075 : heavy ? .135 : rapid ? .115 : .1;
+    slot.life = slot.maxLife = this.reducedMotion ? .075 : precision ? .15 : heavy ? .135 : rapid ? .115 : .1;
     slot.position = owner.muzzlePoint?.(slot.position || new THREE.Vector3()) || owner.forwardPoint(.9);
     slot.direction = (slot.direction || new THREE.Vector3()).copy(direction).normalize();
     slot.weaponColor = (slot.weaponColor || new THREE.Color()).set(weapon.color);
     slot.ownerColor = (slot.ownerColor || new THREE.Color()).copy(ownerColor(owner, weapon));
-    slot.length = heavy ? 1.5 : rapid ? 1.08 : .86;
-    slot.width = heavy ? .31 : rapid ? .19 : .15;
+    slot.length = precision ? 2.05 : heavy ? 1.62 : rapid ? 1.16 : .92;
+    slot.width = precision ? .24 : heavy ? .33 : rapid ? .2 : .16;
     if (weapon.type !== "mine" && weapon.type !== "melee") {
       const end = slot.position.clone().addScaledVector(slot.direction, slot.length * 1.45);
       this.addTracer(slot.position, end, weapon, owner, this.reducedMotion ? .06 : .085, rapid ? .072 : .06);
@@ -348,19 +375,21 @@ export class CombatVisuals {
   addTracer(start, end, weapon, owner, life, width) {
     const slot = this.tracers[this.cursors.tracer++ % this.tracers.length];
     const rapid = weapon.projectileSpeed >= 140 || weapon.cooldown <= .12 || weapon.type === "spread";
+    const precision = weapon.type === "rail" || weapon.type === "beam";
     slot.life = slot.maxLife = rapid ? Math.max(.1, life) : life;
     slot.start = (slot.start || new THREE.Vector3()).copy(start);
     slot.end = (slot.end || new THREE.Vector3()).copy(end);
     slot.weaponColor = (slot.weaponColor || new THREE.Color()).set(weapon.color);
     slot.ownerColor = (slot.ownerColor || new THREE.Color()).copy(ownerColor(owner, weapon));
     slot.width = Math.max(width, rapid ? .072 : .052) * (weapon.type === "rail" ? 1.35 : weapon.type === "beam" ? 1.15 : 1);
+    slot.outerWidth = precision ? 4.6 : rapid ? 4.15 : 3;
   }
 
   impact(position, weapon, owner, { size = 1.5, normal = null, explosive = false } = {}) {
     if (!position || !weapon) return;
     const family = impactFamily(weapon, explosive);
     const ring = this.rings[this.cursors.ring++ % this.rings.length];
-    ring.life = ring.maxLife = family === "blast" ? .5
+    ring.life = ring.maxLife = family === "blast" ? .34
       : family === "plasma" ? .4
         : family === "precision" ? .2
           : .28;
@@ -418,7 +447,7 @@ export class CombatVisuals {
       this.matrix.compose(this.position, this.quaternion, this.scale);
       this.flashInner.setMatrixAt(index, this.matrix);
       this.flashOuter.setColorAt(index, this.color.copy(slot.ownerColor).multiplyScalar(.55 + fade * .45));
-      this.flashInner.setColorAt(index, this.color.copy(slot.weaponColor).multiplyScalar(.7 + fade * .3));
+      this.flashInner.setColorAt(index, this.color.copy(slot.weaponColor).lerp(WHITE, .72).multiplyScalar(.78 + fade * .22));
     }
     this.markUpdated(this.flashOuter, this.flashInner);
   }
@@ -438,14 +467,14 @@ export class CombatVisuals {
       this.direction.multiplyScalar(1 / length);
       this.quaternion.setFromUnitVectors(UP, this.direction);
       this.position.copy(slot.start).lerp(slot.end, .5);
-      this.scale.set(slot.width * 2.6 * fade, length, slot.width * 2.6 * fade);
+      this.scale.set(slot.width * slot.outerWidth * fade, length, slot.width * slot.outerWidth * fade);
       this.matrix.compose(this.position, this.quaternion, this.scale);
       this.tracerOuter.setMatrixAt(index, this.matrix);
       this.scale.set(slot.width * .72 * fade, length, slot.width * .72 * fade);
       this.matrix.compose(this.position, this.quaternion, this.scale);
       this.tracerInner.setMatrixAt(index, this.matrix);
-      this.tracerOuter.setColorAt(index, this.color.copy(slot.ownerColor).multiplyScalar(.45 + fade * .55));
-      this.tracerInner.setColorAt(index, this.color.copy(slot.weaponColor).multiplyScalar(.68 + fade * .32));
+      this.tracerOuter.setColorAt(index, this.color.copy(slot.ownerColor).multiplyScalar(.28 + fade * .16));
+      this.tracerInner.setColorAt(index, this.color.copy(slot.weaponColor).lerp(WHITE, .76).multiplyScalar(.74 + fade * .26));
     }
     this.markUpdated(this.tracerOuter, this.tracerInner);
   }
@@ -507,7 +536,7 @@ export class CombatVisuals {
       this.matrix.compose(slot.position, this.quaternion, this.scale);
       this.ringInner.setMatrixAt(index, this.matrix);
       this.ringOuter.setColorAt(index, this.color.copy(slot.ownerColor).multiplyScalar(.35 + fade * .65));
-      this.ringInner.setColorAt(index, this.color.copy(slot.weaponColor).multiplyScalar(.55 + fade * .45));
+      this.ringInner.setColorAt(index, this.color.copy(slot.weaponColor).lerp(WHITE, .62).multiplyScalar(.65 + fade * .35));
     }
     this.markUpdated(this.ringOuter, this.ringInner);
   }
