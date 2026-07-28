@@ -2,7 +2,7 @@ import * as THREE from "three";
 import "./styles.css";
 import { SoundBoard } from "./audio.js";
 import { ArenaWorld } from "./world.js";
-import { Fighter, aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, grappleSightline, projectileTouchesPlayer } from "./player.js";
+import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, grappleSightline, projectileTouchesPlayer, reticleAim } from "./player.js";
 import { InputManager, updateOrbit } from "./input.js";
 import { DEFAULT_LOADOUT, loadSettings, projectileLifetime, projectileStepCount, saveSettings, WEAPONS } from "./gameData.js";
 import { botFireChance, chooseBotSlot, clampBotCount, nearestTarget, safestSpawn } from "./botBrain.js";
@@ -445,7 +445,7 @@ class BlasterBattle {
     let move = cameraRelative(directionFromKeys(this.input), this.cameraYaw);
     move.add(cameraRelative(directionFromTouch(this.touch), this.cameraYaw));
     if (move.lengthSq() > 1) move.normalize();
-    const aim = this.mouseAim();
+    const aim = reticleAim(player, this.camera.position, this.mouseAim(), this.world, [...this.players, ...this.decoys]);
     player.update(dt, move, aim, { jump: this.input.tapped("Space") || this.touch.jumpTap }, this.world);
     this.touch.jumpTap = false;
     if (this.input.tapped("KeyE") || this.input.tapped("MouseRight") || this.touch.grappleTap) this.toggleGrapple(player);
@@ -568,7 +568,7 @@ class BlasterBattle {
       geometry,
       new THREE.MeshStandardMaterial({ color: weapon.color, emissive: weapon.color, emissiveIntensity: 1.2 })
     );
-    mesh.position.copy(position || player.forwardPoint(1.2));
+    mesh.position.copy(position || player.forwardPoint(PROJECTILE_SPAWN_OFFSET));
     if (weapon.type === "rail") mesh.lookAt(mesh.position.clone().add(direction));
     const velocity = direction.clone().multiplyScalar(weapon.projectileSpeed);
     if (weapon.arcLift) velocity.y += weapon.arcLift;

@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { chooseBotSlot, botFireChance, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
 import { DEFAULT_LOADOUT, LOADOUT_SLOTS, projectileLifetime, projectileStepCount, seededRandom, seedFromText, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
 import { InputManager, shouldCaptureGameKey, touchLookDelta, updateOrbit } from "../src/input.js";
-import { aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, grappleSightline, projectileTouchesPlayer } from "../src/player.js";
+import { aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
 
 const [mainSource, serviceWorkerSource] = await Promise.all([
@@ -162,7 +162,21 @@ assert.equal(fighter.weapon.id, "railgun", "weapon switching selects the expecte
 fighter.recoil(2);
 assert.ok(fighter.velocity.z < 0, "weapon recoil contributes to movement");
 assert.ok(projectileTouchesPlayer(fighter, new THREE.Vector3(0, 1.15, 0)), "projectiles collide with the fighter volume");
+assert.ok(projectileTouchesPlayer(fighter, new THREE.Vector3(0, 2.4, 0), .11), "head shots remain inside the fighter collision capsule");
+assert.ok(projectileTouchesPlayer(fighter, new THREE.Vector3(0, .15, 0), .11), "low shots remain inside the fighter collision capsule");
+assert.ok(projectileTouchesPlayer(fighter, fighter.forwardPoint(PROJECTILE_SPAWN_OFFSET + .6), .11), "a point-blank projectile cannot spawn beyond an overlapping fighter");
 assert.ok(aimWithSpread(new THREE.Vector3(0, 0, 1), .02, () => .5).equals(new THREE.Vector3(0, 0, 1)), "centered spread preserves aim");
+
+const closeTarget = { alive: true, radius: .72, position: new THREE.Vector3(0, 0, 2) };
+const cameraOrigin = new THREE.Vector3(3, 3, -6);
+const cameraDirection = closeTarget.position.clone().add(new THREE.Vector3(0, 1.2, 0)).sub(cameraOrigin).normalize();
+const convergedAim = reticleAim(fighter, cameraOrigin, cameraDirection, { grapplePoint: () => null }, [fighter, closeTarget]);
+const convergedHit = new THREE.Ray(fighter.position.clone().add(new THREE.Vector3(0, 1.25, 0)), convergedAim)
+  .intersectSphere(new THREE.Sphere(closeTarget.position.clone().add(new THREE.Vector3(0, 1.2, 0)), closeTarget.radius), new THREE.Vector3());
+assert.ok(convergedHit, "the weapon converges on the exact third-person reticle target at close range");
+const overlappingTarget = { alive: true, radius: .72, position: new THREE.Vector3(0, 0, .3) };
+const overlapDirection = overlappingTarget.position.clone().add(new THREE.Vector3(0, 1.2, 0)).sub(cameraOrigin).normalize();
+assert.ok(reticleAim(fighter, cameraOrigin, overlapDirection, { grapplePoint: () => null }, [fighter, overlappingTarget]).dot(overlapDirection) > 0, "overlapping targets cannot make the muzzle aim backward");
 fighter.velocity.set(0, 0, 8);
 fighter.grapple = { anchor: new THREE.Vector3(20, 20, 0), ropeLength: 24 };
 const ropeBefore = fighter.grapple.ropeLength;

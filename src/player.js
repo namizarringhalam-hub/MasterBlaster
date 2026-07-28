@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { WEAPONS } from "./gameData.js";
 
 const clamp = THREE.MathUtils.clamp;
+export const PROJECTILE_SPAWN_OFFSET = .08;
 
 function material(color, emissive = 0) {
   return new THREE.MeshStandardMaterial({
@@ -306,8 +307,41 @@ export function aimWithSpread(aim, spread, random = Math.random) {
   return aim.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), (random() - .5) * spread).normalize();
 }
 
+export function reticleAim(player, cameraOrigin, cameraDirection, world, targets) {
+  const direction = cameraDirection.clone().normalize();
+  const ray = new THREE.Ray(cameraOrigin, direction);
+  const surface = world.grapplePoint(cameraOrigin, direction);
+  let distance = surface ? cameraOrigin.distanceTo(surface) : 520;
+  let point = surface || cameraOrigin.clone().addScaledVector(direction, distance);
+  let selectedTarget = null;
+  const hit = new THREE.Vector3();
+
+  // Exact ray intersections only: this corrects third-person parallax without aim assist.
+  for (const target of targets) {
+    if (target === player || !target.alive) continue;
+    for (const [height, radius] of [[.55, target.radius * .72], [1.2, target.radius], [2.08, target.radius * .72]]) {
+      const sphere = new THREE.Sphere(target.position.clone().add(new THREE.Vector3(0, height, 0)), radius);
+      if (!ray.intersectSphere(sphere, hit)) continue;
+      const hitDistance = cameraOrigin.distanceTo(hit);
+      if (hitDistance >= distance) continue;
+      distance = hitDistance;
+      point = hit.clone();
+      selectedTarget = target;
+    }
+  }
+
+  const muzzle = player.position.clone().add(new THREE.Vector3(0, 1.25, 0));
+  const aim = point.sub(muzzle);
+  if (selectedTarget && aim.dot(direction) <= 0) aim.copy(selectedTarget.position).add(new THREE.Vector3(0, 1.2, 0)).sub(muzzle);
+  return (aim.lengthSq() > .001 ? aim : direction).normalize();
+}
+
 export function projectileTouchesPlayer(player, position, radius = .22) {
   if (!player.alive) return false;
-  const chest = player.position.clone().add(new THREE.Vector3(0, 1.15, 0));
-  return chest.distanceTo(position) < player.radius + radius;
+  const body = new THREE.Vector3(
+    player.position.x,
+    clamp(position.y, player.position.y + .72, player.position.y + 1.85),
+    player.position.z
+  );
+  return body.distanceTo(position) < player.radius + radius;
 }
