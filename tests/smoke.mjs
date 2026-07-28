@@ -12,6 +12,7 @@ const [mainSource, serviceWorkerSource] = await Promise.all([
   readFile(new URL("../public/sw.js", import.meta.url), "utf8")
 ]);
 assert.doesNotMatch(mainSource, /serviceWorker\.register/, "the game no longer installs the stale offline cache");
+assert.match(mainSource, /reticleAim\(player, this\.camera\.position, this\.camera\.getWorldDirection/, "weapons fire through the visible camera's exact center ray");
 assert.match(serviceWorkerSource, /caches\.delete/, "the replacement worker clears old cached builds");
 assert.match(serviceWorkerSource, /clients\.claim/, "the replacement worker takes control before refreshing old clients");
 assert.match(serviceWorkerSource, /registration\.unregister/, "the replacement worker removes itself after cleanup");

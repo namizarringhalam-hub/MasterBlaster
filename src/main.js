@@ -441,11 +441,12 @@ class BlasterBattle {
     const player = this.players[0];
     const look = this.input.consumeLook();
     ({ yaw: this.cameraYaw, pitch: this.cameraPitch } = updateOrbit(this.cameraYaw, this.cameraPitch, look.x, look.y));
+    this.updateCamera();
     if (!player.alive) return;
     let move = cameraRelative(directionFromKeys(this.input), this.cameraYaw);
     move.add(cameraRelative(directionFromTouch(this.touch), this.cameraYaw));
     if (move.lengthSq() > 1) move.normalize();
-    const aim = reticleAim(player, this.camera.position, this.mouseAim(), this.world, [...this.players, ...this.decoys]);
+    const aim = reticleAim(player, this.camera.position, this.camera.getWorldDirection(new THREE.Vector3()), this.world, [...this.players, ...this.decoys]);
     player.update(dt, move, aim, { jump: this.input.tapped("Space") || this.touch.jumpTap }, this.world);
     this.touch.jumpTap = false;
     if (this.input.tapped("KeyE") || this.input.tapped("MouseRight") || this.touch.grappleTap) this.toggleGrapple(player);
@@ -1051,7 +1052,7 @@ class BlasterBattle {
       this.camera.lookAt(0, 0, 0);
       return;
     }
-    const forward = player.aim.clone();
+    const forward = this.mouseAim();
     const flatForward = forward.clone().setY(0).normalize();
     const right = new THREE.Vector3(flatForward.z, 0, -flatForward.x);
     const pivot = player.position.clone().add(new THREE.Vector3(0, 1.65, 0));
@@ -1066,7 +1067,7 @@ class BlasterBattle {
   }
 
   renderScene() {
-    this.updateCamera();
+    if (this.state !== "play" || this.paused) this.updateCamera();
     this.renderer.render(this.scene, this.camera);
   }
 
