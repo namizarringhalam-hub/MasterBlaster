@@ -65,8 +65,10 @@ button.primary:hover:not(:disabled) { background: #ff4862; border-color: #fff; }
   inset: 0;
   z-index: -1;
   background:
-    linear-gradient(90deg, rgba(5, 12, 21, .97) 0%, rgba(5, 12, 21, .9) 48%, rgba(5, 12, 21, .32) 100%),
-    repeating-linear-gradient(90deg, transparent 0 79px, rgba(62, 222, 255, .04) 80px);
+    radial-gradient(circle at 82% 20%, rgba(86, 37, 177, .3), transparent 30%),
+    radial-gradient(circle at 68% 80%, rgba(0, 220, 255, .19), transparent 35%),
+    linear-gradient(90deg, rgba(5, 12, 21, .98) 0%, rgba(5, 12, 21, .91) 48%, rgba(5, 12, 21, .42) 100%),
+    repeating-linear-gradient(90deg, transparent 0 79px, rgba(62, 222, 255, .055) 80px);
 }
 
 .brand-mark {
@@ -197,7 +199,23 @@ input, select {
 .credits-dialog { max-width: 680px; }
 .credits-dialog p { color: #aebfcb; line-height: 1.7; }
 
-.hud { position: absolute; inset: 0; pointer-events: none; }
+.hud { position: absolute; inset: 0; pointer-events: none; isolation: isolate; }
+.hud::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(circle at center, transparent 48%, rgba(1, 6, 14, .2) 78%, rgba(1, 5, 12, .52));
+}
+.hud::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: .08;
+  background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(112, 236, 255, .14) 4px);
+  mix-blend-mode: screen;
+}
 .combatant {
   position: absolute;
   top: 22px;
@@ -218,14 +236,28 @@ input, select {
 .combatant.right .health i { margin-left: auto; background: #f24463; }
 .combatant > small { display: block; margin-top: 9px; color: #8da4b4; font-size: 9px; letter-spacing: .1em; }
 
-.match-state { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); text-align: center; }
+.match-state { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); min-width: 230px; padding: 8px 28px 11px; text-align: center; background: linear-gradient(180deg, rgba(4, 13, 25, .92), rgba(5, 16, 29, .68)); border-top: 2px solid rgba(116, 236, 255, .62); clip-path: polygon(8% 0, 92% 0, 100% 76%, 84% 100%, 16% 100%, 0 76%); text-shadow: 0 2px 8px #000; }
 .match-state small, .match-state span { display: block; color: #8da4b4; font-size: 9px; font-weight: 700; letter-spacing: .12em; }
 .match-state strong { display: block; margin: 3px 0; font: 900 32px/1 "Barlow Condensed", sans-serif; }
 
-.reticle { position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; transform: translate(-50%, -50%); border: 1px solid rgba(255,255,255,.55); border-radius: 50%; }
+.reticle { position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; transform: translate(-50%, -50%); border: 1px solid rgba(255,255,255,.72); border-radius: 50%; filter: drop-shadow(0 0 5px rgba(71, 231, 255, .7)); }
 .reticle::before, .reticle::after { content: ""; position: absolute; background: #fff; }
 .reticle::before { width: 8px; height: 1px; left: 10px; top: 14px; }
 .reticle::after { width: 1px; height: 8px; left: 14px; top: 10px; }
+.reticle i { position: absolute; inset: 5px; border: 1px solid rgba(83, 235, 255, .5); transform: rotate(45deg); }
+.reticle.hit { animation: hit-confirm .16s ease-out; border-color: #fff; }
+.reticle.elimination { animation: eliminate-confirm .28s ease-out; border-color: #ffdd55; filter: drop-shadow(0 0 9px #ff8a4a); }
+
+.damage-vignette { position: absolute; inset: 0; opacity: 0; background: radial-gradient(circle at center, transparent 52%, color-mix(in srgb, var(--damage-color, #ff365d) 74%, transparent)); }
+.damage-vignette.visible { animation: damage-flash .5s ease-out; }
+.combat-log { position: absolute; top: 96px; right: 22px; width: min(340px, 42vw); text-align: right; }
+.combat-log p { margin: 0 0 5px; padding: 7px 10px; color: #9fb5c5; background: linear-gradient(90deg, transparent, rgba(4, 13, 24, .78)); border-right: 2px solid rgba(100, 229, 255, .5); font: 700 10px/1.2 Inter, sans-serif; animation: combat-log-in .2s ease-out; text-transform: uppercase; }
+.combat-log b { font-weight: 900; }
+
+@keyframes hit-confirm { 50% { transform: translate(-50%, -50%) scale(.68); filter: drop-shadow(0 0 10px #fff); } }
+@keyframes eliminate-confirm { 45% { transform: translate(-50%, -50%) rotate(45deg) scale(1.45); } }
+@keyframes damage-flash { 0% { opacity: .78; } 100% { opacity: 0; } }
+@keyframes combat-log-in { from { opacity: 0; transform: translateX(18px); } }
 
 .weapon-strip {
   position: absolute;
@@ -290,7 +322,7 @@ input, select {
 
 .touch-controls { display: none; }
 
-@media (max-width: 820px) {
+@media (max-width: 900px) {
   .menu-shell { grid-template-columns: 1fr; width: min(620px, calc(100% - 28px)); padding: max(30px, env(safe-area-inset-top)) 0 max(30px, env(safe-area-inset-bottom)); }
   .feature-rail { display: none; }
   .hero-panel h1 { font-size: clamp(54px, 18vw, 84px); }
@@ -312,9 +344,30 @@ input, select {
   .weapon-strip b { display: none; }
   .weapon-strip button > span { display: block; }
   .grapple-readout { bottom: 64px; }
+  .combat-log { top: 112px; right: 10px; width: 52vw; }
+  .combat-log p { font-size: 8px; }
 }
 
-@media (pointer: coarse) {
+@media (max-height: 500px) and (orientation: landscape) {
+  .combatant { top: 5px; width: 31vw; padding: 6px 8px; }
+  .combatant.left { left: 6px; }
+  .combatant.right { right: 6px; }
+  .combatant b { font-size: 13px; }
+  .combatant span { font-size: 18px; }
+  .combatant > small { margin-top: 5px; font-size: 7px; }
+  .health { height: 4px; margin-top: 6px; }
+  .match-state { top: 3px; min-width: 190px; padding: 4px 18px 7px; }
+  .match-state strong { font-size: 25px; }
+  .pause { top: 62px; right: 6px; min-height: 34px; }
+  .combat-log { top: 65px; right: 6px; width: 40vw; }
+  .weapon-strip { bottom: 4px; grid-template-columns: repeat(5, 44px); gap: 3px; }
+  .weapon-strip button { min-height: 40px; padding: 3px; }
+  .weapon-strip button > span { font-size: 14px; }
+  .weapon-strip small { font-size: 7px; }
+  .grapple-readout { bottom: 48px; padding: 4px 7px; font-size: 7px; }
+}
+
+@media (pointer: coarse), (hover: none), (max-width: 900px) and (max-height: 540px) {
   .reticle { opacity: .45; }
   .touch-controls { position: absolute; inset: auto 0 88px; display: flex; justify-content: space-between; align-items: end; padding: 15px; pointer-events: none; }
   .touch-controls button { pointer-events: auto; touch-action: none; user-select: none; min-width: 54px; min-height: 54px; padding: 8px; border-radius: 50%; background: rgba(10, 25, 40, .7); }
@@ -327,6 +380,16 @@ input, select {
   .touch-actions button { border-radius: 10px; font-size: 10px; }
   .touch-actions .fire { min-width: 70px; min-height: 70px; background: rgba(232, 57, 82, .78); }
   .grapple-readout { display: none; }
+}
+
+@media (pointer: coarse) and (max-height: 500px) and (orientation: landscape),
+       (hover: none) and (max-height: 500px) and (orientation: landscape),
+       (max-width: 900px) and (max-height: 500px) and (orientation: landscape) {
+  .touch-controls { bottom: 48px; padding: 7px; opacity: .86; }
+  .touch-controls button { min-width: 44px; min-height: 44px; padding: 5px; }
+  .touch-move { grid-template-columns: repeat(3, 44px); gap: 3px; }
+  .touch-actions { grid-template-columns: repeat(2, 52px); gap: 4px; }
+  .touch-actions .fire { min-width: 56px; min-height: 56px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

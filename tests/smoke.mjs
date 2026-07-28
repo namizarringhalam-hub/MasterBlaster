@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import * as THREE from "three";
 import { chooseBotSlot, botFireChance, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
+import { createProjectileVisual } from "../src/combatVisuals.js";
 import { DEFAULT_LOADOUT, LOADOUT_SLOTS, projectileLifetime, projectileStepCount, randomLoadout, seededRandom, seedFromText, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
 import { InputManager, shouldCaptureGameKey, touchLookDelta, updateOrbit } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
@@ -30,6 +31,11 @@ const documentedWeaponIds = [
 assert.equal(Object.keys(WEAPONS).length, 45, "the game exposes the prototype and complete documented weapon library");
 assert.equal(LOADOUT_SLOTS.length, 5, "players carry five main weapons");
 assert.equal(DEFAULT_LOADOUT.length, 5, "the default loadout is match-ready");
+const visualOwner = { accent: 0x44eeff };
+for (const id of ["machine_gun", "railgun", "rocket_launcher", "grenade_launcher", "plasma_cannon"]) {
+  const projectileVisual = createProjectileVisual(WEAPONS[id], visualOwner, WEAPONS[id].projectileRadius || .11);
+  assert.ok(projectileVisual.children.length >= 2 && projectileVisual.userData.combatVisual, `${id} has a layered, animated combat visual`);
+}
 const quickLoadout = randomLoadout(() => 0);
 assert.equal(quickLoadout.length, 5, "Quick Play selects five random weapons");
 assert.equal(new Set(quickLoadout).size, 5, "Quick Play never selects the same weapon twice");

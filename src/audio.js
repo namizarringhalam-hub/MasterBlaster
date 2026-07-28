@@ -2,6 +2,8 @@ export class SoundBoard {
   constructor() {
     this.context = null;
     this.master = null;
+    this.compressor = null;
+    this.noiseBuffer = null;
     this.enabled = true;
     this.musicTimer = null;
     this.engineNodes = new Map();
@@ -14,9 +16,33 @@ export class SoundBoard {
       this.context = new AudioContext();
       this.master = this.context.createGain();
       this.master.gain.value = 0.32;
-      this.master.connect(this.context.destination);
+      this.compressor = this.context.createDynamicsCompressor();
+      this.compressor.threshold.value = -18;
+      this.compressor.knee.value = 18;
+      this.compressor.ratio.value = 5;
+      this.master.connect(this.compressor).connect(this.context.destination);
+      this.noiseBuffer = this.context.createBuffer(1, this.context.sampleRate, this.context.sampleRate);
+      const noise = this.noiseBuffer.getChannelData(0);
+      for (let index = 0; index < noise.length; index++) noise[index] = Math.random() * 2 - 1;
     }
     this.context.resume();
+  }
+
+  noise(duration = .12, volume = .05, frequency = 1100) {
+    if (!this.enabled || !this.context || !this.noiseBuffer) return;
+    const now = this.context.currentTime;
+    const source = this.context.createBufferSource();
+    const filter = this.context.createBiquadFilter();
+    const gain = this.context.createGain();
+    source.buffer = this.noiseBuffer;
+    filter.type = "bandpass";
+    filter.frequency.value = frequency;
+    filter.Q.value = .8;
+    gain.gain.setValueAtTime(volume, now);
+    gain.gain.exponentialRampToValueAtTime(.0001, now + duration);
+    source.connect(filter).connect(gain).connect(this.master);
+    source.start(now);
+    source.stop(now + duration);
   }
 
   tone(frequency, duration, type = "sine", volume = 0.1, slide = 1) {
@@ -47,6 +73,28 @@ export class SoundBoard {
       win: [440, .65, "triangle", .13, 2.7]
     };
     this.tone(...(sounds[type] || sounds.pickup));
+    if (type === "impact") this.noise(.11, .07, 720);
+  }
+
+  playWeapon(weapon, distanceScale = 1) {
+    const volume = Math.max(.015, .09 * distanceScale);
+    if (["rail", "beam", "chain"].includes(weapon.type)) {
+      this.tone(820, .09, "sawtooth", volume, .24);
+      this.tone(150, .18, "sine", volume * .55, 2.4);
+      return;
+    }
+    if (["rocket", "plasma", "grenade", "remote"].includes(weapon.type)) {
+      this.tone(125, .18, "sawtooth", volume, .42);
+      this.noise(.16, volume * .6, 430);
+      return;
+    }
+    if (weapon.type === "melee") {
+      this.noise(.08, volume, 1450);
+      this.tone(95, .1, "square", volume * .6, .5);
+      return;
+    }
+    this.tone(260 + Math.min(520, weapon.projectileSpeed || 0), .055, "square", volume, .45);
+    this.noise(.045, volume * .48, 1800);
   }
 
   startEngine(id) {

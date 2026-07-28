@@ -4,22 +4,110 @@ import { WEAPONS } from "./gameData.js";
 const clamp = THREE.MathUtils.clamp;
 export const PROJECTILE_SPAWN_OFFSET = .08;
 
-function material(color, emissive = 0) {
+let haloTexture;
+const badgeTextures = new Map();
+
+function material(color, emissive = 0, options = {}) {
   return new THREE.MeshStandardMaterial({
     color,
-    roughness: .42,
-    metalness: .22,
+    roughness: .36,
+    metalness: .32,
     emissive,
-    emissiveIntensity: emissive ? .45 : 0
+    emissiveIntensity: emissive ? .45 : 0,
+    flatShading: true,
+    ...options
   });
 }
 
-function part(geometry, mat, x, y, z) {
+function part(geometry, mat, x, y, z, shadows = true) {
   const mesh = new THREE.Mesh(geometry, mat);
   mesh.position.set(x, y, z);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
+  mesh.castShadow = shadows;
+  mesh.receiveShadow = shadows;
   return mesh;
+}
+
+function radialTexture() {
+  if (haloTexture) return haloTexture;
+  const size = 32;
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const distance = Math.hypot(x / (size - 1) * 2 - 1, y / (size - 1) * 2 - 1);
+      const alpha = Math.round(255 * Math.pow(Math.max(0, 1 - distance), 2.4));
+      const offset = (y * size + x) * 4;
+      data[offset] = data[offset + 1] = data[offset + 2] = 255;
+      data[offset + 3] = alpha;
+    }
+  }
+  haloTexture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  haloTexture.minFilter = THREE.LinearFilter;
+  haloTexture.magFilter = THREE.LinearFilter;
+  haloTexture.generateMipmaps = false;
+  haloTexture.needsUpdate = true;
+  return haloTexture;
+}
+
+function badgeTexture(id) {
+  const number = Math.max(1, Number(String(id).match(/\d+/)?.[0] || 1));
+  if (badgeTextures.has(number)) return badgeTextures.get(number);
+  const size = 32;
+  const data = new Uint8Array(size * size * 4);
+  const shape = (x, y, style) => {
+    if (style === 0) return Math.abs(x) + Math.abs(y) < .92;
+    if (style === 1) return x * x + y * y < .76;
+    if (style === 2) return y > -.82 && y < .78 && Math.abs(x) < (.78 - y) * .55;
+    return Math.abs(x) < .76 && Math.abs(y) < .84 && Math.abs(x) + Math.abs(y) * .5 < 1.04;
+  };
+  const style = (number - 1) % 4;
+  const cut = Math.floor((number - 1) / 4) % 4;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const nx = (x + .5) / size * 2 - 1;
+      const ny = (y + .5) / size * 2 - 1;
+      const outer = shape(nx, ny, style);
+      const inner = shape(nx / .7, ny / .7, style);
+      if (!outer) continue;
+      const pattern = cut === 0 ? Math.abs(nx) < .105
+        : cut === 1 ? Math.abs(ny) < .105
+          : cut === 2 ? Math.abs(nx - ny) < .13
+            : Math.abs(nx + ny) < .12 || Math.abs(nx - ny) < .12;
+      const bright = inner && !pattern;
+      const offset = (y * size + x) * 4;
+      data[offset] = bright ? 255 : 4;
+      data[offset + 1] = bright ? 255 : 7;
+      data[offset + 2] = bright ? 255 : 13;
+      data[offset + 3] = 255;
+    }
+  }
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  badgeTextures.set(number, texture);
+  return texture;
+}
+
+function limb(geometry, mat, x, y, z) {
+  const pivot = new THREE.Group();
+  pivot.position.set(x, y, z);
+  pivot.add(part(geometry, mat, 0, -geometry.parameters.height / 2, 0));
+  return pivot;
+}
+
+function disposeChildren(group) {
+  const geometries = new Set();
+  const materials = new Set();
+  group.traverse((child) => {
+    if (child !== group && child.geometry) geometries.add(child.geometry);
+    if (child !== group && child.material) {
+      for (const entry of Array.isArray(child.material) ? child.material : [child.material]) materials.add(entry);
+    }
+  });
+  group.clear();
+  for (const geometry of geometries) geometry.dispose();
+  for (const entry of materials) entry.dispose();
 }
 
 export class Fighter {
@@ -45,6 +133,10 @@ export class Fighter {
     this.attackTimer = 0;
     this.hitTimer = 0;
     this.slowTimer = 0;
+    this.landTimer = 0;
+    this.landStrength = 0;
+    this.recoilVisual = 0;
+    this.gaitPhase = 0;
     this.grounded = true;
     this.ledgeContact = null;
     this.alive = true;
@@ -63,54 +155,163 @@ export class Fighter {
 
   createModel() {
     const group = new THREE.Group();
-    const armor = material(this.color, this.color);
-    const accent = material(this.accent, this.accent);
-    const dark = material(0x09111f);
+    const armor = material(this.color, this.color, { emissiveIntensity: .16, roughness: .3, metalness: .48 });
+    const accent = material(this.accent, this.accent, { emissiveIntensity: 1.25, roughness: .2, metalness: .2 });
+    const dark = material(0x07101d, this.accent, { emissiveIntensity: .025, roughness: .48, metalness: .56 });
+    this.armorMaterial = armor;
+    this.accentMaterial = accent;
+    this.darkMaterial = dark;
 
     this.rig = new THREE.Group();
+    this.rig.scale.set(1.07, 1.04, 1.07);
     group.add(this.rig);
-    const torso = part(new THREE.CapsuleGeometry(.48, .92, 5, 10), armor, 0, 1.22, 0);
-    const helmet = part(new THREE.SphereGeometry(.48, 14, 10), dark, 0, 2.08, 0);
-    const visor = part(new THREE.BoxGeometry(.75, .18, .18), accent, 0, 2.1, .42);
-    this.leftArm = part(new THREE.BoxGeometry(.22, .78, .24), armor, -.66, 1.4, 0);
-    this.rightArm = part(new THREE.BoxGeometry(.22, .78, .24), armor, .66, 1.4, 0);
-    this.leftLeg = part(new THREE.BoxGeometry(.27, .75, .28), dark, -.25, .42, 0);
-    this.rightLeg = part(new THREE.BoxGeometry(.27, .75, .28), dark, .25, .42, 0);
-    this.rig.add(torso, helmet, visor, this.leftArm, this.rightArm, this.leftLeg, this.rightLeg);
+    const torso = part(new THREE.CapsuleGeometry(.39, .68, 4, 8), dark, 0, 1.25, 0);
+    const chest = part(new THREE.CylinderGeometry(.37, .49, .65, 6), armor, 0, 1.43, .015);
+    chest.scale.z = .76;
+    const pelvis = part(new THREE.BoxGeometry(.72, .23, .45), armor, 0, .91, -.01);
+    const spine = part(new THREE.BoxGeometry(.38, .56, .18), armor, 0, 1.38, -.37);
+    const chestLight = part(new THREE.BoxGeometry(.48, .075, .055), accent, 0, 1.47, .36, false);
+    chestLight.rotation.z = -.18;
+    const helmet = part(new THREE.SphereGeometry(.47, 12, 8), dark, 0, 2.08, 0);
+    helmet.scale.set(1, .92, .94);
+    const visor = part(new THREE.BoxGeometry(.72, .16, .12), accent, 0, 2.1, .43, false);
+    const brow = part(new THREE.BoxGeometry(.78, .1, .16), armor, 0, 2.27, .3);
+    brow.rotation.x = -.18;
+
+    this.leftArm = limb(new THREE.BoxGeometry(.25, .7, .28), dark, -.59, 1.64, 0);
+    this.rightArm = limb(new THREE.BoxGeometry(.25, .7, .28), dark, .59, 1.64, 0);
+    this.leftLeg = limb(new THREE.BoxGeometry(.3, .78, .34), dark, -.23, .82, 0);
+    this.rightLeg = limb(new THREE.BoxGeometry(.3, .78, .34), dark, .23, .82, 0);
+    this.leftArm.add(part(new THREE.BoxGeometry(.31, .34, .34), armor, 0, -.51, .025));
+    this.rightArm.add(part(new THREE.BoxGeometry(.31, .34, .34), armor, 0, -.51, .025));
+    this.leftLeg.add(part(new THREE.BoxGeometry(.255, .4, .39), armor, 0, -.54, .035));
+    this.rightLeg.add(part(new THREE.BoxGeometry(.255, .4, .39), armor, 0, -.54, .035));
+    const leftShoulder = part(new THREE.BoxGeometry(.34, .27, .48), armor, -.57, 1.62, -.02);
+    const rightShoulder = part(new THREE.BoxGeometry(.34, .27, .48), armor, .57, 1.62, -.02);
+    leftShoulder.rotation.z = -.16;
+    rightShoulder.rotation.z = .16;
+    const leftFin = part(new THREE.ConeGeometry(.13, .48, 4), accent, -.46, 1.83, -.25, false);
+    const rightFin = part(new THREE.ConeGeometry(.13, .48, 4), accent, .46, 1.83, -.25, false);
+    leftFin.rotation.z = -.42;
+    rightFin.rotation.z = .42;
+    this.rig.add(
+      torso, chest, pelvis, spine, chestLight, helmet, visor, brow,
+      this.leftArm, this.rightArm, this.leftLeg, this.rightLeg,
+      leftShoulder, rightShoulder, leftFin, rightFin
+    );
 
     this.weaponGroup = new THREE.Group();
-    this.weaponGroup.position.set(.72, 1.42, .34);
+    this.weaponGroup.position.set(.58, 1.4, .28);
     this.rig.add(this.weaponGroup);
 
-    const shadow = part(new THREE.CircleGeometry(.85, 24), material(0x000000), 0, .025, 0);
+    const shadowMaterial = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: .28, depthWrite: false });
+    const shadow = part(new THREE.CircleGeometry(.86, 24), shadowMaterial, 0, .021, 0, false);
     shadow.rotation.x = -Math.PI / 2;
-    shadow.material.transparent = true;
-    shadow.material.opacity = .24;
-    group.add(shadow);
+    const ringMaterial = new THREE.MeshBasicMaterial({
+      color: this.accent,
+      transparent: true,
+      opacity: .46,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      toneMapped: false,
+      side: THREE.DoubleSide
+    });
+    this.identityRing = part(new THREE.RingGeometry(.72, .91, 28), ringMaterial, 0, .035, 0, false);
+    this.identityRing.rotation.x = -Math.PI / 2;
+    this.identityRing.renderOrder = 3;
+    const haloMaterial = new THREE.SpriteMaterial({
+      map: radialTexture(),
+      color: this.accent,
+      transparent: true,
+      opacity: .14,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      toneMapped: false
+    });
+    this.readabilityHalo = new THREE.Sprite(haloMaterial);
+    this.readabilityHalo.position.set(0, 1.38, -.08);
+    this.readabilityHalo.scale.set(2.85, 3.65, 1);
+    this.readabilityHalo.renderOrder = 2;
+    this.identityBeacon = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: badgeTexture(this.id),
+      color: this.accent,
+      transparent: true,
+      opacity: .94,
+      alphaTest: .04,
+      depthWrite: false,
+      sizeAttenuation: false,
+      toneMapped: false
+    }));
+    this.identityBeacon.position.set(0, 2.82, 0);
+    this.identityBeacon.scale.set(.034, .034, 1);
+    this.identityBeacon.renderOrder = 5;
+    group.add(shadow, this.identityRing, this.readabilityHalo, this.identityBeacon);
     return group;
   }
 
   updateWeaponModel() {
-    this.weaponGroup.clear();
+    disposeChildren(this.weaponGroup);
     const weapon = this.weapon;
-    const glow = material(weapon.color, weapon.color);
-    const dark = material(0x111c2c);
+    const glow = material(weapon.color, weapon.color, { emissiveIntensity: 1.35, roughness: .24, metalness: .38 });
+    const identity = material(this.accent, this.accent, { emissiveIntensity: 1.1, roughness: .18, metalness: .3 });
+    const dark = material(0x091424, this.accent, { emissiveIntensity: .035, roughness: .34, metalness: .7 });
+    this.weaponMuzzleDistance = .92;
     if (weapon.type === "mine" || weapon.type === "remote") {
-      this.weaponGroup.add(part(new THREE.CylinderGeometry(.28, .34, .18, 10), glow, .05, .08, .2));
+      const body = part(new THREE.CylinderGeometry(.3, .36, .2, 10), dark, .04, .04, .2);
+      const cap = part(new THREE.CylinderGeometry(.22, .28, .05, 10), glow, .04, .17, .2, false);
+      const marker = part(new THREE.TorusGeometry(.18, .035, 4, 12), identity, .04, .205, .2, false);
+      marker.rotation.x = Math.PI / 2;
+      this.weaponGroup.add(body, cap, marker);
+      this.weaponMuzzleDistance = .55;
       return;
     }
     if (weapon.type === "melee") {
       const reachScale = Math.min(1.5, weapon.reach / 3.5);
-      const blade = part(new THREE.BoxGeometry(.12, .12, 1.15 * reachScale), glow, .08, .04, .48);
-      const grip = part(new THREE.BoxGeometry(.18, .28, .2), dark, .08, -.08, -.08);
-      this.weaponGroup.add(blade, grip);
+      const bladeLength = 1.12 * reachScale;
+      const blade = part(new THREE.BoxGeometry(.1, .11, bladeLength), glow, .06, .04, .43 + bladeLength * .35, false);
+      const grip = part(new THREE.CylinderGeometry(.07, .085, .34, 8), dark, .06, -.01, .03);
+      grip.rotation.x = Math.PI / 2;
+      const guard = part(new THREE.BoxGeometry(.38, .09, .1), identity, .06, .04, .18, false);
+      this.weaponGroup.add(blade, grip, guard);
+      this.weaponMuzzleDistance = .55 + bladeLength;
       return;
     }
-    const scale = weapon.type === "rocket" || weapon.type === "plasma" ? 1.18 : .82;
-    const barrel = part(new THREE.CylinderGeometry(.11 * scale, .16 * scale, .9 * scale, 10), glow, .08, .06, .45);
-    barrel.rotation.x = Math.PI / 2;
-    const grip = part(new THREE.BoxGeometry(.2, .4, .22), dark, .08, -.18, .08);
-    this.weaponGroup.add(barrel, grip);
+    const heavy = ["rocket", "plasma", "grenade"].includes(weapon.type);
+    const receiver = part(new THREE.BoxGeometry(heavy ? .34 : .27, .3, heavy ? .66 : .5), dark, .05, .02, .26);
+    const grip = part(new THREE.BoxGeometry(.18, .38, .2), dark, .05, -.2, .11);
+    grip.rotation.x = -.18;
+    const ownerBand = part(new THREE.BoxGeometry(heavy ? .4 : .32, .07, .14), identity, .05, .12, .22, false);
+    this.weaponGroup.add(receiver, grip, ownerBand);
+
+    if (weapon.type === "rocket") {
+      const tube = part(new THREE.CylinderGeometry(.17, .2, .92, 10), glow, .05, .06, .72);
+      tube.rotation.x = Math.PI / 2;
+      const muzzle = part(new THREE.TorusGeometry(.23, .055, 5, 12), identity, .05, .06, 1.17, false);
+      this.weaponGroup.add(tube, muzzle);
+      this.weaponMuzzleDistance = 1.28;
+    } else if (weapon.type === "plasma") {
+      const chamber = part(new THREE.IcosahedronGeometry(.24, 1), glow, .05, .07, .58, false);
+      const cageMaterial = identity.clone();
+      cageMaterial.wireframe = true;
+      const cage = part(new THREE.IcosahedronGeometry(.3, 1), cageMaterial, .05, .07, .58, false);
+      const barrel = part(new THREE.CylinderGeometry(.08, .13, .55, 8), dark, .05, .07, .92);
+      barrel.rotation.x = Math.PI / 2;
+      this.weaponGroup.add(chamber, cage, barrel);
+      this.weaponMuzzleDistance = 1.21;
+    } else if (weapon.type === "rail") {
+      const railA = part(new THREE.BoxGeometry(.08, .1, 1.18), glow, -.055, .08, .78, false);
+      const railB = part(new THREE.BoxGeometry(.08, .1, 1.18), glow, .155, .08, .78, false);
+      const bridge = part(new THREE.BoxGeometry(.31, .08, .16), identity, .05, .08, 1.19, false);
+      this.weaponGroup.add(railA, railB, bridge);
+      this.weaponMuzzleDistance = 1.42;
+    } else {
+      const scale = weapon.type === "grenade" ? 1.15 : .82;
+      const barrel = part(new THREE.CylinderGeometry(.095 * scale, .135 * scale, .76 * scale, 9), glow, .05, .06, .69);
+      barrel.rotation.x = Math.PI / 2;
+      const muzzle = part(new THREE.TorusGeometry(.13 * scale, .035, 4, 10), identity, .05, .06, .98, false);
+      this.weaponGroup.add(barrel, muzzle);
+      this.weaponMuzzleDistance = 1.08;
+    }
   }
 
   switchSlot(index) {
@@ -129,6 +330,7 @@ export class Fighter {
 
   recoil(amount = this.weapon.recoil) {
     this.velocity.addScaledVector(this.aim, -amount);
+    this.recoilVisual = Math.max(this.recoilVisual, clamp(amount * .11, .12, .72));
   }
 
   takeHit(amount, push = null) {
@@ -153,18 +355,24 @@ export class Fighter {
     this.reloadTimer = 0;
     this.attackTimer = .7;
     this.slowTimer = 0;
+    this.landTimer = 0;
+    this.landStrength = 0;
+    this.recoilVisual = 0;
     this.grapple = null;
     this.ledgeContact = null;
   }
 
   update(dt, move, look, actions, world) {
     if (!this.alive) return;
+    const wasGrounded = this.grounded;
     this.attackTimer = Math.max(0, this.attackTimer - dt);
     const reloading = this.reloadTimer > 0;
     this.reloadTimer = Math.max(0, this.reloadTimer - dt);
     if (reloading && this.reloadTimer === 0) this.ammo[this.weapon.id] = this.weapon.ammo;
     this.hitTimer = Math.max(0, this.hitTimer - dt);
     this.slowTimer = Math.max(0, this.slowTimer - dt);
+    this.landTimer = Math.max(0, this.landTimer - dt);
+    this.recoilVisual = THREE.MathUtils.damp(this.recoilVisual, 0, 13, dt);
 
     if (look.lengthSq() > .001) this.aim.copy(look).normalize();
     if (actions.jump && this.grounded) {
@@ -191,6 +399,7 @@ export class Fighter {
       }
     }
     this.velocity.y -= 19 * dt;
+    const fallSpeed = Math.max(0, -this.velocity.y);
     const previous = this.position.clone();
     this.position.addScaledVector(this.velocity, dt);
 
@@ -198,6 +407,10 @@ export class Fighter {
     this.ledgeContact = collision.ledge;
     if (collision.ceiling && this.velocity.y > 0) this.velocity.y = 0;
     if (collision.grounded && this.velocity.y <= 0) {
+      if (!wasGrounded && fallSpeed > 2.5) {
+        this.landTimer = .22;
+        this.landStrength = clamp((fallSpeed - 2) / 15, .18, 1);
+      }
       this.velocity.y = 0;
       this.grounded = true;
     } else {
@@ -211,30 +424,111 @@ export class Fighter {
 
     const angle = Math.atan2(this.aim.x, this.aim.z);
     this.group.rotation.y = THREE.MathUtils.damp(this.group.rotation.y, angle, 15, dt);
-    this.weaponGroup.rotation.x = -Math.asin(clamp(this.aim.y, -1, 1));
     const time = performance.now() * .009;
-    const swing = moving ? Math.sin(time) * .55 : .06;
-    this.leftLeg.rotation.x = swing;
-    this.rightLeg.rotation.x = -swing;
-    this.leftArm.rotation.x = -swing * .5;
-    this.rightArm.rotation.x = swing * .4 - (this.attackTimer > this.weapon.cooldown * .55 ? .75 : 0);
-    this.rig.position.y = moving ? Math.abs(Math.sin(time)) * .05 : Math.sin(time * .45) * .018;
-    this.rig.traverse((child) => {
-      if (!child.material?.emissive) return;
-      child.material.emissiveIntensity = this.hitTimer > 0 ? 1.4 : .45;
-    });
+    const horizontalSpeed = Math.hypot(this.velocity.x, this.velocity.z);
+    const locomotion = clamp(horizontalSpeed / 9, 0, 1);
+    if (this.grounded && moving) this.gaitPhase = (this.gaitPhase + dt * (5.2 + horizontalSpeed * .72)) % (Math.PI * 2);
+    const gait = Math.sin(this.gaitPhase);
+    const landing = this.landTimer > 0
+      ? this.landStrength * Math.sin((1 - this.landTimer / .22) * Math.PI)
+      : 0;
+    const grappled = Boolean(this.grapple);
+    let leftLegTarget;
+    let rightLegTarget;
+    if (this.grounded) {
+      leftLegTarget = moving ? gait * (.42 + locomotion * .26) + landing * .42 : landing * .42;
+      rightLegTarget = moving ? -gait * (.42 + locomotion * .26) + landing * .42 : landing * .42;
+    } else if (grappled) {
+      leftLegTarget = .48 + clamp(-this.velocity.y * .018, -.2, .24);
+      rightLegTarget = -.16 + clamp(-this.velocity.y * .012, -.14, .2);
+    } else {
+      const tuck = clamp(Math.abs(this.velocity.y) / 18, .12, .52);
+      leftLegTarget = .16 + tuck;
+      rightLegTarget = -.08 + tuck * .72;
+    }
+    this.leftLeg.rotation.x = THREE.MathUtils.damp(this.leftLeg.rotation.x, leftLegTarget, 15, dt);
+    this.rightLeg.rotation.x = THREE.MathUtils.damp(this.rightLeg.rotation.x, rightLegTarget, 15, dt);
+
+    const aimPitch = Math.asin(clamp(this.aim.y, -1, 1));
+    const melee = this.weapon.type === "melee";
+    const attacking = this.attackTimer > this.weapon.cooldown * .55;
+    let leftArmTarget = -1.06 - aimPitch * .65 - gait * locomotion * .035;
+    let rightArmTarget = -1.24 - aimPitch * .72 + this.recoilVisual * .68;
+    let leftArmRoll = .38;
+    let rightArmRoll = -.1;
+    if (melee) {
+      leftArmTarget = -.42;
+      rightArmTarget = attacking ? -1.72 : -.48;
+      leftArmRoll = .1;
+      rightArmRoll = -.2;
+    } else if (grappled) {
+      const anchor = this.grapple.wraps?.[0] || this.grapple.anchor;
+      const ropeLength = anchor ? this.position.distanceTo(anchor) : 1;
+      const ropePitch = anchor ? Math.asin(clamp((anchor.y - this.position.y - 1.4) / Math.max(.01, ropeLength), -1, 1)) : 0;
+      leftArmTarget = -1.48 - ropePitch * .72;
+      leftArmRoll = .5;
+      rightArmTarget -= .08;
+    }
+    this.leftArm.rotation.x = THREE.MathUtils.damp(this.leftArm.rotation.x, leftArmTarget, 19, dt);
+    this.rightArm.rotation.x = THREE.MathUtils.damp(this.rightArm.rotation.x, rightArmTarget, 19, dt);
+    this.leftArm.rotation.z = THREE.MathUtils.damp(this.leftArm.rotation.z, leftArmRoll, 17, dt);
+    this.rightArm.rotation.z = THREE.MathUtils.damp(this.rightArm.rotation.z, rightArmRoll, 17, dt);
+    this.leftArm.rotation.y = THREE.MathUtils.damp(this.leftArm.rotation.y, melee ? 0 : -.26, 17, dt);
+    this.rightArm.rotation.y = THREE.MathUtils.damp(this.rightArm.rotation.y, melee ? .15 : .08, 17, dt);
+
+    this.weaponGroup.rotation.x = THREE.MathUtils.damp(this.weaponGroup.rotation.x, -aimPitch + this.recoilVisual * .22, 22, dt);
+    this.weaponGroup.rotation.z = THREE.MathUtils.damp(this.weaponGroup.rotation.z, grappled ? Math.sin(time * .42) * .035 : 0, 13, dt);
+    this.weaponGroup.position.y = THREE.MathUtils.damp(this.weaponGroup.position.y, 1.4 - landing * .07, 20, dt);
+    this.weaponGroup.position.z = THREE.MathUtils.damp(this.weaponGroup.position.z, .28 - this.recoilVisual * .22, 24, dt);
+    const bob = this.grounded && moving ? Math.abs(gait) * .055 : Math.sin(time * .45) * .018;
+    this.rig.position.y = bob - landing * .13;
+    this.rig.scale.set(1.07 + landing * .07, 1.04 - landing * .11, 1.07 + landing * .07);
+    const strafe = this.velocity.x * this.aim.z - this.velocity.z * this.aim.x;
+    this.rig.rotation.z = THREE.MathUtils.damp(this.rig.rotation.z, clamp(-strafe * .025, -.14, .14), 9, dt);
+    const bodyPitch = grappled
+      ? clamp(-.1 - this.velocity.y * .012, -.28, .12)
+      : moving ? -.045 * locomotion : 0;
+    this.rig.rotation.x = THREE.MathUtils.damp(this.rig.rotation.x, bodyPitch, 9, dt);
+    const hit = this.hitTimer > 0;
+    this.armorMaterial.emissiveIntensity = hit ? 1.45 : .16;
+    this.accentMaterial.emissiveIntensity = hit ? 2.15 : 1.25;
+    this.darkMaterial.emissiveIntensity = hit ? .48 : .025;
+    const pulse = .5 + Math.sin(time * .55 + this.id.length) * .5;
+    this.identityRing.material.opacity = hit ? .85 : .34 + pulse * .17;
+    this.identityRing.scale.setScalar(1 + pulse * .045);
+    this.identityRing.rotation.z += dt * .32;
+    this.readabilityHalo.material.opacity = hit ? .32 : .12 + locomotion * .06;
+    this.identityBeacon.position.y = 2.82 + Math.sin(time * .7) * .04;
+    this.identityBeacon.material.opacity = hit ? 1 : .86 + pulse * .12;
+    this.identityBeacon.scale.setScalar((hit ? .041 : .034) * (1 + pulse * .06));
   }
 
   forwardPoint(distance) {
     return this.position.clone().add(new THREE.Vector3(0, 1.25, 0)).addScaledVector(this.aim, distance);
   }
 
+  muzzlePoint(target = new THREE.Vector3()) {
+    const flatLength = Math.hypot(this.aim.x, this.aim.z);
+    const rightX = flatLength > .001 ? this.aim.z / flatLength : Math.cos(this.group.rotation.y);
+    const rightZ = flatLength > .001 ? -this.aim.x / flatLength : -Math.sin(this.group.rotation.y);
+    target.copy(this.position).add(new THREE.Vector3(0, 1.43, 0)).addScaledVector(this.aim, this.weaponMuzzleDistance || .92);
+    target.x += rightX * .5;
+    target.z += rightZ * .5;
+    return target;
+  }
+
   dispose() {
     this.scene.remove(this.group);
+    const geometries = new Set();
+    const materials = new Set();
     this.group.traverse((child) => {
-      child.geometry?.dispose?.();
-      child.material?.dispose?.();
+      if (child.geometry) geometries.add(child.geometry);
+      if (child.material) {
+        for (const entry of Array.isArray(child.material) ? child.material : [child.material]) materials.add(entry);
+      }
     });
+    for (const geometry of geometries) geometry.dispose();
+    for (const entry of materials) entry.dispose();
   }
 }
 
