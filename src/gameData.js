@@ -95,6 +95,15 @@ export const WEAPONS = Object.fromEntries(weaponList.map((entry) => [entry.id, e
 
 export const DEFAULT_LOADOUT = LOADOUT_SLOTS.map((slot) => slot.defaultWeapon);
 
+export function randomLoadout(random = Math.random) {
+  const pool = Object.keys(WEAPONS);
+  for (let index = pool.length - 1; index >= pool.length - LOADOUT_SLOTS.length; index--) {
+    const pick = Math.floor(random() * (index + 1));
+    [pool[index], pool[pick]] = [pool[pick], pool[index]];
+  }
+  return pool.slice(-LOADOUT_SLOTS.length);
+}
+
 export function projectileLifetime(weapon) {
   return weapon.fuse ?? Infinity;
 }

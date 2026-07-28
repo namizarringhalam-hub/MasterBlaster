@@ -4,7 +4,7 @@ import { SoundBoard } from "./audio.js";
 import { ArenaWorld } from "./world.js";
 import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, grappleSightline, projectileTouchesPlayer, reticleAim } from "./player.js";
 import { InputManager, updateOrbit } from "./input.js";
-import { DEFAULT_LOADOUT, loadSettings, projectileLifetime, projectileStepCount, saveSettings, WEAPONS } from "./gameData.js";
+import { DEFAULT_LOADOUT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, WEAPONS } from "./gameData.js";
 import { botFireChance, chooseBotSlot, clampBotCount, nearestTarget, safestSpawn } from "./botBrain.js";
 
 const canvas = document.querySelector("#game-canvas");
@@ -150,6 +150,11 @@ class BlasterBattle {
 
   renderSetup(mode) {
     this.mode = mode;
+    if (mode === "quick") {
+      this.settings.loadout = randomLoadout();
+      this.settings.botCount = 7;
+      this.botDifficulty = "normal";
+    }
     const title = mode === "quick" ? "Quick Play" : mode === "private" ? "Private Room" : "Training";
     const detail = mode === "quick"
       ? "Enter the regional practice queue with up to fifteen AI combatants."
@@ -505,7 +510,7 @@ class BlasterBattle {
     player.grapple = { anchor, line, wraps: [], ropeLength: Math.max(5, start.distanceTo(anchor) * .92) };
     const direction = anchor.clone().sub(start).normalize();
     const approachSpeed = player.velocity.dot(direction);
-    if (approachSpeed < 12) player.velocity.addScaledVector(direction, 12 - approachSpeed);
+    if (approachSpeed < 15) player.velocity.addScaledVector(direction, 15 - approachSpeed);
     this.sound.play("power");
   }
 

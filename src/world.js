@@ -322,6 +322,7 @@ export class ArenaWorld {
     const floor = this.surfaceHeightAt(position, previous.y + .35);
     const grounded = position.y <= floor && previous.y >= floor - .35;
     let ceiling = false;
+    let ledge = null;
     if (grounded) position.y = floor;
 
     for (const item of this.obstacles) {
@@ -344,8 +345,13 @@ export class ArenaWorld {
       ];
       pushes.sort((a, b) => a[0] - b[0]);
       position[pushes[0][1]] = pushes[0][2];
+      const rise = item.top - position.y;
+      if (rise > .15 && rise <= 3.25 && (!ledge || item.top < ledge.top)) {
+        const inward = new THREE.Vector3(item.x - position.x, 0, item.z - position.z);
+        if (inward.lengthSq()) ledge = { top: item.top, inward: inward.normalize() };
+      }
     }
-    return { grounded, ceiling, floor };
+    return { grounded, ceiling, ledge, floor };
   }
 
   boostAt(position) {

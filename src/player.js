@@ -46,6 +46,7 @@ export class Fighter {
     this.hitTimer = 0;
     this.slowTimer = 0;
     this.grounded = true;
+    this.ledgeContact = null;
     this.alive = true;
     this.deaths = 0;
     this.botThink = 0;
@@ -153,6 +154,7 @@ export class Fighter {
     this.attackTimer = .7;
     this.slowTimer = 0;
     this.grapple = null;
+    this.ledgeContact = null;
   }
 
   update(dt, move, look, actions, world) {
@@ -193,6 +195,7 @@ export class Fighter {
     this.position.addScaledVector(this.velocity, dt);
 
     const collision = world.resolve(this.position, this.radius, previous);
+    this.ledgeContact = collision.ledge;
     if (collision.ceiling && this.velocity.y > 0) this.velocity.y = 0;
     if (collision.grounded && this.velocity.y <= 0) {
       this.velocity.y = 0;
@@ -246,11 +249,11 @@ export function applyGrapplePhysics(player, dt) {
 
   const direction = towardAnchor.multiplyScalar(1 / distance);
   const movementScale = player.slowTimer > 0 ? .55 : 1;
-  player.grapple.ropeLength = Math.max(5, player.grapple.ropeLength - 18 * movementScale * dt);
+  player.grapple.ropeLength = Math.max(5, player.grapple.ropeLength - 22 * movementScale * dt);
   let wrappedLength = 0;
   for (let index = 0; index < wraps.length; index++) wrappedLength += wraps[index].distanceTo(wraps[index + 1] || player.grapple.anchor);
   const stretch = Math.max(0, distance - Math.max(1, player.grapple.ropeLength - wrappedLength));
-  player.velocity.addScaledVector(direction, (30 + stretch * 11) * movementScale * dt);
+  player.velocity.addScaledVector(direction, (38 + stretch * 13) * movementScale * dt);
 
   // A taut rope cancels only outward velocity. Tangential speed survives and becomes the swing.
   if (stretch > 0) {
@@ -260,6 +263,11 @@ export function applyGrapplePhysics(player, dt) {
 
   const steering = player.controlMove.clone().sub(direction.clone().multiplyScalar(player.controlMove.dot(direction)));
   if (steering.lengthSq() > .01) player.velocity.addScaledVector(steering.normalize(), 14 * movementScale * dt);
+  if (player.ledgeContact && Math.max(pullPoint.y, player.grapple.anchor.y) >= player.ledgeContact.top - .35) {
+    player.velocity.y = Math.max(player.velocity.y, 11);
+    const inwardSpeed = player.velocity.dot(player.ledgeContact.inward);
+    if (inwardSpeed < 7) player.velocity.addScaledVector(player.ledgeContact.inward, 7 - inwardSpeed);
+  }
   if (player.velocity.length() > 48) player.velocity.setLength(48);
 }
 

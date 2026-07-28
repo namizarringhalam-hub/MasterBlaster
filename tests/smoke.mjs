@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import * as THREE from "three";
 import { chooseBotSlot, botFireChance, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
-import { DEFAULT_LOADOUT, LOADOUT_SLOTS, projectileLifetime, projectileStepCount, seededRandom, seedFromText, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
+import { DEFAULT_LOADOUT, LOADOUT_SLOTS, projectileLifetime, projectileStepCount, randomLoadout, seededRandom, seedFromText, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
 import { InputManager, shouldCaptureGameKey, touchLookDelta, updateOrbit } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
@@ -13,6 +13,7 @@ const [mainSource, serviceWorkerSource] = await Promise.all([
 ]);
 assert.doesNotMatch(mainSource, /serviceWorker\.register/, "the game no longer installs the stale offline cache");
 assert.match(mainSource, /reticleAim\(player, this\.camera\.position, this\.camera\.getWorldDirection/, "weapons fire through the visible camera's exact center ray");
+assert.match(mainSource, /mode === "quick"[\s\S]*?settings\.botCount = 7;[\s\S]*?botDifficulty = "normal";/, "Quick Play defaults to seven normal-difficulty bots");
 assert.match(serviceWorkerSource, /caches\.delete/, "the replacement worker clears old cached builds");
 assert.match(serviceWorkerSource, /clients\.claim/, "the replacement worker takes control before refreshing old clients");
 assert.match(serviceWorkerSource, /registration\.unregister/, "the replacement worker removes itself after cleanup");
@@ -29,6 +30,10 @@ const documentedWeaponIds = [
 assert.equal(Object.keys(WEAPONS).length, 45, "the game exposes the prototype and complete documented weapon library");
 assert.equal(LOADOUT_SLOTS.length, 5, "players carry five main weapons");
 assert.equal(DEFAULT_LOADOUT.length, 5, "the default loadout is match-ready");
+const quickLoadout = randomLoadout(() => 0);
+assert.equal(quickLoadout.length, 5, "Quick Play selects five random weapons");
+assert.equal(new Set(quickLoadout).size, 5, "Quick Play never selects the same weapon twice");
+assert.ok(quickLoadout.every((id) => WEAPONS[id]), "Quick Play only selects valid weapons");
 assert.deepEqual(
   Object.keys(WEAPONS).sort(),
   documentedWeaponIds,
@@ -164,6 +169,9 @@ assert.ok(worldB.resolve(risingIntoPlatform, .72, new THREE.Vector3(10, 11, 10))
 const embeddedInSpire = new THREE.Vector3(0, 20, 0);
 worldB.resolve(embeddedInSpire, .72, embeddedInSpire.clone());
 assert.ok(Math.abs(embeddedInSpire.x) >= 4.2 || Math.abs(embeddedInSpire.z) >= 4.2, "solid blocks eject overlapping players instead of trapping them inside");
+const platformSide = new THREE.Vector3(21.5, 12.5, 10);
+const ledgeCollision = worldB.resolve(platformSide, .72, new THREE.Vector3(22.2, 12.5, 10));
+assert.ok(ledgeCollision.ledge?.top === 15 && ledgeCollision.ledge.inward.x < 0, "platform sides expose an inward ledge-climb direction");
 
 const fighter = new Fighter(
   worldScene,
@@ -196,13 +204,20 @@ fighter.grapple = { anchor: new THREE.Vector3(20, 20, 0), ropeLength: 24 };
 const ropeBefore = fighter.grapple.ropeLength;
 applyGrapplePhysics(fighter, .1);
 assert.ok(fighter.velocity.x > 0 && fighter.velocity.y > 0, "the grapple actively pulls toward elevated anchors");
-assert.ok(fighter.grapple.ropeLength < ropeBefore, "the grapple reels in while attached");
+assert.ok(ropeBefore - fighter.grapple.ropeLength >= 2.1, "the strengthened grapple reels in decisively while attached");
 const wrappedPlayer = {
   position: new THREE.Vector3(), velocity: new THREE.Vector3(), controlMove: new THREE.Vector3(), slowTimer: 0,
   grapple: { anchor: new THREE.Vector3(20, 10, 0), wraps: [new THREE.Vector3(0, 10, 10)], ropeLength: 25 }
 };
 applyGrapplePhysics(wrappedPlayer, .1);
 assert.ok(wrappedPlayer.velocity.z > 0 && Math.abs(wrappedPlayer.velocity.x) < .001, "a bent rope pulls toward its nearest wrap point instead of through the obstacle");
+const ledgePlayer = {
+  position: new THREE.Vector3(21.72, 12.5, 10), velocity: new THREE.Vector3(), controlMove: new THREE.Vector3(), slowTimer: 0,
+  ledgeContact: ledgeCollision.ledge,
+  grapple: { anchor: new THREE.Vector3(10, 15, 10), wraps: [], ropeLength: 14 }
+};
+applyGrapplePhysics(ledgePlayer, .1);
+assert.ok(ledgePlayer.velocity.y >= 11 && ledgePlayer.velocity.dot(ledgeCollision.ledge.inward) >= 6.99, "grappling a platform top automatically lifts and pulls a stuck player over its ledge");
 const speedBeforeRelease = fighter.velocity.length();
 boostGrappleRelease(fighter);
 assert.ok(fighter.velocity.length() > speedBeforeRelease, "releasing a fast swing adds a slingshot boost");
