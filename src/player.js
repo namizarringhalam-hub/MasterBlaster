@@ -193,6 +193,7 @@ export class Fighter {
     this.position.addScaledVector(this.velocity, dt);
 
     const collision = world.resolve(this.position, this.radius, previous);
+    if (collision.ceiling && this.velocity.y > 0) this.velocity.y = 0;
     if (collision.grounded && this.velocity.y <= 0) {
       this.velocity.y = 0;
       this.grounded = true;
@@ -237,14 +238,18 @@ export class Fighter {
 export function applyGrapplePhysics(player, dt) {
   if (!player.grapple) return;
   const chest = player.position.clone().add(new THREE.Vector3(0, 1.4, 0));
-  const towardAnchor = player.grapple.anchor.clone().sub(chest);
+  const wraps = player.grapple.wraps || [];
+  const pullPoint = wraps[0] || player.grapple.anchor;
+  const towardAnchor = pullPoint.clone().sub(chest);
   const distance = towardAnchor.length();
   if (distance < .01) return;
 
   const direction = towardAnchor.multiplyScalar(1 / distance);
   const movementScale = player.slowTimer > 0 ? .55 : 1;
   player.grapple.ropeLength = Math.max(5, player.grapple.ropeLength - 18 * movementScale * dt);
-  const stretch = Math.max(0, distance - player.grapple.ropeLength);
+  let wrappedLength = 0;
+  for (let index = 0; index < wraps.length; index++) wrappedLength += wraps[index].distanceTo(wraps[index + 1] || player.grapple.anchor);
+  const stretch = Math.max(0, distance - Math.max(1, player.grapple.ropeLength - wrappedLength));
   player.velocity.addScaledVector(direction, (30 + stretch * 11) * movementScale * dt);
 
   // A taut rope cancels only outward velocity. Tangential speed survives and becomes the swing.

@@ -138,6 +138,14 @@ const wallGrapple = worldB.grapplePoint(new THREE.Vector3(100, 10, 0), new THREE
 assert.ok(wallGrapple && Math.abs(wallGrapple.x - 111.4) < .01 && wallGrapple.y === 10, "the grapple attaches exactly where aimed on a wall");
 const blockGrapple = worldB.grapplePoint(new THREE.Vector3(12, 20, 0), new THREE.Vector3(-1, 0, 0));
 assert.ok(blockGrapple && Math.abs(blockGrapple.x - 3.5) < .01 && blockGrapple.y === 20, "the grapple attaches to ordinary blocks, not only anchor spheres");
+const ropeStart = new THREE.Vector3(-12, 20, 0);
+const ropeEnd = new THREE.Vector3(12, 20, 0);
+const ropeWrapA = worldB.ropeWrapPoint(ropeStart, ropeEnd);
+const ropeWrapB = ropeWrapA && worldB.ropeWrapPoint(ropeWrapA, ropeEnd);
+assert.ok(worldB.ropeBlocked(ropeStart, ropeEnd), "solid geometry blocks a straight grapple rope");
+assert.ok(ropeWrapA && ropeWrapB && !worldB.ropeBlocked(ropeStart, ropeWrapA) && !worldB.ropeBlocked(ropeWrapA, ropeWrapB) && !worldB.ropeBlocked(ropeWrapB, ropeEnd), "the grapple routes around clear obstacle edges");
+const lowWrap = worldB.ropeWrapPoint(new THREE.Vector3(-12, 1.4, 0), new THREE.Vector3(12, 1.4, 0));
+assert.ok(lowWrap?.y >= .12, "rope routing never bends underneath the arena floor");
 assert.equal(worldB.grapplePoint(new THREE.Vector3(90, 10, 90), new THREE.Vector3(0, 1, 0)), null, "a missed grapple does not snap to an unrelated anchor");
 assert.ok(worldB.grapplePoint(new THREE.Vector3(-300, 10, 0), new THREE.Vector3(1, 0, 0)), "the grapple ray has no hidden distance cutoff");
 const blockedCamera = worldB.constrainCamera(new THREE.Vector3(100, 10, 0), new THREE.Vector3(120, 10, 0));
@@ -151,6 +159,11 @@ assert.ok(worldB.spawnPoints().some((point) => point.y >= 30), "respawns include
 const upperSpawn = worldB.spawnPoints().find((point) => point.y >= 30);
 const fallingOntoUpperSpawn = upperSpawn.clone().setY(upperSpawn.y - .1);
 assert.ok(worldB.resolve(fallingOntoUpperSpawn, .72, upperSpawn.clone().setY(upperSpawn.y + .2)).grounded, "players land on elevated platforms");
+const risingIntoPlatform = new THREE.Vector3(10, 12, 10);
+assert.ok(worldB.resolve(risingIntoPlatform, .72, new THREE.Vector3(10, 11, 10)).ceiling && risingIntoPlatform.y < 11.3, "grapple motion cannot pull players through a platform underside");
+const embeddedInSpire = new THREE.Vector3(0, 20, 0);
+worldB.resolve(embeddedInSpire, .72, embeddedInSpire.clone());
+assert.ok(Math.abs(embeddedInSpire.x) >= 4.2 || Math.abs(embeddedInSpire.z) >= 4.2, "solid blocks eject overlapping players instead of trapping them inside");
 
 const fighter = new Fighter(
   worldScene,
@@ -184,6 +197,12 @@ const ropeBefore = fighter.grapple.ropeLength;
 applyGrapplePhysics(fighter, .1);
 assert.ok(fighter.velocity.x > 0 && fighter.velocity.y > 0, "the grapple actively pulls toward elevated anchors");
 assert.ok(fighter.grapple.ropeLength < ropeBefore, "the grapple reels in while attached");
+const wrappedPlayer = {
+  position: new THREE.Vector3(), velocity: new THREE.Vector3(), controlMove: new THREE.Vector3(), slowTimer: 0,
+  grapple: { anchor: new THREE.Vector3(20, 10, 0), wraps: [new THREE.Vector3(0, 10, 10)], ropeLength: 25 }
+};
+applyGrapplePhysics(wrappedPlayer, .1);
+assert.ok(wrappedPlayer.velocity.z > 0 && Math.abs(wrappedPlayer.velocity.x) < .001, "a bent rope pulls toward its nearest wrap point instead of through the obstacle");
 const speedBeforeRelease = fighter.velocity.length();
 boostGrappleRelease(fighter);
 assert.ok(fighter.velocity.length() > speedBeforeRelease, "releasing a fast swing adds a slingshot boost");

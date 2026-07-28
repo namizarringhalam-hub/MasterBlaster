@@ -502,7 +502,7 @@ class BlasterBattle {
     const geometry = new THREE.BufferGeometry().setFromPoints([start, anchor]);
     const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: player.accent }));
     this.scene.add(line);
-    player.grapple = { anchor, line, ropeLength: Math.max(5, start.distanceTo(anchor) * .92) };
+    player.grapple = { anchor, line, wraps: [], ropeLength: Math.max(5, start.distanceTo(anchor) * .92) };
     const direction = anchor.clone().sub(start).normalize();
     const approachSpeed = player.velocity.dot(direction);
     if (approachSpeed < 12) player.velocity.addScaledVector(direction, 12 - approachSpeed);
@@ -511,9 +511,18 @@ class BlasterBattle {
 
   updateGrapple(player, dt) {
     if (!player.grapple || !player.alive) return;
-    applyGrapplePhysics(player, dt);
     const chest = player.position.clone().add(new THREE.Vector3(0, 1.4, 0));
-    player.grapple.line.geometry.setFromPoints([chest, player.grapple.anchor]);
+    const wraps = [];
+    let routeStart = chest;
+    for (let index = 0; index < 8; index++) {
+      const wrap = this.world.ropeWrapPoint(routeStart, player.grapple.anchor);
+      if (!wrap) break;
+      wraps.push(wrap);
+      routeStart = wrap;
+    }
+    player.grapple.wraps = wraps;
+    applyGrapplePhysics(player, dt);
+    player.grapple.line.geometry.setFromPoints([chest, ...wraps, player.grapple.anchor]);
   }
 
   releaseGrapple(player, boost = false) {

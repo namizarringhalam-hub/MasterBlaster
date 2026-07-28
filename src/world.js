@@ -321,23 +321,31 @@ export class ArenaWorld {
 
     const floor = this.surfaceHeightAt(position, previous.y + .35);
     const grounded = position.y <= floor && previous.y >= floor - .35;
+    let ceiling = false;
     if (grounded) position.y = floor;
 
     for (const item of this.obstacles) {
       if (grounded && Math.abs(position.y - item.top) < .08) continue;
-      const verticallyOverlaps = position.y < item.top - .08 && position.y + 2.25 > item.baseY + .08;
-      if (!verticallyOverlaps) continue;
-      const cx = THREE.MathUtils.clamp(position.x, item.x - item.w / 2, item.x + item.w / 2);
-      const cz = THREE.MathUtils.clamp(position.z, item.z - item.d / 2, item.z + item.d / 2);
-      const dx = position.x - cx;
-      const dz = position.z - cz;
-      const distance = Math.hypot(dx, dz);
-      if (distance > 0 && distance < radius) {
-        position.x += dx / distance * (radius - distance);
-        position.z += dz / distance * (radius - distance);
+      const minX = item.x - item.w / 2 - radius;
+      const maxX = item.x + item.w / 2 + radius;
+      const minZ = item.z - item.d / 2 - radius;
+      const maxZ = item.z + item.d / 2 + radius;
+      const insideFootprint = position.x > minX && position.x < maxX && position.z > minZ && position.z < maxZ;
+      if (insideFootprint && position.y > previous.y && previous.y + 2.25 <= item.baseY + .05 && position.y + 2.25 >= item.baseY) {
+        position.y = item.baseY - 2.251;
+        ceiling = true;
+        continue;
       }
+      const verticallyOverlaps = position.y < item.top - .08 && position.y + 2.25 > item.baseY + .08;
+      if (!verticallyOverlaps || !insideFootprint) continue;
+      const pushes = [
+        [position.x - minX, "x", minX], [maxX - position.x, "x", maxX],
+        [position.z - minZ, "z", minZ], [maxZ - position.z, "z", maxZ]
+      ];
+      pushes.sort((a, b) => a[0] - b[0]);
+      position[pushes[0][1]] = pushes[0][2];
     }
-    return { grounded, floor };
+    return { grounded, ceiling, floor };
   }
 
   boostAt(position) {
@@ -400,6 +408,58 @@ export class ArenaWorld {
     ];
     const ray = new THREE.Raycaster(origin, direction.clone().normalize(), .05);
     return ray.intersectObjects(surfaces, false)[0]?.point.clone() ?? null;
+  }
+
+  ropeObstacle(origin, target) {
+    const delta = target.clone().sub(origin);
+    const length = delta.length();
+    if (length < .1) return null;
+    const ray = new THREE.Ray(origin, delta.multiplyScalar(1 / length));
+    const box = new THREE.Box3();
+    const hit = new THREE.Vector3();
+    let nearest = null;
+    for (const item of this.obstacles) {
+      box.min.set(item.x - item.w / 2, item.baseY, item.z - item.d / 2);
+      box.max.set(item.x + item.w / 2, item.top, item.z + item.d / 2);
+      if (box.containsPoint(origin) || !ray.intersectBox(box, hit)) continue;
+      const distance = origin.distanceTo(hit);
+      if (distance <= .04 || distance >= length - .04 || (nearest && distance >= nearest.distance)) continue;
+      nearest = { item, hit: hit.clone(), distance };
+    }
+    return nearest;
+  }
+
+  ropeBlocked(origin, target) {
+    return Boolean(this.ropeObstacle(origin, target));
+  }
+
+  ropeWrapPoint(origin, target) {
+    const obstruction = this.ropeObstacle(origin, target);
+    if (!obstruction) return null;
+    const { item, hit } = obstruction;
+    const clearance = .3;
+    const xs = [item.x - item.w / 2 - clearance, item.x + item.w / 2 + clearance];
+    const ys = [Math.max(.12, item.baseY - clearance), item.top + clearance];
+    const zs = [item.z - item.d / 2 - clearance, item.z + item.d / 2 + clearance];
+    const candidates = [];
+    for (const x of xs) for (const y of ys) candidates.push(new THREE.Vector3(x, y, THREE.MathUtils.clamp(hit.z, zs[0], zs[1])));
+    for (const x of xs) for (const z of zs) candidates.push(new THREE.Vector3(x, THREE.MathUtils.clamp(hit.y, ys[0], ys[1]), z));
+    for (const y of ys) for (const z of zs) candidates.push(new THREE.Vector3(THREE.MathUtils.clamp(hit.x, xs[0], xs[1]), y, z));
+
+    const blockedByItem = (a, b) => {
+      const delta = b.clone().sub(a);
+      const length = delta.length();
+      if (length < .05) return false;
+      const box = new THREE.Box3(
+        new THREE.Vector3(item.x - item.w / 2, item.baseY, item.z - item.d / 2),
+        new THREE.Vector3(item.x + item.w / 2, item.top, item.z + item.d / 2)
+      );
+      const contact = new THREE.Ray(a, delta.multiplyScalar(1 / length)).intersectBox(box, new THREE.Vector3());
+      return Boolean(contact && a.distanceTo(contact) > .03 && a.distanceTo(contact) < length - .03);
+    };
+    return candidates
+      .filter((point) => point.distanceTo(origin) > .2 && !blockedByItem(origin, point))
+      .sort((a, b) => origin.distanceTo(a) + a.distanceTo(target) - origin.distanceTo(b) - b.distanceTo(target))[0] || null;
   }
 
   lineOfSight(a, b) {
