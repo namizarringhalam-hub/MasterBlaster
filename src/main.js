@@ -492,7 +492,7 @@ class BlasterBattle {
     this.updateHazards(dt);
     this.updateDecoys(dt);
     this.updateEffects(dt);
-    this.combatVisuals?.update(dt);
+    this.combatVisuals?.update(dt, this.camera);
     this.updateRespawns(dt);
     this.updateHud();
     if (this.matchTime <= 0 || Math.max(...this.scores) >= this.targetScore) this.finishMatch();

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import * as THREE from "three";
 import { chooseBotSlot, botFireChance, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
-import { createProjectileVisual } from "../src/combatVisuals.js";
+import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
 import { DEFAULT_LOADOUT, LOADOUT_SLOTS, projectileLifetime, projectileStepCount, randomLoadout, seededRandom, seedFromText, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
 import { InputManager, shouldCaptureGameKey, touchLookDelta, updateOrbit } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
@@ -36,6 +36,15 @@ for (const id of ["machine_gun", "railgun", "rocket_launcher", "grenade_launcher
   const projectileVisual = createProjectileVisual(WEAPONS[id], visualOwner, WEAPONS[id].projectileRadius || .11);
   assert.ok(projectileVisual.children.length >= 2 && projectileVisual.userData.combatVisual, `${id} has a layered, animated combat visual`);
 }
+const tracerScene = new THREE.Scene();
+const tracerVisuals = new CombatVisuals(tracerScene);
+const tracerCamera = new THREE.PerspectiveCamera();
+tracerVisuals.tracer(new THREE.Vector3(-5, 0, 0), new THREE.Vector3(5, 0, 0), WEAPONS.machine_gun, visualOwner);
+tracerVisuals.update(.016, tracerCamera);
+const nearCameraTracerMatrix = new THREE.Matrix4();
+tracerVisuals.tracerOuter.getMatrixAt(0, nearCameraTracerMatrix);
+assert.equal(nearCameraTracerMatrix.determinant(), 0, "fast tracers crossing the camera are hidden instead of becoming screen-sized boxes");
+tracerVisuals.dispose();
 const quickLoadout = randomLoadout(() => 0);
 assert.equal(quickLoadout.length, 5, "Quick Play selects five random weapons");
 assert.equal(new Set(quickLoadout).size, 5, "Quick Play never selects the same weapon twice");
