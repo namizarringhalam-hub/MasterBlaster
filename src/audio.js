@@ -78,6 +78,11 @@ export class SoundBoard {
 
   playWeapon(weapon, distanceScale = 1) {
     const volume = Math.max(.015, .09 * distanceScale);
+    if (weapon.type === "flame") {
+      this.noise(.09, volume * .68, 760);
+      this.tone(105, .08, "sawtooth", volume * .42, .78);
+      return;
+    }
     if (["rail", "beam", "chain"].includes(weapon.type)) {
       this.tone(820, .09, "sawtooth", volume, .24);
       this.tone(150, .18, "sine", volume * .55, 2.4);

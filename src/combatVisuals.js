@@ -37,6 +37,7 @@ function projectileFamily(weapon) {
 }
 
 function impactFamily(weapon, explosive) {
+  if (weapon.type === "flame") return "flame";
   if (["plasma", "wall", "decoy"].includes(weapon.type)) return "plasma";
   if (["rail", "beam"].includes(weapon.type)) return "precision";
   if (weapon.type === "chain") return "arc";
@@ -288,7 +289,7 @@ export class CombatVisuals {
     slot.ownerColor = (slot.ownerColor || new THREE.Color()).copy(ownerColor(owner, weapon));
     slot.length = precision ? 2.05 : heavy ? 1.62 : rapid ? 1.16 : .92;
     slot.width = precision ? .24 : heavy ? .33 : rapid ? .2 : .16;
-    if (weapon.type !== "mine" && weapon.type !== "melee") {
+    if (weapon.type !== "mine" && weapon.type !== "melee" && weapon.type !== "flame") {
       const end = slot.position.clone().addScaledVector(slot.direction, slot.length * 1.45);
       this.addTracer(slot.position, end, weapon, owner, this.reducedMotion ? .06 : .085, rapid ? .072 : .06);
     }
@@ -313,6 +314,41 @@ export class CombatVisuals {
     for (let index = 0; index < points.length - 1; index++) this.addTracer(points[index], points[index + 1], weapon, owner, life, width);
   }
 
+  flameStream(origin, direction, weapon, owner, distance) {
+    if (!origin || !direction?.lengthSq() || distance <= .05) return;
+    const forward = direction.clone().normalize();
+    const right = new THREE.Vector3().crossVectors(forward, UP);
+    if (right.lengthSq() < .01) right.set(1, 0, 0);
+    else right.normalize();
+    const rise = new THREE.Vector3().crossVectors(right, forward).normalize();
+    const ownerTint = ownerColor(owner, weapon);
+    const streams = [
+      { length: 1, side: 0, lift: .035, width: .13 },
+      { length: .78, side: -.12, lift: .1, width: .105 },
+      { length: .62, side: .14, lift: -.045, width: .09 }
+    ];
+    for (const stream of streams) {
+      const end = origin.clone().addScaledVector(forward, distance * stream.length);
+      end.addScaledVector(right, distance * stream.side).addScaledVector(rise, distance * stream.lift);
+      this.addTracer(origin, end, weapon, owner, .1, stream.width);
+    }
+
+    const sparks = this.reducedMotion ? 2 : 4;
+    for (let index = 0; index < sparks; index++) {
+      const fraction = .18 + (index + Math.random() * .45) / sparks * .78;
+      const spark = this.sparks[this.cursors.spark++ % this.sparks.length];
+      spark.life = spark.maxLife = .16 + Math.random() * .13;
+      spark.position = (spark.position || new THREE.Vector3()).copy(origin).addScaledVector(forward, distance * fraction);
+      spark.position.addScaledVector(right, (Math.random() - .5) * distance * fraction * .18);
+      spark.position.addScaledVector(rise, (Math.random() - .35) * distance * fraction * .11);
+      spark.velocity = (spark.velocity || new THREE.Vector3()).copy(forward).multiplyScalar(2 + Math.random() * 3).addScaledVector(rise, 1.2 + Math.random() * 2.4);
+      spark.color = (spark.color || new THREE.Color()).copy(index % 3 ? new THREE.Color(weapon.color) : ownerTint);
+      spark.size = .11 + fraction * .12;
+      spark.family = "flame";
+      spark.gravity = -1.5;
+    }
+  }
+
   addTracer(start, end, weapon, owner, life, width) {
     const slot = this.tracers[this.cursors.tracer++ % this.tracers.length];
     const rapid = weapon.projectileSpeed >= 140 || weapon.cooldown <= .12 || weapon.type === "spread";
@@ -333,6 +369,7 @@ export class CombatVisuals {
     ring.life = ring.maxLife = family === "blast" ? .34
       : family === "plasma" ? .4
         : family === "precision" ? .2
+          : family === "flame" ? .18
           : .28;
     ring.position = (ring.position || new THREE.Vector3()).copy(position);
     ring.normal = (ring.normal || new THREE.Vector3()).copy(normal || (!explosive && owner?.aim) || UP).normalize();
@@ -343,12 +380,13 @@ export class CombatVisuals {
 
     const count = this.reducedMotion ? 3
       : family === "blast" ? 14
+        : family === "flame" ? 4
         : family === "plasma" || family === "arc" ? 9
           : family === "precision" ? 5
             : 7;
     for (let index = 0; index < count; index++) {
       const spark = this.sparks[this.cursors.spark++ % this.sparks.length];
-      spark.life = spark.maxLife = (family === "plasma" ? .34 : .22) + Math.random() * .24;
+      spark.life = spark.maxLife = (family === "plasma" ? .34 : family === "flame" ? .13 : .22) + Math.random() * (family === "flame" ? .14 : .24);
       spark.position = (spark.position || new THREE.Vector3()).copy(position);
       spark.velocity = (spark.velocity || new THREE.Vector3()).set(
         (Math.random() - .5) * (family === "blast" ? 14 : family === "precision" ? 2.5 : 7),
@@ -356,9 +394,9 @@ export class CombatVisuals {
         (Math.random() - .5) * (family === "blast" ? 14 : family === "precision" ? 2.5 : 7)
       ).addScaledVector(ring.normal, family === "precision" ? 9 + Math.random() * 8 : 2 + Math.random() * 4);
       spark.color = (spark.color || new THREE.Color()).copy(index % 3 ? ring.weaponColor : ring.ownerColor);
-      spark.size = (family === "blast" ? .14 : family === "plasma" ? .11 : .075) + Math.random() * .09;
+      spark.size = (family === "blast" ? .14 : family === "plasma" ? .11 : family === "flame" ? .09 : .075) + Math.random() * .09;
       spark.family = family;
-      spark.gravity = family === "plasma" || family === "arc" ? 4 : 13;
+      spark.gravity = family === "flame" ? -1.5 : family === "plasma" || family === "arc" ? 4 : 13;
     }
   }
 
@@ -497,9 +535,10 @@ export class CombatVisuals {
       else this.quaternion.identity();
       const stretch = slot.family === "precision" ? 4.2
         : slot.family === "melee" ? 3
+          : slot.family === "flame" ? 1.8
           : slot.family === "plasma" || slot.family === "arc" ? 1.15
             : 1.7 + slot.velocity.length() * .08;
-      const width = slot.family === "precision" ? .55 : slot.family === "plasma" || slot.family === "arc" ? 1.15 : 1;
+      const width = slot.family === "precision" ? .55 : slot.family === "flame" ? 1.25 : slot.family === "plasma" || slot.family === "arc" ? 1.15 : 1;
       this.scale.set(slot.size * width * fade, slot.size * stretch * fade, slot.size * width * fade);
       this.matrix.compose(slot.position, this.quaternion, this.scale);
       this.sparkLayer.setMatrixAt(index, this.matrix);

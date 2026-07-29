@@ -25,7 +25,7 @@ function weapon(category, id, name, type, color, description, stats = {}) {
 
 export const WEAPON_GROUPS = [
   { id: "prototype", name: "Prototype", ids: ["blaster", "shotgun", "machine_gun", "rocket_launcher", "grenade_launcher", "mine", "railgun", "plasma_cannon"] },
-  { id: "rapid", name: "Rapid Fire", ids: ["submachine_gun", "minigun", "plasma_repeater", "needle_launcher", "burst_rifle"] },
+  { id: "rapid", name: "Rapid Fire", ids: ["submachine_gun", "minigun", "plasma_repeater", "needle_launcher", "burst_rifle", "flamethrower"] },
   { id: "explosive", name: "Explosive", ids: ["cluster_grenade", "sticky_launcher", "remote_explosive", "mortar", "bouncing_bomb", "napalm_launcher", "implosion_bomb"] },
   { id: "energy", name: "Energy", ids: ["laser_beam", "charged_energy_rifle", "arc_lightning", "pulse_cannon", "gravity_beam", "disintegration_weapon"] },
   { id: "unusual", name: "Unusual", ids: ["black_hole_generator", "freeze_gun", "teleport_projectile", "drill_missile", "boomerang_blade", "ricochet_cannon", "gravity_grenade", "tornado_generator", "temporary_wall", "decoy_launcher", "weapon_stealing_projectile", "grapple_disrupting_pulse"] },
@@ -49,6 +49,7 @@ const weaponList = [
   weapon("Rapid Fire", "plasma_repeater", "Plasma Repeater", "projectile", 0x42f5e6, "Rapid glowing energy bolts.", { damage: 9, projectileSpeed: 105, cooldown: .12, spread: .025, ammo: 24, reload: 1.35, recoil: .4, projectileRadius: .16 }),
   weapon("Rapid Fire", "needle_launcher", "Needle Launcher", "projectile", 0xdf9cff, "Needles pierce through two targets.", { damage: 12, projectileSpeed: 260, cooldown: .16, spread: .009, ammo: 18, reload: 1.3, recoil: .35, penetration: 2 }),
   weapon("Rapid Fire", "burst_rifle", "Burst Rifle", "spread", 0x8dffcf, "Tight three-round precision burst.", { damage: 10, pellets: 3, projectileSpeed: 245, cooldown: .48, spread: .018, ammo: 24, reload: 1.45, recoil: 1.3 }),
+  weapon("Rapid Fire", "flamethrower", "Flamethrower", "flame", 0xff6a24, "Continuous 11.5-metre cone with distance and edge falloff.", { damage: 4, projectileSpeed: 0, cooldown: .115, spread: 0, ammo: 48, reload: 1.8, recoil: .08, reach: 11.5, coneAngle: .22 }),
 
   // Full library: explosive
   weapon("Explosive", "cluster_grenade", "Cluster Grenade", "grenade", 0xff9f68, "Splits into six secondary bomblets.", { damage: 18, projectileSpeed: 15, cooldown: 1.15, ammo: 3, reload: 1.7, recoil: 2.2, radius: 2.8, terrainRadius: 2.3, fuse: 1.05, gravity: 17, bounces: 1, arcLift: 8.5, split: 6 }),
@@ -69,7 +70,7 @@ const weaponList = [
 
   // Full library: unusual
   weapon("Unusual", "black_hole_generator", "Black-Hole Generator", "plasma", 0x5d3b99, "Creates a singularity that pulls and damages nearby fighters.", { damage: 18, projectileSpeed: 34, cooldown: 1.8, ammo: 2, reload: 2.2, recoil: 5, radius: 4, terrainRadius: 2, projectileRadius: .5, hazard: "black_hole", hazardDuration: 5 }),
-  weapon("Unusual", "freeze_gun", "Freeze Gun", "projectile", 0xa9efff, "Slows movement and grappling after a hit.", { damage: 12, projectileSpeed: 92, cooldown: .32, ammo: 14, reload: 1.3, recoil: .5, effect: "freeze", effectDuration: 2.8, projectileRadius: .18 }),
+  weapon("Unusual", "freeze_gun", "Freeze Gun", "projectile", 0xa9efff, "Slows movement and grappling for 4.5 seconds after the last hit.", { damage: 12, projectileSpeed: 92, cooldown: .32, ammo: 14, reload: 1.3, recoil: .5, effect: "freeze", effectDuration: 4.5, projectileRadius: .18 }),
   weapon("Unusual", "teleport_projectile", "Teleport Projectile", "projectile", 0x43ffd1, "Teleports the shooter to the first impact point.", { damage: 5, projectileSpeed: 130, cooldown: 1.3, ammo: 4, reload: 1.6, recoil: 0, effect: "teleport", projectileRadius: .18 }),
   weapon("Unusual", "drill_missile", "Drill Missile", "rocket", 0xffd45d, "Bores through destructible cover before exploding.", { damage: 42, projectileSpeed: 48, cooldown: 1.2, ammo: 3, reload: 1.8, recoil: 3.8, radius: 4.2, terrainRadius: 5, terrainPenetration: 4 }),
   weapon("Unusual", "boomerang_blade", "Boomerang Blade", "projectile", 0xffa7e6, "Piercing blade returns to its owner.", { damage: 24, projectileSpeed: 74, cooldown: .75, ammo: 6, reload: 1.25, recoil: .8, penetration: 5, returning: .8, projectileRadius: .24 }),

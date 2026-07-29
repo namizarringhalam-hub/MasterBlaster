@@ -4,7 +4,7 @@ import "./styles.css";
 import { SoundBoard } from "./audio.js";
 import { CombatVisuals } from "./combatVisuals.js";
 import { ArenaWorld } from "./world.js";
-import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, grappleSightline, projectileTouchesPlayer, reticleAim } from "./player.js";
+import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reticleAim } from "./player.js";
 import { InputManager, updateOrbit } from "./input.js";
 import { DEFAULT_LOADOUT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, WEAPONS } from "./gameData.js";
 import { botFireChance, chooseBotSlot, clampBotCount, nearestTarget, safestSpawn } from "./botBrain.js";
@@ -169,7 +169,7 @@ class BlasterBattle {
         </section>
         <aside class="feature-rail">
           <span>01</span><div><b>GRAPPLE</b><small>Momentum is your weapon</small></div>
-          <span>02</span><div><b>45 WEAPONS</b><small>Carry five into combat</small></div>
+          <span>02</span><div><b>46 WEAPONS</b><small>Carry five into combat</small></div>
           <span>03</span><div><b>DYNAMIC ARENAS</b><small>Moving routes, portals, and hazards</small></div>
         </aside>
       </main>`;
@@ -532,7 +532,7 @@ class BlasterBattle {
     }
     const forward = offset.lengthSq() ? offset.clone().normalize() : new THREE.Vector3();
     const side = new THREE.Vector3(-forward.z, 0, forward.x).multiplyScalar(bot.botDodge);
-    const preferred = bot.weapon.type === "melee" ? bot.weapon.reach * .8 : bot.weapon.type === "spread" ? 8 : ["rail", "beam", "chain"].includes(bot.weapon.type) ? 24 : 15;
+    const preferred = bot.weapon.type === "melee" ? bot.weapon.reach * .8 : bot.weapon.type === "flame" ? 7.5 : bot.weapon.type === "spread" ? 8 : ["rail", "beam", "chain"].includes(bot.weapon.type) ? 24 : 15;
     const move = side.multiplyScalar(.62);
     if (distance > preferred + 3) move.add(forward);
     if (distance < preferred - 3) move.addScaledVector(forward, -1);
@@ -631,6 +631,7 @@ class BlasterBattle {
     if (weapon.type === "mine") return this.spawnMine(player, weapon);
     if (weapon.type === "beam") return this.fireBeam(player, weapon);
     if (weapon.type === "chain") return this.fireChain(player, weapon);
+    if (weapon.type === "flame") return this.fireFlame(player, weapon);
     if (weapon.type === "melee") return this.fireMelee(player, weapon);
     this.spawnProjectile(player, weapon, aimWithSpread(player.aim, weapon.spread));
   }
@@ -700,6 +701,23 @@ class BlasterBattle {
       from = end;
     }
     if (!candidates.length) this.spawnTracer(origin, origin.clone().addScaledVector(player.aim, 8), weapon, player, .1);
+  }
+
+  fireFlame(player, weapon) {
+    const origin = player.muzzlePoint(new THREE.Vector3());
+    const direction = player.aim.clone().normalize();
+    const surface = this.world.grapplePoint(origin, direction);
+    const visibleReach = Math.min(weapon.reach, surface ? origin.distanceTo(surface) : weapon.reach);
+    this.combatVisuals?.flameStream(origin, direction, weapon, player, visibleReach);
+
+    for (const target of [...this.players, ...this.decoys]) {
+      if (target === player || !target.alive) continue;
+      const targetPoint = target.position.clone().add(new THREE.Vector3(0, 1.05, 0));
+      const factor = flameConeFactor(origin, direction, targetPoint, target.radius, weapon.reach, weapon.coneAngle);
+      if (factor <= 0 || this.world.ropeBlocked(origin, targetPoint)) continue;
+      const push = direction.clone().multiplyScalar(weapon.recoil * 1.7);
+      this.damageTarget(target, weapon.damage * factor, push, player, weapon);
+    }
   }
 
   fireMelee(player, weapon) {
@@ -889,7 +907,7 @@ class BlasterBattle {
       return;
     }
     this.damagePlayer(target, damage, push, attacker, weapon);
-    if (weapon.effect === "freeze") target.slowTimer = Math.max(target.slowTimer || 0, weapon.effectDuration || 2);
+    applyWeaponStatus(target, weapon);
     if (weapon.effect === "steal" && target.alive) {
       target.ammo[target.weapon.id] = 0;
       attacker.ammo[attacker.weapon.id] = attacker.weapon.ammo;

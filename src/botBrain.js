@@ -30,6 +30,7 @@ export function chooseBotSlot(loadout, distance, random = Math.random) {
     const weapon = WEAPONS[id];
     let score = random() * .25;
     if (weapon.type === "melee") score += distance <= weapon.reach + 1 ? 1.7 : -1.2;
+    else if (weapon.type === "flame") score += distance <= weapon.reach ? 1.55 : -1.25;
     else if (weapon.type === "spread") score += distance < 11 ? 1.4 : -.6;
     else if (weapon.type === "mine") score += distance < 8 ? .9 : -.8;
     else if (weapon.type === "grenade") score += distance > 9 && distance < 24 ? 1.05 : 0;
@@ -46,6 +47,7 @@ export function chooseBotSlot(loadout, distance, random = Math.random) {
 export function botFireChance(distance, visible, weapon) {
   if (!visible && weapon.type !== "grenade") return 0;
   if (weapon.type === "melee") return distance <= weapon.reach + 1 ? .28 : 0;
+  if (weapon.type === "flame") return distance <= weapon.reach ? .24 : 0;
   if (weapon.type === "mine") return distance < 7 ? .045 : 0;
   if (weapon.type === "spread") return distance < 15 ? .18 : .015;
   if (["rail", "beam", "chain"].includes(weapon.type)) return .025;

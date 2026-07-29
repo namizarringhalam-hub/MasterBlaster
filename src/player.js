@@ -263,6 +263,17 @@ export class Fighter {
     this.identityRing = part(new THREE.RingGeometry(.72, .91, 28), ringMaterial, 0, .035, 0, false);
     this.identityRing.rotation.x = -Math.PI / 2;
     this.identityRing.renderOrder = 3;
+    this.freezeRing = part(new THREE.RingGeometry(.82, 1.08, 32), new THREE.MeshBasicMaterial({
+      color: 0xa9efff,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      toneMapped: false,
+      side: THREE.DoubleSide
+    }), 0, .055, 0, false);
+    this.freezeRing.rotation.x = -Math.PI / 2;
+    this.freezeRing.renderOrder = 4;
     const haloMaterial = new THREE.SpriteMaterial({
       map: radialTexture(),
       color: this.accent,
@@ -276,6 +287,18 @@ export class Fighter {
     this.readabilityHalo.position.set(0, 1.38, -.08);
     this.readabilityHalo.scale.set(2.85, 3.65, 1);
     this.readabilityHalo.renderOrder = 2;
+    this.freezeAura = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: radialTexture(),
+      color: 0xa9efff,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      toneMapped: false
+    }));
+    this.freezeAura.position.set(0, 1.35, -.05);
+    this.freezeAura.scale.set(3.15, 3.95, 1);
+    this.freezeAura.renderOrder = 3;
     this.identityBeacon = new THREE.Sprite(new THREE.SpriteMaterial({
       map: badgeTexture(this.id),
       color: this.accent,
@@ -289,7 +312,7 @@ export class Fighter {
     this.identityBeacon.position.set(0, 2.82, 0);
     this.identityBeacon.scale.set(.034, .034, 1);
     this.identityBeacon.renderOrder = 5;
-    group.add(shadow, this.identityRing, this.readabilityHalo, this.identityBeacon);
+    group.add(shadow, this.identityRing, this.freezeRing, this.readabilityHalo, this.freezeAura, this.identityBeacon);
     return group;
   }
 
@@ -307,6 +330,21 @@ export class Fighter {
       marker.rotation.x = Math.PI / 2;
       this.weaponGroup.add(body, cap, marker);
       this.weaponMuzzleDistance = .55;
+      return;
+    }
+    if (weapon.type === "flame") {
+      const receiver = part(new THREE.BoxGeometry(.34, .34, .58), dark, .05, .01, .28);
+      const fuelTank = part(new THREE.CylinderGeometry(.19, .19, .58, 10), glow, -.18, -.04, .18, false);
+      fuelTank.rotation.z = Math.PI / 2;
+      const nozzle = part(new THREE.CylinderGeometry(.075, .14, 1.05, 10), dark, .05, .06, .83);
+      nozzle.rotation.x = Math.PI / 2;
+      const heatShield = part(new THREE.CylinderGeometry(.18, .18, .42, 10, 1, true), glow, .05, .06, .94, false);
+      heatShield.rotation.x = Math.PI / 2;
+      const muzzle = part(new THREE.TorusGeometry(.19, .045, 5, 12), identity, .05, .06, 1.37, false);
+      const pilot = part(new THREE.ConeGeometry(.08, .26, 7), glow, .05, .06, 1.52, false);
+      pilot.rotation.x = Math.PI / 2;
+      this.weaponGroup.add(receiver, fuelTank, nozzle, heatShield, muzzle, pilot);
+      this.weaponMuzzleDistance = 1.52;
       return;
     }
     if (weapon.type === "melee") {
@@ -466,6 +504,9 @@ export class Fighter {
     if (push) this.velocity.add(push);
     if (this.health > 0) return false;
     this.alive = false;
+    this.slowTimer = 0;
+    this.freezeRing.material.opacity = 0;
+    this.freezeAura.material.opacity = 0;
     this.deaths += 1;
     this.deathTimer = 1.4;
     return true;
@@ -727,6 +768,12 @@ export class Fighter {
     this.accentMaterial.emissiveIntensity = 1.25 + hitFlash * 1.15;
     this.darkMaterial.emissiveIntensity = .025 + hitFlash * .44;
     const pulse = .5 + Math.sin(time * .55 + this.id.length) * .5;
+    const frozen = this.slowTimer > 0;
+    const freezePulse = .5 + Math.sin(time * 1.8) * .5;
+    this.freezeRing.material.opacity = frozen ? .4 + freezePulse * .28 : 0;
+    this.freezeRing.scale.setScalar(1 + freezePulse * .16);
+    this.freezeRing.rotation.z -= dt * (frozen ? 1.6 : 0);
+    this.freezeAura.material.opacity = frozen ? .16 + freezePulse * .08 : 0;
     this.identityRing.material.opacity = hit ? .62 + hitWave * .32 : .34 + pulse * .17;
     this.identityRing.scale.setScalar(1 + pulse * .045);
     this.identityRing.rotation.z += dt * .32;
@@ -884,4 +931,22 @@ export function projectileTouchesPlayer(player, position, radius = .22) {
     player.position.z
   );
   return body.distanceTo(position) < player.radius + radius;
+}
+
+export function flameConeFactor(origin, direction, target, targetRadius = .72, reach = 11.5, halfAngle = .22) {
+  const aim = direction.clone().normalize();
+  const offset = target.clone().sub(origin);
+  const along = offset.dot(aim);
+  if (along < -targetRadius || along > reach + targetRadius) return 0;
+  const radial = Math.sqrt(Math.max(0, offset.lengthSq() - along * along));
+  const coneRadius = .32 + Math.max(0, along) * Math.tan(halfAngle);
+  if (radial > coneRadius + targetRadius) return 0;
+  const edge = clamp((radial - targetRadius * .65) / Math.max(.01, coneRadius), 0, 1);
+  const distance = clamp(along / reach, 0, 1);
+  return (1 - edge * .45) * (1 - Math.max(0, distance - .45) / .55 * .28);
+}
+
+export function applyWeaponStatus(target, weapon) {
+  if (!target?.alive || weapon?.effect !== "freeze") return;
+  target.slowTimer = Math.max(target.slowTimer || 0, weapon.effectDuration || 2);
 }

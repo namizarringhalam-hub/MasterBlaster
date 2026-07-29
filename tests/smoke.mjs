@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import * as THREE from "three";
 import { chooseBotSlot, botFireChance, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
-import { createProjectileVisual } from "../src/combatVisuals.js";
+import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
 import { DEFAULT_LOADOUT, LOADOUT_SLOTS, projectileLifetime, projectileStepCount, randomLoadout, seededRandom, seedFromText, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
 import { InputManager, shouldCaptureGameKey, touchLookDelta, updateOrbit } from "../src/input.js";
-import { aimWithSpread, applyGrapplePhysics, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
+import { aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, flameConeFactor, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
 
 const [mainSource, serviceWorkerSource] = await Promise.all([
@@ -24,13 +24,13 @@ assert.match(serviceWorkerSource, /registration\.unregister/, "the replacement w
 const documentedWeaponIds = [
   "arc_lightning", "black_hole_generator", "blaster", "boomerang_blade", "bouncing_bomb", "burst_rifle",
   "chainsaw", "charged_energy_rifle", "cluster_grenade", "decoy_launcher", "disintegration_weapon", "drill_missile",
-  "energy_sword", "freeze_gun", "grapple_disrupting_pulse", "gravity_beam", "gravity_grenade", "grenade_launcher",
+  "energy_sword", "flamethrower", "freeze_gun", "grapple_disrupting_pulse", "gravity_beam", "gravity_grenade", "grenade_launcher",
   "hammer", "implosion_bomb", "knife", "laser_beam", "machine_gun", "mine", "minigun", "mortar",
   "napalm_launcher", "needle_launcher", "plasma_cannon", "plasma_repeater", "pulse_cannon", "punch_glove",
   "railgun", "remote_explosive", "ricochet_cannon", "rocket_launcher", "shock_baton", "shotgun", "spear",
   "sticky_launcher", "submachine_gun", "teleport_projectile", "temporary_wall", "tornado_generator", "weapon_stealing_projectile"
 ];
-assert.equal(Object.keys(WEAPONS).length, 45, "the game exposes the prototype and complete documented weapon library");
+assert.equal(Object.keys(WEAPONS).length, 46, "the game exposes the prototype, documented library, and Flamethrower");
 assert.equal(LOADOUT_SLOTS.length, 5, "players carry five main weapons");
 assert.equal(DEFAULT_LOADOUT.length, 5, "the default loadout is match-ready");
 const visualOwner = { accent: 0x44eeff };
@@ -48,7 +48,7 @@ assert.deepEqual(
   documentedWeaponIds,
   "weapon IDs match the specification"
 );
-assert.equal(WEAPON_GROUPS.reduce((total, group) => total + group.ids.length, 0), 45, "every documented weapon belongs to one menu category");
+assert.equal(WEAPON_GROUPS.reduce((total, group) => total + group.ids.length, 0), 46, "every weapon belongs to one menu category");
 assert.ok(WEAPON_GROUPS.every((group) => group.ids.every((id) => WEAPONS[id])), "weapon categories contain no missing entries");
 assert.ok(Object.values(WEAPONS).every((weapon) => weapon.name && weapon.description && weapon.category), "every weapon has complete menu metadata");
 assert.equal(WEAPONS.cluster_grenade.split, 6, "cluster grenades create secondary bomblets");
@@ -61,6 +61,13 @@ assert.equal(WEAPONS.temporary_wall.type, "wall", "the wall projectile creates p
 assert.equal(WEAPONS.decoy_launcher.type, "decoy", "decoy rounds deploy bot targets");
 assert.equal(WEAPONS.teleport_projectile.effect, "teleport", "teleport projectiles relocate their shooter");
 assert.equal(WEAPONS.grapple_disrupting_pulse.grappleDisrupt, true, "disrupting pulses release grapples");
+assert.equal(WEAPONS.freeze_gun.effectDuration, 4.5, "Freeze Gun slows for 4.5 seconds after the latest hit");
+assert.equal(WEAPONS.shock_baton.effectDuration, 1.5, "Shock Baton keeps its separate short stun duration");
+assert.equal(WEAPONS.flamethrower.type, "flame", "the Flamethrower uses its own cone-fire behavior");
+assert.equal(WEAPONS.flamethrower.reach, 11.5, "the Flamethrower is deliberately limited to a short cone");
+assert.ok(WEAPONS.flamethrower.damage / WEAPONS.flamethrower.cooldown >= 30 && WEAPONS.flamethrower.damage / WEAPONS.flamethrower.cooldown <= 35, "centre-line Flamethrower DPS stays within the balanced 30-35 band");
+assert.equal(botFireChance(WEAPONS.flamethrower.reach + .01, true, WEAPONS.flamethrower), 0, "bots never fire the Flamethrower beyond its reach");
+assert.equal(chooseBotSlot(["flamethrower", "railgun"], 8, () => 0), 0, "bots prefer the Flamethrower at close range");
 assert.equal(WEAPONS.grenade_launcher.projectileSpeed, 13, "grenades keep their deliberate throwing arc");
 assert.ok(WEAPONS.railgun.projectileSpeed >= WEAPONS.grenade_launcher.projectileSpeed * 30, "the railgun feels almost instant beside a grenade");
 assert.ok(WEAPONS.machine_gun.projectileSpeed > WEAPONS.blaster.projectileSpeed, "rifle-class bullets outrun visible blaster bolts");
@@ -71,6 +78,21 @@ assert.ok(Object.values(WEAPONS).every((weapon) => !("range" in weapon)), "weapo
 assert.ok(Object.values(WEAPONS).filter((weapon) => !weapon.fuse).every((weapon) => projectileLifetime(weapon) === Infinity), "straight projectiles persist until they hit something");
 assert.equal(projectileLifetime(WEAPONS.grenade_launcher), WEAPONS.grenade_launcher.fuse, "grenades keep their physical fuse");
 assert.ok(WEAPONS.machine_gun.spread < .03, "machine-gun rounds remain accurate across the arena");
+const flameOrigin = new THREE.Vector3();
+const flameDirection = new THREE.Vector3(0, 0, 1);
+const centreFlame = flameConeFactor(flameOrigin, flameDirection, new THREE.Vector3(0, 0, 5), .72, WEAPONS.flamethrower.reach, WEAPONS.flamethrower.coneAngle);
+const edgeFlame = flameConeFactor(flameOrigin, flameDirection, new THREE.Vector3(1.5, 0, 5), .72, WEAPONS.flamethrower.reach, WEAPONS.flamethrower.coneAngle);
+assert.equal(centreFlame, 1, "the centre of the flame cone receives full damage");
+assert.ok(edgeFlame > 0 && edgeFlame < centreFlame, "the flame cone has readable edge falloff");
+assert.equal(flameConeFactor(flameOrigin, flameDirection, new THREE.Vector3(3, 0, 5), .72, WEAPONS.flamethrower.reach, WEAPONS.flamethrower.coneAngle), 0, "targets outside the flame cone take no damage");
+assert.equal(flameConeFactor(flameOrigin, flameDirection, new THREE.Vector3(0, 0, 13), .72, WEAPONS.flamethrower.reach, WEAPONS.flamethrower.coneAngle), 0, "targets beyond the flame jet take no damage");
+const flameVisualScene = new THREE.Scene();
+const flameVisuals = new CombatVisuals(flameVisualScene, { quality: 1 });
+flameVisuals.flameStream(flameOrigin, flameDirection, WEAPONS.flamethrower, visualOwner, WEAPONS.flamethrower.reach);
+assert.ok(flameVisuals.tracers.filter((slot) => slot.life > 0).length >= 3, "the flame jet uses layered pooled streams");
+assert.ok(flameVisuals.sparks.filter((slot) => slot.life > 0).length >= 2, "the flame jet includes pooled rising embers");
+assert.ok(flameVisuals.tracers.length <= 72 && flameVisuals.sparks.length <= 180, "Flamethrower effects remain strictly bounded");
+flameVisuals.dispose();
 
 const randomA = seededRandom(seedFromText("BLAST-01"));
 const randomB = seededRandom(seedFromText("BLAST-01"));
@@ -208,6 +230,26 @@ assert.ok(projectileTouchesPlayer(fighter, new THREE.Vector3(0, 2.4, 0), .11), "
 assert.ok(projectileTouchesPlayer(fighter, new THREE.Vector3(0, .15, 0), .11), "low shots remain inside the fighter collision capsule");
 assert.ok(projectileTouchesPlayer(fighter, fighter.forwardPoint(PROJECTILE_SPAWN_OFFSET + .6), .11), "a point-blank projectile cannot spawn beyond an overlapping fighter");
 assert.ok(aimWithSpread(new THREE.Vector3(0, 0, 1), .02, () => .5).equals(new THREE.Vector3(0, 0, 1)), "centered spread preserves aim");
+
+const flameFighter = new Fighter(
+  worldScene,
+  { id: "p16", name: "Pyro", color: 0xd75a1b, accent: 0xffc06a },
+  ["flamethrower", ...DEFAULT_LOADOUT.slice(1)],
+  new THREE.Vector3(4, 0, 4)
+);
+assert.ok(flameFighter.weaponMuzzleDistance > 1.4 && flameFighter.weaponGroup.children.length >= 6, "the Flamethrower has a distinct long-nozzle and fuel-tank silhouette");
+flameFighter.slowTimer = 1;
+flameFighter.update(.016, new THREE.Vector3(), new THREE.Vector3(0, 0, 1), {}, worldB);
+assert.ok(flameFighter.freezeAura.material.opacity > 0 && flameFighter.freezeRing.material.opacity > 0, "the cyan frozen-state cue remains visible while slowed");
+applyWeaponStatus(flameFighter, WEAPONS.freeze_gun);
+assert.equal(flameFighter.slowTimer, 4.5, "repeated Freeze Gun hits refresh rather than add their duration");
+applyWeaponStatus(flameFighter, WEAPONS.freeze_gun);
+assert.equal(flameFighter.slowTimer, 4.5, "rapid Freeze Gun hits cannot stack into a longer impairment");
+flameFighter.takeHit(100);
+applyWeaponStatus(flameFighter, WEAPONS.freeze_gun);
+assert.equal(flameFighter.slowTimer, 0, "death clears the frozen status immediately");
+assert.equal(flameFighter.freezeAura.material.opacity, 0, "death clears the frozen-state visual immediately");
+flameFighter.dispose();
 
 const closeTarget = { alive: true, radius: .72, position: new THREE.Vector3(0, 0, 2) };
 const cameraOrigin = new THREE.Vector3(3, 3, -6);
