@@ -584,51 +584,6 @@ export class ArenaWorld {
   }
 
   addAtmosphere() {
-    const uniforms = {
-      uTime: { value: 0 },
-      uHaze: { value: new THREE.Color(this.theme.haze) },
-      uAccent: { value: new THREE.Color(this.theme.accent) }
-    };
-    const haze = new THREE.Mesh(
-      new THREE.CylinderGeometry(this.size + 15, this.size + 15, this.height + 54, 64, 1, true),
-      new THREE.ShaderMaterial({
-        uniforms,
-        vertexShader: `
-          varying float vHeight;
-          varying float vAngle;
-          void main() {
-            vHeight = uv.y;
-            vAngle = atan(position.z, position.x);
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }
-        `,
-        fragmentShader: `
-          varying float vHeight;
-          varying float vAngle;
-          uniform float uTime;
-          uniform vec3 uHaze;
-          uniform vec3 uAccent;
-          void main() {
-            float horizon = exp(-pow((vHeight - .22) * 5.0, 2.0));
-            float columns = .5 + .5 * sin(vAngle * 28.0 + uTime * .16);
-            float scan = .5 + .5 * sin(vHeight * 180.0 - uTime * .8);
-            vec3 color = mix(uHaze, uAccent, columns * .18 + scan * .035);
-            float alpha = .035 + horizon * .105 + columns * .018;
-            gl_FragColor = vec4(color, alpha);
-          }
-        `,
-        side: THREE.BackSide,
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        toneMapped: false
-      })
-    );
-    haze.name = "Animated atmospheric perimeter";
-    haze.position.y = (this.height + 42) / 2 - 6;
-    this.group.add(haze);
-    this.shaderUniforms.push(uniforms);
-
     const horizonMark = new THREE.Group();
     const horizonColor = this.districtColors[1];
     horizonMark.position.set(-58, 68, -this.size - 8);

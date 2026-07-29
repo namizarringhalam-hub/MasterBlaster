@@ -421,9 +421,9 @@ export class CombatVisuals {
     }
   }
 
-  update(dt, camera = null) {
+  update(dt) {
     this.updateFlashes(dt);
-    this.updateTracers(dt, camera);
+    this.updateTracers(dt);
     this.updateRings(dt);
     this.updateSparks(dt);
   }
@@ -452,7 +452,7 @@ export class CombatVisuals {
     this.markUpdated(this.flashOuter, this.flashInner);
   }
 
-  updateTracers(dt, camera) {
+  updateTracers(dt) {
     for (let index = 0; index < this.tracers.length; index++) {
       const slot = this.tracers[index];
       slot.life -= dt;
@@ -465,15 +465,6 @@ export class CombatVisuals {
       this.direction.copy(slot.end).sub(slot.start);
       const length = this.direction.length();
       this.direction.multiplyScalar(1 / length);
-      if (camera?.position) {
-        const along = clamp(this.position.copy(camera.position).sub(slot.start).dot(this.direction), 0, length);
-        this.normal.copy(slot.start).addScaledVector(this.direction, along);
-        if (this.normal.distanceToSquared(camera.position) < 3.24) {
-          this.tracerOuter.setMatrixAt(index, HIDDEN);
-          this.tracerInner.setMatrixAt(index, HIDDEN);
-          continue;
-        }
-      }
       this.quaternion.setFromUnitVectors(UP, this.direction);
       this.position.copy(slot.start).lerp(slot.end, .5);
       this.scale.set(slot.width * slot.outerWidth * fade, length, slot.width * slot.outerWidth * fade);
