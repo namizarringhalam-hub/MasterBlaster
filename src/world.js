@@ -460,7 +460,10 @@ export class ArenaWorld {
         district,
         layer,
         angle,
-        radius: this.size + 13 + layer * 15 + random() * 7,
+        // Keep decorative skyline geometry well beyond the third-person camera.
+        // Its deepest towers used to overlap the camera orbit at the arena edge,
+        // where their dark faces looked like large moving black rectangles.
+        radius: this.size + 44 + layer * 18 + random() * 10,
         width: 6 + random() * 10 + (district === 2 ? 5 : 0),
         depth: 6 + random() * 9,
         height: 25 + random() * (layer === 0 ? 58 : 42) + district * 3
@@ -512,7 +515,7 @@ export class ArenaWorld {
       );
       entries.forEach((spec, index) => {
         const { angle, radius, height, layer, width } = spec;
-        const value = [.23, .115, .052][layer];
+        const value = [.42, .24, .14][layer];
         const tint = new THREE.Color(this.districtColors[district]).multiplyScalar(value).addScalar(.012 + (2 - layer) * .006);
         const tangentX = -Math.sin(angle);
         const tangentZ = Math.cos(angle);

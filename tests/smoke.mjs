@@ -138,6 +138,16 @@ assert.deepEqual(obstacleLayoutA, obstacleLayoutB, "seeded arenas generate the s
 assert.equal(worldB.spawnPoints().length, 16, "the arena provides one spawn candidate for every possible combatant");
 assert.equal(worldB.movers.length, 4, "the arena has moving aerial routes");
 assert.equal(worldB.group.getObjectByName("Animated atmospheric perimeter"), undefined, "no giant atmosphere shell can intersect the camera at the map edge");
+const skylineMatrix = new THREE.Matrix4();
+const skylinePosition = new THREE.Vector3();
+worldB.group.traverse((object) => {
+  if (!object.isInstancedMesh || !object.name.includes("layered bodies")) return;
+  for (let index = 0; index < object.count; index++) {
+    object.getMatrixAt(index, skylineMatrix);
+    skylinePosition.setFromMatrixPosition(skylineMatrix);
+    assert.ok(Math.hypot(skylinePosition.x, skylinePosition.z) >= worldB.size + 40, "decorative skyline stays clear of the camera orbit");
+  }
+});
 assert.equal(worldB.portals.length, 4, "the arena has two paired teleport routes");
 assert.equal(worldB.sweepers.length, 2, "the arena has active kinetic hazards");
 const moverX = worldB.movers[2].obstacle.x;
