@@ -1713,6 +1713,27 @@ export class ArenaWorld {
     return Boolean(this.ropeObstacle(origin, target));
   }
 
+  effectBlocked(origin, target) {
+    const delta = target.clone().sub(origin);
+    const length = delta.length();
+    if (length < .1) return false;
+    const direction = delta.multiplyScalar(1 / length);
+    const ray = new THREE.Ray(origin, direction);
+    const box = new THREE.Box3();
+    const hit = new THREE.Vector3();
+    const probe = origin.clone().addScaledVector(direction, .08);
+    for (const item of this.obstacles) {
+      box.min.set(item.x - item.w / 2, item.baseY, item.z - item.d / 2);
+      box.max.set(item.x + item.w / 2, item.top, item.z + item.d / 2);
+      const contact = ray.intersectBox(box, hit);
+      if (!contact) continue;
+      const distance = origin.distanceTo(contact);
+      if (distance >= length - .05) continue;
+      if (distance > .04 || box.containsPoint(probe)) return true;
+    }
+    return false;
+  }
+
   ropeWrapPoint(origin, target) {
     const obstruction = this.ropeObstacle(origin, target);
     if (!obstruction) return null;

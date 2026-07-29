@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import * as THREE from "three";
-import { chooseBotSlot, botFireChance, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
+import { chooseBotSlot, botFireChance, botWeaponPolicy, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
 import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
-import { DEFAULT_LOADOUT, LOADOUT_SLOTS, projectileLifetime, projectileStepCount, randomLoadout, seededRandom, seedFromText, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
+import { DEFAULT_LOADOUT, excessOwnedProjectiles, LOADOUT_SLOTS, projectileLifetime, projectileStepCount, randomLoadout, seededRandom, seedFromText, swapStolenWeapon, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
 import { InputManager, shouldCaptureGameKey, touchLookDelta, updateOrbit } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, flameConeFactor, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
+import { weaponPresentation } from "../src/weaponPresentation.js";
 
 const [mainSource, serviceWorkerSource] = await Promise.all([
   readFile(new URL("../src/main.js", import.meta.url), "utf8"),
@@ -51,6 +52,59 @@ assert.deepEqual(
 assert.equal(WEAPON_GROUPS.reduce((total, group) => total + group.ids.length, 0), 46, "every weapon belongs to one menu category");
 assert.ok(WEAPON_GROUPS.every((group) => group.ids.every((id) => WEAPONS[id])), "weapon categories contain no missing entries");
 assert.ok(Object.values(WEAPONS).every((weapon) => weapon.name && weapon.description && weapon.category), "every weapon has complete menu metadata");
+const presentationSignatures = new Set();
+const modelScene = new THREE.Scene();
+const presentationScene = new THREE.Scene();
+const presentationVisuals = new CombatVisuals(presentationScene, { quality: 1 });
+const matrixOwner = {
+  id: "matrix-owner", accent: 0x44eeff, aim: new THREE.Vector3(0, 0, 1),
+  muzzlePoint: (target = new THREE.Vector3()) => target.set(0, 1, 0),
+  forwardPoint: (distance = 1) => new THREE.Vector3(0, 1, distance)
+};
+for (const [id, weapon] of Object.entries(WEAPONS)) {
+  const profile = weaponPresentation(weapon);
+  const policy = botWeaponPolicy(weapon);
+  const fireMode = weaponFireMode(weapon);
+  assert.ok(profile.delivery && profile.payload && profile.tempo, `${id} has a complete projectile, impact, and audio presentation profile`);
+  assert.ok(profile.trailLength > 0 && profile.trailWidth > 0 && profile.muzzleLength > 0 && profile.impactScale > 0 && profile.audioDuration > 0, `${id} has tuned presentation dimensions and audio timing`);
+  assert.ok(!presentationSignatures.has(profile.signature), `${id} has a weapon-specific presentation signature`);
+  presentationSignatures.add(profile.signature);
+  assert.ok(Number.isFinite(policy.min) && Number.isFinite(policy.preferred) && Number.isFinite(policy.max), `${id} has finite bot-use ranges`);
+  assert.ok(policy.min <= policy.preferred && policy.preferred <= policy.max && policy.intent, `${id} has a coherent bot range and utility policy`);
+  assert.ok(["spread", "burst", "mine", "beam", "chain", "flame", "melee", "hitscan", "projectile"].includes(fireMode), `${id} resolves to an implemented firing path`);
+
+  const model = new Fighter(modelScene, { id: `model-${id}`, name: id, color: weapon.color, accent: 0xffffff }, [id], new THREE.Vector3());
+  assert.ok(model.weaponGroup.children.length >= 3, `${id} has a layered held-weapon model`);
+  assert.ok(model.weaponMuzzleDistance > .3, `${id} exposes a valid muzzle or strike origin`);
+  model.dispose();
+
+  presentationVisuals.muzzle(matrixOwner, weapon, matrixOwner.aim);
+  const flash = presentationVisuals.flashes[(presentationVisuals.cursors.flash - 1 + presentationVisuals.flashes.length) % presentationVisuals.flashes.length];
+  assert.equal(flash.profile, profile, `${id} drives its muzzle flash from its presentation profile`);
+  presentationVisuals.impact(new THREE.Vector3(), weapon, matrixOwner, { explosive: Boolean(weapon.radius) });
+  const ring = presentationVisuals.rings[(presentationVisuals.cursors.ring - 1 + presentationVisuals.rings.length) % presentationVisuals.rings.length];
+  assert.equal(ring.profile, profile, `${id} drives its impact effect from its presentation profile`);
+  if (!["beam", "chain", "flame", "melee"].includes(fireMode) && fireMode !== "hitscan") {
+    const projectile = createProjectileVisual(weapon, matrixOwner, weapon.projectileRadius || .14, { mine: fireMode === "mine" });
+    assert.equal(projectile.userData.combatVisual.profile, profile, `${id} has a profile-driven world projectile`);
+    assert.ok(projectile.children.length >= 3, `${id} has a readable layered projectile silhouette`);
+  } else if (["beam", "chain", "melee", "hitscan"].includes(fireMode)) {
+    presentationVisuals.tracer(new THREE.Vector3(), new THREE.Vector3(0, 1, 12), weapon, matrixOwner);
+    const tracer = presentationVisuals.tracers[(presentationVisuals.cursors.tracer - 1 + presentationVisuals.tracers.length) % presentationVisuals.tracers.length];
+    assert.equal(tracer.profile, profile, `${id} has a profile-driven tracer or melee sweep`);
+  } else {
+    presentationVisuals.flameStream(new THREE.Vector3(), matrixOwner.aim, weapon, matrixOwner, weapon.reach);
+  }
+}
+assert.equal(presentationSignatures.size, 46, "all 46 weapons retain distinct audiovisual signatures");
+assert.ok(presentationVisuals.tracers.length <= 72 && presentationVisuals.sparks.length <= 180 && presentationVisuals.rings.length <= 36, "the complete 46-weapon effects matrix remains pool-bounded");
+const meleeTraceCounts = { hammer: 2, energy_sword: 2, chainsaw: 2, spear: 1, punch_glove: 2, shock_baton: 4, knife: 1 };
+for (const [id, expectedSegments] of Object.entries(meleeTraceCounts)) {
+  const before = presentationVisuals.cursors.tracer;
+  presentationVisuals.tracer(new THREE.Vector3(), new THREE.Vector3(0, 1, WEAPONS[id].reach), WEAPONS[id], matrixOwner);
+  assert.equal(presentationVisuals.cursors.tracer - before, expectedSegments, `${id} renders its own ${WEAPONS[id].meleeMotion} strike grammar`);
+}
+presentationVisuals.dispose();
 assert.equal(WEAPONS.cluster_grenade.split, 6, "cluster grenades create secondary bomblets");
 assert.equal(WEAPONS.sticky_launcher.sticky, true, "sticky charges adhere to surfaces");
 assert.equal(WEAPONS.remote_explosive.type, "remote", "remote explosives use place-and-detonate behavior");
@@ -78,6 +132,45 @@ assert.ok(Object.values(WEAPONS).every((weapon) => !("range" in weapon)), "weapo
 assert.ok(Object.values(WEAPONS).filter((weapon) => !weapon.fuse).every((weapon) => projectileLifetime(weapon) === Infinity), "straight projectiles persist until they hit something");
 assert.equal(projectileLifetime(WEAPONS.grenade_launcher), WEAPONS.grenade_launcher.fuse, "grenades keep their physical fuse");
 assert.ok(WEAPONS.machine_gun.spread < .03, "machine-gun rounds remain accurate across the arena");
+assert.ok(["machine_gun", "submachine_gun", "minigun", "needle_launcher", "burst_rifle", "railgun", "charged_energy_rifle"].every((id) => WEAPONS[id].hitscan), "near-instant rifle, needle, and rail shots use target-swept hit-scan collision");
+assert.equal(WEAPONS.burst_rifle.type, "burst", "the Burst Rifle uses the timed burst scheduler instead of shotgun pellets");
+assert.equal(WEAPONS.burst_rifle.burstCount, 3, "the Burst Rifle emits exactly three scheduled rounds");
+assert.ok(WEAPONS.burst_rifle.burstInterval > 0 && WEAPONS.burst_rifle.burstInterval < WEAPONS.burst_rifle.cooldown / 3, "burst rounds have a readable intra-burst cadence");
+assert.ok(WEAPONS.charged_energy_rifle.chargeTime >= 1 && WEAPONS.charged_energy_rifle.minCharge > 0, "the Charged Energy Rifle requires a deliberate hold and release");
+assert.equal(WEAPONS.needle_launcher.penetration, 1, "the Needle Launcher can pierce its first fighter and hit a second");
+assert.ok(WEAPONS.disintegration_weapon.penetration >= 4 && WEAPONS.disintegration_weapon.terrainRadius > 0, "the Disintegration Weapon cuts through multiple cover pieces");
+assert.ok(WEAPONS.tornado_generator.hazardSpeed > 0, "the Tornado Generator creates a moving vortex");
+assert.ok(WEAPONS.knife.executeThreshold > WEAPONS.knife.damage, "the Knife has a real low-health execution window");
+assert.ok(["minigun", "gravity_beam", "chainsaw"].every((id) => WEAPONS[id].maintained), "maintained weapons opt into sustained handling and audio");
+assert.equal(new Set(WEAPON_GROUPS.find((group) => group.id === "melee").ids.map((id) => WEAPONS[id].meleeMotion)).size, 7, "every melee weapon has its own sweep, thrust, strike, or contact grammar");
+assert.match(mainSource, /updateBurst\(player, dt\)[\s\S]*?burst\.timer -= dt[\s\S]*?fireBurstRound/, "burst rounds are scheduled across update frames");
+assert.match(mainSource, /updateCharge\(player, wantsFire, dt\)[\s\S]*?releaseCharge\(player\)/, "charged shots use an explicit hold and release lifecycle");
+assert.match(mainSource, /effectBlocked\(position, targetPoint\)/, "radial blasts and hazards respect solid cover");
+assert.match(mainSource, /fireMelee\([\s\S]*?ropeBlocked\(origin, targetPoint\)/, "melee strikes cannot pass through arena geometry");
+assert.match(mainSource, /fireChain\([\s\S]*?point\.distanceTo\(from\) <= 14[\s\S]*?ropeBlocked\(from, point\)/, "every Arc Lightning hop performs its own distance and cover check");
+const stealAttacker = {
+  loadout: ["weapon_stealing_projectile", "blaster", "shotgun", "railgun", "laser_beam"],
+  ammo: { weapon_stealing_projectile: 2, railgun: 1 }
+};
+const stealTarget = {
+  loadout: ["railgun", "rocket_launcher", "weapon_stealing_projectile", "mine", "plasma_cannon"],
+  ammo: { weapon_stealing_projectile: 4, railgun: 3 }
+};
+assert.deepEqual(swapStolenWeapon(stealAttacker, stealTarget, "weapon_stealing_projectile", 0, 0), { stolenId: "railgun", attackerSlot: 0, targetSlot: 0 }, "the stealing projectile swaps real active inventory slots");
+assert.equal(new Set(stealAttacker.loadout).size, 5, "stealing a weapon already held by the attacker preserves unique slots");
+assert.equal(new Set(stealTarget.loadout).size, 5, "giving the target a weapon already in its loadout preserves unique slots");
+assert.equal(stealAttacker.ammo.railgun, 3, "the stolen weapon brings the target's exact ammo pool");
+assert.equal(stealTarget.ammo.weapon_stealing_projectile, 2, "the exchanged weapon brings the attacker's exact ammo pool");
+const remoteOwner = { id: "remote-owner" };
+const transferredCharges = Array.from({ length: 8 }, (_, age) => ({ owner: remoteOwner, weapon: WEAPONS.remote_explosive, age }));
+assert.deepEqual(excessOwnedProjectiles(transferredCharges, remoteOwner, "remote_explosive", 4).map((shot) => shot.age), [7, 6, 5, 4], "a 4+4 remote-charge ownership transfer selects every oldest excess charge and restores the four-charge cap");
+assert.match(mainSource, /hazard\.weapon\.hazard === "tornado"[\s\S]*?addScaledVector\(hazard\.velocity, dt\)[\s\S]*?hazard\.mesh\.position\.copy\(next\)/, "tornado hazards travel after impact rather than remaining a flat stationary ring");
+assert.match(mainSource, /updateWeaponLoop\(player\.id, player\.weapon, fireHeld && player\.weapon\.maintained/, "maintained human weapons keep a continuous audiovisual loop while held");
+assert.match(mainSource, /updateChargeLoop\(player\.id, weapon, player\.chargeLevel, distanceScale\)/, "charged shots escalate a continuous wind-up cue with their charge level");
+assert.match(mainSource, /if \(!bot\.alive\)[\s\S]*?stopChargeLoop\(bot\.id\)[\s\S]*?if \(!target\)[\s\S]*?stopChargeLoop\(bot\.id\)/, "dead and targetless bots always stop charged-rifle wind-up audio");
+assert.match(mainSource, /stolenId === "remote_explosive"[\s\S]*?trimRemoteCharges\(attacker, WEAPONS\[stolenId\], WEAPONS\[stolenId\]\.maxCharges\)/, "stealing Remote Explosives immediately restores the receiver's charge cap");
+assert.match(mainSource, /weapon\.type === "remote"[\s\S]*?\$\{armed\} ARMED/, "the Remote Explosive HUD displays its live armed-charge count");
+assert.match(mainSource, /presentationPayload === "mortar"[\s\S]*?RingGeometry\([\s\S]*?shot\.telegraph = telegraph/, "mortar shells show a predicted landing telegraph");
 const flameOrigin = new THREE.Vector3();
 const flameDirection = new THREE.Vector3(0, 0, 1);
 const centreFlame = flameConeFactor(flameOrigin, flameDirection, new THREE.Vector3(0, 0, 5), .72, WEAPONS.flamethrower.reach, WEAPONS.flamethrower.coneAngle);
@@ -190,6 +283,8 @@ const ropeEnd = new THREE.Vector3(12, 20, 0);
 const ropeWrapA = worldB.ropeWrapPoint(ropeStart, ropeEnd);
 const ropeWrapB = ropeWrapA && worldB.ropeWrapPoint(ropeWrapA, ropeEnd);
 assert.ok(worldB.ropeBlocked(ropeStart, ropeEnd), "solid geometry blocks a straight grapple rope");
+assert.ok(worldB.effectBlocked(ropeStart, ropeEnd), "explosions and persistent hazards cannot damage through the same solid geometry");
+assert.equal(worldB.effectBlocked(new THREE.Vector3(92, 10, 70), new THREE.Vector3(98, 10, 70)), false, "cover-aware effects still reach targets across clear open space");
 assert.ok(ropeWrapA && ropeWrapB && !worldB.ropeBlocked(ropeStart, ropeWrapA) && !worldB.ropeBlocked(ropeWrapA, ropeWrapB) && !worldB.ropeBlocked(ropeWrapB, ropeEnd), "the grapple routes around clear obstacle edges");
 const lowWrap = worldB.ropeWrapPoint(new THREE.Vector3(-12, 1.4, 0), new THREE.Vector3(12, 1.4, 0));
 assert.ok(lowWrap?.y >= .12, "rope routing never bends underneath the arena floor");
@@ -230,6 +325,15 @@ assert.ok(projectileTouchesPlayer(fighter, new THREE.Vector3(0, 2.4, 0), .11), "
 assert.ok(projectileTouchesPlayer(fighter, new THREE.Vector3(0, .15, 0), .11), "low shots remain inside the fighter collision capsule");
 assert.ok(projectileTouchesPlayer(fighter, fighter.forwardPoint(PROJECTILE_SPAWN_OFFSET + .6), .11), "a point-blank projectile cannot spawn beyond an overlapping fighter");
 assert.ok(aimWithSpread(new THREE.Vector3(0, 0, 1), .02, () => .5).equals(new THREE.Vector3(0, 0, 1)), "centered spread preserves aim");
+const spreadSamples = [.2, .8];
+const conicalSpread = aimWithSpread(new THREE.Vector3(0, 0, 1), .2, () => spreadSamples.shift());
+assert.notEqual(conicalSpread.x, 0, "shot spread varies horizontally");
+assert.notEqual(conicalSpread.y, 0, "shot spread varies vertically instead of forming a flat fan");
+fighter.ammo.railgun = 0;
+assert.equal(fighter.reload(), true, "an empty weapon starts reloading");
+fighter.switchSlot(0);
+fighter.update(WEAPONS.railgun.reload + .05, new THREE.Vector3(), fighter.aim, {}, worldB);
+assert.equal(fighter.ammo.railgun, WEAPONS.railgun.ammo, "reload completion refills the weapon that started the reload after a slot switch");
 
 const flameFighter = new Fighter(
   worldScene,

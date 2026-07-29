@@ -84,7 +84,10 @@ export class InputManager {
         return;
       }
       if (document.pointerLockElement !== canvas) canvas.requestPointerLock?.();
-      if (event.button === 0) this.mouse.left = true;
+      if (event.button === 0) {
+        this.mouse.left = true;
+        this.pressed.add("MouseLeft");
+      }
       if (event.button === 2) {
         this.mouse.right = true;
         this.pressed.add("MouseRight");

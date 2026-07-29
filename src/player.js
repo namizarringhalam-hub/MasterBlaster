@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { WEAPONS } from "./gameData.js";
+import { weaponPresentation } from "./weaponPresentation.js";
 
 const clamp = THREE.MathUtils.clamp;
 export const PROJECTILE_SPAWN_OFFSET = .08;
@@ -147,7 +148,12 @@ export class Fighter {
     this.slotIndex = 0;
     this.ammo = Object.fromEntries(loadout.map((id) => [id, WEAPONS[id].ammo]));
     this.reloadTimer = 0;
+    this.reloadWeaponId = null;
     this.attackTimer = 0;
+    this.pendingBurst = null;
+    this.chargeTimer = 0;
+    this.chargeLevel = 0;
+    this.chargingWeaponId = null;
     this.hitTimer = 0;
     this.hitStagger = 1;
     this.slowTimer = 0;
@@ -322,7 +328,51 @@ export class Fighter {
     const glow = material(weapon.color, weapon.color, { emissiveIntensity: 1.35, roughness: .24, metalness: .38 });
     const identity = material(this.accent, this.accent, { emissiveIntensity: 1.1, roughness: .18, metalness: .3 });
     const dark = material(0x091424, this.accent, { emissiveIntensity: .035, roughness: .34, metalness: .7 });
+    const presentation = weaponPresentation(weapon);
+    this.weaponGlowMaterial = glow;
+    this.weaponSpinner = null;
+    this.weaponPiston = null;
     this.weaponMuzzleDistance = .92;
+    const addSignature = () => {
+      const z = Math.min(1.18, Math.max(.28, this.weaponMuzzleDistance * .58));
+      let marker;
+      if (["gravity", "implosion"].includes(presentation.payload)) {
+        marker = part(new THREE.TorusGeometry(.18, .045, 5, 14), identity, .05, .16, z, false);
+        marker.rotation.x = Math.PI / 2;
+        const inner = part(new THREE.TorusGeometry(.11, .028, 4, 12), glow, .05, .16, z, false);
+        inner.rotation.x = Math.PI / 2;
+        this.weaponGroup.add(inner);
+      } else if (presentation.payload === "freeze") {
+        marker = part(new THREE.OctahedronGeometry(.17, 0), glow, .05, .17, z, false);
+        marker.scale.set(.72, 1.35, .72);
+      } else if (["teleport", "steal", "decoy"].includes(presentation.payload)) {
+        marker = part(new THREE.TorusKnotGeometry(.1, .025, 24, 5), identity, .05, .17, z, false);
+      } else if (presentation.payload === "cluster") {
+        marker = new THREE.Group();
+        for (let index = 0; index < 3; index++) {
+          const angle = index / 3 * Math.PI * 2;
+          marker.add(part(new THREE.SphereGeometry(.055, 6, 4), glow, .05 + Math.cos(angle) * .14, .16 + Math.sin(angle) * .14, z, false));
+        }
+      } else if (["sticky", "ricochet", "disrupt"].includes(presentation.payload)) {
+        marker = part(new THREE.TorusGeometry(.16, .038, 4, presentation.payload === "ricochet" ? 4 : 12), identity, .05, .16, z, false);
+        marker.rotation.x = Math.PI / 2;
+      } else if (presentation.payload === "drill") {
+        marker = part(new THREE.ConeGeometry(.13, .42, 7), glow, .05, .16, z, false);
+        marker.rotation.x = Math.PI / 2;
+      } else if (["wall", "kinetic"].includes(presentation.payload)) {
+        marker = part(new THREE.BoxGeometry(.3, .055, .16), identity, .05, .17, z, false);
+        marker.rotation.z = presentation.variant * Math.PI / 6;
+      } else {
+        marker = part(new THREE.IcosahedronGeometry(.13 + presentation.signature * .045, 0), glow, .05, .17, z, false);
+      }
+      this.weaponGroup.add(marker);
+      const bands = 1 + presentation.variant;
+      for (let index = 0; index < bands; index++) {
+        const band = part(new THREE.TorusGeometry(.1 + index * .025, .018, 4, 9), index % 2 ? glow : identity, .05, .06, Math.min(this.weaponMuzzleDistance - .08, .42 + index * .19), false);
+        band.rotation.x = Math.PI / 2;
+        this.weaponGroup.add(band);
+      }
+    };
     if (weapon.type === "mine" || weapon.type === "remote") {
       const body = part(new THREE.CylinderGeometry(.3, .36, .2, 10), dark, .04, .04, .2);
       const cap = part(new THREE.CylinderGeometry(.22, .28, .05, 10), glow, .04, .17, .2, false);
@@ -330,6 +380,7 @@ export class Fighter {
       marker.rotation.x = Math.PI / 2;
       this.weaponGroup.add(body, cap, marker);
       this.weaponMuzzleDistance = .55;
+      addSignature();
       return;
     }
     if (weapon.type === "flame") {
@@ -345,6 +396,7 @@ export class Fighter {
       pilot.rotation.x = Math.PI / 2;
       this.weaponGroup.add(receiver, fuelTank, nozzle, heatShield, muzzle, pilot);
       this.weaponMuzzleDistance = 1.52;
+      addSignature();
       return;
     }
     if (weapon.type === "melee") {
@@ -360,11 +412,14 @@ export class Fighter {
         this.weaponGroup.add(shaft, head, face);
         this.weaponMuzzleDistance = 1.72;
       } else if (weapon.id === "punch_glove") {
+        const pistonGroup = new THREE.Group();
         const piston = part(new THREE.CylinderGeometry(.1, .13, .55, 8), dark, .06, .04, .35);
         piston.rotation.x = Math.PI / 2;
         const fist = part(new THREE.DodecahedronGeometry(.31, 0), glow, .06, .04, .72, false);
         const knuckles = part(new THREE.BoxGeometry(.52, .13, .19), identity, .06, .1, .88, false);
-        this.weaponGroup.add(piston, fist, knuckles);
+        pistonGroup.add(piston, fist, knuckles);
+        this.weaponGroup.add(pistonGroup);
+        this.weaponPiston = pistonGroup;
         this.weaponMuzzleDistance = 1.05;
       } else if (weapon.id === "chainsaw") {
         const body = part(new THREE.BoxGeometry(.34, .34, .55), dark, .06, .04, .37);
@@ -372,6 +427,7 @@ export class Fighter {
         const teeth = part(new THREE.TorusGeometry(.17, .05, 4, 12), identity, .06, .04, 1.65, false);
         teeth.rotation.x = Math.PI / 2;
         this.weaponGroup.add(body, blade, teeth);
+        this.weaponSpinner = teeth;
         this.weaponMuzzleDistance = 1.88;
       } else if (weapon.id === "spear") {
         const shaft = part(new THREE.CylinderGeometry(.045, .065, 1.9 * reachScale, 8), dark, .06, .04, .78);
@@ -387,6 +443,7 @@ export class Fighter {
         this.weaponGroup.add(blade, guard);
         this.weaponMuzzleDistance = .55 + bladeLength;
       }
+      addSignature();
       return;
     }
     const heavy = ["rocket", "plasma", "grenade"].includes(weapon.type);
@@ -444,17 +501,41 @@ export class Fighter {
       const pump = part(new THREE.BoxGeometry(.46, .11, .3), identity, .05, -.07, .63, false);
       this.weaponGroup.add(shroud, barrelA, barrelB, pump);
       this.weaponMuzzleDistance = 1.19;
+    } else if (weapon.id === "submachine_gun") {
+      const shortBody = part(new THREE.BoxGeometry(.34, .28, .54), dark, .05, .02, .38);
+      const vent = part(new THREE.BoxGeometry(.39, .08, .32), glow, .05, .15, .42, false);
+      const barrel = part(new THREE.CylinderGeometry(.055, .08, .48, 7), glow, .05, .05, .82);
+      barrel.rotation.x = Math.PI / 2;
+      const stickMagazine = part(new THREE.BoxGeometry(.15, .42, .18), identity, .05, -.27, .31, false);
+      stickMagazine.rotation.x = -.16;
+      const compactStock = part(new THREE.BoxGeometry(.28, .08, .35), identity, .05, .04, -.13, false);
+      const muzzle = part(new THREE.TorusGeometry(.1, .028, 4, 9), identity, .05, .05, 1.05, false);
+      this.weaponGroup.add(shortBody, vent, barrel, stickMagazine, compactStock, muzzle);
+      this.weaponMuzzleDistance = 1.08;
+    } else if (weapon.id === "mortar") {
+      const tube = part(new THREE.CylinderGeometry(.2, .29, 1.08, 10), dark, .05, .08, .72);
+      tube.rotation.x = Math.PI / 2;
+      const muzzle = part(new THREE.TorusGeometry(.29, .065, 5, 12), glow, .05, .08, 1.25, false);
+      const breech = part(new THREE.CylinderGeometry(.25, .25, .32, 10), identity, .05, .08, .18, false);
+      breech.rotation.z = Math.PI / 2;
+      const rangeSight = part(new THREE.TorusGeometry(.16, .025, 4, 12, Math.PI), identity, -.22, .25, .68, false);
+      rangeSight.rotation.y = Math.PI / 2;
+      const shoulderBrace = part(new THREE.BoxGeometry(.38, .16, .45), dark, .05, -.08, -.08);
+      this.weaponGroup.add(tube, muzzle, breech, rangeSight, shoulderBrace);
+      this.weaponMuzzleDistance = 1.38;
     } else if (weapon.id === "minigun" || weapon.id === "machine_gun") {
       const barrelCount = weapon.id === "minigun" ? 4 : 2;
+      const barrelCluster = new THREE.Group();
       for (let index = 0; index < barrelCount; index++) {
         const angle = index / barrelCount * Math.PI * 2;
         const barrel = part(new THREE.CylinderGeometry(.045, .06, .86, 6), glow, .05 + Math.cos(angle) * .11, .06 + Math.sin(angle) * .11, .72, false);
         barrel.rotation.x = Math.PI / 2;
-        this.weaponGroup.add(barrel);
+        barrelCluster.add(barrel);
       }
       const drum = part(new THREE.CylinderGeometry(.2, .2, .32, 10), identity, .05, -.11, .34, false);
       drum.rotation.z = Math.PI / 2;
-      this.weaponGroup.add(drum);
+      this.weaponGroup.add(barrelCluster, drum);
+      if (weapon.id === "minigun") this.weaponSpinner = barrelCluster;
       this.weaponMuzzleDistance = 1.17;
     } else {
       const scale = weapon.type === "grenade" ? 1.15 : .82;
@@ -473,12 +554,16 @@ export class Fighter {
       }
       this.weaponMuzzleDistance = 1.08;
     }
+    addSignature();
   }
 
   switchSlot(index) {
     if (index < 0 || index >= this.loadout.length || index === this.slotIndex) return;
     this.slotIndex = index;
-    this.attackTimer = Math.min(this.attackTimer, .12);
+    this.pendingBurst = null;
+    this.chargeTimer = 0;
+    this.chargeLevel = 0;
+    this.chargingWeaponId = null;
     this.updateWeaponModel();
   }
 
@@ -486,6 +571,7 @@ export class Fighter {
     const weapon = this.weapon;
     if (this.reloadTimer > 0 || this.ammo[weapon.id] === weapon.ammo) return false;
     this.reloadTimer = weapon.reload;
+    this.reloadWeaponId = weapon.id;
     return true;
   }
 
@@ -505,6 +591,10 @@ export class Fighter {
     if (this.health > 0) return false;
     this.alive = false;
     this.slowTimer = 0;
+    this.pendingBurst = null;
+    this.chargeTimer = 0;
+    this.chargeLevel = 0;
+    this.chargingWeaponId = null;
     this.freezeRing.material.opacity = 0;
     this.freezeAura.material.opacity = 0;
     this.deaths += 1;
@@ -558,7 +648,12 @@ export class Fighter {
     this.readabilityHalo.material.opacity = .14;
     this.identityBeacon.material.opacity = .94;
     this.reloadTimer = 0;
+    this.reloadWeaponId = null;
     this.attackTimer = .7;
+    this.pendingBurst = null;
+    this.chargeTimer = 0;
+    this.chargeLevel = 0;
+    this.chargingWeaponId = null;
     this.slowTimer = 0;
     this.landTimer = 0;
     this.landStrength = 0;
@@ -574,7 +669,10 @@ export class Fighter {
     this.attackTimer = Math.max(0, this.attackTimer - dt);
     const reloading = this.reloadTimer > 0;
     this.reloadTimer = Math.max(0, this.reloadTimer - dt);
-    if (reloading && this.reloadTimer === 0) this.ammo[this.weapon.id] = this.weapon.ammo;
+    if (reloading && this.reloadTimer === 0 && this.reloadWeaponId) {
+      this.ammo[this.reloadWeaponId] = WEAPONS[this.reloadWeaponId].ammo;
+      this.reloadWeaponId = null;
+    }
     this.hitTimer = Math.max(0, this.hitTimer - dt);
     this.slowTimer = Math.max(0, this.slowTimer - dt);
     this.landTimer = Math.max(0, this.landTimer - dt);
@@ -666,6 +764,7 @@ export class Fighter {
 
     const aimPitch = Math.asin(clamp(this.aim.y, -1, 1));
     const melee = this.weapon.type === "melee";
+    const meleeMotion = this.weapon.meleeMotion;
     const attacking = this.attackTimer > this.weapon.cooldown * .55;
     const attackPhase = this.weapon.cooldown > 0 ? clamp(this.attackTimer / this.weapon.cooldown, 0, 1) : 0;
     const attackSwing = attacking ? Math.sin((1 - attackPhase) * Math.PI) : 0;
@@ -676,9 +775,13 @@ export class Fighter {
     let rightArmRoll = -.18;
     if (melee) {
       leftArmTarget = -.42;
-      rightArmTarget = attacking ? -1.72 + attackSwing * .46 : -.48;
+      rightArmTarget = attacking
+        ? meleeMotion === "overhead" ? -2.28 + attackSwing * .92
+          : ["thrust", "stab", "punch"].includes(meleeMotion) ? -.7 - attackSwing * .65
+            : -1.72 + attackSwing * .46
+        : -.48;
       leftArmRoll = .1;
-      rightArmRoll = -.2 - attackSwing * .78;
+      rightArmRoll = -.2 - attackSwing * (meleeMotion === "saw" ? .12 : meleeMotion === "overhead" ? .3 : .78);
     } else if (grappled) {
       const anchor = this.grapple.wraps?.[0] || this.grapple.anchor;
       const ropeLength = anchor ? this.position.distanceTo(anchor) : 1;
@@ -735,13 +838,18 @@ export class Fighter {
     this.leftForearm.rotation.z = THREE.MathUtils.damp(this.leftForearm.rotation.z, leftElbowRoll, 18, dt);
     this.rightForearm.rotation.z = THREE.MathUtils.damp(this.rightForearm.rotation.z, rightElbowRoll, 18, dt);
 
-    this.weaponGroup.rotation.x = THREE.MathUtils.damp(this.weaponGroup.rotation.x, -aimPitch + this.recoilVisual * .46, 22, dt);
-    this.weaponGroup.rotation.y = THREE.MathUtils.damp(this.weaponGroup.rotation.y, melee ? attackSwing * .72 : 0, 19, dt);
-    this.weaponGroup.rotation.z = THREE.MathUtils.damp(this.weaponGroup.rotation.z, melee ? -.18 - attackSwing * .85 : grappled ? Math.sin(time * .42) * .035 : 0, 16, dt);
+    const overheadPitch = meleeMotion === "overhead" ? -attackSwing * 1.05 : 0;
+    const thrustMotion = ["thrust", "stab", "punch"].includes(meleeMotion) ? attackSwing : 0;
+    this.weaponGroup.rotation.x = THREE.MathUtils.damp(this.weaponGroup.rotation.x, -aimPitch + this.recoilVisual * .46 + overheadPitch, 22, dt);
+    this.weaponGroup.rotation.y = THREE.MathUtils.damp(this.weaponGroup.rotation.y, melee && !thrustMotion ? attackSwing * (meleeMotion === "saw" ? .12 : .72) : 0, 19, dt);
+    this.weaponGroup.rotation.z = THREE.MathUtils.damp(this.weaponGroup.rotation.z, melee ? -.18 - attackSwing * (meleeMotion === "overhead" ? .26 : meleeMotion === "saw" ? .1 : .85) : grappled ? Math.sin(time * .42) * .035 : 0, 16, dt);
     this.weaponGroup.position.x = THREE.MathUtils.damp(this.weaponGroup.position.x, melee ? .45 : reloadingPose ? .22 : .38, 18, dt);
     this.weaponGroup.position.y = THREE.MathUtils.damp(this.weaponGroup.position.y, 1.4 - landing * .11 + (this.grounded && moving ? gait * .025 : 0), 20, dt);
-    this.weaponGroup.position.z = THREE.MathUtils.damp(this.weaponGroup.position.z, .28 - this.recoilVisual * .46, 24, dt);
+    this.weaponGroup.position.z = THREE.MathUtils.damp(this.weaponGroup.position.z, .28 - this.recoilVisual * .46 + thrustMotion * .58, 24, dt);
     this.weaponGroup.scale.set(1 + this.recoilVisual * .04, 1 + this.recoilVisual * .04, 1 - this.recoilVisual * .08);
+    if (this.weaponGlowMaterial) this.weaponGlowMaterial.emissiveIntensity = 1.35 + this.chargeLevel * (2.4 + Math.sin(time * 2.4) * .55);
+    if (this.weaponSpinner) this.weaponSpinner.rotation.z += dt * (this.attackTimer > 0 ? 32 : 5);
+    if (this.weaponPiston) this.weaponPiston.position.z = THREE.MathUtils.damp(this.weaponPiston.position.z, attacking ? .42 * attackSwing : 0, 24, dt);
     const bob = this.grounded && moving ? Math.abs(gait) * .075 : Math.sin(time * .45) * .018;
     this.rig.position.y = bob - landing * .27;
     const airStretch = this.grounded ? 0 : clamp(Math.abs(this.velocity.y) / 36, 0, .09);
@@ -891,7 +999,16 @@ export function cameraRelative(vector, yaw) {
 }
 
 export function aimWithSpread(aim, spread, random = Math.random) {
-  return aim.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), (random() - .5) * spread).normalize();
+  if (!spread) return aim.clone().normalize();
+  const forward = aim.clone().normalize();
+  const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0));
+  if (right.lengthSq() < .001) right.set(1, 0, 0);
+  else right.normalize();
+  const up = new THREE.Vector3().crossVectors(right, forward).normalize();
+  return forward
+    .addScaledVector(right, (random() - .5) * spread)
+    .addScaledVector(up, (random() - .5) * spread)
+    .normalize();
 }
 
 export function reticleAim(player, cameraOrigin, cameraDirection, world, targets) {
