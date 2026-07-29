@@ -15,6 +15,8 @@ const [mainSource, serviceWorkerSource] = await Promise.all([
 assert.doesNotMatch(mainSource, /serviceWorker\.register/, "the game no longer installs the stale offline cache");
 assert.match(mainSource, /reticleAim\(player, this\.camera\.position, this\.camera\.getWorldDirection/, "weapons fire through the visible camera's exact center ray");
 assert.match(mainSource, /mode === "quick"[\s\S]*?settings\.botCount = 7;[\s\S]*?botDifficulty = "normal";/, "Quick Play defaults to seven normal-difficulty bots");
+assert.doesNotMatch(mainSource, /EffectComposer|UnrealBloomPass|composer\.render/, "the game avoids unstable post-processing framebuffers");
+assert.match(mainSource, /renderer\.render\(this\.scene, this\.camera\)/, "the game renders directly through Three.js");
 assert.match(serviceWorkerSource, /caches\.delete/, "the replacement worker clears old cached builds");
 assert.match(serviceWorkerSource, /clients\.claim/, "the replacement worker takes control before refreshing old clients");
 assert.match(serviceWorkerSource, /registration\.unregister/, "the replacement worker removes itself after cleanup");

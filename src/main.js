@@ -1,9 +1,5 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import "./styles.css";
 import { SoundBoard } from "./audio.js";
 import { CombatVisuals } from "./combatVisuals.js";
@@ -78,11 +74,6 @@ class BlasterBattle {
     this.cameraFocus = new THREE.Vector3();
     this.sound = new SoundBoard();
     this.settings = loadSettings();
-    this.composer = new EffectComposer(this.renderer);
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .34, .36, .78);
-    this.composer.addPass(this.bloomPass);
-    this.composer.addPass(new OutputPass());
     this.state = "menu";
     this.paused = false;
     this.mode = "training";
@@ -126,7 +117,6 @@ class BlasterBattle {
 
   resize() {
     this.renderer.setSize(innerWidth, innerHeight, false);
-    this.composer?.setSize(innerWidth, innerHeight);
     this.camera.aspect = innerWidth / innerHeight;
     this.camera.updateProjectionMatrix();
   }
@@ -1233,7 +1223,7 @@ class BlasterBattle {
 
   renderScene() {
     if (this.state !== "play" || this.paused) this.updateCamera();
-    this.composer.render();
+    this.renderer.render(this.scene, this.camera);
   }
 
   removeProjectile(index) {
