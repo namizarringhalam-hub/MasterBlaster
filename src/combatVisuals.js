@@ -55,68 +55,9 @@ function addTail(group, radius, length, material) {
 }
 
 function addScreenTrail(group, radius, length, color) {
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute([
-    -1, 0, 0, 1, 0, 0, -1, 0, -1, 1, 0, -1
-  ], 3));
-  geometry.setAttribute("uv", new THREE.Float32BufferAttribute([
-    0, 0, 1, 0, 0, 1, 1, 1
-  ], 2));
-  geometry.setIndex([0, 2, 1, 2, 3, 1]);
-  const material = new THREE.ShaderMaterial({
-    uniforms: {
-      color: { value: color.clone() },
-      worldWidth: { value: radius },
-      minWidth: { value: .0019 }
-    },
-    vertexShader: `
-      uniform float worldWidth;
-      uniform float minWidth;
-      varying vec2 vUv;
-      void main() {
-        vUv = uv;
-        vec4 headView = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-        vec4 tailView = modelViewMatrix * vec4(0.0, 0.0, -1.0, 1.0);
-        if (headView.z > -0.11 || tailView.z > -0.11) {
-          gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-          return;
-        }
-        vec4 headClip = projectionMatrix * headView;
-        vec4 tailClip = projectionMatrix * tailView;
-        vec2 axis = headClip.xy / headClip.w - tailClip.xy / tailClip.w;
-        vec2 facing = length(axis) > 0.00001 ? normalize(vec2(-axis.y, axis.x)) : vec2(1.0, 0.0);
-        float along = -position.z;
-        vec4 center = mix(headClip, tailClip, along);
-        float depth = max(1.0, -mix(headView.z, tailView.z, along));
-        float halfWidth = max(minWidth, worldWidth * projectionMatrix[1][1] / depth);
-        center.xy += facing * position.x * halfWidth * center.w;
-        gl_Position = center;
-      }
-    `,
-    fragmentShader: `
-      uniform vec3 color;
-      varying vec2 vUv;
-      void main() {
-        float lateral = abs(vUv.x * 2.0 - 1.0);
-        float edge = 1.0 - smoothstep(0.28, 1.0, lateral);
-        float spine = 1.0 - smoothstep(0.0, 0.22, lateral);
-        float history = pow(max(0.0, 1.0 - vUv.y), 0.48);
-        float dart = smoothstep(0.68, 1.0, history);
-        vec3 hot = mix(color, vec3(1.0), spine * (0.58 + dart * 0.42));
-        gl_FragColor = vec4(hot, edge * history * (0.72 + spine * 0.28));
-      }
-    `,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-    toneMapped: false
-  });
-  const trail = visualMesh(geometry, material);
-  trail.scale.z = length;
-  trail.userData.trail = { axis: "z", length, offset: 0, screen: true };
-  group.add(trail);
-  return trail;
+  const trailMaterial = glowMaterial(.82);
+  trailMaterial.color.copy(color);
+  return addTail(group, Math.max(.08, radius), length, trailMaterial);
 }
 
 /**

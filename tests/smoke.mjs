@@ -35,6 +35,7 @@ const visualOwner = { accent: 0x44eeff };
 for (const id of ["machine_gun", "railgun", "rocket_launcher", "grenade_launcher", "plasma_cannon"]) {
   const projectileVisual = createProjectileVisual(WEAPONS[id], visualOwner, WEAPONS[id].projectileRadius || .11);
   assert.ok(projectileVisual.children.length >= 2 && projectileVisual.userData.combatVisual, `${id} has a layered, animated combat visual`);
+  assert.ok(projectileVisual.children.every((part) => !part.material?.isShaderMaterial), `${id} uses camera-safe world-space projectile trails`);
 }
 const quickLoadout = randomLoadout(() => 0);
 assert.equal(quickLoadout.length, 5, "Quick Play selects five random weapons");
