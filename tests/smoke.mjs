@@ -25,13 +25,13 @@ assert.match(serviceWorkerSource, /registration\.unregister/, "the replacement w
 const documentedWeaponIds = [
   "arc_lightning", "black_hole_generator", "blaster", "boomerang_blade", "bouncing_bomb", "burst_rifle",
   "chainsaw", "charged_energy_rifle", "cluster_grenade", "decoy_launcher", "disintegration_weapon", "drill_missile",
-  "energy_sword", "flamethrower", "freeze_gun", "grapple_disrupting_pulse", "gravity_beam", "gravity_grenade", "grenade_launcher",
+  "energy_sword", "fireball", "flamethrower", "freeze_gun", "grapple_disrupting_pulse", "gravity_beam", "gravity_grenade", "grenade_launcher",
   "hammer", "implosion_bomb", "knife", "laser_beam", "machine_gun", "mine", "minigun", "mortar",
   "napalm_launcher", "needle_launcher", "plasma_cannon", "plasma_repeater", "pulse_cannon", "punch_glove",
   "railgun", "remote_explosive", "ricochet_cannon", "rocket_launcher", "shock_baton", "shotgun", "spear",
   "sticky_launcher", "submachine_gun", "teleport_projectile", "temporary_wall", "tornado_generator", "weapon_stealing_projectile"
 ];
-assert.equal(Object.keys(WEAPONS).length, 46, "the game exposes the prototype, documented library, and Flamethrower");
+assert.equal(Object.keys(WEAPONS).length, 47, "the game exposes the complete documented library, Flamethrower, and Fireball");
 assert.equal(LOADOUT_SLOTS.length, 5, "players carry five main weapons");
 assert.equal(DEFAULT_LOADOUT.length, 5, "the default loadout is match-ready");
 const visualOwner = { accent: 0x44eeff };
@@ -49,7 +49,7 @@ assert.deepEqual(
   documentedWeaponIds,
   "weapon IDs match the specification"
 );
-assert.equal(WEAPON_GROUPS.reduce((total, group) => total + group.ids.length, 0), 46, "every weapon belongs to one menu category");
+assert.equal(WEAPON_GROUPS.reduce((total, group) => total + group.ids.length, 0), 47, "every weapon belongs to one menu category");
 assert.ok(WEAPON_GROUPS.every((group) => group.ids.every((id) => WEAPONS[id])), "weapon categories contain no missing entries");
 assert.ok(Object.values(WEAPONS).every((weapon) => weapon.name && weapon.description && weapon.category), "every weapon has complete menu metadata");
 const presentationSignatures = new Set();
@@ -96,8 +96,8 @@ for (const [id, weapon] of Object.entries(WEAPONS)) {
     presentationVisuals.flameStream(new THREE.Vector3(), matrixOwner.aim, weapon, matrixOwner, weapon.reach);
   }
 }
-assert.equal(presentationSignatures.size, 46, "all 46 weapons retain distinct audiovisual signatures");
-assert.ok(presentationVisuals.tracers.length <= 72 && presentationVisuals.sparks.length <= 180 && presentationVisuals.rings.length <= 36, "the complete 46-weapon effects matrix remains pool-bounded");
+assert.equal(presentationSignatures.size, 47, "all 47 weapons retain distinct audiovisual signatures");
+assert.ok(presentationVisuals.tracers.length <= 72 && presentationVisuals.sparks.length <= 180 && presentationVisuals.rings.length <= 36, "the complete 47-weapon effects matrix remains pool-bounded");
 const meleeTraceCounts = { hammer: 2, energy_sword: 2, chainsaw: 2, spear: 1, punch_glove: 2, shock_baton: 4, knife: 1 };
 for (const [id, expectedSegments] of Object.entries(meleeTraceCounts)) {
   const before = presentationVisuals.cursors.tracer;

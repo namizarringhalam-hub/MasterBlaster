@@ -51,7 +51,7 @@ export function weaponPresentation(weapon = {}) {
   const blast = Math.max(0, weapon.radius || 0);
   const weight = clamp((weapon.damage || 0) / 92 + (weapon.recoil || 0) / 16 + blast / 15, .12, 1.35);
   const energy = ["plasma", "beam", "rail", "chain"].includes(delivery)
-    || ["gravity", "implosion", "freeze", "teleport", "steal", "disrupt", "energy", "arc"].includes(payload);
+    || ["gravity", "implosion", "freeze", "fireball", "teleport", "steal", "disrupt", "energy", "arc"].includes(payload);
   const precision = delivery === "rail" || delivery === "beam" || payload === "penetrator";
   const rapid = tempo === "rapid" || speed >= 180;
   const trailLength = clamp((.55 + speed * .021 + weight * .55) * (.92 + signature * .16), .65, precision ? 7.2 : 5.6);

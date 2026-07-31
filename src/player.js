@@ -345,6 +345,12 @@ export class Fighter {
       } else if (presentation.payload === "freeze") {
         marker = part(new THREE.OctahedronGeometry(.17, 0), glow, .05, .17, z, false);
         marker.scale.set(.72, 1.35, .72);
+      } else if (presentation.payload === "fireball") {
+        marker = part(new THREE.DodecahedronGeometry(.18, 0), glow, .05, .17, z, false);
+        const coronaMaterial = identity.clone();
+        coronaMaterial.wireframe = true;
+        const corona = part(new THREE.IcosahedronGeometry(.25, 0), coronaMaterial, .05, .17, z, false);
+        this.weaponGroup.add(corona);
       } else if (["teleport", "steal", "decoy"].includes(presentation.payload)) {
         marker = part(new THREE.TorusKnotGeometry(.1, .025, 24, 5), identity, .05, .17, z, false);
       } else if (presentation.payload === "cluster") {
@@ -380,6 +386,22 @@ export class Fighter {
       marker.rotation.x = Math.PI / 2;
       this.weaponGroup.add(body, cap, marker);
       this.weaponMuzzleDistance = .55;
+      addSignature();
+      return;
+    }
+    if (weapon.id === "fireball") {
+      const bracer = part(new THREE.CylinderGeometry(.2, .26, .62, 8), dark, .05, -.04, .28);
+      bracer.rotation.x = Math.PI / 2;
+      const cuff = part(new THREE.TorusGeometry(.25, .055, 5, 10), identity, .05, -.04, .03, false);
+      const palm = part(new THREE.BoxGeometry(.34, .12, .36), dark, .05, .03, .62);
+      const ember = part(new THREE.DodecahedronGeometry(.22, 0), glow, .05, .24, .82, false);
+      const halo = part(new THREE.TorusGeometry(.3, .035, 4, 14), identity, .05, .24, .82, false);
+      halo.rotation.x = Math.PI / 2;
+      const clawA = part(new THREE.ConeGeometry(.055, .42, 5), glow, -.17, .11, .86, false);
+      const clawB = part(new THREE.ConeGeometry(.055, .42, 5), glow, .27, .11, .86, false);
+      clawA.rotation.x = clawB.rotation.x = Math.PI / 2;
+      this.weaponGroup.add(bracer, cuff, palm, ember, halo, clawA, clawB);
+      this.weaponMuzzleDistance = 1.12;
       addSignature();
       return;
     }

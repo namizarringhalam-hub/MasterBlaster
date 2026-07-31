@@ -7,6 +7,9 @@ const FORWARD = new THREE.Vector3(0, 0, 1);
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 const BLACK = new THREE.Color(0x000000);
 const WHITE = new THREE.Color(0xffffff);
+const FIRE = new THREE.Color(0xff5a1f);
+const FIRE_HOT = new THREE.Color(0xffd36a);
+export const FIREBALL_INSTANCE_CAPACITY = 4096;
 
 function glowMaterial(opacity = 1) {
   return new THREE.MeshBasicMaterial({
@@ -41,7 +44,7 @@ function isCloseRapid(profile, weapon) {
 function impactFamily(profile, explosive) {
   if (["gravity", "implosion", "freeze", "disrupt", "cluster", "sticky", "ricochet", "drill", "pulse"].includes(profile.payload)) return profile.payload;
   if (["teleport", "steal", "wall", "decoy"].includes(profile.payload)) return "scan";
-  if (profile.delivery === "flame" || profile.payload === "napalm") return "flame";
+  if (profile.delivery === "flame" || ["napalm", "fireball"].includes(profile.payload)) return "flame";
   if (["plasma", "wall", "decoy"].includes(profile.delivery)) return "plasma";
   if (profile.precision) return "precision";
   if (profile.delivery === "chain") return "arc";
@@ -68,7 +71,7 @@ function addScreenTrail(group, radius, length, color) {
 function addPayloadDecorator(group, profile, radius, materials, movingParts, pulseParts) {
   const decoratedPayloads = [
     "gravity", "implosion", "freeze", "teleport", "steal", "disrupt", "cluster", "sticky",
-    "ricochet", "drill", "wall", "decoy", "tornado", "napalm", "penetrator", "pulse", "mortar"
+    "ricochet", "drill", "wall", "decoy", "tornado", "napalm", "fireball", "penetrator", "pulse", "mortar"
   ];
   if (!decoratedPayloads.includes(profile.payload)) return [];
   const identity = materials.identity().clone();
@@ -126,6 +129,11 @@ function addPayloadDecorator(group, profile, radius, materials, movingParts, pul
     mesh = visualMesh(new THREE.TorusGeometry(radius * 1.4, radius * .13, 4, 9), identity);
     mesh.rotation.x = Math.PI / 2;
     motion = "armed";
+  } else if (profile.payload === "fireball") {
+    identity.wireframe = true;
+    mesh = visualMesh(new THREE.DodecahedronGeometry(radius * 1.62, 0), identity);
+    mesh.scale.set(.88, 1.12, .88);
+    motion = "hoop";
   } else if (profile.payload === "penetrator") {
     mesh = visualMesh(new THREE.BoxGeometry(radius * .38, radius * .38, radius * 3.3), identity);
     motion = "drill";
@@ -220,6 +228,20 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
         group.add(dot);
       }
     }
+  } else if (profile.payload === "fireball") {
+    const ember = visualMesh(new THREE.IcosahedronGeometry(radius, 1), core);
+    const whiteCore = visualMesh(new THREE.DodecahedronGeometry(radius * .52, 0), hot);
+    const coronaMaterial = identityMaterial().clone();
+    coronaMaterial.wireframe = true;
+    coronaMaterial.color.set(0xffd36a);
+    const corona = visualMesh(new THREE.IcosahedronGeometry(radius * 1.34, 1), coronaMaterial);
+    const orbitA = visualMesh(new THREE.TorusGeometry(radius * 1.48, radius * .075, 4, 15), identityMaterial());
+    const orbitB = visualMesh(new THREE.TorusGeometry(radius * 1.48, radius * .075, 4, 15), identityMaterial().clone());
+    orbitA.rotation.x = Math.PI / 2;
+    orbitB.rotation.set(Math.PI / 3, Math.PI / 5, 0);
+    group.add(ember, whiteCore, corona, orbitA, orbitB);
+    movingParts.push(corona, orbitA, orbitB);
+    pulseParts.push(whiteCore, corona, orbitA, orbitB, addTail(group, radius * 1.15, Math.max(1.45, speedTail), soft()));
   } else if (family === "plasma") {
     const orb = visualMesh(new THREE.SphereGeometry(radius, 10, 8), core);
     const hotOrb = visualMesh(new THREE.OctahedronGeometry(radius * .48, 1), hot);
@@ -328,6 +350,26 @@ export class CombatVisuals {
     this.sparkLayer = instancedLayer(new THREE.OctahedronGeometry(1, 0), sparkCapacity, .92);
     this.group.add(this.flashOuter, this.flashInner, this.tracerOuter, this.tracerInner, this.ringOuter, this.ringInner, this.sparkLayer);
 
+    this.fireballs = new Set();
+    this.fireballGroup = new THREE.Group();
+    this.fireballGroup.name = "Instanced persistent Fireballs";
+    this.fireballLayers = {
+      aura: instancedLayer(new THREE.SphereGeometry(1, 8, 6), FIREBALL_INSTANCE_CAPACITY, .18),
+      ember: instancedLayer(new THREE.IcosahedronGeometry(1, 1), FIREBALL_INSTANCE_CAPACITY, .96),
+      core: instancedLayer(new THREE.DodecahedronGeometry(1, 0), FIREBALL_INSTANCE_CAPACITY, 1),
+      corona: instancedLayer(new THREE.IcosahedronGeometry(1, 1), FIREBALL_INSTANCE_CAPACITY, .72),
+      orbitA: instancedLayer(new THREE.TorusGeometry(1.48, .075, 4, 15), FIREBALL_INSTANCE_CAPACITY, .84),
+      orbitB: instancedLayer(new THREE.TorusGeometry(1.48, .075, 4, 15), FIREBALL_INSTANCE_CAPACITY, .84),
+      tail: instancedLayer(new THREE.ConeGeometry(1, 1, 6, 1, true), FIREBALL_INSTANCE_CAPACITY, .4)
+    };
+    this.fireballLayers.corona.material.wireframe = true;
+    this.fireballLayerList = Object.values(this.fireballLayers);
+    for (const layer of this.fireballLayerList) {
+      layer.count = 0;
+      this.fireballGroup.add(layer);
+    }
+    this.group.add(this.fireballGroup);
+
     this.matrix = new THREE.Matrix4();
     this.quaternion = new THREE.Quaternion();
     this.twistQuaternion = new THREE.Quaternion();
@@ -343,13 +385,30 @@ export class CombatVisuals {
   }
 
   createProjectile(owner, weapon, radius, options) {
+    if (weapon.presentationPayload === "fireball") {
+      const anchor = new THREE.Object3D();
+      anchor.userData.combatVisual = {
+        instancedFireball: true,
+        time: 0,
+        radius,
+        weaponColor: new THREE.Color(weapon.color),
+        ownerColor: ownerColor(owner, weapon)
+      };
+      this.fireballs.add(anchor);
+      return anchor;
+    }
     return createProjectileVisual(weapon, owner, radius, options);
+  }
+
+  removeProjectile(shot) {
+    if (shot?.mesh?.userData?.combatVisual?.instancedFireball) this.fireballs.delete(shot.mesh);
   }
 
   updateProjectile(shot, dt) {
     const visual = shot.mesh?.userData?.combatVisual;
     if (!visual) return;
     visual.time += dt;
+    if (visual.instancedFireball) return;
     const moving = shot.velocity?.lengthSq() > .001;
     if (moving) {
       this.direction.copy(shot.velocity).normalize();
@@ -605,10 +664,73 @@ export class CombatVisuals {
   }
 
   update(dt) {
+    this.updateFireballs();
     this.updateFlashes(dt);
     this.updateTracers(dt);
     this.updateRings(dt);
     this.updateSparks(dt);
+  }
+
+  updateFireballs() {
+    const layers = this.fireballLayers;
+    let index = 0;
+    for (const anchor of this.fireballs) {
+      if (index >= FIREBALL_INSTANCE_CAPACITY) break;
+      const visual = anchor.userData.combatVisual;
+      const radius = visual.radius;
+      const pulse = 1 + Math.sin(visual.time * 14 + index * .37) * .1;
+      const spin = visual.time * 3.2 + index * .19;
+
+      this.quaternion.identity();
+      this.scale.setScalar(radius * 1.62 * pulse);
+      this.matrix.compose(anchor.position, this.quaternion, this.scale);
+      layers.aura.setMatrixAt(index, this.matrix);
+
+      this.quaternion.setFromAxisAngle(UP, spin);
+      this.scale.setScalar(radius * pulse);
+      this.matrix.compose(anchor.position, this.quaternion, this.scale);
+      layers.ember.setMatrixAt(index, this.matrix);
+
+      this.quaternion.setFromAxisAngle(FORWARD, -spin * 1.4);
+      this.scale.setScalar(radius * .52 * (1.08 - (pulse - 1) * .7));
+      this.matrix.compose(anchor.position, this.quaternion, this.scale);
+      layers.core.setMatrixAt(index, this.matrix);
+
+      this.quaternion.setFromAxisAngle(UP, -spin * .72);
+      this.scale.set(radius * 1.18 * pulse, radius * 1.5 / pulse, radius * 1.18 * pulse);
+      this.matrix.compose(anchor.position, this.quaternion, this.scale);
+      layers.corona.setMatrixAt(index, this.matrix);
+
+      this.quaternion.setFromAxisAngle(FORWARD, spin * .54);
+      this.scale.setScalar(radius);
+      this.matrix.compose(anchor.position, this.quaternion, this.scale);
+      layers.orbitA.setMatrixAt(index, this.matrix);
+
+      this.quaternion.setFromAxisAngle(UP, Math.PI / 3);
+      this.quaternion.multiply(this.twistQuaternion.setFromAxisAngle(FORWARD, -spin * .62));
+      this.scale.setScalar(radius);
+      this.matrix.compose(anchor.position, this.quaternion, this.scale);
+      layers.orbitB.setMatrixAt(index, this.matrix);
+
+      const velocity = anchor.userData.projectileVelocity;
+      this.direction.copy(velocity?.lengthSq() > .001 ? velocity : FORWARD).normalize();
+      this.quaternion.setFromUnitVectors(UP, this.direction);
+      this.position.copy(anchor.position).addScaledVector(this.direction, -radius * 2.1);
+      this.scale.set(radius * .82 * pulse, radius * 2.8, radius * .82 * pulse);
+      this.matrix.compose(this.position, this.quaternion, this.scale);
+      layers.tail.setMatrixAt(index, this.matrix);
+
+      layers.aura.setColorAt(index, visual.ownerColor);
+      layers.ember.setColorAt(index, visual.weaponColor);
+      layers.core.setColorAt(index, WHITE);
+      layers.corona.setColorAt(index, FIRE_HOT);
+      layers.orbitA.setColorAt(index, visual.ownerColor);
+      layers.orbitB.setColorAt(index, FIRE_HOT);
+      layers.tail.setColorAt(index, index % 2 ? FIRE : visual.ownerColor);
+      index += 1;
+    }
+    for (const layer of this.fireballLayerList) layer.count = index;
+    this.markUpdated(...this.fireballLayerList);
   }
 
   updateFlashes(dt) {
@@ -829,6 +951,7 @@ export class CombatVisuals {
   }
 
   dispose() {
+    this.fireballs.clear();
     this.scene.remove(this.group);
     this.group.traverse((child) => {
       child.geometry?.dispose?.();

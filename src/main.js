@@ -174,7 +174,7 @@ class BlasterBattle {
         </section>
         <aside class="feature-rail">
           <span>01</span><div><b>GRAPPLE</b><small>Momentum is your weapon</small></div>
-          <span>02</span><div><b>46 WEAPONS</b><small>Carry five into combat</small></div>
+          <span>02</span><div><b>47 WEAPONS</b><small>Carry five into combat</small></div>
           <span>03</span><div><b>DYNAMIC ARENAS</b><small>Moving routes, portals, and hazards</small></div>
         </aside>
       </main>`;
@@ -799,7 +799,7 @@ class BlasterBattle {
     if (weapon.type === "rail") mesh.lookAt(mesh.position.clone().add(direction));
     const velocity = direction.clone().multiplyScalar(weapon.projectileSpeed);
     if (weapon.arcLift) velocity.y += weapon.arcLift;
-    this.scene.add(mesh);
+    if (!mesh.userData.combatVisual?.instancedFireball) this.scene.add(mesh);
     const shot = {
       mesh, owner: player, weapon, velocity, radius,
       life: projectileLifetime(weapon),
@@ -810,6 +810,7 @@ class BlasterBattle {
       remainingTerrainPenetration: weapon.terrainPenetration || 0,
       remote: weapon.type === "remote"
     };
+    if (mesh.userData.combatVisual?.instancedFireball) mesh.userData.projectileVelocity = velocity;
     if (weapon.presentationPayload === "mortar") {
       const landing = mesh.position.clone();
       const predictedVelocity = velocity.clone();
@@ -1031,6 +1032,7 @@ class BlasterBattle {
               this.damageTarget(target, shot.weapon.damage, shot.velocity.clone().normalize().multiplyScalar(shot.weapon.recoil * 1.7), shot.owner, shot.weapon, {
                 point: shot.mesh.position.clone(), direction: shot.velocity.clone(), sourceSlot: shot.sourceSlot
               });
+              if (shot.weapon.presentationPayload === "fireball") this.playFireballImpact(shot);
               shot.hitTargets.add(target.id);
               if (shot.remainingPenetration > 0) {
                 shot.remainingPenetration -= 1;
@@ -1100,6 +1102,16 @@ class BlasterBattle {
     shot.velocity.multiplyScalar(shot.weapon.bounceEnergy ?? .62);
     if (shot.weapon.type === "grenade") shot.velocity.y = Math.max(2.5, shot.velocity.y);
     this.combatVisuals?.impact(previous, shot.weapon, shot.owner, { size: .58 });
+    if (shot.weapon.presentationPayload === "fireball" && shot.age - (shot.lastBounceSound ?? -Infinity) >= .12) {
+      shot.lastBounceSound = shot.age;
+      this.playFireballImpact(shot, .48);
+    }
+  }
+
+  playFireballImpact(shot, volumeScale = 1) {
+    const listener = this.players[0];
+    const distanceScale = listener ? Math.max(.12, 1 - shot.mesh.position.distanceTo(listener.position) / 110) : .12;
+    this.sound.playImpact(shot.weapon, distanceScale * volumeScale);
   }
 
   finishProjectile(index, shot) {
@@ -1655,6 +1667,7 @@ class BlasterBattle {
   }
 
   removeProjectile(index) {
+    this.combatVisuals?.removeProjectile(this.projectiles[index]);
     this.removeObject(this.projectiles[index].mesh);
     this.removeObject(this.projectiles[index].telegraph);
     this.projectiles.splice(index, 1);

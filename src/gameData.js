@@ -51,7 +51,7 @@ export const WEAPON_GROUPS = [
   { id: "rapid", name: "Rapid Fire", ids: ["submachine_gun", "minigun", "plasma_repeater", "needle_launcher", "burst_rifle", "flamethrower"] },
   { id: "explosive", name: "Explosive", ids: ["cluster_grenade", "sticky_launcher", "remote_explosive", "mortar", "bouncing_bomb", "napalm_launcher", "implosion_bomb"] },
   { id: "energy", name: "Energy", ids: ["laser_beam", "charged_energy_rifle", "arc_lightning", "pulse_cannon", "gravity_beam", "disintegration_weapon"] },
-  { id: "unusual", name: "Unusual", ids: ["black_hole_generator", "freeze_gun", "teleport_projectile", "drill_missile", "boomerang_blade", "ricochet_cannon", "gravity_grenade", "tornado_generator", "temporary_wall", "decoy_launcher", "weapon_stealing_projectile", "grapple_disrupting_pulse"] },
+  { id: "unusual", name: "Unusual", ids: ["black_hole_generator", "freeze_gun", "fireball", "teleport_projectile", "drill_missile", "boomerang_blade", "ricochet_cannon", "gravity_grenade", "tornado_generator", "temporary_wall", "decoy_launcher", "weapon_stealing_projectile", "grapple_disrupting_pulse"] },
   { id: "melee", name: "Melee", ids: ["hammer", "energy_sword", "chainsaw", "spear", "punch_glove", "shock_baton", "knife"] }
 ];
 
@@ -94,6 +94,7 @@ const weaponList = [
   // Full library: unusual
   weapon("Unusual", "black_hole_generator", "Black-Hole Generator", "plasma", 0x5d3b99, "Creates a singularity that pulls and damages nearby fighters.", { damage: 18, projectileSpeed: 34, cooldown: 1.8, ammo: 2, reload: 2.2, recoil: 5, radius: 4, terrainRadius: 2, projectileRadius: .5, hazard: "black_hole", hazardDuration: 5, maxActiveHazards: 2 }),
   weapon("Unusual", "freeze_gun", "Freeze Gun", "projectile", 0xa9efff, "Slows movement and grappling for 4.5 seconds after the last hit.", { damage: 12, projectileSpeed: 92, cooldown: .32, ammo: 14, reload: 1.3, recoil: .5, effect: "freeze", effectDuration: 4.5, projectileRadius: .18 }),
+  weapon("Unusual", "fireball", "Fireball", "plasma", 0xff5a1f, "Thrown living flame rebounds from floors and walls until it strikes a fighter.", { damage: 38, projectileSpeed: 32, cooldown: .85, ammo: 6, reload: 1.65, recoil: 2.8, projectileRadius: .36, gravity: 11, arcLift: 6.5, bounces: Infinity, bounceEnergy: 1, presentationPayload: "fireball", minUsefulRange: 3, preferredRange: 20, maxUsefulRange: 72, utilityIntent: "ricochet" }),
   weapon("Unusual", "teleport_projectile", "Teleport Projectile", "projectile", 0x43ffd1, "Teleports the shooter to the first impact point.", { damage: 5, projectileSpeed: 130, cooldown: 1.3, ammo: 4, reload: 1.6, recoil: 0, effect: "teleport", projectileRadius: .18 }),
   weapon("Unusual", "drill_missile", "Drill Missile", "rocket", 0xffd45d, "Bores through destructible cover before exploding.", { damage: 42, projectileSpeed: 48, cooldown: 1.2, ammo: 3, reload: 1.8, recoil: 3.8, radius: 4.2, terrainRadius: 5, terrainPenetration: 4 }),
   weapon("Unusual", "boomerang_blade", "Boomerang Blade", "projectile", 0xffa7e6, "Piercing blade returns to its owner.", { damage: 24, projectileSpeed: 74, cooldown: .75, ammo: 6, reload: 1.25, recoil: .8, penetration: 5, returning: .8, projectileRadius: .24 }),

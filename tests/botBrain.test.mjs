@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { WEAPONS } from "../src/gameData.js";
 import { botRemoteChargeAction, botWeaponPolicy, botFireChance, shouldBotPlaceWall } from "../src/botBrain.js";
 
-assert.equal(Object.keys(WEAPONS).length, 46);
+assert.equal(Object.keys(WEAPONS).length, 47);
 for (const weapon of Object.values(WEAPONS)) {
   const policy = botWeaponPolicy(weapon);
   assert.ok(Number.isFinite(policy.min) && Number.isFinite(policy.preferred) && Number.isFinite(policy.max));

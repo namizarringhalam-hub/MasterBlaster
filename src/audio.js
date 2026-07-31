@@ -95,6 +95,12 @@ export class SoundBoard {
     const profile = weaponPresentation(weapon);
     const volume = Math.max(.015, .09 * distanceScale);
     const pitch = profile.audioPitch * (.94 + profile.signature * .12);
+    if (profile.payload === "fireball") {
+      this.noise(.14, volume * .72, 520);
+      this.tone(118, .16, "sawtooth", volume * .82, 1.8);
+      this.tone(410 + profile.signature * 90, .09, "triangle", volume * .38, .52);
+      return;
+    }
     if (profile.delivery === "flame") {
       this.noise(.1, volume * (.62 + profile.audioNoise * .25), 620 + pitch * .28);
       this.tone(92 + profile.signature * 28, .085, "sawtooth", volume * .4, .7);
@@ -159,7 +165,11 @@ export class SoundBoard {
     const profile = weaponPresentation(weapon);
     const volume = Math.max(.012, .085 * distanceScale);
     const inward = profile.payload === "gravity" || profile.payload === "implosion";
-    if (inward) {
+    if (profile.payload === "fireball") {
+      this.noise(.11, volume * .7, 760);
+      this.tone(150 + profile.signature * 45, .12, "sawtooth", volume * .72, .44);
+      this.tone(680 + profile.signature * 120, .055, "triangle", volume * .3, 1.5);
+    } else if (inward) {
       this.tone(74 + profile.signature * 28, .24, "sine", volume, 2.4);
       this.noise(.16, volume * .34, 280);
     } else if (isCloseRapid(profile, weapon)) {
