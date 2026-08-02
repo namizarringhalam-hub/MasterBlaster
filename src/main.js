@@ -5,7 +5,7 @@ import { SoundBoard } from "./audio.js";
 import { CombatVisuals } from "./combatVisuals.js";
 import { ArenaWorld } from "./world.js";
 import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reticleAim } from "./player.js";
-import { InputManager, updateOrbit } from "./input.js";
+import { InputManager, clearTouchActions, updateOrbit } from "./input.js";
 import { DEFAULT_LOADOUT, excessOwnedProjectiles, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, weaponFireMode, WEAPONS } from "./gameData.js";
 import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, clampBotCount, nearestTarget, safestSpawn, shouldBotPlaceWall } from "./botBrain.js";
 
@@ -96,8 +96,11 @@ class BlasterBattle {
     this.renderMain();
     this.resize();
     addEventListener("resize", () => this.resize());
-    addEventListener("visibilitychange", () => {
-      if (document.hidden && this.state === "play" && !this.paused) this.togglePause();
+    addEventListener("blur", () => clearTouchActions(this.touch));
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) return;
+      clearTouchActions(this.touch);
+      if (this.state === "play" && !this.paused) this.togglePause();
     });
     requestAnimationFrame(() => this.frame());
   }
@@ -123,6 +126,7 @@ class BlasterBattle {
 
   clearMatch() {
     this.input.releasePointer();
+    clearTouchActions(this.touch);
     this.combatVisuals?.dispose();
     this.combatVisuals = null;
     this.world?.dispose();
@@ -392,10 +396,6 @@ class BlasterBattle {
           </div>
         </div>
         <div class="touch-controls" aria-label="Touch controls">
-          <div class="touch-move">
-            <button data-touch="up">▲</button><button data-touch="left">◀</button>
-            <button data-touch="down">▼</button><button data-touch="right">▶</button>
-          </div>
           <div class="touch-actions">
             <button data-touch="jump">JUMP</button><button data-touch="grapple">HOOK</button>
             <button data-touch="weapon">SWAP</button><button class="fire" data-touch="fire">FIRE</button>
@@ -442,9 +442,14 @@ class BlasterBattle {
         event.preventDefault();
         this.touch[action] = false;
       };
+      const cancel = (event) => {
+        release(event);
+        if (action === "fire") this.touch.fireTap = false;
+        else if (action === "jump" || action === "grapple" || action === "weapon") this.touch[`${action}Tap`] = false;
+      };
       button.addEventListener("pointerdown", press);
       button.addEventListener("pointerup", release);
-      button.addEventListener("pointercancel", release);
+      button.addEventListener("pointercancel", cancel);
     }
   }
 
@@ -453,6 +458,7 @@ class BlasterBattle {
     this.paused = !this.paused;
     if (this.paused) {
       this.input.releasePointer();
+      clearTouchActions(this.touch);
       for (const player of this.players || []) {
         this.sound.updateWeaponLoop(player.id, player.weapon, false);
         this.sound.stopChargeLoop(player.id);
@@ -522,7 +528,7 @@ class BlasterBattle {
       return;
     }
     let move = cameraRelative(directionFromKeys(this.input), this.cameraYaw);
-    move.add(cameraRelative(directionFromTouch(this.touch), this.cameraYaw));
+    move.add(cameraRelative(directionFromTouch(this.input.touchDirection()), this.cameraYaw));
     if (move.lengthSq() > 1) move.normalize();
     const aim = reticleAim(player, this.camera.position, this.camera.getWorldDirection(new THREE.Vector3()), this.world, [...this.players, ...this.decoys]);
     player.update(dt, move, aim, { jump: this.input.tapped("Space") || this.touch.jumpTap }, this.world);

@@ -1005,12 +1005,8 @@ export function directionFromKeys(input) {
 }
 
 export function directionFromTouch(touch) {
-  const value = new THREE.Vector3(
-    (touch.right ? 1 : 0) - (touch.left ? 1 : 0),
-    0,
-    (touch.down ? 1 : 0) - (touch.up ? 1 : 0)
-  );
-  return value.lengthSq() ? value.normalize() : value;
+  const value = new THREE.Vector3(touch?.x || 0, 0, touch?.y || 0);
+  return value.lengthSq() > 1 ? value.normalize() : value;
 }
 
 export function cameraRelative(vector, yaw) {

@@ -399,13 +399,8 @@ input, select {
 
 @media (pointer: coarse), (hover: none), (max-width: 900px) and (max-height: 540px) {
   .reticle { opacity: .45; }
-  .touch-controls { position: absolute; inset: auto 0 88px; display: flex; justify-content: space-between; align-items: end; padding: 15px; pointer-events: none; }
+  .touch-controls { position: absolute; inset: auto 0 88px; display: flex; justify-content: flex-end; align-items: end; padding: 15px; pointer-events: none; }
   .touch-controls button { pointer-events: auto; touch-action: none; user-select: none; min-width: 54px; min-height: 54px; padding: 8px; border-radius: 50%; background: rgba(10, 25, 40, .7); }
-  .touch-move { display: grid; grid-template-columns: repeat(3, 54px); grid-template-areas: ". up ." "left down right"; gap: 4px; }
-  [data-touch="up"] { grid-area: up; }
-  [data-touch="left"] { grid-area: left; }
-  [data-touch="down"] { grid-area: down; }
-  [data-touch="right"] { grid-area: right; }
   .touch-actions { display: grid; grid-template-columns: repeat(2, 66px); gap: 7px; }
   .touch-actions button { border-radius: 10px; font-size: 10px; }
   .touch-actions .fire { min-width: 70px; min-height: 70px; background: rgba(232, 57, 82, .78); }
@@ -417,7 +412,6 @@ input, select {
        (max-width: 900px) and (max-height: 500px) and (orientation: landscape) {
   .touch-controls { bottom: 48px; padding: 7px; opacity: .86; }
   .touch-controls button { min-width: 44px; min-height: 44px; padding: 5px; }
-  .touch-move { grid-template-columns: repeat(3, 44px); gap: 3px; }
   .touch-actions { grid-template-columns: repeat(2, 52px); gap: 4px; }
   .touch-actions .fire { min-width: 56px; min-height: 56px; }
 }

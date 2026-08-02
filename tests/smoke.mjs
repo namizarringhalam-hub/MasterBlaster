@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { chooseBotSlot, botFireChance, botWeaponPolicy, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
 import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
 import { DEFAULT_LOADOUT, excessOwnedProjectiles, LOADOUT_SLOTS, projectileLifetime, projectileStepCount, randomLoadout, seededRandom, seedFromText, swapStolenWeapon, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
-import { InputManager, shouldCaptureGameKey, touchLookDelta, updateOrbit } from "../src/input.js";
+import { InputManager, clearTouchActions, shouldCaptureGameKey, touchLookDelta, touchMoveDelta, updateOrbit } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, flameConeFactor, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
 import { weaponPresentation } from "../src/weaponPresentation.js";
@@ -18,6 +18,10 @@ assert.match(mainSource, /reticleAim\(player, this\.camera\.position, this\.came
 assert.match(mainSource, /mode === "quick"[\s\S]*?settings\.botCount = 7;[\s\S]*?botDifficulty = "normal";/, "Quick Play defaults to seven normal-difficulty bots");
 assert.doesNotMatch(mainSource, /EffectComposer|UnrealBloomPass|composer\.render/, "the game avoids unstable post-processing framebuffers");
 assert.match(mainSource, /renderer\.render\(this\.scene, this\.camera\)/, "the game renders directly through Three.js");
+assert.doesNotMatch(mainSource, /data-touch="(?:up|down|left|right)"/, "mobile movement has no directional-button overlay");
+assert.match(mainSource, /document\.addEventListener\("visibilitychange"/, "page visibility resets are attached to the document that dispatches them");
+assert.match(mainSource, /if \(this\.paused\) \{[\s\S]*?clearTouchActions\(this\.touch\)/, "pausing clears held and queued touch actions");
+assert.match(mainSource, /pointercancel", cancel/, "cancelled action touches cannot replay queued actions");
 assert.match(serviceWorkerSource, /caches\.delete/, "the replacement worker clears old cached builds");
 assert.match(serviceWorkerSource, /clients\.claim/, "the replacement worker takes control before refreshing old clients");
 assert.match(serviceWorkerSource, /registration\.unregister/, "the replacement worker removes itself after cleanup");
@@ -197,10 +201,14 @@ assert.ok(!shouldCaptureGameKey({ code: "KeyR", ctrlKey: true, target: null }, t
 assert.deepEqual(updateOrbit(0, 0, 100, -50), { yaw: -.22, pitch: .11 }, "mouse-right turns the third-person camera right without reversing vertical aim");
 assert.equal(updateOrbit(0, .6, 0, -1000).pitch, .65, "vertical camera aim is clamped before it can flip");
 assert.deepEqual(touchLookDelta(20, 30, 70, 5), { x: 50, y: -25 }, "dragging right and up produces rightward and upward touch look");
-assert.ok(cameraRelative(directionFromTouch({ up: true }), 0).distanceTo(new THREE.Vector3(0, 0, 1)) < .001, "touch up moves forward with the camera");
-assert.ok(cameraRelative(directionFromTouch({ down: true }), 0).distanceTo(new THREE.Vector3(0, 0, -1)) < .001, "touch down moves backward from the camera");
-assert.ok(cameraRelative(directionFromTouch({ left: true }), 0).distanceTo(new THREE.Vector3(1, 0, 0)) < .001, "touch left follows screen-left relative to the camera");
-assert.ok(cameraRelative(directionFromTouch({ right: true }), 0).distanceTo(new THREE.Vector3(-1, 0, 0)) < .001, "touch right follows screen-right relative to the camera");
+assert.deepEqual(touchMoveDelta(20, 30, 24, 34), { x: 0, y: 0 }, "small left-side touch motion stays inside the walking dead zone");
+assert.deepEqual(touchMoveDelta(20, 30, 92, 30), { x: 1, y: 0 }, "a full left-side drag reaches full walking input");
+const heldTouchActions = { fire: true, fireTap: true, jumpTap: true, grappleTap: true, weaponTap: true };
+assert.deepEqual(clearTouchActions(heldTouchActions), { fire: false, fireTap: false, jumpTap: false, grappleTap: false, weaponTap: false }, "blur and pause can clear every held or queued touch action");
+assert.ok(cameraRelative(directionFromTouch({ x: 0, y: -1 }), 0).distanceTo(new THREE.Vector3(0, 0, 1)) < .001, "left-side drag up moves forward with the camera");
+assert.ok(cameraRelative(directionFromTouch({ x: 0, y: 1 }), 0).distanceTo(new THREE.Vector3(0, 0, -1)) < .001, "left-side drag down moves backward from the camera");
+assert.ok(cameraRelative(directionFromTouch({ x: -1, y: 0 }), 0).distanceTo(new THREE.Vector3(1, 0, 0)) < .001, "left-side drag left follows screen-left relative to the camera");
+assert.ok(cameraRelative(directionFromTouch({ x: 1, y: 0 }), 0).distanceTo(new THREE.Vector3(-1, 0, 0)) < .001, "left-side drag right follows screen-right relative to the camera");
 assert.ok(cameraRelative(directionFromKeys({ down: (code) => code === "KeyA" }), 0).distanceTo(new THREE.Vector3(1, 0, 0)) < .001, "keyboard A follows screen-left");
 assert.ok(cameraRelative(directionFromKeys({ down: (code) => code === "KeyD" }), 0).distanceTo(new THREE.Vector3(-1, 0, 0)) < .001, "keyboard D follows screen-right");
 
@@ -220,15 +228,32 @@ const canvasListeners = {};
 globalThis.addEventListener = (type, listener) => { windowListeners[type] = listener; };
 globalThis.document = { pointerLockElement: null, addEventListener() {} };
 const touchInput = new InputManager({
+  clientWidth: 200,
   addEventListener(type, listener) { canvasListeners[type] = listener; },
   setPointerCapture() {}
 });
-canvasListeners.pointerdown({ pointerType: "touch", pointerId: 7, clientX: 20, clientY: 30, preventDefault() {} });
-windowListeners.pointermove({ pointerType: "touch", pointerId: 7, clientX: 70, clientY: 5, preventDefault() {} });
-assert.deepEqual(touchInput.consumeLook(), { x: 50, y: -25 }, "dragging the gameplay view feeds horizontal and vertical camera look");
+canvasListeners.pointerdown({ pointerType: "touch", pointerId: 7, clientX: 160, clientY: 80, preventDefault() {} });
+canvasListeners.pointerdown({ pointerType: "touch", pointerId: 8, clientX: 40, clientY: 80, preventDefault() {} });
+windowListeners.pointermove({ pointerType: "touch", pointerId: 7, clientX: 190, clientY: 55, preventDefault() {} });
+windowListeners.pointermove({ pointerType: "touch", pointerId: 8, clientX: 112, clientY: 80, preventDefault() {} });
+assert.deepEqual(touchInput.consumeLook(), { x: 30, y: -25 }, "right-side dragging feeds horizontal and vertical camera look");
+assert.deepEqual(touchInput.touchDirection(), { x: 1, y: 0 }, "left-side dragging feeds walking direction while look remains active");
 assert.equal(touchInput.mouse.left, false, "touching the gameplay view does not fire the weapon");
-windowListeners.pointerup({ pointerType: "touch", pointerId: 7 });
+windowListeners.pointerup({ pointerType: "touch", pointerId: 7, preventDefault() {} });
 assert.equal(touchInput.touchLook, null, "lifting the look finger ends the drag");
+assert.deepEqual(touchInput.touchDirection(), { x: 1, y: 0 }, "lifting look does not interrupt the walking finger");
+windowListeners.pointerup({ pointerType: "touch", pointerId: 8, preventDefault() {} });
+assert.deepEqual(touchInput.touchDirection(), { x: 0, y: 0 }, "lifting the walking finger stops movement");
+canvasListeners.pointerdown({ pointerType: "touch", pointerId: 9, clientX: 20, clientY: 80, preventDefault() {} });
+canvasListeners.pointerdown({ pointerType: "touch", pointerId: 10, clientX: 70, clientY: 80, preventDefault() {} });
+windowListeners.pointermove({ pointerType: "touch", pointerId: 10, clientX: 95, clientY: 40, preventDefault() {} });
+assert.equal(touchInput.touchMove.id, 9, "the first left-side finger owns walking");
+assert.equal(touchInput.touchLook, null, "an extra left-side finger cannot take ownership of camera look");
+assert.deepEqual(touchInput.consumeLook(), { x: 0, y: 0 }, "same-side overflow cannot rotate the camera");
+windowListeners.pointercancel({ pointerType: "touch", pointerId: 10 });
+assert.equal(touchInput.touchMove.id, 9, "cancelling an ignored finger preserves the active walking finger");
+windowListeners.pointercancel({ pointerType: "touch", pointerId: 9 });
+assert.deepEqual(touchInput.touchDirection(), { x: 0, y: 0 }, "cancelling the walking finger clears movement");
 if (previousAddEventListener) globalThis.addEventListener = previousAddEventListener;
 else delete globalThis.addEventListener;
 if (previousDocument) globalThis.document = previousDocument;

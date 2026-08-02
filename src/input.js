@@ -26,6 +26,20 @@ export function touchLookDelta(fromX, fromY, toX, toY) {
   };
 }
 
+export function touchMoveDelta(fromX, fromY, toX, toY, range = 72, deadZone = 8) {
+  const x = toX - fromX;
+  const y = toY - fromY;
+  const distance = Math.hypot(x, y);
+  if (distance <= deadZone) return { x: 0, y: 0 };
+  const scale = Math.min(1, (distance - deadZone) / Math.max(1, range - deadZone)) / distance;
+  return { x: x * scale, y: y * scale };
+}
+
+export function clearTouchActions(touch) {
+  for (const action of Object.keys(touch || {})) touch[action] = false;
+  return touch;
+}
+
 export class InputManager {
   constructor(canvas, shouldCapture = () => true, onPointerUnlock = () => {}) {
     this.shouldCapture = shouldCapture;
@@ -33,6 +47,8 @@ export class InputManager {
     this.pressed = new Set();
     this.mouse = { left: false, right: false, movementX: 0, movementY: 0, locked: false };
     this.touchLook = null;
+    this.touchMove = null;
+    this.touchMoveValue = { x: 0, y: 0 };
 
     addEventListener("keydown", (event) => {
       if (!shouldCaptureGameKey(event, this.shouldCapture())) return;
@@ -50,16 +66,19 @@ export class InputManager {
       this.mouse.right = false;
       this.mouse.movementX = 0;
       this.mouse.movementY = 0;
-      this.touchLook = null;
+      this.resetTouches();
     });
     addEventListener("pointermove", (event) => {
       if (event.pointerType === "touch") {
-        if (this.touchLook?.id !== event.pointerId) return;
-        const movement = touchLookDelta(this.touchLook.x, this.touchLook.y, event.clientX, event.clientY);
-        this.mouse.movementX += movement.x;
-        this.mouse.movementY += movement.y;
-        this.touchLook.x = event.clientX;
-        this.touchLook.y = event.clientY;
+        if (this.touchMove?.id === event.pointerId) {
+          Object.assign(this.touchMoveValue, touchMoveDelta(this.touchMove.x, this.touchMove.y, event.clientX, event.clientY));
+        } else if (this.touchLook?.id === event.pointerId) {
+          const movement = touchLookDelta(this.touchLook.x, this.touchLook.y, event.clientX, event.clientY);
+          this.mouse.movementX += movement.x;
+          this.mouse.movementY += movement.y;
+          this.touchLook.x = event.clientX;
+          this.touchLook.y = event.clientY;
+        } else return;
         event.preventDefault();
         return;
       }
@@ -78,7 +97,16 @@ export class InputManager {
     canvas.addEventListener("pointerdown", (event) => {
       if (!this.shouldCapture()) return;
       if (event.pointerType === "touch") {
-        this.touchLook = { id: event.pointerId, x: event.clientX, y: event.clientY };
+        const bounds = canvas.getBoundingClientRect?.();
+        const midpoint = bounds?.width ? bounds.left + bounds.width / 2 : (canvas.clientWidth || globalThis.innerWidth || 0) / 2;
+        if (event.clientX < midpoint) {
+          if (this.touchMove) return;
+          this.touchMove = { id: event.pointerId, x: event.clientX, y: event.clientY };
+          this.touchMoveValue.x = this.touchMoveValue.y = 0;
+        } else {
+          if (this.touchLook) return;
+          this.touchLook = { id: event.pointerId, x: event.clientX, y: event.clientY };
+        }
         canvas.setPointerCapture?.(event.pointerId);
         event.preventDefault();
         return;
@@ -96,14 +124,15 @@ export class InputManager {
     });
     addEventListener("pointerup", (event) => {
       if (event.pointerType === "touch") {
-        if (this.touchLook?.id === event.pointerId) this.touchLook = null;
+        this.releaseTouch(event.pointerId);
+        event.preventDefault();
         return;
       }
       if (event.button === 0) this.mouse.left = false;
       if (event.button === 2) this.mouse.right = false;
     });
     addEventListener("pointercancel", (event) => {
-      if (this.touchLook?.id === event.pointerId) this.touchLook = null;
+      this.releaseTouch(event.pointerId);
     });
     canvas.addEventListener("contextmenu", (event) => event.preventDefault());
   }
@@ -116,9 +145,27 @@ export class InputManager {
     this.mouse.movementY = 0;
     return movement;
   }
-  releasePointer() { if (document.pointerLockElement) document.exitPointerLock?.(); }
+  touchDirection() { return this.touchMoveValue; }
+  releaseTouch(pointerId) {
+    if (this.touchMove?.id === pointerId) {
+      this.touchMove = null;
+      this.touchMoveValue.x = this.touchMoveValue.y = 0;
+    }
+    if (this.touchLook?.id === pointerId) this.touchLook = null;
+  }
+  resetTouches() {
+    this.touchMove = this.touchLook = null;
+    this.touchMoveValue.x = this.touchMoveValue.y = 0;
+  }
+  releasePointer() {
+    if (document.pointerLockElement) document.exitPointerLock?.();
+    this.resetTouches();
+  }
   endFrame() {
     this.pressed.clear();
-    if (!this.shouldCapture()) this.consumeLook();
+    if (!this.shouldCapture()) {
+      this.consumeLook();
+      this.resetTouches();
+    }
   }
 }
