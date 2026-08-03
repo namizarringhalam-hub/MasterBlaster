@@ -100,6 +100,9 @@ for (const [id, weapon] of Object.entries(WEAPONS)) {
     presentationVisuals.flameStream(new THREE.Vector3(), matrixOwner.aim, weapon, matrixOwner, weapon.reach);
   }
 }
+const fireballVisual = createProjectileVisual(WEAPONS.fireball, visualOwner, WEAPONS.fireball.projectileRadius);
+assert.ok(fireballVisual.children.filter((child) => child.geometry?.type === "ConeGeometry").length >= 4, "the Fireball projectile has multiple tapered flame tongues and a wake");
+assert.equal(fireballVisual.children.filter((child) => child.geometry?.type === "TorusGeometry").length, 0, "the Fireball projectile no longer reads as an orbiting plasma device");
 assert.equal(presentationSignatures.size, 47, "all 47 weapons retain distinct audiovisual signatures");
 assert.ok(presentationVisuals.tracers.length <= 72 && presentationVisuals.sparks.length <= 180 && presentationVisuals.rings.length <= 36, "the complete 47-weapon effects matrix remains pool-bounded");
 const meleeTraceCounts = { hammer: 2, energy_sword: 2, chainsaw: 2, spear: 1, punch_glove: 2, shock_baton: 4, knife: 1 };

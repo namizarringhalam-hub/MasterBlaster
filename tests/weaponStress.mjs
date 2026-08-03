@@ -55,6 +55,8 @@ assert.equal(visuals.fireballs.size, 2100, "persistent Fireballs remain register
 assert.ok(accumulatedFireballs.every((shot) => shot.mesh.children.length === 0 && shot.mesh.parent === null), "persistent Fireballs add no per-shot drawable or scene node");
 assert.equal(visuals.fireballGroup.children.length, 7, "all Fireballs share seven instanced visual layers");
 assert.ok(visuals.fireballLayerList.every((layer) => layer.count === 2100), "2,100 simultaneous Fireballs render through the fixed batch");
+assert.deepEqual(Object.keys(visuals.fireballLayers), ["aura", "shell", "core", "flameA", "flameB", "flameC", "cinder"], "the batched Fireball silhouette uses only fire-specific layers");
+assert.ok(["flameA", "flameB", "flameC"].every((name) => visuals.fireballLayers[name].geometry.type === "ConeGeometry"), "three independently animated flame tongues replace plasma rings");
 
 const mainSource = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
 assert.match(mainSource, /this\.hazards\.length >= 24/, "persistent hazards also have a global match cap");

@@ -9,6 +9,12 @@ const BLACK = new THREE.Color(0x000000);
 const WHITE = new THREE.Color(0xffffff);
 const FIRE = new THREE.Color(0xff5a1f);
 const FIRE_HOT = new THREE.Color(0xffd36a);
+const FIRE_DARK = new THREE.Color(0xff2608);
+const FIRE_TONGUES = [
+  ["flameA", 0, 0, 3.4, .72, 0],
+  ["flameB", .54, .24, 2.45, .46, 2.1],
+  ["flameC", -.5, -.18, 2.15, .4, 4.3]
+];
 export const FIREBALL_INSTANCE_CAPACITY = 4096;
 
 function glowMaterial(opacity = 1) {
@@ -71,7 +77,7 @@ function addScreenTrail(group, radius, length, color) {
 function addPayloadDecorator(group, profile, radius, materials, movingParts, pulseParts) {
   const decoratedPayloads = [
     "gravity", "implosion", "freeze", "teleport", "steal", "disrupt", "cluster", "sticky",
-    "ricochet", "drill", "wall", "decoy", "tornado", "napalm", "fireball", "penetrator", "pulse", "mortar"
+    "ricochet", "drill", "wall", "decoy", "tornado", "napalm", "penetrator", "pulse", "mortar"
   ];
   if (!decoratedPayloads.includes(profile.payload)) return [];
   const identity = materials.identity().clone();
@@ -129,11 +135,6 @@ function addPayloadDecorator(group, profile, radius, materials, movingParts, pul
     mesh = visualMesh(new THREE.TorusGeometry(radius * 1.4, radius * .13, 4, 9), identity);
     mesh.rotation.x = Math.PI / 2;
     motion = "armed";
-  } else if (profile.payload === "fireball") {
-    identity.wireframe = true;
-    mesh = visualMesh(new THREE.DodecahedronGeometry(radius * 1.62, 0), identity);
-    mesh.scale.set(.88, 1.12, .88);
-    motion = "hoop";
   } else if (profile.payload === "penetrator") {
     mesh = visualMesh(new THREE.BoxGeometry(radius * .38, radius * .38, radius * 3.3), identity);
     motion = "drill";
@@ -229,19 +230,26 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
       }
     }
   } else if (profile.payload === "fireball") {
-    const ember = visualMesh(new THREE.IcosahedronGeometry(radius, 1), core);
-    const whiteCore = visualMesh(new THREE.DodecahedronGeometry(radius * .52, 0), hot);
-    const coronaMaterial = identityMaterial().clone();
-    coronaMaterial.wireframe = true;
-    coronaMaterial.color.set(0xffd36a);
-    const corona = visualMesh(new THREE.IcosahedronGeometry(radius * 1.34, 1), coronaMaterial);
-    const orbitA = visualMesh(new THREE.TorusGeometry(radius * 1.48, radius * .075, 4, 15), identityMaterial());
-    const orbitB = visualMesh(new THREE.TorusGeometry(radius * 1.48, radius * .075, 4, 15), identityMaterial().clone());
-    orbitA.rotation.x = Math.PI / 2;
-    orbitB.rotation.set(Math.PI / 3, Math.PI / 5, 0);
-    group.add(ember, whiteCore, corona, orbitA, orbitB);
-    movingParts.push(corona, orbitA, orbitB);
-    pulseParts.push(whiteCore, corona, orbitA, orbitB, addTail(group, radius * 1.15, Math.max(1.45, speedTail), soft()));
+    const auraMaterial = soft().clone();
+    auraMaterial.color.set(FIRE_DARK);
+    const flameMaterial = glowMaterial(.78);
+    flameMaterial.color.set(FIRE);
+    const aura = visualMesh(new THREE.SphereGeometry(radius * 1.42, 9, 7), auraMaterial);
+    const ember = visualMesh(new THREE.SphereGeometry(radius, 11, 8), core);
+    const whiteCore = visualMesh(new THREE.IcosahedronGeometry(radius * .54, 1), hot);
+    const flames = [
+      [0, .12, 2.7, .62],
+      [.48, -.12, 1.9, .38],
+      [-.42, .22, 1.65, .34]
+    ].map(([x, y, length, width]) => {
+      const flame = visualMesh(new THREE.ConeGeometry(radius * width, radius * length, 7, 1, true), flameMaterial);
+      flame.rotation.x = -Math.PI / 2;
+      flame.position.set(radius * x, radius * y, -radius * length * .48);
+      return flame;
+    });
+    group.add(aura, ember, whiteCore, ...flames);
+    movingParts.push(ember, ...flames);
+    pulseParts.push(aura, whiteCore, ...flames, addTail(group, radius * .68, Math.max(1.7, speedTail * 1.15), flameMaterial.clone()));
   } else if (family === "plasma") {
     const orb = visualMesh(new THREE.SphereGeometry(radius, 10, 8), core);
     const hotOrb = visualMesh(new THREE.OctahedronGeometry(radius * .48, 1), hot);
@@ -354,15 +362,14 @@ export class CombatVisuals {
     this.fireballGroup = new THREE.Group();
     this.fireballGroup.name = "Instanced persistent Fireballs";
     this.fireballLayers = {
-      aura: instancedLayer(new THREE.SphereGeometry(1, 8, 6), FIREBALL_INSTANCE_CAPACITY, .18),
-      ember: instancedLayer(new THREE.IcosahedronGeometry(1, 1), FIREBALL_INSTANCE_CAPACITY, .96),
-      core: instancedLayer(new THREE.DodecahedronGeometry(1, 0), FIREBALL_INSTANCE_CAPACITY, 1),
-      corona: instancedLayer(new THREE.IcosahedronGeometry(1, 1), FIREBALL_INSTANCE_CAPACITY, .72),
-      orbitA: instancedLayer(new THREE.TorusGeometry(1.48, .075, 4, 15), FIREBALL_INSTANCE_CAPACITY, .84),
-      orbitB: instancedLayer(new THREE.TorusGeometry(1.48, .075, 4, 15), FIREBALL_INSTANCE_CAPACITY, .84),
-      tail: instancedLayer(new THREE.ConeGeometry(1, 1, 6, 1, true), FIREBALL_INSTANCE_CAPACITY, .4)
+      aura: instancedLayer(new THREE.SphereGeometry(1, 8, 6), FIREBALL_INSTANCE_CAPACITY, .2),
+      shell: instancedLayer(new THREE.SphereGeometry(1, 11, 8), FIREBALL_INSTANCE_CAPACITY, .96),
+      core: instancedLayer(new THREE.IcosahedronGeometry(1, 1), FIREBALL_INSTANCE_CAPACITY, 1),
+      flameA: instancedLayer(new THREE.ConeGeometry(1, 1, 7, 1, true), FIREBALL_INSTANCE_CAPACITY, .86),
+      flameB: instancedLayer(new THREE.ConeGeometry(1, 1, 7, 1, true), FIREBALL_INSTANCE_CAPACITY, .72),
+      flameC: instancedLayer(new THREE.ConeGeometry(1, 1, 7, 1, true), FIREBALL_INSTANCE_CAPACITY, .62),
+      cinder: instancedLayer(new THREE.DodecahedronGeometry(1, 0), FIREBALL_INSTANCE_CAPACITY, .9)
     };
-    this.fireballLayers.corona.material.wireframe = true;
     this.fireballLayerList = Object.values(this.fireballLayers);
     for (const layer of this.fireballLayerList) {
       layer.count = 0;
@@ -378,6 +385,9 @@ export class CombatVisuals {
     this.direction = new THREE.Vector3();
     this.color = new THREE.Color();
     this.normal = new THREE.Vector3();
+    this.fireSide = new THREE.Vector3();
+    this.fireRise = new THREE.Vector3();
+    this.fireBack = new THREE.Vector3();
   }
 
   setReducedMotion(reducedMotion) {
@@ -680,53 +690,62 @@ export class CombatVisuals {
       const radius = visual.radius;
       const pulse = 1 + Math.sin(visual.time * 14 + index * .37) * .1;
       const spin = visual.time * 3.2 + index * .19;
+      const velocity = anchor.userData.projectileVelocity;
+      this.direction.copy(velocity?.lengthSq() > .001 ? velocity : FORWARD).normalize();
+      this.fireBack.copy(this.direction).multiplyScalar(-1);
+      this.fireSide.crossVectors(this.direction, UP);
+      if (this.fireSide.lengthSq() < .01) this.fireSide.set(1, 0, 0);
+      else this.fireSide.normalize();
+      this.fireRise.crossVectors(this.fireSide, this.direction).normalize();
 
       this.quaternion.identity();
-      this.scale.setScalar(radius * 1.62 * pulse);
+      this.scale.set(radius * 1.48 * pulse, radius * 1.38 / pulse, radius * 1.48 * pulse);
       this.matrix.compose(anchor.position, this.quaternion, this.scale);
       layers.aura.setMatrixAt(index, this.matrix);
 
       this.quaternion.setFromAxisAngle(UP, spin);
-      this.scale.setScalar(radius * pulse);
+      this.scale.set(radius * (1 + Math.sin(spin * 1.7) * .08), radius * (1 + Math.cos(spin * 1.3) * .11), radius * (1 + Math.sin(spin * 1.1 + 2) * .09));
       this.matrix.compose(anchor.position, this.quaternion, this.scale);
-      layers.ember.setMatrixAt(index, this.matrix);
+      layers.shell.setMatrixAt(index, this.matrix);
 
       this.quaternion.setFromAxisAngle(FORWARD, -spin * 1.4);
-      this.scale.setScalar(radius * .52 * (1.08 - (pulse - 1) * .7));
+      this.scale.setScalar(radius * .54 * (1.08 - (pulse - 1) * .7));
       this.matrix.compose(anchor.position, this.quaternion, this.scale);
       layers.core.setMatrixAt(index, this.matrix);
 
-      this.quaternion.setFromAxisAngle(UP, -spin * .72);
-      this.scale.set(radius * 1.18 * pulse, radius * 1.5 / pulse, radius * 1.18 * pulse);
-      this.matrix.compose(anchor.position, this.quaternion, this.scale);
-      layers.corona.setMatrixAt(index, this.matrix);
+      for (const [layerName, side, rise, length, width, phase] of FIRE_TONGUES) {
+        const flicker = 1 + Math.sin(visual.time * (11 + phase) + index * .29 + phase) * .18;
+        this.normal.copy(this.fireBack)
+          .addScaledVector(this.fireSide, Math.sin(spin + phase) * .14)
+          .addScaledVector(this.fireRise, Math.cos(spin * 1.3 + phase) * .1)
+          .normalize();
+        this.quaternion.setFromUnitVectors(UP, this.normal);
+        this.position.copy(anchor.position)
+          .addScaledVector(this.normal, radius * length * .47)
+          .addScaledVector(this.fireSide, radius * side)
+          .addScaledVector(this.fireRise, radius * rise);
+        this.scale.set(radius * width * flicker, radius * length * flicker, radius * width * flicker);
+        this.matrix.compose(this.position, this.quaternion, this.scale);
+        layers[layerName].setMatrixAt(index, this.matrix);
+      }
 
-      this.quaternion.setFromAxisAngle(FORWARD, spin * .54);
-      this.scale.setScalar(radius);
-      this.matrix.compose(anchor.position, this.quaternion, this.scale);
-      layers.orbitA.setMatrixAt(index, this.matrix);
-
-      this.quaternion.setFromAxisAngle(UP, Math.PI / 3);
-      this.quaternion.multiply(this.twistQuaternion.setFromAxisAngle(FORWARD, -spin * .62));
-      this.scale.setScalar(radius);
-      this.matrix.compose(anchor.position, this.quaternion, this.scale);
-      layers.orbitB.setMatrixAt(index, this.matrix);
-
-      const velocity = anchor.userData.projectileVelocity;
-      this.direction.copy(velocity?.lengthSq() > .001 ? velocity : FORWARD).normalize();
-      this.quaternion.setFromUnitVectors(UP, this.direction);
-      this.position.copy(anchor.position).addScaledVector(this.direction, -radius * 2.1);
-      this.scale.set(radius * .82 * pulse, radius * 2.8, radius * .82 * pulse);
+      const cinderFlicker = .18 + (.5 + Math.sin(spin * 2.7) * .5) * .16;
+      this.position.copy(anchor.position)
+        .addScaledVector(this.fireBack, radius * (3.7 + Math.sin(spin) * .45))
+        .addScaledVector(this.fireSide, Math.sin(spin * 1.9) * radius * .75)
+        .addScaledVector(this.fireRise, Math.cos(spin * 1.5) * radius * .48);
+      this.quaternion.setFromAxisAngle(UP, spin * 2.2);
+      this.scale.setScalar(radius * cinderFlicker);
       this.matrix.compose(this.position, this.quaternion, this.scale);
-      layers.tail.setMatrixAt(index, this.matrix);
+      layers.cinder.setMatrixAt(index, this.matrix);
 
-      layers.aura.setColorAt(index, visual.ownerColor);
-      layers.ember.setColorAt(index, visual.weaponColor);
-      layers.core.setColorAt(index, WHITE);
-      layers.corona.setColorAt(index, FIRE_HOT);
-      layers.orbitA.setColorAt(index, visual.ownerColor);
-      layers.orbitB.setColorAt(index, FIRE_HOT);
-      layers.tail.setColorAt(index, index % 2 ? FIRE : visual.ownerColor);
+      layers.aura.setColorAt(index, FIRE_DARK);
+      layers.shell.setColorAt(index, visual.weaponColor);
+      layers.core.setColorAt(index, FIRE_HOT);
+      layers.flameA.setColorAt(index, FIRE);
+      layers.flameB.setColorAt(index, FIRE_HOT);
+      layers.flameC.setColorAt(index, FIRE_DARK);
+      layers.cinder.setColorAt(index, visual.ownerColor);
       index += 1;
     }
     for (const layer of this.fireballLayerList) layer.count = index;
