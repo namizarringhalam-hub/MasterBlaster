@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { chooseBotSlot, botFireChance, botWeaponPolicy, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
 import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
 import { DEFAULT_LOADOUT, excessOwnedProjectiles, LOADOUT_SLOTS, projectileLifetime, projectileStepCount, randomLoadout, seededRandom, seedFromText, swapStolenWeapon, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
-import { InputManager, clearTouchActions, shouldCaptureGameKey, touchLookDelta, touchMoveDelta, updateOrbit } from "../src/input.js";
+import { InputManager, TOUCH_LOOK_GAIN, clearTouchActions, shouldCaptureGameKey, touchLookDelta, touchMoveDelta, updateOrbit } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, flameConeFactor, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
 import { weaponPresentation } from "../src/weaponPresentation.js";
@@ -200,7 +200,8 @@ assert.ok(shouldCaptureGameKey({ code: "Digit5", target: null }, true), "the fif
 assert.ok(!shouldCaptureGameKey({ code: "KeyR", ctrlKey: true, target: null }, true), "browser shortcuts are preserved");
 assert.deepEqual(updateOrbit(0, 0, 100, -50), { yaw: -.22, pitch: .11 }, "mouse-right turns the third-person camera right without reversing vertical aim");
 assert.equal(updateOrbit(0, .6, 0, -1000).pitch, .65, "vertical camera aim is clamped before it can flip");
-assert.deepEqual(touchLookDelta(20, 30, 70, 5), { x: 50, y: -25 }, "dragging right and up produces rightward and upward touch look");
+assert.equal(TOUCH_LOOK_GAIN, 3.5, "right-side touch aiming is substantially faster than mouse aiming");
+assert.deepEqual(touchLookDelta(20, 30, 70, 5), { x: 175, y: -87.5 }, "right-side dragging applies fast horizontal and vertical touch look");
 assert.deepEqual(touchMoveDelta(20, 30, 24, 34), { x: 0, y: 0 }, "small left-side touch motion stays inside the walking dead zone");
 assert.deepEqual(touchMoveDelta(20, 30, 92, 30), { x: 1, y: 0 }, "a full left-side drag reaches full walking input");
 const heldTouchActions = { fire: true, fireTap: true, jumpTap: true, grappleTap: true, weaponTap: true };
@@ -236,7 +237,7 @@ canvasListeners.pointerdown({ pointerType: "touch", pointerId: 7, clientX: 160, 
 canvasListeners.pointerdown({ pointerType: "touch", pointerId: 8, clientX: 40, clientY: 80, preventDefault() {} });
 windowListeners.pointermove({ pointerType: "touch", pointerId: 7, clientX: 190, clientY: 55, preventDefault() {} });
 windowListeners.pointermove({ pointerType: "touch", pointerId: 8, clientX: 112, clientY: 80, preventDefault() {} });
-assert.deepEqual(touchInput.consumeLook(), { x: 30, y: -25 }, "right-side dragging feeds horizontal and vertical camera look");
+assert.deepEqual(touchInput.consumeLook(), { x: 105, y: -87.5 }, "right-side dragging feeds accelerated horizontal and vertical camera look");
 assert.deepEqual(touchInput.touchDirection(), { x: 1, y: 0 }, "left-side dragging feeds walking direction while look remains active");
 assert.equal(touchInput.mouse.left, false, "touching the gameplay view does not fire the weapon");
 windowListeners.pointerup({ pointerType: "touch", pointerId: 7, preventDefault() {} });

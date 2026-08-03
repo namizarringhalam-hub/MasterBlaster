@@ -19,10 +19,12 @@ export function updateOrbit(yaw, pitch, movementX, movementY, sensitivity = .002
   };
 }
 
-export function touchLookDelta(fromX, fromY, toX, toY) {
+export const TOUCH_LOOK_GAIN = 3.5;
+
+export function touchLookDelta(fromX, fromY, toX, toY, gain = TOUCH_LOOK_GAIN) {
   return {
-    x: Math.max(-80, Math.min(80, toX - fromX)),
-    y: Math.max(-80, Math.min(80, toY - fromY))
+    x: Math.max(-80, Math.min(80, toX - fromX)) * gain,
+    y: Math.max(-80, Math.min(80, toY - fromY)) * gain
   };
 }
 
