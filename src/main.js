@@ -1,4 +1,4 @@
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import "./styles.css";
 import { SoundBoard } from "./audio.js";
@@ -8,6 +8,7 @@ import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, a
 import { InputManager, clearTouchActions, updateOrbit } from "./input.js";
 import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, weaponFireMode, WEAPONS } from "./gameData.js";
 import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, clampBotCount, nearestTarget, safestSpawn, shouldBotPlaceWall } from "./botBrain.js";
+import { NeonRenderPipeline } from "./renderPipeline.js";
 
 const canvas = document.querySelector("#game-canvas");
 const ui = document.querySelector("#ui-root");
@@ -38,6 +39,7 @@ const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({
 
 function capabilities() {
   return {
+    webgpu: Boolean(navigator.gpu),
     webgl2: Boolean(document.createElement("canvas").getContext("webgl2")),
     wasm: typeof WebAssembly === "object",
     websocket: typeof WebSocket === "function",
@@ -48,22 +50,29 @@ function capabilities() {
 class BlasterBattle {
   constructor() {
     this.capabilities = capabilities();
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.55));
+    this.forceWebGL = sessionStorage.getItem("blaster-force-webgl") === "1"
+      || new URLSearchParams(location.search).get("renderer") === "webgl";
+    this.renderer = new THREE.WebGPURenderer({
+      canvas,
+      antialias: true,
+      samples: 4,
+      alpha: false,
+      forceWebGL: this.forceWebGL,
+      powerPreference: "high-performance"
+    });
+    const coarsePointer = matchMedia("(pointer: coarse)").matches;
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, coarsePointer ? 1.3 : 1.65));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.06;
+    this.renderer.toneMappingExposure = 1.12;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.scene = new THREE.Scene();
-    const environment = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = environment.fromScene(new RoomEnvironment(), .04).texture;
-    this.scene.environmentIntensity = .55;
-    environment.dispose();
     this.scene.background = new THREE.Color(0x07111d);
     this.scene.fog = new THREE.FogExp2(0x07111d, .006);
     this.camera = new THREE.PerspectiveCamera(62, 1, .1, 520);
-    this.clock = new THREE.Clock();
+    this.timer = new THREE.Timer();
+    this.timer.connect(document);
     this.input = new InputManager(
       canvas,
       () => this.state === "play" && !this.paused,
@@ -93,6 +102,34 @@ class BlasterBattle {
     this.touch = {};
     this.performanceSample = this.freshPerformanceSample();
     this.setupLights();
+  }
+
+  async init() {
+    await this.renderer.init();
+    this.capabilities[this.renderer.backend.isWebGPUBackend === true ? "webgpu renderer" : "webgl2 fallback"] = true;
+    const environment = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = environment.fromScene(new RoomEnvironment(), .04).texture;
+    this.scene.environmentIntensity = .72;
+    environment.dispose();
+    this.renderPipeline = new NeonRenderPipeline(this.renderer, this.scene, this.camera, {
+      reducedMotion: this.settings.reducedMotion,
+      coarsePointer: matchMedia("(pointer: coarse)").matches
+    });
+    const reportDeviceLost = this.renderer.onDeviceLost.bind(this.renderer);
+    this.renderer.onDeviceLost = (info) => {
+      reportDeviceLost(info);
+      if (this.renderer.backend.isWebGPUBackend === true && !this.forceWebGL) {
+        sessionStorage.setItem("blaster-force-webgl", "1");
+        location.reload();
+        return;
+      }
+      this.showRendererFailure("The graphics device was reset. Reload the page to restart the arena.");
+    };
+    const reportRendererError = this.renderer.onError.bind(this.renderer);
+    this.renderer.onError = (info) => {
+      reportRendererError(info);
+      this.renderPipeline.degradeToDirect(info);
+    };
     this.renderMain();
     this.resize();
     addEventListener("resize", () => this.resize());
@@ -102,7 +139,7 @@ class BlasterBattle {
       clearTouchActions(this.touch);
       if (this.state === "play" && !this.paused) this.togglePause();
     });
-    requestAnimationFrame(() => this.frame());
+    await this.renderer.setAnimationLoop((time) => this.frame(time));
   }
 
   setupLights() {
@@ -111,11 +148,18 @@ class BlasterBattle {
     key.position.set(-22, 40, 18);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
+    key.shadow.bias = -.00018;
+    key.shadow.normalBias = .035;
     Object.assign(key.shadow.camera, { left: -135, right: 135, top: 135, bottom: -135, near: 1, far: 260 });
     this.scene.add(key);
     const rim = new THREE.DirectionalLight(0xff315f, 1.25);
     rim.position.set(22, 15, -25);
     this.scene.add(rim);
+  }
+
+  showRendererFailure(message) {
+    this.paused = true;
+    ui.insertAdjacentHTML("beforeend", `<div class="overlay"><section class="dialog"><p>GRAPHICS RECOVERY</p><h1>Renderer paused.</h1><p class="dialog-lead">${escapeHtml(message)}</p><button class="primary" onclick="location.reload()">RELOAD</button></section></div>`);
   }
 
   resize() {
@@ -504,6 +548,7 @@ class BlasterBattle {
     this.settings.shake = Number(ui.querySelector('[data-setting="shake"]').value);
     this.settings.volume = Number(ui.querySelector('[data-setting="volume"]').value);
     this.settings.reducedMotion = ui.querySelector('[data-setting="reducedMotion"]').checked;
+    this.renderPipeline.setReducedMotion(this.settings.reducedMotion);
     saveSettings(this.settings);
     this.renderMain();
   }
@@ -662,15 +707,15 @@ class BlasterBattle {
     return { elapsed: 0, frames: 0, windowElapsed: 0, windowFrames: 0, fps: 0, minimum: Infinity, total: 0, samples: 0 };
   }
 
-  frame() {
-    const rawDt = Math.min(.25, this.clock.getDelta());
+  frame(time) {
+    this.timer.update(time);
+    const rawDt = Math.min(.25, this.timer.getDelta());
     const dt = Math.min(.033, rawDt);
     if (this.state === "play" && this.input.tapped("Escape")) this.togglePause();
     if (this.state === "play" && !this.paused) this.update(dt);
     this.renderScene();
     if (this.state === "play" && !this.paused) this.updatePerformanceSample(rawDt);
     this.input.endFrame();
-    requestAnimationFrame(() => this.frame());
   }
 
   update(dt) {
@@ -829,7 +874,14 @@ class BlasterBattle {
     const sightline = grappleSightline(player, this.camera);
     const anchor = this.world.grapplePoint(sightline.origin, sightline.direction);
     if (!anchor) return;
-    const geometry = new THREE.BufferGeometry().setFromPoints([start, anchor]);
+    const ropePositions = new Float32Array(10 * 3);
+    const ropeAttribute = new THREE.BufferAttribute(ropePositions, 3).setUsage(THREE.DynamicDrawUsage);
+    ropeAttribute.setXYZ(0, start.x, start.y, start.z);
+    ropeAttribute.setXYZ(1, anchor.x, anchor.y, anchor.z);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", ropeAttribute);
+    geometry.setDrawRange(0, 2);
+    geometry.computeBoundingSphere();
     const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: player.accent }));
     this.scene.add(line);
     player.grapple = { anchor, line, wraps: [], ropeLength: Math.max(5, start.distanceTo(anchor) * .92) };
@@ -852,7 +904,13 @@ class BlasterBattle {
     }
     player.grapple.wraps = wraps;
     applyGrapplePhysics(player, dt);
-    player.grapple.line.geometry.setFromPoints([chest, ...wraps, player.grapple.anchor]);
+    const ropePoints = [chest, ...wraps, player.grapple.anchor];
+    const ropeGeometry = player.grapple.line.geometry;
+    const ropePosition = ropeGeometry.getAttribute("position");
+    ropePoints.forEach((point, index) => ropePosition.setXYZ(index, point.x, point.y, point.z));
+    ropePosition.needsUpdate = true;
+    ropeGeometry.setDrawRange(0, ropePoints.length);
+    ropeGeometry.computeBoundingSphere();
   }
 
   releaseGrapple(player, boost = false) {
@@ -1764,7 +1822,7 @@ class BlasterBattle {
     if (!node) return;
     const seconds = Math.min(60, Math.floor(sample.elapsed));
     const average = sample.total / sample.samples;
-    node.textContent = `${Math.round(sample.fps)} FPS · ${this.renderer.info.render.calls} DRAWS · ${this.players.length} FIGHTERS · ${seconds}/60 SEC`;
+    node.textContent = `${Math.round(sample.fps)} FPS · ${this.renderer.info.render.drawCalls} DRAWS · ${this.players.length} FIGHTERS · ${this.renderPipeline.profile} · ${seconds}/60 SEC`;
     node.dataset.fps = sample.fps.toFixed(1);
     node.dataset.averageFps = average.toFixed(1);
     node.dataset.minimumFps = sample.minimum.toFixed(1);
@@ -1849,7 +1907,7 @@ class BlasterBattle {
 
   renderScene() {
     if (this.state !== "play" || this.paused) this.updateCamera();
-    this.renderer.render(this.scene, this.camera);
+    this.renderPipeline.render();
   }
 
   removeProjectile(index) {
@@ -1877,4 +1935,7 @@ class BlasterBattle {
   }
 }
 
-new BlasterBattle();
+new BlasterBattle().init().catch((error) => {
+  console.error("Blaster Battle renderer failed to initialize", error);
+  ui.innerHTML = `<main class="menu-shell"><section class="hero-panel"><p class="kicker">RENDERER ERROR</p><h1>Graphics initialization failed.</h1><p class="lead">Update your browser or enable WebGL2, then reload.</p></section></main>`;
+});

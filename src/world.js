@@ -1,4 +1,5 @@
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
+import { abs, color, fract, length, max, min, mix, sin, smoothstep, time, uv, vec2, vec3 } from "three/tsl";
 import { MAP_THEMES, seededRandom, seedFromText } from "./gameData.js";
 
 const TAU = Math.PI * 2;
@@ -138,6 +139,7 @@ function material(color, emissive = 0, opacity = 1, options = {}) {
     metalness: options.metalness ?? .32,
     emissive,
     emissiveIntensity: emissive ? options.emissiveIntensity ?? .55 : 0,
+    envMapIntensity: options.envMapIntensity ?? .92,
     transparent: opacity < 1,
     opacity,
     depthWrite: opacity >= .4,
@@ -187,7 +189,6 @@ export class ArenaWorld {
     this.temporaryWalls = [];
     this.rotors = [];
     this.pulsers = [];
-    this.shaderUniforms = [];
     this.textures = [
       proceduralPanelTexture(`${seed}-structure`, 4),
       proceduralPanelTexture(`${seed}-ground`, 28),
@@ -195,7 +196,7 @@ export class ArenaWorld {
     ];
     [this.panelTexture, this.groundTexture, this.glowTexture] = this.textures;
     this.routeMaterials = this.districtColors.map((color) => new THREE.MeshBasicMaterial({
-      color,
+      color: new THREE.Color(color).multiplyScalar(1.65),
       transparent: true,
       opacity: .42,
       blending: THREE.AdditiveBlending,
@@ -344,67 +345,46 @@ export class ArenaWorld {
   }
 
   addGroundTreatment() {
-    const uniforms = {
-      uTime: { value: 0 },
-      uColor0: { value: new THREE.Color(this.districtColors[0]) },
-      uColor1: { value: new THREE.Color(this.districtColors[1]) },
-      uColor2: { value: new THREE.Color(this.districtColors[2]) },
-      uColor3: { value: new THREE.Color(this.districtColors[3]) }
-    };
+    const p = uv().sub(.5).mul(224);
+    const east = smoothstep(-3, 3, p.x);
+    const south = smoothstep(-3, 3, p.y);
+    const northColor = mix(color(this.districtColors[0]), color(this.districtColors[1]), east);
+    const southColor = mix(color(this.districtColors[3]), color(this.districtColors[2]), east);
+    const district = mix(northColor, southColor, south);
+    const fineCell = abs(fract(p.add(112).div(4)).sub(.5));
+    const majorCell = abs(fract(p.add(112).div(16)).sub(.5));
+    const fineGrid = smoothstep(.465, .5, max(fineCell.x, fineCell.y));
+    const majorGrid = smoothstep(.455, .5, max(majorCell.x, majorCell.y));
+    const axial = smoothstep(.55, 1.1, min(abs(p.x), abs(p.y))).oneMinus();
+    const diagonal = smoothstep(.8, 1.6, min(abs(p.x.sub(p.y)), abs(p.x.add(p.y)))).oneMinus()
+      .mul(smoothstep(22, 38, length(p)));
+    const districtCenter = vec2(
+      p.x.lessThan(0).select(-62, 62),
+      p.y.lessThan(0).select(-62, 62)
+    );
+    const orbit = smoothstep(.55, 1.25, abs(length(p.sub(districtCenter)).sub(23))).oneMinus();
+    const pulse = sin(time.mul(2.2).sub(length(p).mul(.11))).mul(.32).add(.68);
+    const route = max(axial, max(diagonal.mul(.55), orbit.mul(.72)));
+    const routeLight = majorGrid.mul(.22).add(route.mul(.16));
+    const routeColor = mix(district.mul(.68), vec3(1), routeLight);
+    const alpha = fineGrid.mul(.03).add(majorGrid.mul(.085)).add(route.mul(.14).mul(pulse)).add(.025);
+    const material = new THREE.MeshBasicNodeMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide
+    });
+    material.colorNode = routeColor;
+    material.opacityNode = alpha;
     const overlay = new THREE.Mesh(
       new THREE.PlaneGeometry(this.size * 2, this.size * 2),
-      new THREE.ShaderMaterial({
-        uniforms,
-        vertexShader: `
-          varying vec2 vUv;
-          void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }
-        `,
-        fragmentShader: `
-          varying vec2 vUv;
-          uniform float uTime;
-          uniform vec3 uColor0;
-          uniform vec3 uColor1;
-          uniform vec3 uColor2;
-          uniform vec3 uColor3;
-          void main() {
-            vec2 p = (vUv - .5) * 224.0;
-            float east = smoothstep(-3.0, 3.0, p.x);
-            float south = smoothstep(-3.0, 3.0, p.y);
-            vec3 northColor = mix(uColor0, uColor1, east);
-            vec3 southColor = mix(uColor3, uColor2, east);
-            vec3 district = mix(northColor, southColor, south);
-
-            vec2 fineCell = abs(fract((p + 112.0) / 4.0) - .5);
-            vec2 majorCell = abs(fract((p + 112.0) / 16.0) - .5);
-            float fineGrid = smoothstep(.465, .5, max(fineCell.x, fineCell.y));
-            float majorGrid = smoothstep(.455, .5, max(majorCell.x, majorCell.y));
-            float axial = 1.0 - smoothstep(.55, 1.1, min(abs(p.x), abs(p.y)));
-            float diagonal = 1.0 - smoothstep(.8, 1.6, min(abs(p.x - p.y), abs(p.x + p.y)));
-            diagonal *= smoothstep(22.0, 38.0, length(p));
-            vec2 districtCenter = vec2(p.x < 0.0 ? -62.0 : 62.0, p.y < 0.0 ? -62.0 : 62.0);
-            float orbit = 1.0 - smoothstep(.55, 1.25, abs(length(p - districtCenter) - 23.0));
-            float pulse = .68 + .32 * sin(uTime * 2.2 - length(p) * .11);
-            float route = max(axial, max(diagonal * .55, orbit * .72));
-            vec3 color = mix(district * .68, vec3(1.0), majorGrid * .22 + route * .16);
-            float alpha = .025 + fineGrid * .03 + majorGrid * .085 + route * .14 * pulse;
-            gl_FragColor = vec4(color, alpha);
-          }
-        `,
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        toneMapped: false
-      })
+      material
     );
     overlay.name = "District route floor";
     overlay.rotation.x = -Math.PI / 2;
     overlay.position.y = .006;
     overlay.receiveShadow = true;
     this.group.add(overlay);
-    this.shaderUniforms.push(uniforms);
   }
 
   addBoundaryBands() {
@@ -638,7 +618,7 @@ export class ArenaWorld {
 
   glowSprite(color, size, opacity = .3) {
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-      color,
+      color: new THREE.Color(color).multiplyScalar(1.8),
       map: this.glowTexture,
       transparent: true,
       opacity,
@@ -1469,7 +1449,6 @@ export class ArenaWorld {
 
   update(dt, players) {
     this.time += dt;
-    for (const uniforms of this.shaderUniforms) uniforms.uTime.value = this.time;
     for (const rotor of this.rotors) {
       rotor.object.rotation.x += dt * rotor.x;
       rotor.object.rotation.y += dt * rotor.y;

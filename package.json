@@ -10,7 +10,7 @@
     "test": "node tests/smoke.mjs && node tests/botBrain.test.mjs && node tests/audioLifecycle.test.mjs && node tests/weaponStress.mjs"
   },
   "dependencies": {
-    "three": "0.165.0",
+    "three": "0.185.1",
     "vite": "^8.0.16"
   }
 }

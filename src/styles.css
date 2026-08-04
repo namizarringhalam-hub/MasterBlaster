@@ -141,6 +141,8 @@ button.primary:hover:not(:disabled) { background: #ff4862; border-color: #fff; }
 
 .dialog {
   width: min(980px, 100%);
+  min-width: 0;
+  max-width: 100%;
   padding: clamp(24px, 5vw, 54px);
   background: linear-gradient(145deg, rgba(13, 27, 44, .98), rgba(8, 18, 30, .98));
   border: 1px solid rgba(100, 214, 255, .22);
@@ -208,7 +210,7 @@ input, select {
 .loadout-preset footer button:last-child { color: #ff8496; }
 .loadout-status { min-height: 16px; margin: -8px 0 8px; color: #74eaff; font-size: 10px; font-weight: 700; }
 .weapon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; margin-top: 14px; }
-.weapon-choice { min-height: 112px; text-align: left; position: relative; overflow: hidden; }
+.weapon-choice { min-width: 0; min-height: 112px; text-align: left; position: relative; overflow: hidden; }
 .weapon-choice i { position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--weapon); opacity: .8; }
 .weapon-choice b, .weapon-choice em, .weapon-choice small { display: block; }
 .weapon-choice b { font: 800 17px/1 "Barlow Condensed", sans-serif; text-transform: uppercase; }
@@ -397,7 +399,8 @@ input, select {
   .preset-heading { align-items: start; }
   .loadout-presets { grid-template-columns: 1fr; }
   .preset-summary { min-height: 0; }
-  .weapon-grid { grid-template-columns: repeat(2, 1fr); }
+  .loadout-builder, .loadout-order, .weapon-grid { min-width: 0; max-width: 100%; }
+  .weapon-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .combatant { width: 38vw; top: 10px; padding: 9px; }
   .combatant.left { left: 10px; }
   .combatant.right { right: 10px; }
@@ -412,6 +415,20 @@ input, select {
   .grapple-readout { bottom: 64px; }
   .combat-log { top: 112px; right: 10px; width: 52vw; }
   .combat-log p { font-size: 8px; }
+}
+
+@media (max-width: 600px) and (orientation: portrait) {
+  .combatant { top: 8px; width: calc(50% - 14px); padding: 8px 9px; }
+  .combatant.left { left: 8px; }
+  .combatant.right { right: 8px; }
+  .combatant > small { display: none; }
+  .health { margin-top: 7px; }
+  .match-state { top: 68px; min-width: 198px; padding: 6px 20px 9px; }
+  .match-state strong { font-size: 28px; }
+  .pause { top: 78px; right: 8px; }
+  .combat-log { top: 130px; right: 8px; width: 66vw; }
+  .grapple-readout { bottom: 80px; max-width: 210px; text-align: center; }
+  .perf-readout { display: none; }
 }
 
 @media (max-height: 500px) and (orientation: landscape) {

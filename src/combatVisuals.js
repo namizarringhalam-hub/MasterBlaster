@@ -1,4 +1,4 @@
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
 import { weaponPresentation } from "./weaponPresentation.js";
 
 const clamp = THREE.MathUtils.clamp;
@@ -10,6 +10,7 @@ const WHITE = new THREE.Color(0xffffff);
 const FIRE = new THREE.Color(0xff5a1f);
 const FIRE_HOT = new THREE.Color(0xffd36a);
 const FIRE_DARK = new THREE.Color(0xff2608);
+const HDR_GLOW = 2.2;
 const FIRE_TONGUES = [
   ["flameA", 0, 0, 3.4, .72, 0],
   ["flameB", .54, .24, 2.45, .46, 2.1],
@@ -19,7 +20,7 @@ export const FIREBALL_INSTANCE_CAPACITY = 4096;
 
 function glowMaterial(opacity = 1) {
   return new THREE.MeshBasicMaterial({
-    color: 0xffffff,
+    color: new THREE.Color(0xffffff).multiplyScalar(HDR_GLOW),
     transparent: true,
     opacity,
     depthWrite: false,
@@ -70,7 +71,7 @@ function addTail(group, radius, length, material) {
 
 function addScreenTrail(group, radius, length, color) {
   const trailMaterial = glowMaterial(.82);
-  trailMaterial.color.copy(color);
+  trailMaterial.color.copy(color).multiplyScalar(HDR_GLOW);
   return addTail(group, Math.max(.08, radius), length, trailMaterial);
 }
 
@@ -165,14 +166,14 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
   const radius = Math.max(.08, collisionRadius);
   const profile = weaponPresentation(weapon);
   const family = mine ? "grenade" : ["wall", "decoy"].includes(profile.delivery) ? "plasma" : profile.delivery;
-  const core = new THREE.MeshBasicMaterial({ color: weapon.color, toneMapped: false });
-  const hot = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
+  const core = new THREE.MeshBasicMaterial({ color: new THREE.Color(weapon.color).multiplyScalar(1.85), toneMapped: false });
+  const hot = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffffff).multiplyScalar(3), toneMapped: false });
   const shotIdentity = ownerColor(owner, weapon);
   let identity;
   const identityMaterial = () => {
     if (!identity) {
       identity = glowMaterial(.72);
-      identity.color.copy(shotIdentity);
+      identity.color.copy(shotIdentity).multiplyScalar(HDR_GLOW);
     }
     return identity;
   };
@@ -231,9 +232,9 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
     }
   } else if (profile.payload === "fireball") {
     const auraMaterial = soft().clone();
-    auraMaterial.color.set(FIRE_DARK);
+    auraMaterial.color.copy(FIRE_DARK).multiplyScalar(1.8);
     const flameMaterial = glowMaterial(.78);
-    flameMaterial.color.set(FIRE);
+    flameMaterial.color.copy(FIRE).multiplyScalar(2.5);
     const aura = visualMesh(new THREE.SphereGeometry(radius * 1.42, 9, 7), auraMaterial);
     const ember = visualMesh(new THREE.SphereGeometry(radius, 11, 8), core);
     const whiteCore = visualMesh(new THREE.IcosahedronGeometry(radius * .54, 1), hot);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
 import { chooseBotSlot, botFireChance, botWeaponPolicy, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
 import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
 import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, LOADOUT_PRESET_COUNT, LOADOUT_SLOTS, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, seededRandom, seedFromText, swapStolenWeapon, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
@@ -9,8 +9,10 @@ import { aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRele
 import { ArenaWorld } from "../src/world.js";
 import { weaponPresentation } from "../src/weaponPresentation.js";
 
-const [mainSource, serviceWorkerSource, stylesSource] = await Promise.all([
+const [mainSource, renderPipelineSource, worldSource, serviceWorkerSource, stylesSource] = await Promise.all([
   readFile(new URL("../src/main.js", import.meta.url), "utf8"),
+  readFile(new URL("../src/renderPipeline.js", import.meta.url), "utf8"),
+  readFile(new URL("../src/world.js", import.meta.url), "utf8"),
   readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
   readFile(new URL("../src/styles.css", import.meta.url), "utf8")
 ]);
@@ -18,7 +20,17 @@ assert.doesNotMatch(mainSource, /serviceWorker\.register/, "the game no longer i
 assert.match(mainSource, /reticleAim\(player, this\.camera\.position, this\.camera\.getWorldDirection/, "weapons fire through the visible camera's exact center ray");
 assert.match(mainSource, /mode === "quick"[\s\S]*?settings\.botCount = 7;[\s\S]*?botDifficulty = "normal";/, "Quick Play defaults to seven normal-difficulty bots");
 assert.doesNotMatch(mainSource, /EffectComposer|UnrealBloomPass|composer\.render/, "the game avoids unstable post-processing framebuffers");
-assert.match(mainSource, /renderer\.render\(this\.scene, this\.camera\)/, "the game renders directly through Three.js");
+assert.match(mainSource, /new THREE\.WebGPURenderer/, "the game uses Three.js's WebGPU renderer");
+assert.match(mainSource, /await this\.renderer\.init\(\)/, "WebGPU initializes before environment generation");
+assert.match(mainSource, /this\.renderPipeline\.render\(\)/, "the game renders through the node-based HDR pipeline");
+assert.match(renderPipelineSource, /RenderPipeline[\s\S]*?bloom\([\s\S]*?ao\(/, "the HDR pipeline combines bloom with ambient grounding");
+assert.match(renderPipelineSource, /this\.direct = !ultra[\s\S]*?renderer\.render\(this\.scene, this\.camera\)/, "WebGL2 and coarse devices use a framebuffer-safe direct path");
+assert.match(renderPipelineSource, /catch \(error\)[\s\S]*?degradeToDirect\(error\)/, "post-processing failures degrade to direct rendering");
+assert.match(mainSource, /sessionStorage\.setItem\("blaster-force-webgl", "1"\)[\s\S]*?location\.reload\(\)/, "WebGPU device loss restarts through the WebGL2 recovery path");
+assert.match(mainSource, /renderPipeline\.setReducedMotion\(this\.settings\.reducedMotion\)/, "reduced-motion changes immediately retune the active pipeline");
+assert.doesNotMatch(mainSource, /grapple\.line\.geometry\.setFromPoints/, "grapple rope updates reuse fixed GPU buffers");
+assert.doesNotMatch(worldSource, /new THREE\.ShaderMaterial/, "the arena has no legacy GLSL-only material");
+assert.match(worldSource, /MeshBasicNodeMaterial[\s\S]*?colorNode[\s\S]*?opacityNode/, "the animated route floor uses an MRT-compatible TSL node material");
 assert.doesNotMatch(mainSource, /data-touch="(?:up|down|left|right)"/, "mobile movement has no directional-button overlay");
 assert.match(mainSource, /document\.addEventListener\("visibilitychange"/, "page visibility resets are attached to the document that dispatches them");
 assert.match(mainSource, /if \(this\.paused\) \{[\s\S]*?clearTouchActions\(this\.touch\)/, "pausing clears held and queued touch actions");

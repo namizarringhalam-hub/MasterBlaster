@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
 import { CombatVisuals, FIREBALL_INSTANCE_CAPACITY } from "../src/combatVisuals.js";
 import { projectileLifetime, WEAPONS } from "../src/gameData.js";
 import { Fighter } from "../src/player.js";

@@ -1,4 +1,4 @@
-import * as THREE from "three";
+import * as THREE from "three/webgpu";
 import { WEAPONS } from "./gameData.js";
 import { weaponPresentation } from "./weaponPresentation.js";
 
@@ -9,12 +9,15 @@ let haloTexture;
 const badgeTextures = new Map();
 
 function material(color, emissive = 0, options = {}) {
-  return new THREE.MeshStandardMaterial({
+  return new THREE.MeshPhysicalMaterial({
     color,
-    roughness: .36,
-    metalness: .32,
+    roughness: .32,
+    metalness: .38,
+    clearcoat: .24,
+    clearcoatRoughness: .28,
+    envMapIntensity: 1.1,
     emissive,
-    emissiveIntensity: emissive ? .45 : 0,
+    emissiveIntensity: emissive ? .62 : 0,
     flatShading: true,
     ...options
   });
