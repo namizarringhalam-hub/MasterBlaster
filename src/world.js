@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu";
-import { abs, color, fract, length, max, min, mix, sin, smoothstep, time, uv, vec2, vec3 } from "three/tsl";
+import { abs, color, fract, length, max, min, mix, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
 import { MAP_THEMES, seededRandom, seedFromText } from "./gameData.js";
 
 const TAU = Math.PI * 2;
@@ -29,6 +29,41 @@ function proceduralPanelTexture(seed, repeat = 4) {
   }
   const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(repeat, repeat);
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.anisotropy = 4;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function proceduralSurfaceDetail(seed, repeat = 4, normal = false) {
+  const size = 64;
+  const data = new Uint8Array(size * size * 4);
+  const random = seededRandom(seedFromText(`${seed}-${normal ? "normal" : "roughness"}-${repeat}`));
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const index = (y * size + x) * 4;
+      const cellX = x % 16;
+      const cellY = y % 16;
+      const seamX = cellX === 0;
+      const seamY = cellY === 0;
+      const bevelX = cellX === 1 || cellX === 15;
+      const bevelY = cellY === 1 || cellY === 15;
+      const rivet = (cellX === 3 || cellX === 13) && (cellY === 3 || cellY === 13);
+      if (normal) {
+        data[index] = seamX ? 96 : cellX === 1 ? 164 : cellX === 15 ? 112 : 128;
+        data[index + 1] = seamY ? 96 : cellY === 1 ? 164 : cellY === 15 ? 112 : 128;
+        data[index + 2] = rivet ? 226 : 255;
+      } else {
+        const value = rivet ? 92 : seamX || seamY ? 228 : bevelX || bevelY ? 142 : 166 + Math.floor(random() * 24);
+        data[index] = data[index + 1] = data[index + 2] = value;
+      }
+      data[index + 3] = 255;
+    }
+  }
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.repeat.set(repeat, repeat);
   texture.magFilter = THREE.LinearFilter;
@@ -144,7 +179,10 @@ function material(color, emissive = 0, opacity = 1, options = {}) {
     opacity,
     depthWrite: opacity >= .4,
     side: options.side ?? THREE.FrontSide,
-    map: options.map ?? null
+    map: options.map ?? null,
+    normalMap: options.normalMap ?? null,
+    normalScale: options.normalScale ?? new THREE.Vector2(.42, .42),
+    roughnessMap: options.roughnessMap ?? null
   });
 }
 
@@ -192,9 +230,13 @@ export class ArenaWorld {
     this.textures = [
       proceduralPanelTexture(`${seed}-structure`, 4),
       proceduralPanelTexture(`${seed}-ground`, 28),
-      radialGlowTexture()
+      radialGlowTexture(),
+      proceduralSurfaceDetail(`${seed}-structure`, 4, true),
+      proceduralSurfaceDetail(`${seed}-structure`, 4, false),
+      proceduralSurfaceDetail(`${seed}-ground`, 28, true),
+      proceduralSurfaceDetail(`${seed}-ground`, 28, false)
     ];
-    [this.panelTexture, this.groundTexture, this.glowTexture] = this.textures;
+    [this.panelTexture, this.groundTexture, this.glowTexture, this.panelNormal, this.panelRoughness, this.groundNormal, this.groundRoughness] = this.textures;
     this.routeMaterials = this.districtColors.map((color) => new THREE.MeshBasicMaterial({
       color: new THREE.Color(color).multiplyScalar(1.65),
       transparent: true,
@@ -222,6 +264,9 @@ export class ArenaWorld {
     this.ground = box(this.size * 2, .5, this.size * 2, this.theme.ground, 0, -.28, 0);
     this.ground.name = "Arena floor";
     this.ground.material.map = this.groundTexture;
+    this.ground.material.normalMap = this.groundNormal;
+    this.ground.material.normalScale.set(.36, .36);
+    this.ground.material.roughnessMap = this.groundRoughness;
     this.ground.material.roughness = .9;
     this.ground.material.metalness = .14;
     this.group.add(this.ground);
@@ -336,7 +381,7 @@ export class ArenaWorld {
 
     // Four restrained pools give each route quadrant its own readable lighting hierarchy.
     positions.forEach(([x, z], index) => {
-      const light = new THREE.PointLight(this.districtColors[index], 42, 68, 2);
+      const light = new THREE.PointLight(this.districtColors[index], 19, 64, 2);
       light.name = `District ${index + 1} route light`;
       light.position.set(x, 23, z);
       light.castShadow = false;
@@ -772,7 +817,10 @@ export class ArenaWorld {
         new THREE.Color(0x06111b).lerp(new THREE.Color(color), .075),
         color,
         1,
-        { roughness: .72, metalness: .34, emissiveIntensity: .035, map: this.panelTexture }
+        {
+          roughness: .72, metalness: .34, emissiveIntensity: .035, map: this.panelTexture,
+          normalMap: this.panelNormal, roughnessMap: this.panelRoughness
+        }
       );
       const facade = new THREE.Mesh(new THREE.CylinderGeometry(3.72, 3.55, top - bottom, 8), facadeMaterial);
       facade.position.y = (bottom + top) / 2;
@@ -1226,6 +1274,9 @@ export class ArenaWorld {
   addBox(x, z, w, d, h, color, destructible = false, anchor = false, baseY = 0) {
     const mesh = box(w, h, d, color, x, baseY + h / 2, z);
     mesh.material.map = this.panelTexture;
+    mesh.material.normalMap = this.panelNormal;
+    mesh.material.normalScale.set(.42, .42);
+    mesh.material.roughnessMap = this.panelRoughness;
     mesh.material.roughness = destructible ? .48 : .66;
     mesh.material.metalness = destructible ? .38 : .31;
     if (destructible) {
@@ -1425,7 +1476,7 @@ export class ArenaWorld {
     this.pulsers.push({ object: warningRing, base: 1, amplitude: .06, speed: 2.7, phase: x * .1 });
   }
 
-  addTemporaryWall(position, direction, color, lifetime = 10) {
+  addTemporaryWall(position, direction, wallColor, lifetime = 10) {
     const alongX = Math.abs(direction.x) > Math.abs(direction.z);
     const baseY = this.surfaceHeightAt(position, position.y + 1);
     const obstacle = this.addBox(
@@ -1434,16 +1485,27 @@ export class ArenaWorld {
       alongX ? 1.1 : 8,
       alongX ? 8 : 1.1,
       5.5,
-      color,
+      wallColor,
       false,
       false,
       baseY
     );
-    obstacle.mesh.material.transparent = true;
-    obstacle.mesh.material.opacity = .72;
-    obstacle.mesh.material.emissive.setHex(color);
-    obstacle.mesh.material.emissiveIntensity = .5;
-    this.temporaryWalls.push({ obstacle, life: lifetime });
+    obstacle.mesh.material.dispose();
+    const wallUv = uv().mul(vec2(alongX ? 2.4 : 12, 8));
+    const cell = abs(fract(wallUv).sub(.5));
+    const grid = smoothstep(.42, .49, max(cell.x, cell.y));
+    const scan = sin(time.mul(3.2).sub(uv().y.mul(34))).mul(.5).add(.5);
+    const fade = uniform(1);
+    const fieldMaterial = new THREE.MeshBasicNodeMaterial({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      toneMapped: false
+    });
+    fieldMaterial.colorNode = mix(color(0x06111b), color(wallColor), grid.mul(.72).add(scan.mul(.18)));
+    fieldMaterial.opacityNode = grid.mul(.48).add(.16).mul(fade);
+    obstacle.mesh.material = fieldMaterial;
+    this.temporaryWalls.push({ obstacle, life: lifetime, fade });
     return obstacle;
   }
 
@@ -1463,7 +1525,7 @@ export class ArenaWorld {
     for (let index = this.temporaryWalls.length - 1; index >= 0; index--) {
       const wall = this.temporaryWalls[index];
       wall.life -= dt;
-      wall.obstacle.mesh.material.opacity = Math.min(.72, wall.life * .5);
+      wall.fade.value = Math.min(1, wall.life * .5);
       if (wall.life > 0) continue;
       this.group.remove(wall.obstacle.mesh);
       this.obstacles.splice(this.obstacles.indexOf(wall.obstacle), 1);

@@ -10,6 +10,7 @@ const WHITE = new THREE.Color(0xffffff);
 const FIRE = new THREE.Color(0xff5a1f);
 const FIRE_HOT = new THREE.Color(0xffd36a);
 const FIRE_DARK = new THREE.Color(0xff2608);
+const BLOOD = new THREE.Color(0xff183f);
 const HDR_GLOW = 2.2;
 const FIRE_TONGUES = [
   ["flameA", 0, 0, 3.4, .72, 0],
@@ -55,6 +56,7 @@ function impactFamily(profile, explosive) {
   if (["plasma", "wall", "decoy"].includes(profile.delivery)) return "plasma";
   if (profile.precision) return "precision";
   if (profile.delivery === "chain") return "arc";
+  if (profile.energy) return "plasma";
   if (profile.delivery === "melee") return "melee";
   if (explosive || profile.payload === "blast") return "blast";
   return "kinetic";
@@ -327,7 +329,21 @@ function slots(length) {
   return Array.from({ length }, () => ({ life: 0 }));
 }
 
-/** Capped, pooled combat effects: seven draw calls regardless of fire rate. */
+function bloodSplatGeometry() {
+  const shape = new THREE.Shape();
+  const radii = [1, .66, .88, .58, 1.08, .7, .92, .6, 1.04, .64, .82, .57];
+  radii.forEach((radius, index) => {
+    const angle = index / radii.length * Math.PI * 2;
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius;
+    if (index === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
+  });
+  shape.closePath();
+  return new THREE.ShapeGeometry(shape);
+}
+
+/** Capped, pooled combat effects: fixed draw cost regardless of fire rate. */
 export class CombatVisuals {
   constructor(scene, { reducedMotion = false, quality = 1 } = {}) {
     this.scene = scene;
@@ -337,15 +353,17 @@ export class CombatVisuals {
     this.group.name = "Combat visuals";
     scene.add(this.group);
 
-    const flashCapacity = Math.round(40 * this.quality);
-    const tracerCapacity = Math.round(72 * this.quality);
-    const ringCapacity = Math.round(36 * this.quality);
-    const sparkCapacity = Math.round(180 * this.quality);
+    const flashCapacity = Math.round(64 * this.quality);
+    const tracerCapacity = Math.round(128 * this.quality);
+    const ringCapacity = Math.round(80 * this.quality);
+    const sparkCapacity = Math.round(512 * this.quality);
     this.flashes = slots(flashCapacity);
     this.tracers = slots(tracerCapacity);
     this.rings = slots(ringCapacity);
     this.sparks = slots(sparkCapacity);
-    this.cursors = { flash: 0, tracer: 0, ring: 0, spark: 0 };
+    const bloodCapacity = Math.round(48 * this.quality);
+    this.bloodDecals = slots(bloodCapacity);
+    this.cursors = { flash: 0, tracer: 0, ring: 0, spark: 0, blood: 0 };
 
     this.flashOuter = instancedLayer(new THREE.ConeGeometry(1, 1, 6, 1, true), flashCapacity, .42);
     this.flashInner = instancedLayer(new THREE.ConeGeometry(1, 1, 6), flashCapacity, 1);
@@ -357,7 +375,40 @@ export class CombatVisuals {
     this.ringOuter = instancedLayer(new THREE.TorusGeometry(1, .052, 5, 24), ringCapacity, .34);
     this.ringInner = instancedLayer(new THREE.TorusGeometry(1, .026, 4, 24), ringCapacity, .78);
     this.sparkLayer = instancedLayer(new THREE.OctahedronGeometry(1, 0), sparkCapacity, .92);
-    this.group.add(this.flashOuter, this.flashInner, this.tracerOuter, this.tracerInner, this.ringOuter, this.ringInner, this.sparkLayer);
+    this.bloodLayer = new THREE.InstancedMesh(
+      bloodSplatGeometry(),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, transparent: true, opacity: .78, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }),
+      bloodCapacity
+    );
+    this.bloodLayer.name = "Pooled impact splatters";
+    this.bloodLayer.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.bloodLayer.frustumCulled = false;
+    this.bloodLayer.renderOrder = 7;
+    for (let index = 0; index < bloodCapacity; index++) {
+      this.bloodLayer.setMatrixAt(index, HIDDEN);
+      this.bloodLayer.setColorAt(index, BLACK);
+    }
+    this.bloodLayer.instanceMatrix.needsUpdate = true;
+    this.bloodLayer.instanceColor.needsUpdate = true;
+    this.speedStreakCapacity = Math.round(28 * this.quality);
+    this.speedStreakLayer = instancedLayer(new THREE.ConeGeometry(.045, 1.15, 4, 1, true), this.speedStreakCapacity, .32);
+    this.speedStreakLayer.name = "Momentum speed streaks";
+    this.speedStreakLayer.count = 0;
+    this.group.add(this.flashOuter, this.flashInner, this.tracerOuter, this.tracerInner, this.ringOuter, this.ringInner, this.sparkLayer, this.bloodLayer, this.speedStreakLayer);
+
+    // Four recycled lights preserve spatial continuity during crossfire without
+    // multiplying illumination by fighter count.
+    this.combatLightGroup = new THREE.Group();
+    this.combatLightGroup.name = "Pooled combat response lights";
+    this.combatLights = Array.from({ length: 4 }, () => {
+      const light = new THREE.PointLight(0xffffff, 0, 12, 2);
+      light.castShadow = false;
+      light.userData.life = 0;
+      this.combatLightGroup.add(light);
+      return light;
+    });
+    this.combatLightCursor = 0;
+    this.group.add(this.combatLightGroup);
 
     this.fireballs = new Set();
     this.fireballGroup = new THREE.Group();
@@ -389,6 +440,10 @@ export class CombatVisuals {
     this.fireSide = new THREE.Vector3();
     this.fireRise = new THREE.Vector3();
     this.fireBack = new THREE.Vector3();
+    this.speedSide = new THREE.Vector3();
+    this.speedRise = new THREE.Vector3();
+    this.offset = new THREE.Vector3();
+    this.effectTime = 0;
   }
 
   setReducedMotion(reducedMotion) {
@@ -464,6 +519,11 @@ export class CombatVisuals {
     slot.closeRapid = isCloseRapid(profile, weapon);
     slot.length = profile.muzzleLength * (.94 + profile.signature * .12);
     slot.width = profile.muzzleWidth;
+    if (!this.reducedMotion) {
+      this.position.copy(slot.position).addScaledVector(slot.direction, slot.length * .32);
+      this.color.copy(slot.weaponColor).lerp(slot.ownerColor, .24);
+      this.pulseLight(this.position, this.color, profile.tempo === "heavy" ? 5.8 : profile.energy ? 4.8 : 3.4, profile.tempo === "heavy" ? 14 : 10, .085);
+    }
     if (slot.closeRapid) {
       slot.length *= .68;
       slot.width *= 1.28;
@@ -560,15 +620,23 @@ export class CombatVisuals {
     const side = this.normal.crossVectors(direction, UP);
     if (side.lengthSq() < .01) side.set(1, 0, 0);
     else side.normalize();
+    const segments = 7;
+    const distance = start.distanceTo(end);
+    const jitter = clamp(.18 + distance * .006, .2, .52);
     const points = [start.clone()];
-    for (let index = 1; index < 4; index++) {
-      const point = start.clone().lerp(end, index / 4);
-      point.addScaledVector(side, (index % 2 ? 1 : -1) * .24);
-      point.y += index % 2 ? .12 : -.12;
+    for (let index = 1; index < segments; index++) {
+      const point = start.clone().lerp(end, index / segments);
+      point.addScaledVector(side, (index % 2 ? 1 : -1) * jitter * (.72 + Math.sin(index * 2.1) * .28));
+      point.y += (index % 3 - 1) * jitter * .48;
       points.push(point);
     }
     points.push(end.clone());
     for (let index = 0; index < points.length - 1; index++) this.addTracer(points[index], points[index + 1], weapon, owner, life, width);
+    for (const index of [2, 5]) {
+      if (!points[index]) continue;
+      const fork = points[index].clone().addScaledVector(side, (index === 2 ? -1 : 1) * jitter * 1.7).addScaledVector(UP, jitter * .8);
+      this.addTracer(points[index], fork, weapon, owner, life * .62, width * .48);
+    }
   }
 
   flameStream(origin, direction, weapon, owner, distance) {
@@ -641,6 +709,11 @@ export class CombatVisuals {
     ring.size = size * (.78 + profile.impactScale * .22);
     ring.family = family;
     ring.profile = profile;
+    if (!this.reducedMotion) {
+      this.position.copy(position).addScaledVector(ring.normal, .18);
+      this.color.copy(ring.weaponColor).lerp(ring.ownerColor, .2);
+      this.pulseLight(this.position, this.color, Math.min(10, 3.4 + ring.size * 2.2), Math.min(22, 8 + ring.size * 4.2), explosive ? .18 : .11);
+    }
 
     const blastLike = family === "blast" || family === "cluster"
       || (explosive && !["gravity", "implosion", "pulse", "disrupt"].includes(family));
@@ -674,12 +747,90 @@ export class CombatVisuals {
     }
   }
 
-  update(dt) {
+  burst(position, color, count, { family = "energy", direction = null, force = 7 } = {}) {
+    if (!position || count <= 0) return;
+    const tint = this.color.set(color);
+    const bias = this.normal.copy(direction?.lengthSq?.() ? direction : UP).normalize();
+    const amount = Math.min(this.sparks.length, this.reducedMotion ? Math.ceil(count * .45) : count);
+    for (let index = 0; index < amount; index++) {
+      const spark = this.sparks[this.cursors.spark++ % this.sparks.length];
+      spark.life = spark.maxLife = (family === "blood" ? .42 : .3) + Math.random() * .32;
+      spark.position = (spark.position || new THREE.Vector3()).copy(position);
+      spark.position.add(this.offset.set((Math.random() - .5) * .18, (Math.random() - .5) * .2, (Math.random() - .5) * .18));
+      spark.velocity = (spark.velocity || new THREE.Vector3()).set(
+        (Math.random() - .5) * force,
+        1.4 + Math.random() * force * .62,
+        (Math.random() - .5) * force
+      ).addScaledVector(bias, force * (.32 + Math.random() * .72));
+      spark.color = (spark.color || new THREE.Color()).copy(family === "blood" ? BLOOD : tint).lerp(tint, family === "blood" ? .22 : .45);
+      spark.size = (family === "blood" ? .065 : .08) + Math.random() * (family === "blood" ? .09 : .11);
+      spark.family = family;
+      spark.gravity = family === "blood" ? 17 : 10;
+    }
+  }
+
+  blood(position, normal, size = 1) {
+    if (!position) return;
+    const slot = this.bloodDecals[this.cursors.blood++ % this.bloodDecals.length];
+    slot.life = slot.maxLife = this.reducedMotion ? .22 : .48;
+    slot.position = (slot.position || new THREE.Vector3()).copy(position);
+    slot.normal = (slot.normal || new THREE.Vector3()).copy(normal?.lengthSq?.() ? normal : FORWARD).normalize();
+    slot.size = size;
+    slot.rotation = Math.random() * Math.PI * 2;
+  }
+
+  pulseLight(position, color, intensity, distance, life) {
+    const light = this.combatLights[this.combatLightCursor++ % this.combatLights.length];
+    light.position.copy(position);
+    light.color.copy(color);
+    light.intensity = intensity;
+    light.distance = distance;
+    light.userData.life = life;
+  }
+
+  update(dt, focusPlayer = null) {
+    this.effectTime += dt;
     this.updateFireballs();
     this.updateFlashes(dt);
     this.updateTracers(dt);
     this.updateRings(dt);
     this.updateSparks(dt);
+    this.updateBlood(dt);
+    this.updateSpeedStreaks(focusPlayer);
+    for (const light of this.combatLights) {
+      light.userData.life = Math.max(0, light.userData.life - dt);
+      light.intensity = THREE.MathUtils.damp(light.intensity, light.userData.life > 0 ? light.intensity : 0, 22, dt);
+    }
+  }
+
+  updateSpeedStreaks(player) {
+    const speed = player?.alive ? player.velocity.length() : 0;
+    const strength = this.reducedMotion ? 0 : clamp((speed - 13) / 30, 0, 1);
+    const visible = strength > .025 ? Math.max(5, Math.ceil(this.speedStreakCapacity * strength)) : 0;
+    this.speedStreakLayer.count = visible;
+    if (!visible) return;
+    this.direction.copy(player.velocity).normalize();
+    this.speedSide.crossVectors(this.direction, UP);
+    if (this.speedSide.lengthSq() < .01) this.speedSide.set(1, 0, 0);
+    else this.speedSide.normalize();
+    this.speedRise.crossVectors(this.speedSide, this.direction).normalize();
+    this.quaternion.setFromUnitVectors(UP, this.direction);
+    const tint = this.color.set(player.accent ?? 0x6feeff).lerp(WHITE, .28);
+    for (let index = 0; index < visible; index++) {
+      const phase = (this.effectTime * (1.35 + strength * 2.4) + index * .6180339) % 1;
+      const angle = index * 2.39996 + this.effectTime * .14;
+      const radius = 1.65 + (index % 6) * .42;
+      this.position.copy(player.position)
+        .addScaledVector(this.direction, (phase - .5) * 11)
+        .addScaledVector(this.speedSide, Math.cos(angle) * radius)
+        .addScaledVector(this.speedRise, Math.sin(angle) * radius)
+        .addScaledVector(UP, 1.25);
+      this.scale.set(1, .72 + strength * 3.2 * (1 - phase * .25), 1);
+      this.matrix.compose(this.position, this.quaternion, this.scale);
+      this.speedStreakLayer.setMatrixAt(index, this.matrix);
+      this.speedStreakLayer.setColorAt(index, tint);
+    }
+    this.markUpdated(this.speedStreakLayer);
   }
 
   updateFireballs() {
@@ -949,10 +1100,12 @@ export class CombatVisuals {
         : slot.family === "freeze" || slot.family === "drill" ? 3.8
           : slot.family === "ricochet" || slot.family === "disrupt" ? 2.8
         : slot.family === "melee" ? 3
+          : slot.family === "blood" ? 1.45
           : slot.family === "flame" ? 1.8
           : slot.family === "plasma" || slot.family === "arc" ? 1.15
             : 1.7 + slot.velocity.length() * .08;
       const width = slot.family === "precision" || slot.family === "freeze" || slot.family === "drill" ? .55
+        : slot.family === "blood" ? .72
         : slot.family === "flame" ? 1.25
           : slot.family === "plasma" || slot.family === "arc" ? 1.15 : 1;
       this.scale.set(slot.size * width * fade, slot.size * stretch * fade, slot.size * width * fade);
@@ -961,6 +1114,28 @@ export class CombatVisuals {
       this.sparkLayer.setColorAt(index, this.color.copy(slot.color).multiplyScalar(.45 + fade * .55));
     }
     this.markUpdated(this.sparkLayer);
+  }
+
+  updateBlood(dt) {
+    for (let index = 0; index < this.bloodDecals.length; index++) {
+      const slot = this.bloodDecals[index];
+      slot.life -= dt;
+      if (slot.life <= 0) {
+        this.bloodLayer.setMatrixAt(index, HIDDEN);
+        continue;
+      }
+      const fade = clamp(slot.life / slot.maxLife, 0, 1);
+      const progress = 1 - fade;
+      this.quaternion.setFromUnitVectors(FORWARD, slot.normal);
+      this.quaternion.multiply(this.twistQuaternion.setFromAxisAngle(FORWARD, slot.rotation));
+      this.position.copy(slot.position).addScaledVector(slot.normal, .025);
+      const spread = slot.size * (.3 + (1 - Math.pow(1 - progress, 3)) * .7);
+      this.scale.set(spread, spread * (.72 + (slot.rotation % .4)), 1);
+      this.matrix.compose(this.position, this.quaternion, this.scale);
+      this.bloodLayer.setMatrixAt(index, this.matrix);
+      this.bloodLayer.setColorAt(index, this.color.copy(BLOOD).multiplyScalar(.28 + fade * .72));
+    }
+    this.markUpdated(this.bloodLayer);
   }
 
   markUpdated(...layers) {

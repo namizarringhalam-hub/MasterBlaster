@@ -25,11 +25,28 @@ for (let frame = 0; frame < 3600; frame++) {
   visuals.update(1 / 60);
 }
 
+const synchronizedTracerStart = visuals.cursors.tracer;
+for (let burst = 0; burst < 45; burst++) {
+  for (let index = 0; index < fighters.length; index++) {
+    const fighter = fighters[index];
+    const weapon = index % 2 ? WEAPONS.minigun : WEAPONS.arc_lightning;
+    const start = fighter.muzzlePoint(new THREE.Vector3());
+    const burstEnd = end.clone().add(new THREE.Vector3(index - 8, index % 3, burst % 5));
+    visuals.muzzle(fighter, weapon, fighter.aim);
+    visuals.tracer(start, burstEnd, weapon, fighter, { life: .11, width: .05 });
+    visuals.impact(burstEnd, weapon, fighter, { size: .8 });
+  }
+  visuals.update(1 / 60);
+}
+assert.ok(visuals.cursors.tracer - synchronizedTracerStart >= fighters.length * 45, "synchronized sixteen-player Arc Lightning and minigun bursts stay active without dropping their presentation events");
+
 assert.equal(fighters.length, 16, "the stress matrix renders a full sixteen-fighter match");
-assert.equal(visuals.group.children.length, 8, "rapid effects and the persistent Fireball batch stay in fixed render groups");
-assert.equal(visuals.tracers.length, 72, "rapid tracers stay at their fixed pool capacity");
-assert.equal(visuals.rings.length, 36, "impact rings stay at their fixed pool capacity");
-assert.equal(visuals.sparks.length, 180, "impact sparks stay at their fixed pool capacity");
+assert.equal(visuals.group.children.length, 11, "rapid effects, pooled splatters, momentum streaks, response lights, and Fireballs stay in fixed render groups");
+assert.equal(visuals.speedStreakCapacity, 28, "momentum streaks stay in one fixed-capacity instance batch");
+assert.equal(visuals.flashes.length, 64, "sixteen-fighter muzzle flashes stay below the fixed pool capacity");
+assert.equal(visuals.tracers.length, 128, "sixteen-fighter rapid tracers stay below the fixed pool capacity");
+assert.equal(visuals.rings.length, 80, "sixteen-fighter impact rings stay below the fixed pool capacity");
+assert.equal(visuals.sparks.length, 512, "sixteen-fighter impact particles stay below the fixed pool capacity");
 assert.equal(WEAPONS.plasma_repeater.hitscan, true, "the Plasma Repeater cannot allocate unbounded live bolt groups");
 assert.ok(["napalm_launcher", "black_hole_generator", "tornado_generator"].every((id) => WEAPONS[id].maxActiveHazards === 2), "persistent zones are capped to two per owner and weapon");
 assert.equal(WEAPONS.remote_explosive.maxCharges, 4, "remote charges have a strict per-owner cap");
@@ -60,7 +77,8 @@ assert.ok(["flameA", "flameB", "flameC"].every((name) => visuals.fireballLayers[
 
 const mainSource = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
 assert.match(mainSource, /this\.hazards\.length >= 24/, "persistent hazards also have a global match cap");
-assert.match(mainSource, /new THREE\.InstancedMesh[\s\S]*?kind: "flame"[\s\S]*?new THREE\.InstancedMesh[\s\S]*?kind: "vortex"/, "napalm flames and tornado rings are instanced instead of separate draw calls");
+assert.match(mainSource, /setHighLoadMode\(fighterCount >= 13\)/, "maximum-size matches select the lighter WebGPU bloom profile before heavy fighter materials are created");
+assert.match(mainSource, /new THREE\.InstancedMesh[\s\S]*?kind: "flame"[\s\S]*?vortexRibbonGeometry[\s\S]*?kind: "ribbon"/, "napalm stays instanced while tornadoes use one authored helical ribbon draw");
 assert.match(mainSource, /shot\.bounces < \(shot\.weapon\.bounces \|\| 0\)[\s\S]*?bounceProjectile\(shot, previous\)/, "infinite Fireball ricochets stay on the swept world-collision path");
 
 for (const fighter of fighters) fighter.dispose();

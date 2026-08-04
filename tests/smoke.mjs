@@ -24,10 +24,12 @@ assert.match(mainSource, /new THREE\.WebGPURenderer/, "the game uses Three.js's 
 assert.match(mainSource, /await this\.renderer\.init\(\)/, "WebGPU initializes before environment generation");
 assert.match(mainSource, /this\.renderPipeline\.render\(\)/, "the game renders through the node-based HDR pipeline");
 assert.match(renderPipelineSource, /RenderPipeline[\s\S]*?bloom\([\s\S]*?ao\(/, "the HDR pipeline combines bloom with ambient grounding");
-assert.match(renderPipelineSource, /this\.direct = !ultra[\s\S]*?renderer\.render\(this\.scene, this\.camera\)/, "WebGL2 and coarse devices use a framebuffer-safe direct path");
+assert.match(renderPipelineSource, /this\.direct = coarsePointer[\s\S]*?if \(!nativeWebGPU\)[\s\S]*?bloom\([\s\S]*?renderer\.render\(this\.scene, this\.camera\)/, "desktop WebGL2 keeps lightweight bloom while coarse devices retain a framebuffer-safe direct path");
 assert.match(renderPipelineSource, /catch \(error\)[\s\S]*?degradeToDirect\(error\)/, "post-processing failures degrade to direct rendering");
 assert.match(mainSource, /sessionStorage\.setItem\("blaster-force-webgl", "1"\)[\s\S]*?location\.reload\(\)/, "WebGPU device loss restarts through the WebGL2 recovery path");
 assert.match(mainSource, /renderPipeline\.setReducedMotion\(this\.settings\.reducedMotion\)/, "reduced-motion changes immediately retune the active pipeline");
+assert.match(renderPipelineSource, /this\.reducedMotion = Boolean\(reducedMotion\)[\s\S]*?highLoadBloom = bloom\(sceneColor, this\.reducedMotion \? \.16 : \.3/, "a newly-created sixteen-player bloom profile inherits Reduced Motion");
+assert.match(mainSource, /damageVignetteTimer = setTimeout\([\s\S]*?classList\.remove\("visible"\)[\s\S]*?reducedMotion \? 120 : 520/, "the damage vignette clears explicitly even when CSS animations are disabled");
 assert.doesNotMatch(mainSource, /grapple\.line\.geometry\.setFromPoints/, "grapple rope updates reuse fixed GPU buffers");
 assert.doesNotMatch(worldSource, /new THREE\.ShaderMaterial/, "the arena has no legacy GLSL-only material");
 assert.match(worldSource, /MeshBasicNodeMaterial[\s\S]*?colorNode[\s\S]*?opacityNode/, "the animated route floor uses an MRT-compatible TSL node material");
@@ -108,6 +110,14 @@ const matrixOwner = {
   muzzlePoint: (target = new THREE.Vector3()) => target.set(0, 1, 0),
   forwardPoint: (distance = 1) => new THREE.Vector3(0, 1, distance)
 };
+const expectedImpactFamilies = {
+  plasma_repeater: "plasma",
+  railgun: "precision",
+  charged_energy_rifle: "precision",
+  laser_beam: "precision",
+  disintegration_weapon: "precision",
+  arc_lightning: "arc"
+};
 for (const [id, weapon] of Object.entries(WEAPONS)) {
   const profile = weaponPresentation(weapon);
   const policy = botWeaponPolicy(weapon);
@@ -123,6 +133,7 @@ for (const [id, weapon] of Object.entries(WEAPONS)) {
   const model = new Fighter(modelScene, { id: `model-${id}`, name: id, color: weapon.color, accent: 0xffffff }, [id], new THREE.Vector3());
   assert.ok(model.weaponGroup.children.length >= 3, `${id} has a layered held-weapon model`);
   assert.ok(model.weaponMuzzleDistance > .3, `${id} exposes a valid muzzle or strike origin`);
+  if (id === "boomerang_blade") assert.equal(model.weaponSpinner?.geometry?.type, "TorusGeometry", "the equipped Boomerang reaches its authored spinning-disc bracer branch");
   model.dispose();
 
   presentationVisuals.muzzle(matrixOwner, weapon, matrixOwner.aim);
@@ -131,6 +142,7 @@ for (const [id, weapon] of Object.entries(WEAPONS)) {
   presentationVisuals.impact(new THREE.Vector3(), weapon, matrixOwner, { explosive: Boolean(weapon.radius) });
   const ring = presentationVisuals.rings[(presentationVisuals.cursors.ring - 1 + presentationVisuals.rings.length) % presentationVisuals.rings.length];
   assert.equal(ring.profile, profile, `${id} drives its impact effect from its presentation profile`);
+  if (expectedImpactFamilies[id]) assert.equal(ring.family, expectedImpactFamilies[id], `${id} retains its correct impact family instead of inheriting generic plasma`);
   if (!["beam", "chain", "flame", "melee"].includes(fireMode) && fireMode !== "hitscan") {
     const projectile = createProjectileVisual(weapon, matrixOwner, weapon.projectileRadius || .14, { mine: fireMode === "mine" });
     assert.equal(projectile.userData.combatVisual.profile, profile, `${id} has a profile-driven world projectile`);
@@ -147,7 +159,9 @@ const fireballVisual = createProjectileVisual(WEAPONS.fireball, visualOwner, WEA
 assert.ok(fireballVisual.children.filter((child) => child.geometry?.type === "ConeGeometry").length >= 4, "the Fireball projectile has multiple tapered flame tongues and a wake");
 assert.equal(fireballVisual.children.filter((child) => child.geometry?.type === "TorusGeometry").length, 0, "the Fireball projectile no longer reads as an orbiting plasma device");
 assert.equal(presentationSignatures.size, 47, "all 47 weapons retain distinct audiovisual signatures");
-assert.ok(presentationVisuals.tracers.length <= 72 && presentationVisuals.sparks.length <= 180 && presentationVisuals.rings.length <= 36, "the complete 47-weapon effects matrix remains pool-bounded");
+assert.match(mainSource, /data-weapon="\$\{weapon\.id\}"[\s\S]*?weaponPreviewVariables\(weapon, index\)/, "every menu card receives weapon-specific procedural preview variables");
+assert.ok(["boomerang_blade", "fireball", "plasma_cannon", "temporary_wall", "decoy_launcher", "black_hole_generator", "tornado_generator"].every((id) => stylesSource.includes(`data-weapon="${id}"`)), "signature and unusual weapons receive authored menu silhouettes beyond their generic type");
+assert.ok(presentationVisuals.tracers.length <= 128 && presentationVisuals.sparks.length <= 512 && presentationVisuals.rings.length <= 80, "the complete 47-weapon effects matrix remains fixed and sized for sixteen-player bursts");
 const meleeTraceCounts = { hammer: 2, energy_sword: 2, chainsaw: 2, spear: 1, punch_glove: 2, shock_baton: 4, knife: 1 };
 for (const [id, expectedSegments] of Object.entries(meleeTraceCounts)) {
   const before = presentationVisuals.cursors.tracer;
@@ -234,7 +248,7 @@ const flameVisuals = new CombatVisuals(flameVisualScene, { quality: 1 });
 flameVisuals.flameStream(flameOrigin, flameDirection, WEAPONS.flamethrower, visualOwner, WEAPONS.flamethrower.reach);
 assert.ok(flameVisuals.tracers.filter((slot) => slot.life > 0).length >= 3, "the flame jet uses layered pooled streams");
 assert.ok(flameVisuals.sparks.filter((slot) => slot.life > 0).length >= 2, "the flame jet includes pooled rising embers");
-assert.ok(flameVisuals.tracers.length <= 72 && flameVisuals.sparks.length <= 180, "Flamethrower effects remain strictly bounded");
+assert.ok(flameVisuals.tracers.length <= 128 && flameVisuals.sparks.length <= 512, "Flamethrower effects remain strictly bounded for sixteen-player combat");
 flameVisuals.dispose();
 
 const randomA = seededRandom(seedFromText("BLAST-01"));

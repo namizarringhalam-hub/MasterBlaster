@@ -8,22 +8,33 @@ export class NeonRenderPipeline {
     this.renderer = renderer;
     this.scene = scene;
     this.camera = camera;
+    this.reducedMotion = Boolean(reducedMotion);
+    this.highLoadMode = false;
+    this.highLoadPipeline = null;
+    this.highLoadBloom = null;
     const nativeWebGPU = renderer.backend.isWebGPUBackend === true;
-    const ultra = nativeWebGPU && !coarsePointer;
-    this.direct = !ultra;
-    this.profile = nativeWebGPU ? "WEBGPU MOBILE" : "WEBGL2 DIRECT";
+    this.nativeWebGPU = nativeWebGPU;
+    this.direct = coarsePointer;
+    this.profile = nativeWebGPU ? "WEBGPU MOBILE DIRECT" : coarsePointer ? "WEBGL2 MOBILE DIRECT" : "WEBGL2 BLOOM";
     if (this.direct) return;
 
     this.pipeline = new THREE.RenderPipeline(renderer);
+    if (!nativeWebGPU) {
+      const sceneColor = pass(scene, camera).getTextureNode("output");
+      this.bloomPass = bloom(sceneColor, reducedMotion ? .16 : .28, .3, 1.08);
+      this.bloomPass.resolutionScale = .34;
+      this.pipeline.outputNode = sceneColor.add(this.bloomPass);
+      return;
+    }
     const scenePass = pass(scene, camera);
     scenePass.setMRT(mrt({ output, normal: normalView }));
 
     const sceneColor = scenePass.getTextureNode("output");
     const bloomPass = bloom(
       sceneColor,
-      reducedMotion ? .32 : .58,
-      .48,
-      .72
+      reducedMotion ? .22 : .44,
+      .36,
+      1.02
     );
     bloomPass.resolutionScale = .5;
     this.bloomPass = bloomPass;
@@ -47,7 +58,7 @@ export class NeonRenderPipeline {
   render() {
     if (this.direct) return this.renderer.render(this.scene, this.camera);
     try {
-      this.pipeline.render();
+      (this.highLoadMode ? this.highLoadPipeline : this.pipeline).render();
     } catch (error) {
       this.degradeToDirect(error);
       this.renderer.render(this.scene, this.camera);
@@ -55,20 +66,45 @@ export class NeonRenderPipeline {
   }
 
   setReducedMotion(reducedMotion) {
-    if (this.bloomPass) this.bloomPass.strength.value = reducedMotion ? .32 : .58;
+    this.reducedMotion = Boolean(reducedMotion);
+    if (this.bloomPass) this.bloomPass.strength.value = this.nativeWebGPU ? reducedMotion ? .22 : .44 : reducedMotion ? .16 : .28;
+    if (this.highLoadBloom) this.highLoadBloom.strength.value = reducedMotion ? .16 : .3;
+  }
+
+  setHighLoadMode(enabled) {
+    if (this.direct) return;
+    if (!this.nativeWebGPU) {
+      this.highLoadMode = false;
+      this.profile = "WEBGL2 BLOOM";
+      return;
+    }
+    this.highLoadMode = Boolean(enabled);
+    if (this.highLoadMode && !this.highLoadPipeline) {
+      this.highLoadPipeline = new THREE.RenderPipeline(this.renderer);
+      const sceneColor = pass(this.scene, this.camera).getTextureNode("output");
+      this.highLoadBloom = bloom(sceneColor, this.reducedMotion ? .16 : .3, .3, 1.08);
+      this.highLoadBloom.resolutionScale = .34;
+      this.highLoadPipeline.outputNode = sceneColor.add(this.highLoadBloom);
+    }
+    this.profile = this.highLoadMode ? "WEBGPU 16P BLOOM" : "WEBGPU ULTRA";
   }
 
   degradeToDirect(reason) {
     if (this.direct) return;
     console.warn("HDR render pipeline disabled; continuing with direct rendering.", reason);
     this.pipeline?.dispose();
+    this.highLoadPipeline?.dispose();
     this.pipeline = null;
+    this.highLoadPipeline = null;
     this.bloomPass = null;
+    this.highLoadBloom = null;
     this.direct = true;
+    this.highLoadMode = false;
     this.profile = "DIRECT SAFETY";
   }
 
   dispose() {
     this.pipeline?.dispose();
+    this.highLoadPipeline?.dispose();
   }
 }

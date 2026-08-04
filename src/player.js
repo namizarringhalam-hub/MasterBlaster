@@ -11,14 +11,15 @@ const badgeTextures = new Map();
 function material(color, emissive = 0, options = {}) {
   return new THREE.MeshPhysicalMaterial({
     color,
-    roughness: .32,
-    metalness: .38,
-    clearcoat: .24,
-    clearcoatRoughness: .28,
-    envMapIntensity: 1.1,
+    roughness: .29,
+    metalness: .42,
+    clearcoat: .42,
+    clearcoatRoughness: .2,
+    envMapIntensity: 1.2,
+    specularIntensity: .92,
     emissive,
     emissiveIntensity: emissive ? .62 : 0,
-    flatShading: true,
+    flatShading: false,
     ...options
   });
 }
@@ -183,9 +184,16 @@ export class Fighter {
 
   createModel() {
     const group = new THREE.Group();
-    const armor = material(this.color, this.color, { emissiveIntensity: .16, roughness: .3, metalness: .48 });
-    const accent = material(this.accent, this.accent, { emissiveIntensity: 1.25, roughness: .2, metalness: .2 });
-    const dark = material(0x07101d, this.accent, { emissiveIntensity: .025, roughness: .48, metalness: .56 });
+    const costumeVariant = [...this.id].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % 4;
+    const armor = material(this.color, this.color, {
+      emissiveIntensity: .14, roughness: .24, metalness: .52, clearcoat: .58,
+      sheen: .22, sheenColor: new THREE.Color(this.color).lerp(new THREE.Color(0xffffff), .28), sheenRoughness: .42
+    });
+    const accent = material(this.accent, this.accent, {
+      emissiveIntensity: 1.1, roughness: .14, metalness: .24, clearcoat: .82,
+      iridescence: .34, iridescenceIOR: 1.32, iridescenceThicknessRange: [120, 340]
+    });
+    const dark = material(0x07101d, this.accent, { emissiveIntensity: .022, roughness: .4, metalness: .68, clearcoat: .32 });
     this.armorMaterial = armor;
     this.accentMaterial = accent;
     this.darkMaterial = dark;
@@ -194,7 +202,7 @@ export class Fighter {
     this.rig.scale.set(1.07, 1.04, 1.07);
     group.add(this.rig);
     const torso = part(new THREE.CapsuleGeometry(.39, .68, 4, 8), dark, 0, 1.25, 0);
-    const chest = part(new THREE.CylinderGeometry(.37, .49, .65, 6), armor, 0, 1.43, .015);
+    const chest = part(new THREE.CylinderGeometry(.37, .49, .65, [6, 8, 5, 7][costumeVariant]), armor, 0, 1.43, .015);
     chest.scale.z = .76;
     const pelvis = part(new THREE.BoxGeometry(.72, .23, .45), armor, 0, .91, -.01);
     const spine = part(new THREE.BoxGeometry(.38, .56, .18), armor, 0, 1.38, -.37);
@@ -204,7 +212,14 @@ export class Fighter {
     sternum.scale.set(.72, 1.3, .5);
     const chestLight = part(new THREE.BoxGeometry(.48, .075, .055), accent, 0, 1.47, .36, false);
     chestLight.rotation.z = -.18;
-    const helmet = part(new THREE.SphereGeometry(.47, 12, 8), dark, 0, 2.08, 0);
+    const helmetGeometry = costumeVariant === 0
+      ? new THREE.DodecahedronGeometry(.47, 1)
+      : costumeVariant === 1
+        ? new THREE.SphereGeometry(.47, 16, 10)
+        : costumeVariant === 2
+          ? new THREE.CapsuleGeometry(.37, .22, 4, 10)
+          : new THREE.IcosahedronGeometry(.47, 1);
+    const helmet = part(helmetGeometry, dark, 0, 2.08, 0);
     helmet.scale.set(1, .92, .94);
     const visor = part(new THREE.BoxGeometry(.72, .16, .12), accent, 0, 2.1, .43, false);
     this.helmet = helmet;
@@ -233,8 +248,14 @@ export class Fighter {
     const rightKnee = part(new THREE.BoxGeometry(.29, .18, .13), accent, 0, -.39, .23, false);
     this.leftLeg.add(leftKnee);
     this.rightLeg.add(rightKnee);
-    const leftShoulder = part(new THREE.BoxGeometry(.34, .27, .48), armor, -.57, 1.62, -.02);
-    const rightShoulder = part(new THREE.BoxGeometry(.34, .27, .48), armor, .57, 1.62, -.02);
+    const shoulderGeometry = costumeVariant === 1
+      ? new THREE.CylinderGeometry(.2, .25, .42, 6)
+      : costumeVariant === 3
+        ? new THREE.DodecahedronGeometry(.25, 0)
+        : new THREE.BoxGeometry(.34, .27, .48);
+    const leftShoulder = part(shoulderGeometry, armor, -.57, 1.62, -.02);
+    const rightShoulder = part(shoulderGeometry, armor, .57, 1.62, -.02);
+    if (costumeVariant === 1) leftShoulder.rotation.x = rightShoulder.rotation.x = Math.PI / 2;
     leftShoulder.rotation.z = -.16;
     rightShoulder.rotation.z = .16;
     const leftFin = part(new THREE.ConeGeometry(.13, .48, 4), accent, -.46, 1.83, -.25, false);
@@ -245,8 +266,34 @@ export class Fighter {
     const packLight = part(new THREE.BoxGeometry(.38, .32, .055), accent, 0, 1.42, -.58, false);
     const leftThruster = part(new THREE.ConeGeometry(.105, .36, 6, 1, true), accent, -.2, 1.02, -.49, false);
     const rightThruster = part(new THREE.ConeGeometry(.105, .36, 6, 1, true), accent, .2, 1.02, -.49, false);
+    const thrusterMaterial = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(this.accent).multiplyScalar(2.1), transparent: true, opacity: .5,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false
+    });
+    leftThruster.material = rightThruster.material = thrusterMaterial;
+    this.thrusterMaterial = thrusterMaterial;
     leftThruster.rotation.x = rightThruster.rotation.x = Math.PI;
     this.thrusterLights = [leftThruster, rightThruster];
+    if (costumeVariant === 0) {
+      leftShoulder.scale.set(1.3, .82, 1.22); rightShoulder.scale.copy(leftShoulder.scale);
+      helmetCrest.scale.set(.94, 1.34, 1.12);
+      breastplate.scale.set(1.06, .94, 1.18);
+    } else if (costumeVariant === 1) {
+      helmet.scale.set(.92, 1.02, .96);
+      breastplate.scale.set(.88, 1.18, 1.08);
+      leftFin.scale.set(.66, 1.46, .66); rightFin.scale.copy(leftFin.scale);
+    } else if (costumeVariant === 2) {
+      brow.scale.set(1.22, .7, 1.14);
+      leftShoulder.scale.set(.84, 1.34, .92); rightShoulder.scale.copy(leftShoulder.scale);
+      backpack.scale.set(1.08, 1.16, 1.08);
+    } else {
+      helmetCrest.rotation.z = .28;
+      helmetCrest.scale.set(.72, 1.12, 1.3);
+      packLight.scale.set(.72, 1.28, 1);
+      leftFin.scale.set(1.2, .82, 1.16); rightFin.scale.copy(leftFin.scale);
+    }
+    armor.roughness += costumeVariant * .025;
+    armor.clearcoat = .68 - costumeVariant * .08;
     this.rig.add(
       torso, chest, breastplate, sternum, pelvis, spine, chestLight, helmet, visor, brow, helmetCrest, leftEar, rightEar,
       this.leftArm, this.rightArm, this.leftLeg, this.rightLeg,
@@ -328,9 +375,12 @@ export class Fighter {
   updateWeaponModel() {
     disposeChildren(this.weaponGroup);
     const weapon = this.weapon;
-    const glow = material(weapon.color, weapon.color, { emissiveIntensity: 1.35, roughness: .24, metalness: .38 });
-    const identity = material(this.accent, this.accent, { emissiveIntensity: 1.1, roughness: .18, metalness: .3 });
-    const dark = material(0x091424, this.accent, { emissiveIntensity: .035, roughness: .34, metalness: .7 });
+    const glow = material(weapon.color, weapon.color, {
+      emissiveIntensity: 1.18, roughness: .14, metalness: .38, clearcoat: .76,
+      iridescence: .22, iridescenceIOR: 1.28, iridescenceThicknessRange: [90, 280]
+    });
+    const identity = material(this.accent, this.accent, { emissiveIntensity: .92, roughness: .12, metalness: .34, clearcoat: .82, iridescence: .38 });
+    const dark = material(0x091424, this.accent, { emissiveIntensity: .03, roughness: .28, metalness: .76, clearcoat: .48 });
     const presentation = weaponPresentation(weapon);
     this.weaponGlowMaterial = glow;
     this.weaponSpinner = null;
@@ -447,9 +497,11 @@ export class Fighter {
         this.weaponMuzzleDistance = 1.05;
       } else if (weapon.id === "chainsaw") {
         const body = part(new THREE.BoxGeometry(.34, .34, .55), dark, .06, .04, .37);
-        const blade = part(new THREE.BoxGeometry(.15, .12, 1.1), glow, .06, .04, 1.1, false);
-        const teeth = part(new THREE.TorusGeometry(.17, .05, 4, 12), identity, .06, .04, 1.65, false);
+        const blade = part(new THREE.CapsuleGeometry(.09, .98, 3, 7), glow, .06, .04, 1.1, false);
+        blade.rotation.x = Math.PI / 2;
+        const teeth = part(new THREE.TorusGeometry(.19, .045, 4, 18), identity, .06, .04, 1.58, false);
         teeth.rotation.x = Math.PI / 2;
+        teeth.scale.set(1, 1, 2.35);
         this.weaponGroup.add(body, blade, teeth);
         this.weaponSpinner = teeth;
         this.weaponMuzzleDistance = 1.88;
@@ -462,11 +514,32 @@ export class Fighter {
         this.weaponMuzzleDistance = 2.05 * reachScale;
       } else {
         const bladeLength = (weapon.id === "knife" ? .62 : weapon.id === "shock_baton" ? .92 : 1.12) * reachScale;
-        const blade = part(new THREE.BoxGeometry(weapon.id === "knife" ? .16 : .1, .11, bladeLength), glow, .06, .04, .43 + bladeLength * .35, false);
+        const bladeGeometry = weapon.id === "knife"
+          ? new THREE.ConeGeometry(.12, bladeLength, 5)
+          : weapon.id === "shock_baton"
+            ? new THREE.CylinderGeometry(.055, .075, bladeLength, 8)
+            : new THREE.CapsuleGeometry(.055, Math.max(.16, bladeLength - .12), 3, 7);
+        const blade = part(bladeGeometry, glow, .06, .04, .43 + bladeLength * .35, false);
+        blade.rotation.x = Math.PI / 2;
         const guard = part(new THREE.BoxGeometry(.38, .09, .1), identity, .06, .04, .18, false);
         this.weaponGroup.add(blade, guard);
         this.weaponMuzzleDistance = .55 + bladeLength;
       }
+      addSignature();
+      return;
+    }
+    if (presentation.delivery === "disc") {
+      const bracer = part(new THREE.CylinderGeometry(.18, .24, .54, 8), dark, .05, -.04, .25);
+      bracer.rotation.x = Math.PI / 2;
+      const blade = part(new THREE.TorusGeometry(.34, .085, 5, 18), glow, .05, .11, .72, false);
+      blade.rotation.x = Math.PI / 2;
+      const rim = part(new THREE.TorusGeometry(.43, .035, 4, 24), identity, .05, .11, .72, false);
+      rim.rotation.x = Math.PI / 2;
+      const hub = part(new THREE.OctahedronGeometry(.13, 0), identity, .05, .11, .72, false);
+      const grip = part(new THREE.BoxGeometry(.18, .22, .45), dark, .05, -.08, .48);
+      this.weaponGroup.add(bracer, blade, rim, hub, grip);
+      this.weaponSpinner = blade;
+      this.weaponMuzzleDistance = 1.18;
       addSignature();
       return;
     }
@@ -894,6 +967,7 @@ export class Fighter {
     this.visor.rotation.x = this.helmet.rotation.x;
     const thrust = landing > .05 ? 1.7 + landing * .7 : grappled ? 1.8 : this.grounded ? .65 : 1.2 + clamp(horizontalSpeed / 32, 0, .65);
     for (const thruster of this.thrusterLights) thruster.scale.y = THREE.MathUtils.damp(thruster.scale.y, thrust, 11, dt);
+    if (this.thrusterMaterial) this.thrusterMaterial.opacity = .32 + clamp(thrust / 2.4, 0, 1) * .48;
     const hit = this.hitTimer > 0;
     const hitFlash = hit ? .55 + hitWave * .95 : 0;
     this.armorMaterial.emissiveIntensity = .16 + hitFlash * 1.45;

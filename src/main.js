@@ -1,5 +1,7 @@
 import * as THREE from "three/webgpu";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { Line2 } from "three/addons/lines/webgpu/Line2.js";
+import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import "./styles.css";
 import { SoundBoard } from "./audio.js";
 import { CombatVisuals } from "./combatVisuals.js";
@@ -13,6 +15,39 @@ import { NeonRenderPipeline } from "./renderPipeline.js";
 const canvas = document.querySelector("#game-canvas");
 const ui = document.querySelector("#ui-root");
 const clamp = THREE.MathUtils.clamp;
+
+function weaponPreviewVariables(weapon, index) {
+  const length = 27 + index % 7 * 1.35;
+  const height = 8 + index % 5 * 1.1;
+  const angle = -8 + index * .36;
+  const offset = index % 4 * .75;
+  return `--preview-length:${length}px;--preview-height:${height}px;--preview-angle:${angle}deg;--preview-offset:${offset}px`;
+}
+
+function vortexRibbonGeometry(radius = 2.25, height = 3.8, turns = 3.4, segments = 76) {
+  const positions = [];
+  const indices = [];
+  for (let index = 0; index <= segments; index++) {
+    const t = index / segments;
+    const angle = t * Math.PI * 2 * turns;
+    const centreRadius = radius * (1 - t * .58) + Math.sin(t * Math.PI * 7) * .08;
+    const halfWidth = .07 + (1 - t) * .05;
+    for (const side of [-1, 1]) {
+      const r = centreRadius + side * halfWidth;
+      positions.push(Math.cos(angle) * r, t * height, Math.sin(angle) * r);
+    }
+    if (index < segments) {
+      const base = index * 2;
+      indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
 
 const PLAYER_COLORS = [
   { color: 0x129dba, accent: 0x6ff6ff },
@@ -64,7 +99,7 @@ class BlasterBattle {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, coarsePointer ? 1.3 : 1.65));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.12;
+    this.renderer.toneMappingExposure = 1.02;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.scene = new THREE.Scene();
@@ -83,6 +118,7 @@ class BlasterBattle {
     this.cameraFocus = new THREE.Vector3();
     this.sound = new SoundBoard();
     this.settings = loadSettings();
+    document.documentElement.classList.toggle("reduce-motion", this.settings.reducedMotion);
     this.state = "menu";
     this.paused = false;
     this.mode = "training";
@@ -109,7 +145,7 @@ class BlasterBattle {
     this.capabilities[this.renderer.backend.isWebGPUBackend === true ? "webgpu renderer" : "webgl2 fallback"] = true;
     const environment = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = environment.fromScene(new RoomEnvironment(), .04).texture;
-    this.scene.environmentIntensity = .72;
+    this.scene.environmentIntensity = .82;
     environment.dispose();
     this.renderPipeline = new NeonRenderPipeline(this.renderer, this.scene, this.camera, {
       reducedMotion: this.settings.reducedMotion,
@@ -143,8 +179,8 @@ class BlasterBattle {
   }
 
   setupLights() {
-    this.scene.add(new THREE.HemisphereLight(0x96d9ff, 0x10182a, 1.45));
-    const key = new THREE.DirectionalLight(0xffffff, 2.15);
+    this.scene.add(new THREE.HemisphereLight(0x96d9ff, 0x10182a, 1.18));
+    const key = new THREE.DirectionalLight(0xffffff, 1.78);
     key.position.set(-22, 40, 18);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
@@ -152,7 +188,7 @@ class BlasterBattle {
     key.shadow.normalBias = .035;
     Object.assign(key.shadow.camera, { left: -135, right: 135, top: 135, bottom: -135, near: 1, far: 260 });
     this.scene.add(key);
-    const rim = new THREE.DirectionalLight(0xff315f, 1.25);
+    const rim = new THREE.DirectionalLight(0xff315f, .88);
     rim.position.set(22, 15, -25);
     this.scene.add(rim);
   }
@@ -268,9 +304,10 @@ class BlasterBattle {
             <section class="loadout-presets" aria-label="Saved weapon sets" data-loadout-presets>${this.loadoutPresetsMarkup()}</section>
             <p class="loadout-status" data-loadout-status aria-live="polite"></p>
             <div class="weapon-grid">
-              ${Object.values(WEAPONS).map((weapon) => `
-                <button class="weapon-choice ${this.settings.loadout.includes(weapon.id) ? "selected" : ""}" data-weapon-choice="${weapon.id}" data-slot="${this.settings.loadout.includes(weapon.id) ? this.settings.loadout.indexOf(weapon.id) + 1 : ""}" style="--weapon:#${weapon.color.toString(16).padStart(6, "0")}">
+              ${Object.values(WEAPONS).map((weapon, index) => `
+                <button class="weapon-choice ${this.settings.loadout.includes(weapon.id) ? "selected" : ""}" data-weapon-choice="${weapon.id}" data-weapon="${weapon.id}" data-shape="${weapon.type}" data-slot="${this.settings.loadout.includes(weapon.id) ? this.settings.loadout.indexOf(weapon.id) + 1 : ""}" style="--weapon:#${weapon.color.toString(16).padStart(6, "0")};${weaponPreviewVariables(weapon, index)}">
                   <i></i>
+                  <span class="weapon-preview" aria-hidden="true"></span>
                   <b>${weapon.name}</b><em>${weapon.category}</em><small>${weapon.description}</small>
                 </button>`).join("")}
             </div>
@@ -548,6 +585,7 @@ class BlasterBattle {
     this.settings.shake = Number(ui.querySelector('[data-setting="shake"]').value);
     this.settings.volume = Number(ui.querySelector('[data-setting="volume"]').value);
     this.settings.reducedMotion = ui.querySelector('[data-setting="reducedMotion"]').checked;
+    document.documentElement.classList.toggle("reduce-motion", this.settings.reducedMotion);
     this.renderPipeline.setReducedMotion(this.settings.reducedMotion);
     saveSettings(this.settings);
     this.renderMain();
@@ -559,6 +597,10 @@ class BlasterBattle {
     this.paused = false;
     this.matchTime = 180;
     this.performanceSample = this.freshPerformanceSample();
+    const fighterCount = 1 + clampBotCount(this.settings.botCount);
+    // The full post stack is ideal for normal matches. Sixteen-fighter sessions use
+    // the lighter WebGPU bloom profile to preserve effects under maximum material load.
+    this.renderPipeline.setHighLoadMode(fighterCount >= 13);
     this.world = new ArenaWorld(this.scene, this.seed);
     this.combatVisuals = new CombatVisuals(this.scene, {
       reducedMotion: this.settings.reducedMotion,
@@ -729,7 +771,7 @@ class BlasterBattle {
     this.updateHazards(dt);
     this.updateDecoys(dt);
     this.updateEffects(dt);
-    this.combatVisuals?.update(dt);
+    this.combatVisuals?.update(dt, this.players[0]);
     this.updateRespawns(dt);
     this.updateHud();
     if (this.matchTime <= 0 || Math.max(...this.scores) >= this.targetScore) this.finishMatch();
@@ -874,15 +916,20 @@ class BlasterBattle {
     const sightline = grappleSightline(player, this.camera);
     const anchor = this.world.grapplePoint(sightline.origin, sightline.direction);
     if (!anchor) return;
-    const ropePositions = new Float32Array(10 * 3);
-    const ropeAttribute = new THREE.BufferAttribute(ropePositions, 3).setUsage(THREE.DynamicDrawUsage);
-    ropeAttribute.setXYZ(0, start.x, start.y, start.z);
-    ropeAttribute.setXYZ(1, anchor.x, anchor.y, anchor.z);
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", ropeAttribute);
-    geometry.setDrawRange(0, 2);
-    geometry.computeBoundingSphere();
-    const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: player.accent }));
+    const geometry = new LineGeometry();
+    geometry.setPositions([start.x, start.y, start.z, anchor.x, anchor.y, anchor.z]);
+    const ropeMaterial = new THREE.Line2NodeMaterial({
+      color: new THREE.Color(player.accent).multiplyScalar(1.65),
+      lineWidth: player.isBot ? 1.55 : 2.35,
+      transparent: true,
+      opacity: player.isBot ? .64 : .92,
+      depthWrite: false,
+      toneMapped: false,
+      alphaToCoverage: true
+    });
+    const line = new Line2(geometry, ropeMaterial);
+    line.frustumCulled = false;
+    line.computeLineDistances();
     this.scene.add(line);
     player.grapple = { anchor, line, wraps: [], ropeLength: Math.max(5, start.distanceTo(anchor) * .92) };
     const direction = anchor.clone().sub(start).normalize();
@@ -905,12 +952,10 @@ class BlasterBattle {
     player.grapple.wraps = wraps;
     applyGrapplePhysics(player, dt);
     const ropePoints = [chest, ...wraps, player.grapple.anchor];
-    const ropeGeometry = player.grapple.line.geometry;
-    const ropePosition = ropeGeometry.getAttribute("position");
-    ropePoints.forEach((point, index) => ropePosition.setXYZ(index, point.x, point.y, point.z));
-    ropePosition.needsUpdate = true;
-    ropeGeometry.setDrawRange(0, ropePoints.length);
-    ropeGeometry.computeBoundingSphere();
+    const ropePositions = [];
+    for (const point of ropePoints) ropePositions.push(point.x, point.y, point.z);
+    player.grapple.line.geometry.setPositions(ropePositions);
+    player.grapple.line.computeLineDistances();
   }
 
   releaseGrapple(player, boost = false) {
@@ -1465,18 +1510,20 @@ class BlasterBattle {
     if (this.hazards.length >= 24) this.removeHazard(0);
     const hazardRadius = weapon.hazard === "black_hole" ? 9 : weapon.hazard === "tornado" ? 7 : 6;
     const mesh = new THREE.Group();
+    const ringOpacity = weapon.hazard === "tornado" ? .12 : weapon.hazard === "black_hole" ? .18 : .28;
     const ring = new THREE.Mesh(
       new THREE.TorusGeometry(hazardRadius * .48, .22, 8, 34),
-      new THREE.MeshBasicMaterial({ color: weapon.color, transparent: true, opacity: .58, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false })
+      new THREE.MeshBasicMaterial({ color: weapon.color, transparent: true, opacity: ringOpacity, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false })
     );
     ring.rotation.x = Math.PI / 2;
     mesh.add(ring);
     let instances = null;
+    const fadeMaterials = [{ material: ring.material, baseOpacity: ringOpacity }];
     if (weapon.hazard === "napalm") {
       const count = 9;
       const flames = new THREE.InstancedMesh(
         new THREE.ConeGeometry(.42, 1.8, 7),
-        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .6, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .46, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }),
         count
       );
       const dummy = new THREE.Object3D();
@@ -1495,33 +1542,25 @@ class BlasterBattle {
       }
       flames.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       mesh.add(flames);
+      fadeMaterials.push({ material: flames.material, baseOpacity: .46 });
       instances = { kind: "flame", mesh: flames, dummy, bases, phases };
     } else if (weapon.hazard === "black_hole") {
-      const core = new THREE.Mesh(new THREE.SphereGeometry(1.25, 16, 10), new THREE.MeshBasicMaterial({ color: 0x020106, toneMapped: false }));
+      const core = new THREE.Mesh(new THREE.SphereGeometry(1.25, 16, 10), new THREE.MeshBasicMaterial({ color: 0x210337, transparent: true, opacity: .58, depthWrite: false, toneMapped: false }));
       const vertical = new THREE.Mesh(new THREE.TorusGeometry(2.1, .13, 7, 28), ring.material.clone());
+      vertical.material.opacity = .24;
       vertical.rotation.y = Math.PI / 2;
       mesh.add(core, vertical);
+      fadeMaterials.push({ material: core.material, baseOpacity: .58 }, { material: vertical.material, baseOpacity: .24 });
     } else {
-      const count = 6;
-      const levels = new THREE.InstancedMesh(
-        new THREE.TorusGeometry(1, .085, 6, 24),
-        ring.material.clone(),
-        count
-      );
-      const dummy = new THREE.Object3D();
-      const scales = [];
-      for (let index = 0; index < 6; index++) {
-        const scale = 1.2 + index * .42;
-        scales.push(scale);
-        dummy.position.set(0, .45 + index * .62, 0);
-        dummy.rotation.set(Math.PI / 2, 0, index * .22);
-        dummy.scale.setScalar(scale);
-        dummy.updateMatrix();
-        levels.setMatrixAt(index, dummy.matrix);
-      }
-      levels.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      mesh.add(levels);
-      instances = { kind: "vortex", mesh: levels, dummy, scales };
+      const vortexMaterial = ring.material.clone();
+      vortexMaterial.opacity = .1;
+      vortexMaterial.side = THREE.DoubleSide;
+      vortexMaterial.blending = THREE.NormalBlending;
+      const ribbon = new THREE.Mesh(vortexRibbonGeometry(), vortexMaterial);
+      ribbon.position.y = .18;
+      mesh.add(ribbon);
+      fadeMaterials.push({ material: vortexMaterial, baseOpacity: .1 });
+      instances = { kind: "ribbon", mesh: ribbon };
     }
     const hazardPosition = position.clone();
     if (weapon.hazard === "napalm") hazardPosition.y = this.world.surfaceHeightAt(hazardPosition, position.y + 2) + .12;
@@ -1530,7 +1569,7 @@ class BlasterBattle {
     this.scene.add(mesh);
     const velocity = projectileVelocity.clone().setY(0);
     if (velocity.lengthSq()) velocity.normalize().multiplyScalar(weapon.hazardSpeed || 0);
-    this.hazards.push({ mesh, owner, weapon, radius: hazardRadius, life: weapon.hazardDuration, tick: 0, velocity, elapsed: 0, instances });
+    this.hazards.push({ mesh, owner, weapon, radius: hazardRadius, life: weapon.hazardDuration, tick: 0, velocity, elapsed: 0, instances, fadeMaterials });
   }
 
   updateHazards(dt) {
@@ -1539,6 +1578,9 @@ class BlasterBattle {
       hazard.life -= dt;
       hazard.tick -= dt;
       hazard.elapsed += dt;
+      const cameraDistance = this.camera.position.distanceTo(hazard.mesh.position);
+        const proximityFade = clamp((cameraDistance - 2) / 7, .025, 1);
+      for (const entry of hazard.fadeMaterials || []) entry.material.opacity = entry.baseOpacity * proximityFade;
       hazard.mesh.rotation.y += dt * (hazard.weapon.hazard === "tornado" ? 2.6 : hazard.weapon.hazard === "black_hole" ? -1.4 : .4);
       if (hazard.weapon.hazard === "tornado" && hazard.velocity.lengthSq()) {
         const previous = hazard.mesh.position.clone();
@@ -1561,17 +1603,9 @@ class BlasterBattle {
           mesh.setMatrixAt(flameIndex, dummy.matrix);
         }
         mesh.instanceMatrix.needsUpdate = true;
-      } else if (hazard.instances?.kind === "vortex") {
-        const { mesh, dummy, scales } = hazard.instances;
-        for (let level = 0; level < scales.length; level++) {
-          const wobble = Math.sin(hazard.elapsed * 4 + level) * .1;
-          dummy.position.set(0, .45 + level * .62, 0);
-          dummy.rotation.set(Math.PI / 2 + wobble, hazard.elapsed * (2.4 + level * .3), level * .22);
-          dummy.scale.setScalar(scales[level] * (1 + Math.sin(hazard.elapsed * 6 + level) * .05));
-          dummy.updateMatrix();
-          mesh.setMatrixAt(level, dummy.matrix);
-        }
-        mesh.instanceMatrix.needsUpdate = true;
+      } else if (hazard.instances?.kind === "ribbon") {
+        hazard.instances.mesh.rotation.y += dt * 1.8;
+        hazard.instances.mesh.scale.y = 1 + Math.sin(hazard.elapsed * 5) * .035;
       }
       const pulse = 1 + Math.sin(hazard.life * 7) * .08;
       hazard.mesh.scale.setScalar(pulse);
@@ -1685,6 +1719,11 @@ class BlasterBattle {
       this.hud.damageVignette.classList.remove("visible");
       void this.hud.damageVignette.offsetWidth;
       this.hud.damageVignette.classList.add("visible");
+      clearTimeout(this.damageVignetteTimer);
+      this.damageVignetteTimer = setTimeout(
+        () => this.hud?.damageVignette?.classList.remove("visible"),
+        this.settings.reducedMotion ? 120 : 520
+      );
     }
     if (!killed || !attacker || attacker === target) return;
     const line = document.createElement("p");
@@ -1705,22 +1744,20 @@ class BlasterBattle {
     const impactWeapon = weapon || { color, type: "projectile" };
     const center = position.clone().add(new THREE.Vector3(0, 1.05, 0));
     this.combatVisuals?.impact(center, impactWeapon, attacker || target, { size: level === "full" ? 1.25 : .9 });
+    if (level !== "off") {
+      const direction = attacker?.position
+        ? target.position.clone().sub(attacker.position).normalize()
+        : new THREE.Vector3(0, 1, 0);
+      this.combatVisuals?.burst(center, 0xff315f, level === "full" ? 10 : 5, { family: "blood", direction, force: level === "full" ? 8 : 5.5 });
+      this.combatVisuals?.blood(center, direction, level === "full" ? .82 : .54);
+    }
     if (!this.settings.reducedMotion && this.settings.shake > 0 && target === this.players[0]) {
       this.camera.position.x += (Math.random() - .5) * this.settings.shake * .006;
     }
   }
 
   spawnBurst(position, color, count) {
-    for (let i = 0; i < count; i++) {
-      const mesh = new THREE.Mesh(
-        new THREE.OctahedronGeometry(.08 + Math.random() * .13),
-        new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: .85 })
-      );
-      mesh.position.copy(position).add(new THREE.Vector3(0, 1.05, 0));
-      const velocity = new THREE.Vector3((Math.random() - .5) * 7, 2 + Math.random() * 5, (Math.random() - .5) * 7);
-      this.scene.add(mesh);
-      this.effects.push({ mesh, velocity, life: .55 + Math.random() * .35 });
-    }
+    this.combatVisuals?.burst(position.clone().add(new THREE.Vector3(0, 1.05, 0)), color, count, { family: "energy", force: 7 });
   }
 
   updateEffects(dt) {
