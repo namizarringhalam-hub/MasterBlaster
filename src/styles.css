@@ -178,6 +178,35 @@ input, select {
 .loadout-builder > div:first-child { display: flex; align-items: end; justify-content: space-between; }
 .loadout-builder h2 { margin: 0; font: 800 25px/1 "Barlow Condensed", sans-serif; text-transform: uppercase; }
 .loadout-builder [data-loadout-count] { color: #4fe9ff; font-size: 12px; font-weight: 700; }
+.loadout-help { margin: 7px 0 0; color: #728b9c; font-size: 10px; line-height: 1.4; }
+.loadout-order { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; margin-top: 14px; }
+.loadout-slot { min-width: 0; padding: 9px; border: 1px solid color-mix(in srgb, var(--weapon) 60%, #27445a); border-top: 3px solid var(--weapon); border-radius: 4px; background: rgba(11, 28, 44, .92); cursor: grab; }
+.loadout-slot:active { cursor: grabbing; }
+.loadout-slot > span { color: var(--weapon); font: 900 18px/1 "Barlow Condensed", sans-serif; }
+.loadout-slot > b { display: block; min-height: 28px; margin-top: 5px; overflow: hidden; color: #eaf7ff; font: 800 13px/1.05 "Barlow Condensed", sans-serif; text-overflow: ellipsis; text-transform: uppercase; }
+.loadout-slot > div { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; margin-top: 7px; }
+.loadout-slot button { min-height: 29px; padding: 2px; color: #9db7c8; }
+.loadout-slot.empty { display: grid; place-items: center; min-height: 82px; border-style: dashed; border-top-width: 1px; color: #617b8d; }
+.loadout-slot.empty span { color: #617b8d; }
+.loadout-slot.empty small { font-size: 9px; text-transform: uppercase; }
+.preset-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-top: 22px; }
+.preset-heading h3 { margin: 0; font: 800 19px/1 "Barlow Condensed", sans-serif; text-transform: uppercase; }
+.preset-heading span { color: #728b9c; font-size: 9px; text-align: right; text-transform: uppercase; }
+.loadout-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 8px 0 18px; }
+.loadout-preset { min-width: 0; padding: 10px; border: 1px solid #294a62; border-radius: 5px; background: rgba(8, 22, 36, .8); }
+.loadout-preset.default { border-color: #ffd166; box-shadow: inset 0 0 0 1px rgba(255, 209, 102, .18); }
+.loadout-preset header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; margin: 0; }
+.loadout-preset input { min-width: 0; height: 36px; margin: 0; padding: 7px 9px; font: 800 14px "Barlow Condensed", sans-serif; text-transform: uppercase; }
+.loadout-preset header button { min-height: 36px; padding: 5px 8px; color: #8ba4b5; font-size: 9px; }
+.loadout-preset.default header button { color: #ffd166; }
+.preset-summary { display: grid; gap: 3px; min-height: 104px; margin: 9px 0; }
+.preset-summary span { overflow: hidden; color: #a8bdca; font-size: 9px; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.preset-summary i { display: inline-grid; place-items: center; width: 17px; height: 17px; margin-right: 6px; color: #4fe9ff; background: #122e44; border-radius: 2px; font-style: normal; font-weight: 900; }
+.preset-summary small { place-self: center; color: #60798b; font-size: 9px; text-transform: uppercase; }
+.loadout-preset footer { display: grid; grid-template-columns: 1fr 1.55fr 1fr; gap: 4px; }
+.loadout-preset footer button { min-width: 0; min-height: 34px; padding: 5px; font-size: 8px; }
+.loadout-preset footer button:last-child { color: #ff8496; }
+.loadout-status { min-height: 16px; margin: -8px 0 8px; color: #74eaff; font-size: 10px; font-weight: 700; }
 .weapon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; margin-top: 14px; }
 .weapon-choice { min-height: 112px; text-align: left; position: relative; overflow: hidden; }
 .weapon-choice i { position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--weapon); opacity: .8; }
@@ -186,7 +215,7 @@ input, select {
 .weapon-choice em { margin-top: 5px; color: var(--weapon); font-size: 8px; font-style: normal; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .weapon-choice small { margin-top: 8px; color: #849bab; font-size: 10px; line-height: 1.35; letter-spacing: 0; }
 .weapon-choice.selected { border-color: var(--weapon, #4fe9ff); background: #172d42; box-shadow: inset 0 0 0 1px #4fe9ff; }
-.weapon-choice.selected::after { content: "✓"; position: absolute; right: 9px; top: 7px; color: #4fe9ff; }
+.weapon-choice.selected::after { content: attr(data-slot); position: absolute; right: 9px; top: 7px; display: grid; place-items: center; width: 21px; height: 21px; color: #07111d; background: #4fe9ff; border-radius: 50%; font: 900 12px/1 "Barlow Condensed", sans-serif; }
 .launch { width: 100%; margin-top: 22px; min-height: 58px; }
 .prototype-note { margin: 14px 0 0; text-align: center; color: #6e8698; font-size: 10px; letter-spacing: .06em; }
 
@@ -360,6 +389,14 @@ input, select {
   .overlay { padding: 12px; place-items: start center; }
   .dialog { margin: 12px 0; padding: 22px; }
   .setup-form { grid-template-columns: 1fr; }
+  .loadout-order { grid-template-columns: repeat(5, minmax(160px, 1fr)); overflow-x: auto; padding-bottom: 5px; scroll-snap-type: x proximity; touch-action: pan-x; }
+  .loadout-slot { scroll-snap-align: start; }
+  .loadout-slot button, .loadout-preset header button, .loadout-preset footer button { min-height: 44px; }
+  .loadout-preset input { height: 44px; }
+  .loadout-preset footer button, .preset-summary span, .preset-heading span { font-size: 10px; }
+  .preset-heading { align-items: start; }
+  .loadout-presets { grid-template-columns: 1fr; }
+  .preset-summary { min-height: 0; }
   .weapon-grid { grid-template-columns: repeat(2, 1fr); }
   .combatant { width: 38vw; top: 10px; padding: 9px; }
   .combatant.left { left: 10px; }

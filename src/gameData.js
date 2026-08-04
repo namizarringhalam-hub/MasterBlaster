@@ -1,4 +1,5 @@
 const SAVE_KEY = "blaster-battle-settings-v1";
+export const LOADOUT_PRESET_COUNT = 3;
 
 export const MAP_THEMES = [
   { id: "foundry", name: "Neon Foundry", ground: 0x102234, grid: 0x1fd7ff, accent: 0x67f4ff, danger: 0xff416c, haze: 0x173149 },
@@ -145,6 +146,17 @@ export function excessOwnedProjectiles(projectiles, owner, weaponId, limit) {
 
 export const DEFAULT_LOADOUT = LOADOUT_SLOTS.map((slot) => slot.defaultWeapon);
 
+function validLoadout(value) {
+  return Array.isArray(value) ? [...new Set(value.filter((id) => WEAPONS[id]))].slice(0, LOADOUT_SLOTS.length) : [];
+}
+
+export function activePresetLoadout(settings) {
+  const index = settings?.defaultLoadoutPreset;
+  if (!Number.isInteger(index) || index < 0 || index >= LOADOUT_PRESET_COUNT) return null;
+  const loadout = validLoadout(settings.loadoutPresets?.[index]?.weaponIds);
+  return loadout.length === LOADOUT_SLOTS.length ? loadout : null;
+}
+
 export function randomLoadout(random = Math.random) {
   const pool = Object.keys(WEAPONS);
   for (let index = pool.length - 1; index >= pool.length - LOADOUT_SLOTS.length; index--) {
@@ -193,18 +205,30 @@ function defaults() {
     reducedMotion: false,
     volume: 70,
     botCount: 1,
-    loadout: [...DEFAULT_LOADOUT]
+    loadout: [...DEFAULT_LOADOUT],
+    loadoutPresets: Array(LOADOUT_PRESET_COUNT).fill(null),
+    defaultLoadoutPreset: null
   };
 }
 
 export function loadSettings() {
   try {
     const saved = JSON.parse(localStorage.getItem(SAVE_KEY) || "{}");
-    const loadout = Array.isArray(saved.loadout)
-      ? [...new Set(saved.loadout.filter((id) => WEAPONS[id]))].slice(0, 5)
-      : [];
-    for (const id of DEFAULT_LOADOUT) if (loadout.length < 5 && !loadout.includes(id)) loadout.push(id);
-    return { ...defaults(), ...saved, loadout };
+    const loadout = validLoadout(saved.loadout);
+    for (const id of DEFAULT_LOADOUT) if (loadout.length < LOADOUT_SLOTS.length && !loadout.includes(id)) loadout.push(id);
+    const loadoutPresets = Array.from({ length: LOADOUT_PRESET_COUNT }, (_, index) => {
+      const preset = saved.loadoutPresets?.[index];
+      const weaponIds = validLoadout(preset?.weaponIds);
+      if (weaponIds.length !== LOADOUT_SLOTS.length) return null;
+      return {
+        name: String(preset.name || `Set ${index + 1}`).trim().slice(0, 18) || `Set ${index + 1}`,
+        weaponIds
+      };
+    });
+    const defaultLoadoutPreset = Number.isInteger(saved.defaultLoadoutPreset) && loadoutPresets[saved.defaultLoadoutPreset]
+      ? saved.defaultLoadoutPreset
+      : null;
+    return { ...defaults(), ...saved, loadout, loadoutPresets, defaultLoadoutPreset };
   } catch {
     return defaults();
   }

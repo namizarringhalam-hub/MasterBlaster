@@ -3,15 +3,16 @@ import { readFile } from "node:fs/promises";
 import * as THREE from "three";
 import { chooseBotSlot, botFireChance, botWeaponPolicy, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
 import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
-import { DEFAULT_LOADOUT, excessOwnedProjectiles, LOADOUT_SLOTS, projectileLifetime, projectileStepCount, randomLoadout, seededRandom, seedFromText, swapStolenWeapon, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
+import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, LOADOUT_PRESET_COUNT, LOADOUT_SLOTS, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, seededRandom, seedFromText, swapStolenWeapon, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
 import { InputManager, TOUCH_LOOK_GAIN, clearTouchActions, shouldCaptureGameKey, touchLookDelta, touchMoveDelta, updateOrbit } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, flameConeFactor, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
 import { weaponPresentation } from "../src/weaponPresentation.js";
 
-const [mainSource, serviceWorkerSource] = await Promise.all([
+const [mainSource, serviceWorkerSource, stylesSource] = await Promise.all([
   readFile(new URL("../src/main.js", import.meta.url), "utf8"),
-  readFile(new URL("../public/sw.js", import.meta.url), "utf8")
+  readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
+  readFile(new URL("../src/styles.css", import.meta.url), "utf8")
 ]);
 assert.doesNotMatch(mainSource, /serviceWorker\.register/, "the game no longer installs the stale offline cache");
 assert.match(mainSource, /reticleAim\(player, this\.camera\.position, this\.camera\.getWorldDirection/, "weapons fire through the visible camera's exact center ray");
@@ -38,6 +39,36 @@ const documentedWeaponIds = [
 assert.equal(Object.keys(WEAPONS).length, 47, "the game exposes the complete documented library, Flamethrower, and Fireball");
 assert.equal(LOADOUT_SLOTS.length, 5, "players carry five main weapons");
 assert.equal(DEFAULT_LOADOUT.length, 5, "the default loadout is match-ready");
+assert.equal(LOADOUT_PRESET_COUNT, 3, "players can save exactly three weapon sets");
+const savedSet = ["railgun", "fireball", "shotgun", "freeze_gun", "grapple_disrupting_pulse"];
+assert.deepEqual(activePresetLoadout({ defaultLoadoutPreset: 1, loadoutPresets: [null, { weaponIds: savedSet }, null] }), savedSet, "the chosen default preset preserves exact weapon order");
+assert.equal(activePresetLoadout({ defaultLoadoutPreset: 0, loadoutPresets: [{ weaponIds: ["railgun"] }] }), null, "incomplete presets cannot override a match loadout");
+let settingsStorage = JSON.stringify({ loadout: savedSet });
+globalThis.localStorage = {
+  getItem: () => settingsStorage,
+  setItem: (_key, value) => { settingsStorage = value; }
+};
+const legacySettings = loadSettings();
+assert.deepEqual(legacySettings.loadout, savedSet, "legacy loadout-only settings migrate without changing weapon order");
+assert.deepEqual(legacySettings.loadoutPresets, [null, null, null], "legacy settings gain three empty preset slots");
+legacySettings.loadoutPresets[0] = { name: "Control", weaponIds: [...savedSet] };
+legacySettings.defaultLoadoutPreset = 0;
+saveSettings(legacySettings);
+const persistedPresetSettings = loadSettings();
+settingsStorage = JSON.stringify({ loadoutPresets: [{ name: "Broken", weaponIds: ["railgun", "railgun", "missing"] }], defaultLoadoutPreset: 0 });
+const repairedPresetSettings = loadSettings();
+delete globalThis.localStorage;
+assert.deepEqual(persistedPresetSettings.loadoutPresets[0], { name: "Control", weaponIds: savedSet }, "saved weapon sets survive a settings reload without losing order");
+assert.equal(persistedPresetSettings.defaultLoadoutPreset, 0, "the default-set choice survives a settings reload");
+assert.deepEqual(repairedPresetSettings.loadoutPresets, [null, null, null], "corrupt and partial presets are discarded safely");
+assert.equal(repairedPresetSettings.defaultLoadoutPreset, null, "an invalid preset cannot remain the default");
+assert.match(mainSource, /savedDefault = activePresetLoadout\(this\.settings\)[\s\S]*?if \(savedDefault\) this\.settings\.loadout = \[\.\.\.savedDefault\]/, "saved defaults apply to every setup mode");
+assert.match(mainSource, /mode === "quick"[\s\S]*?if \(!savedDefault\) this\.settings\.loadout = randomLoadout\(\)/, "Quick Play randomizes only when no default preset exists");
+assert.match(mainSource, /confirm\(`Replace \$\{existing\.name\}/, "overwriting a saved preset requires confirmation");
+assert.match(mainSource, /confirm\(`Clear \$\{preset\.name\}/, "clearing a saved preset requires confirmation");
+assert.match(mainSource, /aria-live="polite"/, "loadout changes are announced to assistive technology");
+assert.match(mainSource, /aria-pressed="\$\{isDefault\}"/, "default preset controls expose their active state");
+assert.match(stylesSource, /minmax\(160px, 1fr\)[\s\S]*?min-height: 44px/, "mobile reorder controls retain reliable touch dimensions");
 const visualOwner = { accent: 0x44eeff };
 for (const id of ["machine_gun", "railgun", "rocket_launcher", "grenade_launcher", "plasma_cannon"]) {
   const projectileVisual = createProjectileVisual(WEAPONS[id], visualOwner, WEAPONS[id].projectileRadius || .11);

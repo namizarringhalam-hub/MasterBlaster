@@ -6,7 +6,7 @@ import { CombatVisuals } from "./combatVisuals.js";
 import { ArenaWorld } from "./world.js";
 import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reticleAim } from "./player.js";
 import { InputManager, clearTouchActions, updateOrbit } from "./input.js";
-import { DEFAULT_LOADOUT, excessOwnedProjectiles, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, weaponFireMode, WEAPONS } from "./gameData.js";
+import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, weaponFireMode, WEAPONS } from "./gameData.js";
 import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, clampBotCount, nearestTarget, safestSpawn, shouldBotPlaceWall } from "./botBrain.js";
 
 const canvas = document.querySelector("#game-canvas");
@@ -187,8 +187,10 @@ class BlasterBattle {
 
   renderSetup(mode) {
     this.mode = mode;
+    const savedDefault = activePresetLoadout(this.settings);
+    if (savedDefault) this.settings.loadout = [...savedDefault];
     if (mode === "quick") {
-      this.settings.loadout = randomLoadout();
+      if (!savedDefault) this.settings.loadout = randomLoadout();
       this.settings.botCount = 7;
       this.botDifficulty = "normal";
     }
@@ -216,9 +218,14 @@ class BlasterBattle {
           </div>
           <section class="loadout-builder">
             <div><h2>Choose five weapons</h2><span data-loadout-count>${this.settings.loadout.length}/5 selected</span></div>
+            <p class="loadout-help">Weapon order becomes slots 1â€“5. Drag on desktop or use the arrow controls on any device.</p>
+            <div class="loadout-order" data-loadout-order>${this.loadoutOrderMarkup()}</div>
+            <div class="preset-heading"><h3>Saved sets</h3><span>One default applies automatically to every game</span></div>
+            <section class="loadout-presets" aria-label="Saved weapon sets" data-loadout-presets>${this.loadoutPresetsMarkup()}</section>
+            <p class="loadout-status" data-loadout-status aria-live="polite"></p>
             <div class="weapon-grid">
               ${Object.values(WEAPONS).map((weapon) => `
-                <button class="weapon-choice ${this.settings.loadout.includes(weapon.id) ? "selected" : ""}" data-weapon-choice="${weapon.id}" style="--weapon:#${weapon.color.toString(16).padStart(6, "0")}">
+                <button class="weapon-choice ${this.settings.loadout.includes(weapon.id) ? "selected" : ""}" data-weapon-choice="${weapon.id}" data-slot="${this.settings.loadout.includes(weapon.id) ? this.settings.loadout.indexOf(weapon.id) + 1 : ""}" style="--weapon:#${weapon.color.toString(16).padStart(6, "0")}">
                   <i></i>
                   <b>${weapon.name}</b><em>${weapon.category}</em><small>${weapon.description}</small>
                 </button>`).join("")}
@@ -229,6 +236,45 @@ class BlasterBattle {
         </section>
       </main>`;
     this.bindUi();
+  }
+
+  loadoutOrderMarkup() {
+    return Array.from({ length: 5 }, (_, index) => {
+      const id = this.settings.loadout[index];
+      const weapon = WEAPONS[id];
+      if (!weapon) return `<div class="loadout-slot empty"><span>${index + 1}</span><small>Empty slot</small></div>`;
+      const color = `#${weapon.color.toString(16).padStart(6, "0")}`;
+      return `<div class="loadout-slot" draggable="true" data-loadout-drag="${index}" style="--weapon:${color}">
+        <span>${index + 1}</span><b>${escapeHtml(weapon.name)}</b>
+        <div>
+          <button data-loadout-move="${index}" data-direction="-1" aria-label="Move ${escapeHtml(weapon.name)} left" ${index === 0 ? "disabled" : ""}>‹</button>
+          <button data-loadout-move="${index}" data-direction="1" aria-label="Move ${escapeHtml(weapon.name)} right" ${index === this.settings.loadout.length - 1 ? "disabled" : ""}>›</button>
+          <button data-loadout-remove="${index}" aria-label="Remove ${escapeHtml(weapon.name)}">×</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  loadoutPresetsMarkup() {
+    return Array.from({ length: LOADOUT_PRESET_COUNT }, (_, index) => {
+      const preset = this.settings.loadoutPresets[index];
+      const isDefault = this.settings.defaultLoadoutPreset === index;
+      const name = preset?.name || `Set ${index + 1}`;
+      const label = escapeHtml(name);
+      const summary = preset ? preset.weaponIds.map((id, slot) => `<span><i>${slot + 1}</i>${escapeHtml(WEAPONS[id].name)}</span>`).join("") : `<small>No saved weapons</small>`;
+      return `<article class="loadout-preset ${isDefault ? "default" : ""}" aria-label="${label} weapon set">
+        <header>
+          <input value="${label}" maxlength="18" data-preset-name="${index}" aria-label="Name for weapon set ${index + 1}">
+          <button data-preset-default="${index}" ${preset ? "" : "disabled"} aria-label="${isDefault ? `Remove ${label} as default` : `Make ${label} the default`} weapon set" aria-pressed="${isDefault}">${isDefault ? "★ DEFAULT" : "☆ DEFAULT"}</button>
+        </header>
+        <div class="preset-summary">${summary}</div>
+        <footer>
+          <button data-preset-load="${index}" ${preset ? "" : "disabled"} aria-label="Load ${label} weapon set">LOAD</button>
+          <button data-preset-save="${index}" ${this.settings.loadout.length === 5 ? "" : "disabled"} aria-label="Save current loadout to ${label}">SAVE CURRENT</button>
+          <button data-preset-clear="${index}" ${preset ? "" : "disabled"} aria-label="Clear ${label} weapon set">CLEAR</button>
+        </footer>
+      </article>`;
+    }).join("");
   }
 
   renderSettings() {
@@ -287,11 +333,35 @@ class BlasterBattle {
       if (button.dataset.screen === "credits") return this.renderCredits();
       if (button.dataset.mode) return this.renderSetup(button.dataset.mode);
       if (button.dataset.weaponChoice) return this.toggleLoadout(button.dataset.weaponChoice);
+      if (button.dataset.loadoutMove) return this.moveLoadout(Number(button.dataset.loadoutMove), Number(button.dataset.direction));
+      if (button.dataset.loadoutRemove) return this.removeLoadout(Number(button.dataset.loadoutRemove));
+      if (button.dataset.presetLoad) return this.loadPreset(Number(button.dataset.presetLoad));
+      if (button.dataset.presetSave) return this.savePreset(Number(button.dataset.presetSave));
+      if (button.dataset.presetDefault) return this.toggleDefaultPreset(Number(button.dataset.presetDefault));
+      if (button.dataset.presetClear) return this.clearPreset(Number(button.dataset.presetClear));
       if (button.dataset.weaponSlot) return this.players[0]?.switchSlot(Number(button.dataset.weaponSlot));
       if (button.dataset.action === "start") return this.captureSetupAndStart();
       if (button.dataset.action === "pause") return this.togglePause();
       if (button.dataset.action === "rematch") return this.startMatch();
       if (button.dataset.action === "save-settings") return this.saveSettingsForm();
+    };
+    ui.onchange = (event) => {
+      if (event.target.dataset.presetName) this.renamePreset(Number(event.target.dataset.presetName), event.target.value);
+    };
+    ui.ondragstart = (event) => {
+      const slot = event.target.closest?.("[data-loadout-drag]");
+      if (!slot) return;
+      event.dataTransfer.setData("text/plain", slot.dataset.loadoutDrag);
+      event.dataTransfer.effectAllowed = "move";
+    };
+    ui.ondragover = (event) => {
+      if (event.target.closest?.("[data-loadout-drag]")) event.preventDefault();
+    };
+    ui.ondrop = (event) => {
+      const slot = event.target.closest?.("[data-loadout-drag]");
+      if (!slot) return;
+      event.preventDefault();
+      this.moveLoadoutTo(Number(event.dataTransfer.getData("text/plain")), Number(slot.dataset.loadoutDrag));
     };
   }
 
@@ -300,13 +370,123 @@ class BlasterBattle {
     const index = current.indexOf(id);
     if (index >= 0) current.splice(index, 1);
     else if (current.length < 5) current.push(id);
+    else return this.announceLoadout("All five weapon slots are full.");
     this.settings.loadout = current;
-    const button = ui.querySelector(`[data-weapon-choice="${id}"]`);
-    button?.classList.toggle("selected", current.includes(id));
+    this.updateLoadoutUi();
+    this.announceLoadout(index >= 0 ? `${WEAPONS[id].name} removed.` : `${WEAPONS[id].name} added to slot ${current.length}.`);
+  }
+
+  moveLoadout(index, direction) {
+    const next = index + direction;
+    if (!this.settings.loadout[index] || next < 0 || next >= this.settings.loadout.length) return;
+    const name = WEAPONS[this.settings.loadout[index]].name;
+    [this.settings.loadout[index], this.settings.loadout[next]] = [this.settings.loadout[next], this.settings.loadout[index]];
+    const focusDirection = next + direction >= 0 && next + direction < this.settings.loadout.length ? direction : -direction;
+    this.updateLoadoutUi(`[data-loadout-move="${next}"][data-direction="${focusDirection}"]`);
+    this.announceLoadout(`${name} moved to slot ${next + 1}.`);
+  }
+
+  moveLoadoutTo(from, to) {
+    if (from === to || !this.settings.loadout[from] || !this.settings.loadout[to]) return;
+    const [weapon] = this.settings.loadout.splice(from, 1);
+    this.settings.loadout.splice(to, 0, weapon);
+    this.updateLoadoutUi();
+    this.announceLoadout(`${WEAPONS[weapon].name} moved to slot ${to + 1}.`);
+  }
+
+  removeLoadout(index) {
+    if (index < 0 || index >= this.settings.loadout.length) return;
+    const [weapon] = this.settings.loadout.splice(index, 1);
+    this.updateLoadoutUi(`[data-weapon-choice="${weapon}"]`);
+    this.announceLoadout(`${WEAPONS[weapon].name} removed.`);
+  }
+
+  loadPreset(index) {
+    const preset = this.settings.loadoutPresets[index];
+    if (!preset) return;
+    this.settings.loadout = [...preset.weaponIds];
+    this.updateLoadoutUi(`[data-preset-load="${index}"]`);
+    this.announceLoadout(`${preset.name} loaded in slots 1 through 5.`);
+  }
+
+  savePreset(index) {
+    if (index < 0 || index >= LOADOUT_PRESET_COUNT || this.settings.loadout.length !== 5) return;
+    const name = ui.querySelector(`[data-preset-name="${index}"]`)?.value.trim().slice(0, 18) || `Set ${index + 1}`;
+    const existing = this.settings.loadoutPresets[index];
+    const unchanged = existing?.name === name && existing.weaponIds.every((id, slot) => id === this.settings.loadout[slot]);
+    if (existing && !unchanged && !globalThis.confirm(`Replace ${existing.name} with the current weapon order?`)) return;
+    const firstPreset = !this.settings.loadoutPresets.some(Boolean);
+    this.settings.loadoutPresets[index] = { name, weaponIds: [...this.settings.loadout] };
+    if (firstPreset) this.settings.defaultLoadoutPreset = index;
+    saveSettings(this.settings);
+    this.updateLoadoutUi(`[data-preset-save="${index}"]`);
+    this.announceLoadout(`${name} saved${firstPreset ? " and set as default" : ""}.`);
+  }
+
+  renamePreset(index, value) {
+    const preset = this.settings.loadoutPresets[index];
+    if (!preset) return;
+    preset.name = value.trim().slice(0, 18) || `Set ${index + 1}`;
+    saveSettings(this.settings);
+    const input = ui.querySelector(`[data-preset-name="${index}"]`);
+    if (input) input.value = preset.name;
+    const label = preset.name;
+    const article = input?.closest(".loadout-preset");
+    article?.setAttribute("aria-label", `${label} weapon set`);
+    article?.querySelector("[data-preset-load]")?.setAttribute("aria-label", `Load ${label} weapon set`);
+    article?.querySelector("[data-preset-save]")?.setAttribute("aria-label", `Save current loadout to ${label}`);
+    article?.querySelector("[data-preset-clear]")?.setAttribute("aria-label", `Clear ${label} weapon set`);
+    article?.querySelector("[data-preset-default]")?.setAttribute("aria-label", this.settings.defaultLoadoutPreset === index
+      ? `Remove ${label} as default weapon set`
+      : `Make ${label} the default weapon set`);
+    this.announceLoadout(`Weapon set renamed to ${preset.name}.`);
+  }
+
+  toggleDefaultPreset(index) {
+    if (!this.settings.loadoutPresets[index]) return;
+    if (this.settings.defaultLoadoutPreset === index) this.settings.defaultLoadoutPreset = null;
+    else {
+      this.settings.defaultLoadoutPreset = index;
+      this.settings.loadout = [...this.settings.loadoutPresets[index].weaponIds];
+    }
+    saveSettings(this.settings);
+    this.updateLoadoutUi(`[data-preset-default="${index}"]`);
+    this.announceLoadout(this.settings.defaultLoadoutPreset === index
+      ? `${this.settings.loadoutPresets[index].name} is now the default and has been loaded.`
+      : "Default weapon set cleared.");
+  }
+
+  clearPreset(index) {
+    if (index < 0 || index >= LOADOUT_PRESET_COUNT) return;
+    const preset = this.settings.loadoutPresets[index];
+    if (!preset || !globalThis.confirm(`Clear ${preset.name}? This cannot be undone.`)) return;
+    this.settings.loadoutPresets[index] = null;
+    if (this.settings.defaultLoadoutPreset === index) this.settings.defaultLoadoutPreset = null;
+    saveSettings(this.settings);
+    this.updateLoadoutUi(`[data-preset-save="${index}"]`);
+    this.announceLoadout(`${preset.name} cleared.`);
+  }
+
+  updateLoadoutUi(focusSelector = "") {
+    for (const button of ui.querySelectorAll("[data-weapon-choice]")) {
+      const index = this.settings.loadout.indexOf(button.dataset.weaponChoice);
+      button.classList.toggle("selected", index >= 0);
+      button.dataset.slot = index >= 0 ? index + 1 : "";
+    }
+    const order = ui.querySelector("[data-loadout-order]");
+    if (order) order.innerHTML = this.loadoutOrderMarkup();
+    const presets = ui.querySelector("[data-loadout-presets]");
+    if (presets) presets.innerHTML = this.loadoutPresetsMarkup();
     const count = ui.querySelector("[data-loadout-count]");
-    if (count) count.textContent = `${current.length}/5 selected`;
+    if (count) count.textContent = `${this.settings.loadout.length}/5 selected`;
     const launch = ui.querySelector('[data-action="start"]');
-    if (launch) launch.disabled = current.length !== 5;
+    if (launch) launch.disabled = this.settings.loadout.length !== 5;
+    if (focusSelector) ui.querySelector(focusSelector)?.focus({ preventScroll: true });
+  }
+
+  announceLoadout(message) {
+    const status = ui.querySelector("[data-loadout-status]");
+    if (status) status.textContent = message;
   }
 
   captureSetupAndStart() {
