@@ -1593,22 +1593,23 @@ export class ArenaWorld {
 
   spawnPoints() {
     return [
-      new THREE.Vector3(-12, 66, 12),
-      new THREE.Vector3(-8, 66, 6),
-      new THREE.Vector3(-4, 66, 11),
-      new THREE.Vector3(4, 66, 10),
-      new THREE.Vector3(10, 66, 5),
-      new THREE.Vector3(8, 66, -8),
+      // Opening fighters occupy separate major platforms instead of stacking on the spire.
+      new THREE.Vector3(10, 66, 0),
+      new THREE.Vector3(-60, 15, -48),
+      new THREE.Vector3(61, 15, 49),
+      new THREE.Vector3(54, 31, 33),
+      new THREE.Vector3(-53, 47, -27),
+      new THREE.Vector3(50, 31, -22),
+      new THREE.Vector3(-50, 47, 30),
       new THREE.Vector3(-14, 15, -14),
-      new THREE.Vector3(14, 15, -14),
       new THREE.Vector3(88, 0, 88),
       new THREE.Vector3(-88, 0, 88),
       new THREE.Vector3(88, 0, -88),
       new THREE.Vector3(-88, 0, -88),
-      new THREE.Vector3(-52, 15, -48),
-      new THREE.Vector3(54, 31, 33),
-      new THREE.Vector3(53, 15, 49),
-      new THREE.Vector3(-52, 47, 20)
+      new THREE.Vector3(88, 0, 0),
+      new THREE.Vector3(-88, 0, 0),
+      new THREE.Vector3(0, 0, 88),
+      new THREE.Vector3(0, 0, -88)
     ];
   }
 
