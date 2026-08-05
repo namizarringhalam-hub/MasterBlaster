@@ -238,7 +238,7 @@ const transferredCharges = Array.from({ length: 8 }, (_, age) => ({ owner: remot
 assert.deepEqual(excessOwnedProjectiles(transferredCharges, remoteOwner, "remote_explosive", 4).map((shot) => shot.age), [7, 6, 5, 4], "a 4+4 remote-charge ownership transfer selects every oldest excess charge and restores the four-charge cap");
 assert.match(mainSource, /hazard\.weapon\.hazard === "tornado"[\s\S]*?addScaledVector\(hazard\.velocity, dt\)[\s\S]*?hazard\.mesh\.position\.copy\(next\)/, "tornado hazards travel after impact rather than remaining a flat stationary ring");
 assert.match(mainSource, /updateWeaponLoop\(player\.id, player\.weapon, fireHeld && player\.weapon\.maintained/, "maintained human weapons keep a continuous audiovisual loop while held");
-assert.match(mainSource, /updateChargeLoop\(player\.id, weapon, player\.chargeLevel, distanceScale\)/, "charged shots escalate a continuous wind-up cue with their charge level");
+assert.match(mainSource, /updateChargeLoop\(player\.id, weapon, player\.chargeLevel, this\.audioSpatial\(/, "charged shots escalate a continuous spatial wind-up cue with their charge level");
 assert.match(mainSource, /if \(!bot\.alive\)[\s\S]*?stopChargeLoop\(bot\.id\)[\s\S]*?if \(!target\)[\s\S]*?stopChargeLoop\(bot\.id\)/, "dead and targetless bots always stop charged-rifle wind-up audio");
 assert.match(mainSource, /stolenId === "remote_explosive"[\s\S]*?trimRemoteCharges\(attacker, WEAPONS\[stolenId\], WEAPONS\[stolenId\]\.maxCharges\)/, "stealing Remote Explosives immediately restores the receiver's charge cap");
 assert.match(mainSource, /weapon\.type === "remote"[\s\S]*?\$\{armed\} ARMED/, "the Remote Explosive HUD displays its live armed-charge count");

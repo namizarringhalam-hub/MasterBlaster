@@ -120,6 +120,9 @@ class BlasterBattle {
     this.cameraFocus = new THREE.Vector3();
     this.sound = new SoundBoard();
     this.settings = loadSettings();
+    this.sound.setVolume(this.settings.volume);
+    this.sound.setMix({ music: this.settings.musicVolume, effects: this.settings.effectsVolume, ambience: this.settings.ambienceVolume });
+    this.sound.setDynamicRange(this.settings.dynamicRange);
     document.documentElement.classList.toggle("reduce-motion", this.settings.reducedMotion);
     this.state = "menu";
     this.paused = false;
@@ -136,9 +139,13 @@ class BlasterBattle {
     this.respawnTimers = [];
     this.scores = [];
     this.matchTime = 180;
+    this.matchStartDelay = 0;
+    this.countdownBeat = 0;
+    this.audioCountdown = false;
     this.targetScore = 10;
     this.touch = {};
     this.performanceSample = this.freshPerformanceSample();
+    this.audioMixTimer = 0;
     this.setupLights();
   }
 
@@ -173,9 +180,11 @@ class BlasterBattle {
     addEventListener("resize", () => this.resize());
     addEventListener("blur", () => clearTouchActions(this.touch));
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) return;
-      clearTouchActions(this.touch);
-      if (this.state === "play" && !this.paused) this.togglePause();
+      if (document.hidden) {
+        clearTouchActions(this.touch);
+        if (this.state === "play" && !this.paused) this.togglePause();
+      }
+      this.sound.setPaused(document.hidden || this.paused);
     });
     await this.renderer.setAnimationLoop((time) => this.frame(time));
   }
@@ -213,9 +222,8 @@ class BlasterBattle {
     this.combatVisuals = null;
     this.world?.dispose();
     for (const player of this.players) {
-      this.sound.updateWeaponLoop(player.id, player.weapon, false);
-      this.sound.stopChargeLoop(player.id);
-      this.releaseGrapple(player);
+      this.sound.stopOwner(player.id);
+      this.releaseGrapple(player, false, true);
       player.dispose();
     }
     for (const shot of this.projectiles) {
@@ -231,12 +239,15 @@ class BlasterBattle {
     this.hazards = [];
     this.decoys = [];
     this.effects = [];
+    this.sound.stopAll();
   }
 
   renderMain() {
     this.state = "menu";
     this.paused = false;
     this.clearMatch();
+    this.sound.setPaused(false);
+    this.sound.setMusicScene("menu");
     const checks = Object.entries(this.capabilities)
       .map(([name, ok]) => `<span class="${ok ? "ok" : "bad"}">${ok ? "●" : "×"} ${name.toUpperCase()}</span>`)
       .join("");
@@ -388,6 +399,20 @@ class BlasterBattle {
             <label>Master volume <output>${this.settings.volume}%</output>
               <input type="range" min="0" max="100" value="${this.settings.volume}" data-setting="volume">
             </label>
+            <label>Music volume <output>${this.settings.musicVolume}%</output>
+              <input type="range" min="0" max="100" value="${this.settings.musicVolume}" data-setting="musicVolume">
+            </label>
+            <label>Effects volume <output>${this.settings.effectsVolume}%</output>
+              <input type="range" min="0" max="100" value="${this.settings.effectsVolume}" data-setting="effectsVolume">
+            </label>
+            <label>Ambience volume <output>${this.settings.ambienceVolume}%</output>
+              <input type="range" min="0" max="100" value="${this.settings.ambienceVolume}" data-setting="ambienceVolume">
+            </label>
+            <label>Dynamic range
+              <select data-setting="dynamicRange">
+                ${["wide", "standard", "night"].map((value) => `<option ${this.settings.dynamicRange === value ? "selected" : ""}>${value}</option>`).join("")}
+              </select>
+            </label>
             <label class="toggle"><input type="checkbox" data-setting="reducedMotion" ${this.settings.reducedMotion ? "checked" : ""}> Reduce motion and flashes</label>
           </div>
           <button class="primary" data-action="save-settings">SAVE SETTINGS</button>
@@ -421,6 +446,12 @@ class BlasterBattle {
       const button = event.target.closest("button");
       if (!button) return;
       this.sound.resume();
+      this.sound.setVolume(this.settings.volume);
+      this.sound.startMusic(this.state === "play" ? "combat" : "menu", this.seed);
+      const menuWeapon = button.dataset.weaponChoice
+        ? WEAPONS[button.dataset.weaponChoice]
+        : button.dataset.weaponSlot != null ? WEAPONS[this.players[0]?.loadout[Number(button.dataset.weaponSlot)]] : null;
+      this.sound.play(button.dataset.screen === "main" ? "uiBack" : button.dataset.weaponChoice || button.dataset.weaponSlot ? "weaponSelect" : "uiConfirm", menuWeapon);
       if (button.dataset.screen === "main") return this.renderMain();
       if (button.dataset.screen === "settings") return this.renderSettings();
       if (button.dataset.screen === "credits") return this.renderCredits();
@@ -440,6 +471,19 @@ class BlasterBattle {
     };
     ui.onchange = (event) => {
       if (event.target.dataset.presetName) this.renamePreset(Number(event.target.dataset.presetName), event.target.value);
+    };
+    ui.oninput = (event) => {
+      if (!["volume", "musicVolume", "effectsVolume", "ambienceVolume"].includes(event.target.dataset.setting)) return;
+      event.target.closest("label")?.querySelector("output")?.replaceChildren(`${event.target.value}%`);
+      this.settings[event.target.dataset.setting] = Number(event.target.value);
+      if (event.target.dataset.setting === "volume") this.sound.setVolume(this.settings.volume);
+      else this.sound.setMix({
+        music: this.settings.musicVolume, effects: this.settings.effectsVolume, ambience: this.settings.ambienceVolume
+      });
+    };
+    ui.onpointerover = (event) => {
+      const button = event.target.closest?.("button");
+      if (button && !button.disabled && event.relatedTarget?.closest?.("button") !== button) this.sound.play("uiHover");
     };
     ui.ondragstart = (event) => {
       const slot = event.target.closest?.("[data-loadout-drag]");
@@ -596,6 +640,13 @@ class BlasterBattle {
     this.settings.blood = ui.querySelector('[data-setting="blood"]').value;
     this.settings.shake = Number(ui.querySelector('[data-setting="shake"]').value);
     this.settings.volume = Number(ui.querySelector('[data-setting="volume"]').value);
+    this.settings.musicVolume = Number(ui.querySelector('[data-setting="musicVolume"]').value);
+    this.settings.effectsVolume = Number(ui.querySelector('[data-setting="effectsVolume"]').value);
+    this.settings.ambienceVolume = Number(ui.querySelector('[data-setting="ambienceVolume"]').value);
+    this.settings.dynamicRange = ui.querySelector('[data-setting="dynamicRange"]').value;
+    this.sound.setVolume(this.settings.volume);
+    this.sound.setMix({ music: this.settings.musicVolume, effects: this.settings.effectsVolume, ambience: this.settings.ambienceVolume });
+    this.sound.setDynamicRange(this.settings.dynamicRange);
     this.settings.reducedMotion = ui.querySelector('[data-setting="reducedMotion"]').checked;
     document.documentElement.classList.toggle("reduce-motion", this.settings.reducedMotion);
     this.renderPipeline.setReducedMotion(this.settings.reducedMotion);
@@ -608,6 +659,9 @@ class BlasterBattle {
     this.state = "play";
     this.paused = false;
     this.matchTime = 180;
+    this.matchStartDelay = 60 / 132 * 8;
+    this.countdownBeat = 8;
+    this.audioCountdown = false;
     this.performanceSample = this.freshPerformanceSample();
     const fighterCount = 1 + clampBotCount(this.settings.botCount);
     // The full post stack is ideal for normal matches. Sixteen-fighter sessions use
@@ -636,7 +690,15 @@ class BlasterBattle {
     this.cameraFocus.set(0, 0, 0);
     this.updateCamera(1);
     this.renderHud();
-    this.sound.startMusic();
+    this.sound.startAmbience(this.world.theme.id);
+    this.sound.setMusicIntensity(.42);
+    const countdown = this.sound.startCountdown(this.seed, .42);
+    if (countdown) {
+      this.audioCountdown = true;
+      this.matchStartDelay = countdown.remaining;
+      this.countdownBeat = countdown.beatsRemaining;
+    } else this.sound.play("countdown");
+    this.sound.setPaused(false);
   }
 
   renderHud() {
@@ -735,6 +797,8 @@ class BlasterBattle {
   togglePause() {
     if (this.state !== "play") return;
     this.paused = !this.paused;
+    this.sound.play(this.paused ? "pause" : "resume");
+    this.sound.setPaused(this.paused);
     if (this.paused) {
       this.input.releasePointer();
       clearTouchActions(this.touch);
@@ -761,6 +825,48 @@ class BlasterBattle {
     return { elapsed: 0, frames: 0, windowElapsed: 0, windowFrames: 0, fps: 0, minimum: Infinity, total: 0, samples: 0 };
   }
 
+  audioSpatial(position, local = false, volume = 1, ownerId = "") {
+    return {
+      position, local, volume, ownerId,
+      occluded: Boolean(!local && this.world?.ropeBlocked?.(this.camera.position, position))
+    };
+  }
+
+  updateAudio(dt) {
+    const local = this.players[0];
+    if (!local) return;
+    this.sound.setListener(this.camera.position, this.camera.getWorldDirection(new THREE.Vector3()));
+    this.audioMixTimer -= dt;
+    if (this.audioMixTimer <= 0) {
+      this.audioMixTimer = .25;
+      const speed = clamp(local.velocity.length() / 38, 0, 1);
+      const danger = clamp((100 - local.health) / 100, 0, 1);
+      const finalMinute = this.matchTime < 60 ? 1 - this.matchTime / 60 : 0;
+      const scorePressure = clamp(Math.max(...this.scores) / Math.max(1, this.targetScore), 0, 1);
+      this.sound.setMusicIntensity(.2 + speed * .18 + danger * .2 + finalMinute * .22 + scorePressure * .18);
+      this.sound.updateAmbience({ danger, speed });
+    }
+    for (const player of this.players) {
+      const localPlayer = player === local;
+      const spatial = this.audioSpatial(player.position, localPlayer, localPlayer ? 1 : .34, player.id);
+      this.sound.updateFighter(player.id, {
+        ...spatial, alive: player.alive, grounded: player.grounded,
+        speed: Math.hypot(player.velocity.x, player.velocity.z), verticalSpeed: player.velocity.y,
+        reloading: player.reloadTimer > 0, weapon: player.weapon, boosted: player.boosted,
+        slowed: player.slowTimer > 0,
+        lowAmmo: player.ammo[player.weapon.id] > 0 && player.ammo[player.weapon.id] <= Math.max(1, Math.ceil(player.weapon.ammo * .2))
+      });
+      this.sound.updateGrappleLoop(player.id, Boolean(player.grapple), {
+        ...spatial, tension: player.grapple ? clamp(player.position.distanceTo(player.grapple.anchor) / Math.max(1, player.grapple.ropeLength) - .72, 0, 1) : 0,
+        speed: player.velocity.length()
+      });
+    }
+    const audibleHazards = new Set([...this.hazards]
+      .sort((a, b) => a.mesh.position.distanceToSquared(local.position) - b.mesh.position.distanceToSquared(local.position))
+      .slice(0, 4).map((hazard) => hazard.audioId));
+    for (const hazard of this.hazards) this.sound.updateHazardLoop(hazard.audioId, hazard.weapon, audibleHazards.has(hazard.audioId), this.audioSpatial(hazard.mesh.position, false, .72, hazard.audioId));
+  }
+
   frame(time) {
     this.timer.update(time);
     const rawDt = Math.min(.25, this.timer.getDelta());
@@ -773,6 +879,31 @@ class BlasterBattle {
   }
 
   update(dt) {
+    if (this.matchStartDelay > 0 || this.audioCountdown) {
+      const countdown = this.audioCountdown ? this.sound.getCountdownState() : null;
+      if (countdown) {
+        this.matchStartDelay = countdown.remaining;
+        this.countdownBeat = countdown.beatsRemaining;
+      } else {
+        this.matchStartDelay = Math.max(0, this.matchStartDelay - dt);
+        const beat = Math.ceil(this.matchStartDelay);
+        if (beat > 0 && beat !== this.countdownBeat) {
+          this.countdownBeat = beat;
+          this.sound.play("countdown");
+        }
+      }
+      this.updateAudio(dt);
+      this.updateHud();
+      if ((countdown && !countdown.active) || (!countdown && this.matchStartDelay === 0)) {
+        if (!countdown) {
+          this.sound.play("go");
+          this.sound.startMusic("combat", this.seed);
+        }
+        this.audioCountdown = false;
+        this.matchStartDelay = 0;
+      }
+      return;
+    }
     this.matchTime = Math.max(0, this.matchTime - dt);
     this.world.update(dt, this.players);
     this.handleWeaponSwitch();
@@ -785,14 +916,21 @@ class BlasterBattle {
     this.updateEffects(dt);
     this.combatVisuals?.update(dt, this.players[0]);
     this.updateRespawns(dt);
+    this.updateAudio(dt);
     this.updateHud();
     if (this.matchTime <= 0 || Math.max(...this.scores) >= this.targetScore) this.finishMatch();
   }
 
   handleWeaponSwitch() {
     const player = this.players[0];
+    const previousSlot = player.slotIndex;
     for (let index = 0; index < 5; index++) if (this.input.tapped(`Digit${index + 1}`)) player.switchSlot(index);
     if (this.input.tapped("KeyQ") || this.touch.weaponTap) player.switchSlot((player.slotIndex + 1) % player.loadout.length);
+    if (player.slotIndex !== previousSlot) {
+      this.sound.stopWeaponLoop(player.id);
+      this.sound.stopChargeLoop(player.id);
+      this.sound.play("weaponSelect", player.weapon, { local: true });
+    }
     this.touch.weaponTap = false;
   }
 
@@ -810,12 +948,14 @@ class BlasterBattle {
     move.add(cameraRelative(directionFromTouch(this.input.touchDirection()), this.cameraYaw));
     if (move.lengthSq() > 1) move.normalize();
     const aim = reticleAim(player, this.camera.position, this.camera.getWorldDirection(new THREE.Vector3()), this.world, [...this.players, ...this.decoys]);
-    player.update(dt, move, aim, { jump: this.input.tapped("Space") || this.touch.jumpTap }, this.world);
+    const jump = this.input.tapped("Space") || this.touch.jumpTap;
+    if (jump && player.grounded) this.sound.play("jump", null, { local: true });
+    player.update(dt, move, aim, { jump }, this.world);
     this.touch.jumpTap = false;
     if (this.input.tapped("KeyE") || this.input.tapped("MouseRight") || this.touch.grappleTap) this.toggleGrapple(player);
     this.touch.grappleTap = false;
     this.updateGrapple(player, dt);
-    if (this.input.tapped("KeyR")) player.reload();
+    if (this.input.tapped("KeyR") && !player.reload()) this.sound.play("uiInvalid");
     const fireHeld = this.input.mouse.left || this.touch.fire;
     const fireTapped = this.input.tapped("MouseLeft") || this.touch.fireTap;
     if (player.weapon.chargeTime) this.updateCharge(player, fireHeld, dt);
@@ -823,7 +963,7 @@ class BlasterBattle {
       this.cancelCharge(player);
       if (fireHeld) this.tryFire(player, fireTapped);
     }
-    this.sound.updateWeaponLoop(player.id, player.weapon, fireHeld && player.weapon.maintained && player.ammo[player.weapon.id] > 0);
+    this.sound.updateWeaponLoop(player.id, player.weapon, fireHeld && player.weapon.maintained && player.ammo[player.weapon.id] > 0, this.audioSpatial(player.position, true, 1, player.id));
     this.touch.fireTap = false;
   }
 
@@ -855,7 +995,9 @@ class BlasterBattle {
     if (bot.botThink <= 0) {
       bot.botThink = this.botDifficulty === "veteran" ? .25 : this.botDifficulty === "rookie" ? .75 : .48;
       bot.botDodge *= Math.random() < .45 ? -1 : 1;
+      const previousSlot = bot.slotIndex;
       bot.switchSlot(chooseBotSlot(bot.loadout, distance));
+      if (bot.slotIndex !== previousSlot) this.sound.play("equip", bot.weapon, this.audioSpatial(bot.position, false, .28, bot.id));
     }
     const forward = aimOffset.lengthSq() ? aimOffset.clone().normalize() : new THREE.Vector3();
     const moveForward = forward.clone().setY(0).normalize();
@@ -897,7 +1039,7 @@ class BlasterBattle {
       else if (action === "place" && wantsFire) this.tryFire(bot, false);
       const listener = this.players[0];
       const distanceScale = Math.max(.12, 1 - bot.position.distanceTo(listener.position) / 110) * .36;
-      this.sound.updateWeaponLoop(bot.id, bot.weapon, false, distanceScale);
+      this.sound.updateWeaponLoop(bot.id, bot.weapon, false, this.audioSpatial(bot.position, false, distanceScale, bot.id));
       return;
     }
     if (bot.weapon.chargeTime) {
@@ -909,7 +1051,7 @@ class BlasterBattle {
     }
     const listener = this.players[0];
     const distanceScale = Math.max(.12, 1 - bot.position.distanceTo(listener.position) / 110) * .36;
-    this.sound.updateWeaponLoop(bot.id, bot.weapon, bot.weapon.maintained && bot.attackTimer > 0, distanceScale);
+    this.sound.updateWeaponLoop(bot.id, bot.weapon, bot.weapon.maintained && bot.attackTimer > 0, this.audioSpatial(bot.position, false, distanceScale, bot.id));
   }
 
   mouseAim() {
@@ -927,7 +1069,12 @@ class BlasterBattle {
     const start = player.position.clone().add(new THREE.Vector3(0, 1.4, 0));
     const sightline = grappleSightline(player, this.camera);
     const anchor = this.world.grapplePoint(sightline.origin, sightline.direction);
-    if (!anchor) return;
+    const local = player === this.players[0];
+    if (!anchor) {
+      this.sound.play("grappleMiss", null, this.audioSpatial(player.position, local, local ? 1 : .3, player.id));
+      return;
+    }
+    this.sound.play("grappleFire", null, this.audioSpatial(start, local, local ? 1 : .34, player.id));
     const geometry = new LineGeometry();
     geometry.setPositions([start.x, start.y, start.z, anchor.x, anchor.y, anchor.z]);
     const ropeMaterial = new THREE.Line2NodeMaterial({
@@ -947,11 +1094,12 @@ class BlasterBattle {
     const direction = anchor.clone().sub(start).normalize();
     const approachSpeed = player.velocity.dot(direction);
     if (approachSpeed < 15) player.velocity.addScaledVector(direction, 15 - approachSpeed);
-    this.sound.play("power");
+    this.sound.play("grappleAttach", null, this.audioSpatial(anchor, local, local ? 1 : .42, player.id));
   }
 
   updateGrapple(player, dt) {
     if (!player.grapple || !player.alive) return;
+    const previousWrapCount = player.grapple.wraps.length;
     const chest = player.position.clone().add(new THREE.Vector3(0, 1.4, 0));
     const wraps = [];
     let routeStart = chest;
@@ -962,6 +1110,7 @@ class BlasterBattle {
       routeStart = wrap;
     }
     player.grapple.wraps = wraps;
+    if (wraps.length !== previousWrapCount) this.sound.play("grappleWrap", null, this.audioSpatial(player.position, player === this.players[0], player === this.players[0] ? .8 : .25, player.id));
     applyGrapplePhysics(player, dt);
     const ropePoints = [chest, ...wraps, player.grapple.anchor];
     const ropePositions = [];
@@ -970,11 +1119,15 @@ class BlasterBattle {
     player.grapple.line.computeLineDistances();
   }
 
-  releaseGrapple(player, boost = false) {
+  releaseGrapple(player, boost = false, silent = false) {
     if (!player?.grapple) return;
+    const local = player === this.players[0];
+    const position = player.position.clone();
     this.removeObject(player.grapple.line);
     player.grapple = null;
     if (boost && player.alive) boostGrappleRelease(player);
+    this.sound.updateGrappleLoop(player.id, false);
+    if (!silent) this.sound.play("grappleRelease", null, this.audioSpatial(position, local, local ? 1 : .3, player.id));
   }
 
   tryFire(player, triggerTap = false) {
@@ -995,6 +1148,7 @@ class BlasterBattle {
       }
     }
     if (player.ammo[weapon.id] <= 0) {
+      this.sound.play("empty", weapon, this.audioSpatial(player.position, player === this.players[0], 1, player.id));
       player.reload();
       return;
     }
@@ -1004,7 +1158,7 @@ class BlasterBattle {
     player.recoil();
     const listener = this.players[0];
     const distanceScale = player === listener ? 1 : Math.max(.18, 1 - player.position.distanceTo(listener.position) / 110) * .42;
-    this.sound.playWeapon(weapon, distanceScale);
+    this.sound.playWeapon(weapon, this.audioSpatial(player.position, player === listener, distanceScale, player.id));
     this.combatVisuals?.muzzle(player, weapon, player.aim);
     if (fireMode === "spread") {
       for (let i = 0; i < weapon.pellets; i++) this.spawnProjectile(player, weapon, aimWithSpread(player.aim, weapon.spread));
@@ -1044,7 +1198,7 @@ class BlasterBattle {
     player.recoil(weapon.recoil * .46);
     const listener = this.players[0];
     const distanceScale = player === listener ? 1 : Math.max(.18, 1 - player.position.distanceTo(listener.position) / 110) * .42;
-    this.sound.playWeapon(weapon, distanceScale);
+    this.sound.playWeapon(weapon, this.audioSpatial(player.position, player === listener, distanceScale, player.id));
     const direction = aimWithSpread(player.aim, weapon.spread);
     this.combatVisuals?.muzzle(player, weapon, direction);
     this.fireHitscan(player, weapon, direction);
@@ -1059,13 +1213,13 @@ class BlasterBattle {
     if (player.chargingWeaponId !== weapon.id) {
       player.chargingWeaponId = weapon.id;
       player.chargeTimer = 0;
-      this.sound.play("power");
+      this.sound.play("power", weapon, this.audioSpatial(player.position, player === this.players[0], player === this.players[0] ? 1 : .35, player.id));
     }
     player.chargeTimer = Math.min(weapon.chargeTime, player.chargeTimer + dt);
     player.chargeLevel = player.chargeTimer / weapon.chargeTime;
     const listener = this.players[0];
     const distanceScale = player === listener ? 1 : Math.max(.15, 1 - player.position.distanceTo(listener.position) / 110) * .42;
-    this.sound.updateChargeLoop(player.id, weapon, player.chargeLevel, distanceScale);
+    this.sound.updateChargeLoop(player.id, weapon, player.chargeLevel, this.audioSpatial(player.position, player === listener, distanceScale, player.id));
   }
 
   releaseCharge(player) {
@@ -1078,7 +1232,7 @@ class BlasterBattle {
     player.ammo[weapon.id] -= 1;
     const chargedWeapon = { ...weapon, damage: weapon.damage * (.35 + ratio * .65), recoil: weapon.recoil * (.45 + ratio * .55) };
     player.recoil(chargedWeapon.recoil);
-    this.sound.playWeapon(chargedWeapon, player === this.players[0] ? 1 : .4);
+    this.sound.playWeapon(chargedWeapon, this.audioSpatial(player.position, player === this.players[0], player === this.players[0] ? 1 : .4, player.id));
     this.combatVisuals?.muzzle(player, chargedWeapon, player.aim);
     this.fireHitscan(player, chargedWeapon, aimWithSpread(player.aim, weapon.spread));
   }
@@ -1102,6 +1256,7 @@ class BlasterBattle {
     if (weapon.arcLift) velocity.y += weapon.arcLift;
     if (!mesh.userData.combatVisual?.instancedFireball) this.scene.add(mesh);
     const shot = {
+      audioId: `projectile-${player.id}-${weapon.id}-${performance.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
       mesh, owner: player, weapon, velocity, radius,
       life: projectileLifetime(weapon),
       age: 0, bounces: 0, hitTargets: new Set(),
@@ -1170,7 +1325,10 @@ class BlasterBattle {
       ? start.clone().addScaledVector(aim, hits[0].distance)
       : wall || start.clone().addScaledVector(aim, 1000);
     this.spawnTracer(start, end, weapon, player, weapon.type === "rail" ? .16 : .105, weapon.type === "rail" ? .095 : .045);
-    if (wall && !hits.length) this.combatVisuals?.impact(wall, weapon, player, { size: weapon.type === "rail" ? 1.25 : .72, normal: aim.clone().negate() });
+    if (wall && !hits.length) {
+      this.combatVisuals?.impact(wall, weapon, player, { size: weapon.type === "rail" ? 1.25 : .72, normal: aim.clone().negate() });
+      this.sound.playImpact(weapon, this.audioSpatial(wall, false, .72, player.id), 0, "world");
+    }
   }
 
   fireBeam(player, weapon) {
@@ -1181,6 +1339,7 @@ class BlasterBattle {
     let end = wall || start.clone().addScaledVector(direction, 1000);
     let terrainPasses = weapon.terrainRadius ? weapon.penetration || 0 : 0;
     while (wall && terrainPasses > 0 && this.world.destroy(wall, weapon.terrainRadius) > 0) {
+      this.sound.playImpact(weapon, this.audioSpatial(wall, false, .64, player.id), 0, "world");
       cursor = wall.clone().addScaledVector(direction, Math.max(.8, weapon.terrainRadius * .35));
       wall = this.world.grapplePoint(cursor, direction);
       end = wall || start.clone().addScaledVector(direction, 1000);
@@ -1196,6 +1355,7 @@ class BlasterBattle {
     }
     if (weapon.terrainRadius && wall && !weapon.penetration) this.world.destroy(wall, weapon.terrainRadius);
     this.spawnTracer(start, end, weapon, player, .13);
+    if (wall && !targets.length) this.sound.playImpact(weapon, this.audioSpatial(wall, false, .72, player.id), 0, "world");
   }
 
   fireChain(player, weapon) {
@@ -1275,11 +1435,21 @@ class BlasterBattle {
       mesh, owner: player, weapon, velocity: new THREE.Vector3(), radius: .35,
       life: projectileLifetime(weapon), age: 0, mine: true
     });
+    this.sound.play("arm", weapon, this.audioSpatial(placement, player === this.players[0], .8, player.id));
   }
 
   updateProjectiles(dt) {
+    const listener = this.players[0];
+    const audibleProjectiles = new Set(this.projectiles
+      .filter((shot) => !shot.mine && !shot.stuck && (shot.weapon.type === "rocket" || shot.weapon.type === "grenade" || shot.weapon.returning || ["fireball", "drill"].includes(shot.weapon.presentationPayload)))
+      .sort((a, b) => a.mesh.position.distanceToSquared(listener.position) - b.mesh.position.distanceToSquared(listener.position))
+      .slice(0, 6)
+      .map((shot) => shot.audioId));
     for (let index = this.projectiles.length - 1; index >= 0; index--) {
       const shot = this.projectiles[index];
+      this.sound.updateProjectileLoop(shot.audioId, shot.weapon, audibleProjectiles.has(shot.audioId), {
+        ...this.audioSpatial(shot.mesh.position, false, .72, shot.owner.id), speed: shot.velocity.length()
+      });
       shot.age += dt;
       shot.life -= dt;
       const explosive = Boolean(shot.weapon.radius);
@@ -1317,9 +1487,11 @@ class BlasterBattle {
             if (shot.weapon.type === "wall") {
               const placement = previous.clone().addScaledVector(shot.velocity.clone().normalize(), -2);
               this.world.addTemporaryWall(placement, shot.velocity, shot.weapon.color, shot.weapon.wallDuration);
+              this.sound.play("construct", shot.weapon, this.audioSpatial(placement, false, .8, shot.owner.id));
               this.removeProjectile(index);
             } else if (shot.weapon.type === "decoy") {
               this.spawnDecoy(previous, shot.owner, shot.weapon);
+              this.sound.play("construct", shot.weapon, this.audioSpatial(previous, false, .75, shot.owner.id));
               this.removeProjectile(index);
             } else if (shot.weapon.sticky || shot.remote) {
               shot.mesh.position.copy(target.position).add(new THREE.Vector3(0, 1.05, 0));
@@ -1327,13 +1499,14 @@ class BlasterBattle {
               shot.stuck = true;
               shot.attachedTarget = target;
               this.combatVisuals?.impact(shot.mesh.position, shot.weapon, shot.owner, { size: .72 });
+              this.sound.play("stick", shot.weapon, this.audioSpatial(shot.mesh.position, false, .82, shot.owner.id));
+              this.sound.play("arm", shot.weapon, this.audioSpatial(shot.mesh.position, false, .48, shot.owner.id));
             } else if (explosive) {
               this.finishProjectile(index, shot);
             } else {
               this.damageTarget(target, shot.weapon.damage, shot.velocity.clone().normalize().multiplyScalar(shot.weapon.recoil * 1.7), shot.owner, shot.weapon, {
                 point: shot.mesh.position.clone(), direction: shot.velocity.clone(), sourceSlot: shot.sourceSlot
               });
-              if (shot.weapon.presentationPayload === "fireball") this.playFireballImpact(shot);
               shot.hitTargets.add(target.id);
               if (shot.remainingPenetration > 0) {
                 shot.remainingPenetration -= 1;
@@ -1347,14 +1520,17 @@ class BlasterBattle {
           if (worldHit) {
             if (shot.weapon.type === "wall") {
               this.world.addTemporaryWall(previous, shot.velocity, shot.weapon.color, shot.weapon.wallDuration);
+              this.sound.play("construct", shot.weapon, this.audioSpatial(previous, false, .8, shot.owner.id));
               this.removeProjectile(index);
               removed = true;
             } else if (shot.weapon.type === "decoy") {
               this.spawnDecoy(previous, shot.owner, shot.weapon);
+              this.sound.play("construct", shot.weapon, this.audioSpatial(previous, false, .75, shot.owner.id));
               this.removeProjectile(index);
               removed = true;
             } else if (shot.weapon.effect === "teleport") {
               this.teleportOwner(shot.owner, previous, shot.velocity);
+              this.sound.play("teleport", shot.weapon, this.audioSpatial(previous, false, .9, shot.owner.id));
               this.removeProjectile(index);
               removed = true;
             } else if (shot.remainingTerrainPenetration > 0 && this.world.destroy(shot.mesh.position, shot.weapon.terrainRadius || 2)) {
@@ -1365,6 +1541,8 @@ class BlasterBattle {
               shot.velocity.set(0, 0, 0);
               shot.stuck = true;
               this.combatVisuals?.impact(previous, shot.weapon, shot.owner, { size: .72 });
+              this.sound.play("stick", shot.weapon, this.audioSpatial(previous, false, .82, shot.owner.id));
+              this.sound.play("arm", shot.weapon, this.audioSpatial(previous, false, .48, shot.owner.id));
               break;
             } else if (shot.bounces < (shot.weapon.bounces || 0) && shot.life > .15) {
               shot.bounces += 1;
@@ -1403,22 +1581,16 @@ class BlasterBattle {
     shot.velocity.multiplyScalar(shot.weapon.bounceEnergy ?? .62);
     if (shot.weapon.type === "grenade") shot.velocity.y = Math.max(2.5, shot.velocity.y);
     this.combatVisuals?.impact(previous, shot.weapon, shot.owner, { size: .58 });
-    if (shot.weapon.presentationPayload === "fireball" && shot.age - (shot.lastBounceSound ?? -Infinity) >= .12) {
-      shot.lastBounceSound = shot.age;
-      this.playFireballImpact(shot, .48);
-    }
-  }
-
-  playFireballImpact(shot, volumeScale = 1) {
-    const listener = this.players[0];
-    const distanceScale = listener ? Math.max(.12, 1 - shot.mesh.position.distanceTo(listener.position) / 110) : .12;
-    this.sound.playImpact(shot.weapon, distanceScale * volumeScale);
+    this.sound.play("bounce", shot.weapon, this.audioSpatial(previous, false, shot.weapon.presentationPayload === "fireball" ? .42 : .62, shot.owner.id));
   }
 
   finishProjectile(index, shot) {
     if (shot.weapon.split && !shot.split) this.splitProjectile(shot);
     else if (shot.weapon.radius) this.explode(shot);
-    else this.combatVisuals?.impact(shot.mesh.position, shot.weapon, shot.owner, { size: 1.05 });
+    else {
+      this.combatVisuals?.impact(shot.mesh.position, shot.weapon, shot.owner, { size: 1.05 });
+      this.sound.playImpact(shot.weapon, this.audioSpatial(shot.mesh.position, false, .78, shot.owner.id), 0, "world");
+    }
     this.removeProjectile(index);
   }
 
@@ -1437,6 +1609,7 @@ class BlasterBattle {
       this.spawnProjectile(shot.owner, child, direction, shot.mesh.position.clone().add(new THREE.Vector3(0, .35, 0)));
     }
     this.combatVisuals?.impact(shot.mesh.position, shot.weapon, shot.owner, { size: 1.5 });
+    this.sound.play("split", shot.weapon, this.audioSpatial(shot.mesh.position, false, .9, shot.owner.id));
   }
 
   explode(shot) {
@@ -1457,7 +1630,7 @@ class BlasterBattle {
     if (shot.weapon.terrainRadius > 0) this.world.destroy(position, shot.weapon.terrainRadius);
     if (shot.weapon.hazard) this.spawnHazard(position, shot.owner, shot.weapon, shot.velocity);
     this.combatVisuals?.impact(position, shot.weapon, shot.owner, { size: Math.min(2.6, Math.max(1.35, shot.weapon.radius * .42)), explosive: true });
-    this.sound.playImpact(shot.weapon);
+    this.sound.playImpact(shot.weapon, this.audioSpatial(position, false, 1, shot.owner.id), 0, "explosive");
   }
 
   damageTarget(target, damage, push, attacker, weapon, context = {}) {
@@ -1489,6 +1662,7 @@ class BlasterBattle {
     if (attacker.slotIndex === attackerSlot) attacker.updateWeaponModel();
     target.updateWeaponModel();
     this.spawnBurst(target.position, stealingWeapon.color, 12);
+    this.sound.play("steal", stealingWeapon, this.audioSpatial(target.position, target === this.players[0], .9, attacker.id));
   }
 
   teleportOwner(player, point, direction) {
@@ -1502,6 +1676,7 @@ class BlasterBattle {
     this.world.resolve(player.position, player.radius, previous);
     player.velocity.set(0, 2.5, 0);
     this.spawnBurst(player.position, 0x43ffd1, 14);
+    this.sound.play("teleport", WEAPONS.teleport_projectile, this.audioSpatial(player.position, player === this.players[0], 1, player.id));
   }
 
   trimRemoteCharges(owner, weapon, limit, detonate = false) {
@@ -1581,7 +1756,9 @@ class BlasterBattle {
     this.scene.add(mesh);
     const velocity = projectileVelocity.clone().setY(0);
     if (velocity.lengthSq()) velocity.normalize().multiplyScalar(weapon.hazardSpeed || 0);
-    this.hazards.push({ mesh, owner, weapon, radius: hazardRadius, life: weapon.hazardDuration, tick: 0, velocity, elapsed: 0, instances, fadeMaterials });
+    const audioId = `hazard-${owner.id}-${weapon.id}-${performance.now().toString(36)}`;
+    this.hazards.push({ audioId, mesh, owner, weapon, radius: hazardRadius, life: weapon.hazardDuration, tick: 0, velocity, elapsed: 0, instances, fadeMaterials });
+    this.sound.play("hazardSpawn", weapon, this.audioSpatial(mesh.position, false, .9, audioId));
   }
 
   updateHazards(dt) {
@@ -1725,8 +1902,10 @@ class BlasterBattle {
       this.hud.reticle.classList.remove("hit", "elimination");
       void this.hud.reticle.offsetWidth;
       this.hud.reticle.classList.add(killed ? "elimination" : "hit");
+      this.sound.play(killed ? "elimination" : "hitConfirm");
     }
     if (target === this.players[0] && attacker) {
+      if (!killed) this.sound.play("damage", weapon, { local: true });
       this.hud.damageVignette.style.setProperty("--damage-color", `#${new THREE.Color(attacker.accent).getHexString()}`);
       this.hud.damageVignette.classList.remove("visible");
       void this.hud.damageVignette.offsetWidth;
@@ -1755,6 +1934,7 @@ class BlasterBattle {
     const color = level === "off" ? 0x6feeff : 0xff315f;
     const impactWeapon = weapon || { color, type: "projectile" };
     const center = position.clone().add(new THREE.Vector3(0, 1.05, 0));
+    if (weapon && !weapon.radius) this.sound.playImpact(weapon, this.audioSpatial(center, target === this.players[0], target === this.players[0] ? 1 : .5, attacker?.id || "world"), 0, "player");
     this.combatVisuals?.impact(center, impactWeapon, attacker || target, { size: level === "full" ? 1.25 : .9 });
     if (level !== "off") {
       const direction = attacker?.position
@@ -1887,9 +2067,9 @@ class BlasterBattle {
     this.paused = true;
     this.input.releasePointer();
     for (const player of this.players) {
-      this.sound.updateWeaponLoop(player.id, player.weapon, false);
-      this.sound.stopChargeLoop(player.id);
+      this.sound.stopOwner(player.id);
     }
+    this.sound.stopAll();
     const winningScore = Math.max(...this.scores);
     const winners = this.scores.map((score, index) => score === winningScore ? index : -1).filter((index) => index >= 0);
     const headline = winners.length > 1 ? "Draw match" : `${escapeHtml(this.players[winners[0]].name)} wins`;
@@ -1903,7 +2083,10 @@ class BlasterBattle {
           <button data-screen="main">RETURN TO MENU</button>
         </section>
       </div>`);
-    this.sound.play("win");
+    const humanWon = winners.includes(0);
+    this.sound.setMusicScene("results", humanWon ? "win" : "loss");
+    this.sound.setMusicIntensity(humanWon ? .58 : .34);
+    this.sound.play(humanWon ? "win" : "loss");
     this.bindUi();
   }
 
@@ -1960,6 +2143,7 @@ class BlasterBattle {
   }
 
   removeProjectile(index) {
+    this.sound.updateProjectileLoop(this.projectiles[index]?.audioId, this.projectiles[index]?.weapon, false);
     this.combatVisuals?.removeProjectile(this.projectiles[index]);
     this.removeObject(this.projectiles[index].mesh);
     this.removeObject(this.projectiles[index].telegraph);
@@ -1969,6 +2153,8 @@ class BlasterBattle {
   removeHazard(index) {
     const hazard = this.hazards[index];
     if (!hazard) return;
+    this.sound.updateHazardLoop(hazard.audioId, hazard.weapon, false);
+    this.sound.play("hazardEnd", hazard.weapon, this.audioSpatial(hazard.mesh.position, false, .48, hazard.audioId));
     this.removeObject(hazard.mesh);
     this.hazards.splice(index, 1);
   }

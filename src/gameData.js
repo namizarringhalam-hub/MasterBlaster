@@ -74,7 +74,7 @@ const weaponList = [
   weapon("Rapid Fire", "plasma_repeater", "Plasma Repeater", "projectile", 0x42f5e6, "Rapid near-instant energy streaks with a persistent visible trail.", { damage: 9, projectileSpeed: 180, cooldown: .12, spread: .025, ammo: 24, reload: 1.35, recoil: .4, projectileRadius: .16, energy: true, hitscan: true }),
   weapon("Rapid Fire", "needle_launcher", "Needle Launcher", "projectile", 0xdf9cff, "Needles pierce through two fighters in one line.", { damage: 12, projectileSpeed: 260, cooldown: .16, spread: .009, ammo: 18, reload: 1.3, recoil: .35, penetration: 1, hitscan: true, preferredRange: 36, maxUsefulRange: 220 }),
   weapon("Rapid Fire", "burst_rifle", "Burst Rifle", "burst", 0x8dffcf, "Timed three-round precision burst.", { damage: 10, burstCount: 3, burstInterval: .065, projectileSpeed: 245, cooldown: .52, spread: .018, ammo: 24, reload: 1.45, recoil: 1.3, hitscan: true }),
-  weapon("Close Quarters", "flamethrower", "Flamethrower", "flame", 0xff6a24, "Continuous 11.5-metre cone with distance and edge falloff.", { damage: 4, projectileSpeed: 0, cooldown: .115, spread: 0, ammo: 48, reload: 1.8, recoil: .08, reach: 11.5, coneAngle: .22 }),
+  weapon("Close Quarters", "flamethrower", "Flamethrower", "flame", 0xff6a24, "Continuous 11.5-metre cone with distance and edge falloff.", { damage: 4, projectileSpeed: 0, cooldown: .115, spread: 0, ammo: 48, reload: 1.8, recoil: .08, reach: 11.5, coneAngle: .22, maintained: true }),
 
   // Full library: explosive
   weapon("Explosive", "cluster_grenade", "Cluster Grenade", "grenade", 0xff9f68, "Splits into six secondary bomblets.", { damage: 18, projectileSpeed: 15, cooldown: 1.15, ammo: 3, reload: 1.7, recoil: 2.2, radius: 2.8, terrainRadius: 2.3, fuse: 1.05, gravity: 17, bounces: 1, arcLift: 8.5, split: 6 }),
@@ -205,6 +205,10 @@ function defaults() {
     shake: 60,
     reducedMotion: false,
     volume: 70,
+    musicVolume: 70,
+    effectsVolume: 85,
+    ambienceVolume: 65,
+    dynamicRange: "standard",
     botCount: 1,
     loadout: [...DEFAULT_LOADOUT],
     loadoutPresets: Array(LOADOUT_PRESET_COUNT).fill(null),

@@ -31,6 +31,7 @@ function payloadOf(weapon) {
   if (weapon.returning) return "returning";
   if (weapon.bounces && weapon.type === "projectile") return "ricochet";
   if (weapon.penetration) return "penetrator";
+  if (weapon.energy || weapon.category === "Energy") return "energy";
   if (weapon.type === "projectile" && weapon.projectileRadius >= .16) return "energy";
   if (weapon.type === "chain") return "arc";
   if (weapon.type === "melee") return "melee";

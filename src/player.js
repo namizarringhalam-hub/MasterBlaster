@@ -167,6 +167,7 @@ export class Fighter {
     this.deathTimer = 0;
     this.gaitPhase = 0;
     this.grounded = true;
+    this.boosted = false;
     this.ledgeContact = null;
     this.alive = true;
     this.deaths = 0;
@@ -733,6 +734,7 @@ export class Fighter {
     this.alive = true;
     this.deathTimer = 0;
     this.grounded = true;
+    this.boosted = false;
     this.group.visible = true;
     this.group.scale.setScalar(1);
     this.rig.position.y = 0;
@@ -822,6 +824,7 @@ export class Fighter {
       this.grounded = false;
     }
     const boost = this.grounded ? world.boostAt(this.position) : null;
+    this.boosted = Boolean(boost);
     if (boost) {
       this.velocity.y = boost.strength;
       this.grounded = false;
