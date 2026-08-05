@@ -133,6 +133,8 @@ for (const [id, weapon] of Object.entries(WEAPONS)) {
   const model = new Fighter(modelScene, { id: `model-${id}`, name: id, color: weapon.color, accent: 0xffffff }, [id], new THREE.Vector3());
   assert.ok(model.weaponGroup.children.length >= 3, `${id} has a layered held-weapon model`);
   assert.ok(model.weaponMuzzleDistance > .3, `${id} exposes a valid muzzle or strike origin`);
+  assert.equal(model.group.getObjectByProperty("castShadow", true), undefined, `${id} cannot create blocky per-fighter shadow-map patches`);
+  assert.equal(model.group.getObjectByName("Soft contact shadow")?.geometry?.type, "PlaneGeometry", `${id} uses the shared feathered contact shadow`);
   if (id === "boomerang_blade") assert.equal(model.weaponSpinner?.geometry?.type, "TorusGeometry", "the equipped Boomerang reaches its authored spinning-disc bracer branch");
   model.dispose();
 

@@ -24,7 +24,7 @@ function material(color, emissive = 0, options = {}) {
   });
 }
 
-function part(geometry, mat, x, y, z, shadows = true) {
+function part(geometry, mat, x, y, z, shadows = false) {
   const mesh = new THREE.Mesh(geometry, mat);
   mesh.position.set(x, y, z);
   mesh.castShadow = shadows;
@@ -304,8 +304,12 @@ export class Fighter {
     this.weaponGroup.position.set(.38, 1.4, .28);
     this.rig.add(this.weaponGroup);
 
-    const shadowMaterial = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: .28, depthWrite: false });
-    const shadow = part(new THREE.CircleGeometry(.86, 24), shadowMaterial, 0, .021, 0, false);
+    const shadowMaterial = new THREE.MeshBasicMaterial({
+      map: radialTexture(), color: 0x000000, transparent: true, opacity: .2,
+      alphaTest: .015, depthWrite: false, toneMapped: false
+    });
+    const shadow = part(new THREE.PlaneGeometry(1.8, 1.35), shadowMaterial, 0, .022, 0);
+    shadow.name = "Soft contact shadow";
     shadow.rotation.x = -Math.PI / 2;
     const ringMaterial = new THREE.MeshBasicMaterial({
       color: this.accent,
