@@ -100,6 +100,9 @@ assert.deepEqual(
 );
 assert.equal(WEAPON_GROUPS.reduce((total, group) => total + group.ids.length, 0), 47, "every weapon belongs to one menu category");
 assert.ok(WEAPON_GROUPS.every((group) => group.ids.every((id) => WEAPONS[id])), "weapon categories contain no missing entries");
+assert.ok(WEAPON_GROUPS.every((group) => /^#[0-9a-f]{6}$/i.test(group.color)), "every weapon category has a stable menu color");
+assert.ok(WEAPON_GROUPS.every((group) => group.ids.map((id) => WEAPONS[id].name).every((name, index, names) => !index || names[index - 1].localeCompare(name) <= 0)), "weapons are alphabetized inside every category");
+assert.match(mainSource, /weapon-categories[\s\S]*?weaponCategoriesMarkup\(\)[\s\S]*?WEAPON_GROUPS\.map/, "Quick Play, Private Room, and Training share the categorized weapon selector");
 assert.ok(Object.values(WEAPONS).every((weapon) => weapon.name && weapon.description && weapon.category), "every weapon has complete menu metadata");
 const presentationSignatures = new Set();
 const modelScene = new THREE.Scene();
@@ -161,7 +164,7 @@ const fireballVisual = createProjectileVisual(WEAPONS.fireball, visualOwner, WEA
 assert.ok(fireballVisual.children.filter((child) => child.geometry?.type === "ConeGeometry").length >= 4, "the Fireball projectile has multiple tapered flame tongues and a wake");
 assert.equal(fireballVisual.children.filter((child) => child.geometry?.type === "TorusGeometry").length, 0, "the Fireball projectile no longer reads as an orbiting plasma device");
 assert.equal(presentationSignatures.size, 47, "all 47 weapons retain distinct audiovisual signatures");
-assert.match(mainSource, /data-weapon="\$\{weapon\.id\}"[\s\S]*?weaponPreviewVariables\(weapon, index\)/, "every menu card receives weapon-specific procedural preview variables");
+assert.match(mainSource, /data-weapon="\$\{id\}"[\s\S]*?weaponPreviewVariables\(weapon, WEAPON_INDEX_BY_ID\[id\]\)/, "every categorized menu card retains weapon-specific procedural preview variables");
 assert.ok(["boomerang_blade", "fireball", "plasma_cannon", "temporary_wall", "decoy_launcher", "black_hole_generator", "tornado_generator"].every((id) => stylesSource.includes(`data-weapon="${id}"`)), "signature and unusual weapons receive authored menu silhouettes beyond their generic type");
 assert.ok(presentationVisuals.tracers.length <= 128 && presentationVisuals.sparks.length <= 512 && presentationVisuals.rings.length <= 80, "the complete 47-weapon effects matrix remains fixed and sized for sixteen-player bursts");
 const meleeTraceCounts = { hammer: 2, energy_sword: 2, chainsaw: 2, spear: 1, punch_glove: 2, shock_baton: 4, knife: 1 };

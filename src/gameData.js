@@ -48,12 +48,12 @@ function weapon(category, id, name, type, color, description, stats = {}) {
 }
 
 export const WEAPON_GROUPS = [
-  { id: "prototype", name: "Prototype", ids: ["blaster", "shotgun", "machine_gun", "rocket_launcher", "grenade_launcher", "mine", "railgun", "plasma_cannon"] },
-  { id: "rapid", name: "Rapid Fire", ids: ["submachine_gun", "minigun", "plasma_repeater", "needle_launcher", "burst_rifle", "flamethrower"] },
-  { id: "explosive", name: "Explosive", ids: ["cluster_grenade", "sticky_launcher", "remote_explosive", "mortar", "bouncing_bomb", "napalm_launcher", "implosion_bomb"] },
-  { id: "energy", name: "Energy", ids: ["laser_beam", "charged_energy_rifle", "arc_lightning", "pulse_cannon", "gravity_beam", "disintegration_weapon"] },
-  { id: "unusual", name: "Unusual", ids: ["black_hole_generator", "freeze_gun", "fireball", "teleport_projectile", "drill_missile", "boomerang_blade", "ricochet_cannon", "gravity_grenade", "tornado_generator", "temporary_wall", "decoy_launcher", "weapon_stealing_projectile", "grapple_disrupting_pulse"] },
-  { id: "melee", name: "Melee", ids: ["hammer", "energy_sword", "chainsaw", "spear", "punch_glove", "shock_baton", "knife"] }
+  { id: "prototype", name: "Prototype", color: "#51dcff", ids: ["blaster", "grenade_launcher", "machine_gun", "mine", "plasma_cannon", "railgun", "rocket_launcher", "shotgun"] },
+  { id: "rapid", name: "Rapid Fire", color: "#5ff0a4", ids: ["burst_rifle", "flamethrower", "minigun", "needle_launcher", "plasma_repeater", "submachine_gun"] },
+  { id: "explosive", name: "Explosive", color: "#ff9b4a", ids: ["bouncing_bomb", "cluster_grenade", "implosion_bomb", "mortar", "napalm_launcher", "remote_explosive", "sticky_launcher"] },
+  { id: "energy", name: "Energy", color: "#7e9dff", ids: ["arc_lightning", "charged_energy_rifle", "disintegration_weapon", "gravity_beam", "laser_beam", "pulse_cannon"] },
+  { id: "unusual", name: "Unusual", color: "#d978ff", ids: ["black_hole_generator", "boomerang_blade", "decoy_launcher", "drill_missile", "fireball", "freeze_gun", "grapple_disrupting_pulse", "gravity_grenade", "ricochet_cannon", "teleport_projectile", "temporary_wall", "tornado_generator", "weapon_stealing_projectile"] },
+  { id: "melee", name: "Melee", color: "#ff607d", ids: ["chainsaw", "energy_sword", "hammer", "knife", "punch_glove", "shock_baton", "spear"] }
 ];
 
 const weaponList = [

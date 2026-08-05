@@ -8,13 +8,15 @@ import { CombatVisuals } from "./combatVisuals.js";
 import { ArenaWorld } from "./world.js";
 import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reticleAim } from "./player.js";
 import { InputManager, clearTouchActions, updateOrbit } from "./input.js";
-import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, weaponFireMode, WEAPONS } from "./gameData.js";
+import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "./gameData.js";
 import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, clampBotCount, nearestTarget, safestSpawn, shouldBotPlaceWall } from "./botBrain.js";
 import { NeonRenderPipeline } from "./renderPipeline.js";
 
 const canvas = document.querySelector("#game-canvas");
 const ui = document.querySelector("#ui-root");
 const clamp = THREE.MathUtils.clamp;
+const WEAPON_CATEGORY_BY_ID = Object.fromEntries(WEAPON_GROUPS.flatMap((group) => group.ids.map((id) => [id, group])));
+const WEAPON_INDEX_BY_ID = Object.fromEntries(Object.keys(WEAPONS).map((id, index) => [id, index]));
 
 function weaponPreviewVariables(weapon, index) {
   const length = 27 + index % 7 * 1.35;
@@ -303,14 +305,7 @@ class BlasterBattle {
             <div class="preset-heading"><h3>Saved sets</h3><span>One default applies automatically to every game</span></div>
             <section class="loadout-presets" aria-label="Saved weapon sets" data-loadout-presets>${this.loadoutPresetsMarkup()}</section>
             <p class="loadout-status" data-loadout-status aria-live="polite"></p>
-            <div class="weapon-grid">
-              ${Object.values(WEAPONS).map((weapon, index) => `
-                <button class="weapon-choice ${this.settings.loadout.includes(weapon.id) ? "selected" : ""}" data-weapon-choice="${weapon.id}" data-weapon="${weapon.id}" data-shape="${weapon.type}" data-slot="${this.settings.loadout.includes(weapon.id) ? this.settings.loadout.indexOf(weapon.id) + 1 : ""}" style="--weapon:#${weapon.color.toString(16).padStart(6, "0")};${weaponPreviewVariables(weapon, index)}">
-                  <i></i>
-                  <span class="weapon-preview" aria-hidden="true"></span>
-                  <b>${weapon.name}</b><em>${weapon.category}</em><small>${weapon.description}</small>
-                </button>`).join("")}
-            </div>
+            <div class="weapon-categories">${this.weaponCategoriesMarkup()}</div>
           </section>
           <button class="launch primary" data-action="start">${mode === "quick" ? "FIND MATCH" : mode === "private" ? "CREATE ROOM" : "START TRAINING"}</button>
           <p class="prototype-note">Playable MVP slice · Guest session · Internet match fleet is represented locally in this build</p>
@@ -319,14 +314,31 @@ class BlasterBattle {
     this.bindUi();
   }
 
+  weaponCategoriesMarkup() {
+    return WEAPON_GROUPS.map((group) => `<section class="weapon-category" data-weapon-category="${group.id}" style="--category:${group.color}" aria-labelledby="weapon-category-${group.id}">
+      <header><h3 id="weapon-category-${group.id}"><i></i>${group.name}</h3><span>${group.ids.length} weapons · A–Z</span></header>
+      <div class="weapon-grid">
+        ${group.ids.map((id) => {
+          const weapon = WEAPONS[id];
+          const slot = this.settings.loadout.indexOf(id);
+          return `<button class="weapon-choice ${slot >= 0 ? "selected" : ""}" data-weapon-choice="${id}" data-weapon="${id}" data-category="${group.id}" data-shape="${weapon.type}" data-slot="${slot >= 0 ? slot + 1 : ""}" style="--weapon:#${weapon.color.toString(16).padStart(6, "0")};--category:${group.color};${weaponPreviewVariables(weapon, WEAPON_INDEX_BY_ID[id])}">
+            <i></i><span class="weapon-preview" aria-hidden="true"></span>
+            <b>${weapon.name}</b><em>${group.name}</em><small>${weapon.description}</small>
+          </button>`;
+        }).join("")}
+      </div>
+    </section>`).join("");
+  }
+
   loadoutOrderMarkup() {
     return Array.from({ length: 5 }, (_, index) => {
       const id = this.settings.loadout[index];
       const weapon = WEAPONS[id];
       if (!weapon) return `<div class="loadout-slot empty"><span>${index + 1}</span><small>Empty slot</small></div>`;
       const color = `#${weapon.color.toString(16).padStart(6, "0")}`;
-      return `<div class="loadout-slot" draggable="true" data-loadout-drag="${index}" style="--weapon:${color}">
-        <span>${index + 1}</span><b>${escapeHtml(weapon.name)}</b>
+      const category = WEAPON_CATEGORY_BY_ID[id];
+      return `<div class="loadout-slot" draggable="true" data-loadout-drag="${index}" style="--weapon:${color};--category:${category.color}">
+        <span>${index + 1}</span><b>${escapeHtml(weapon.name)}</b><small>${category.name}</small>
         <div>
           <button data-loadout-move="${index}" data-direction="-1" aria-label="Move ${escapeHtml(weapon.name)} left" ${index === 0 ? "disabled" : ""}>‹</button>
           <button data-loadout-move="${index}" data-direction="1" aria-label="Move ${escapeHtml(weapon.name)} right" ${index === this.settings.loadout.length - 1 ? "disabled" : ""}>›</button>
@@ -342,7 +354,7 @@ class BlasterBattle {
       const isDefault = this.settings.defaultLoadoutPreset === index;
       const name = preset?.name || `Set ${index + 1}`;
       const label = escapeHtml(name);
-      const summary = preset ? preset.weaponIds.map((id, slot) => `<span><i>${slot + 1}</i>${escapeHtml(WEAPONS[id].name)}</span>`).join("") : `<small>No saved weapons</small>`;
+      const summary = preset ? preset.weaponIds.map((id, slot) => `<span style="--category:${WEAPON_CATEGORY_BY_ID[id].color}"><i>${slot + 1}</i>${escapeHtml(WEAPONS[id].name)}</span>`).join("") : `<small>No saved weapons</small>`;
       return `<article class="loadout-preset ${isDefault ? "default" : ""}" aria-label="${label} weapon set">
         <header>
           <input value="${label}" maxlength="18" data-preset-name="${index}" aria-label="Name for weapon set ${index + 1}">
