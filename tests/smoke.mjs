@@ -99,7 +99,10 @@ assert.deepEqual(
   "weapon IDs match the specification"
 );
 assert.equal(WEAPON_GROUPS.reduce((total, group) => total + group.ids.length, 0), 47, "every weapon belongs to one menu category");
+assert.equal(new Set(WEAPON_GROUPS.flatMap((group) => group.ids)).size, 47, "every weapon belongs to exactly one menu category");
 assert.ok(WEAPON_GROUPS.every((group) => group.ids.every((id) => WEAPONS[id])), "weapon categories contain no missing entries");
+assert.ok(!WEAPON_GROUPS.some((group) => group.id === "prototype" || group.name === "Prototype"), "legacy Prototype category is removed");
+assert.ok(WEAPON_GROUPS.every((group) => group.ids.every((id) => WEAPONS[id].category === group.name)), "menu groups and weapon category metadata agree");
 assert.ok(WEAPON_GROUPS.every((group) => /^#[0-9a-f]{6}$/i.test(group.color)), "every weapon category has a stable menu color");
 assert.ok(WEAPON_GROUPS.every((group) => group.ids.map((id) => WEAPONS[id].name).every((name, index, names) => !index || names[index - 1].localeCompare(name) <= 0)), "weapons are alphabetized inside every category");
 assert.match(mainSource, /weapon-categories[\s\S]*?weaponCategoriesMarkup\(\)[\s\S]*?WEAPON_GROUPS\.map/, "Quick Play, Private Room, and Training share the categorized weapon selector");

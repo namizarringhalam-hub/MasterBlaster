@@ -29,7 +29,7 @@ Touch controls appear automatically on phones and tablets.
 - Three.js WebGL 2 arena rendering
 - Deterministic seeded arena and destructible cover
 - Permanent momentum grappling hook
-- Eight prototype weapons and five-weapon loadouts
+- 47 functionally categorized weapons and five-weapon loadouts
 - Deathmatch scoring, respawns, results, and rematch
 - Adaptive bot Training, Quick Play practice, and private room-code setup
 - Local accessibility/content preferences and installable PWA shell

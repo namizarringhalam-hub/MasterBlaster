@@ -48,24 +48,25 @@ function weapon(category, id, name, type, color, description, stats = {}) {
 }
 
 export const WEAPON_GROUPS = [
-  { id: "prototype", name: "Prototype", color: "#51dcff", ids: ["blaster", "grenade_launcher", "machine_gun", "mine", "plasma_cannon", "railgun", "rocket_launcher", "shotgun"] },
-  { id: "rapid", name: "Rapid Fire", color: "#5ff0a4", ids: ["burst_rifle", "flamethrower", "minigun", "needle_launcher", "plasma_repeater", "submachine_gun"] },
-  { id: "explosive", name: "Explosive", color: "#ff9b4a", ids: ["bouncing_bomb", "cluster_grenade", "implosion_bomb", "mortar", "napalm_launcher", "remote_explosive", "sticky_launcher"] },
-  { id: "energy", name: "Energy", color: "#7e9dff", ids: ["arc_lightning", "charged_energy_rifle", "disintegration_weapon", "gravity_beam", "laser_beam", "pulse_cannon"] },
+  { id: "rapid", name: "Rapid Fire", color: "#5ff0a4", ids: ["burst_rifle", "machine_gun", "minigun", "needle_launcher", "plasma_repeater", "submachine_gun"] },
+  { id: "explosive", name: "Explosive", color: "#ff9b4a", ids: ["bouncing_bomb", "cluster_grenade", "grenade_launcher", "implosion_bomb", "mine", "mortar", "napalm_launcher", "remote_explosive", "rocket_launcher", "sticky_launcher"] },
+  { id: "energy", name: "Energy", color: "#51dcff", ids: ["arc_lightning", "blaster", "gravity_beam", "plasma_cannon", "pulse_cannon"] },
+  { id: "precision", name: "Precision", color: "#9fb7ff", ids: ["charged_energy_rifle", "disintegration_weapon", "laser_beam", "railgun"] },
+  { id: "close", name: "Close Quarters", color: "#ffd166", ids: ["flamethrower", "shotgun"] },
   { id: "unusual", name: "Unusual", color: "#d978ff", ids: ["black_hole_generator", "boomerang_blade", "decoy_launcher", "drill_missile", "fireball", "freeze_gun", "grapple_disrupting_pulse", "gravity_grenade", "ricochet_cannon", "teleport_projectile", "temporary_wall", "tornado_generator", "weapon_stealing_projectile"] },
   { id: "melee", name: "Melee", color: "#ff607d", ids: ["chainsaw", "energy_sword", "hammer", "knife", "punch_glove", "shock_baton", "spear"] }
 ];
 
 const weaponList = [
-  // Prototype set
-  weapon("Prototype", "blaster", "Blaster", "projectile", 0x50e8ff, "Medium-speed visible bolt.", { damage: 18, projectileSpeed: 75, cooldown: .3, spread: .012, ammo: 12, reload: 1.05, recoil: 1.1 }),
-  weapon("Prototype", "shotgun", "Shotgun", "spread", 0xffd166, "Fast close-range pellet burst.", { damage: 8, pellets: 7, projectileSpeed: 165, cooldown: .78, spread: .24, ammo: 5, recoil: 4.8 }),
-  weapon("Prototype", "machine_gun", "Machine Gun", "projectile", 0xa3ff8f, "Near-instant rapid physical rounds.", { damage: 7, projectileSpeed: 210, cooldown: .085, spread: .025, ammo: 32, reload: 1.45, recoil: .42, hitscan: true, preferredRange: 34, maxUsefulRange: 180 }),
-  weapon("Prototype", "rocket_launcher", "Rocket Launcher", "rocket", 0xff6b5f, "Slow, heavy terrain blast.", { damage: 56, projectileSpeed: 36, cooldown: 1.05, spread: .006, ammo: 3, reload: 1.6, recoil: 5.6, radius: 5.8, terrainRadius: 5.2 }),
-  weapon("Prototype", "grenade_launcher", "Grenade Launcher", "grenade", 0xc993ff, "Arcing, bouncing fuse.", { damage: 45, projectileSpeed: 13, cooldown: .88, spread: .02, ammo: 4, reload: 1.45, recoil: 2.2, radius: 5.1, terrainRadius: 4.4, fuse: 1.25, gravity: 17, bounces: 2, arcLift: 7.5 }),
-  weapon("Prototype", "mine", "Mine", "mine", 0xff4fa0, "Persistent proximity trap.", { damage: 60, projectileSpeed: 0, cooldown: 1.05, spread: 0, ammo: 3, reload: 1.6, recoil: .5, radius: 4.7, terrainRadius: 3.8, fuse: 8 }),
-  weapon("Prototype", "railgun", "Railgun", "rail", 0xffffff, "Almost-instant precision line shot.", { damage: 58, projectileSpeed: 520, cooldown: 1.1, spread: .002, ammo: 4, reload: 1.65, recoil: 3, hitscan: true }),
-  weapon("Prototype", "plasma_cannon", "Plasma Cannon", "plasma", 0x57a0ff, "Large charged energy orb.", { damage: 38, projectileSpeed: 58, cooldown: .9, spread: .008, ammo: 5, reload: 1.45, recoil: 3.6, radius: 3.6, terrainRadius: 2.7, projectileRadius: .42 }),
+  // Core arsenal
+  weapon("Energy", "blaster", "Blaster", "projectile", 0x50e8ff, "Medium-speed visible bolt.", { damage: 18, projectileSpeed: 75, cooldown: .3, spread: .012, ammo: 12, reload: 1.05, recoil: 1.1 }),
+  weapon("Close Quarters", "shotgun", "Shotgun", "spread", 0xffd166, "Fast close-range pellet burst.", { damage: 8, pellets: 7, projectileSpeed: 165, cooldown: .78, spread: .24, ammo: 5, recoil: 4.8 }),
+  weapon("Rapid Fire", "machine_gun", "Machine Gun", "projectile", 0xa3ff8f, "Near-instant rapid physical rounds.", { damage: 7, projectileSpeed: 210, cooldown: .085, spread: .025, ammo: 32, reload: 1.45, recoil: .42, hitscan: true, preferredRange: 34, maxUsefulRange: 180 }),
+  weapon("Explosive", "rocket_launcher", "Rocket Launcher", "rocket", 0xff6b5f, "Slow, heavy terrain blast.", { damage: 56, projectileSpeed: 36, cooldown: 1.05, spread: .006, ammo: 3, reload: 1.6, recoil: 5.6, radius: 5.8, terrainRadius: 5.2 }),
+  weapon("Explosive", "grenade_launcher", "Grenade Launcher", "grenade", 0xc993ff, "Arcing, bouncing fuse.", { damage: 45, projectileSpeed: 13, cooldown: .88, spread: .02, ammo: 4, reload: 1.45, recoil: 2.2, radius: 5.1, terrainRadius: 4.4, fuse: 1.25, gravity: 17, bounces: 2, arcLift: 7.5 }),
+  weapon("Explosive", "mine", "Mine", "mine", 0xff4fa0, "Persistent proximity trap.", { damage: 60, projectileSpeed: 0, cooldown: 1.05, spread: 0, ammo: 3, reload: 1.6, recoil: .5, radius: 4.7, terrainRadius: 3.8, fuse: 8 }),
+  weapon("Precision", "railgun", "Railgun", "rail", 0xffffff, "Almost-instant precision line shot.", { damage: 58, projectileSpeed: 520, cooldown: 1.1, spread: .002, ammo: 4, reload: 1.65, recoil: 3, hitscan: true }),
+  weapon("Energy", "plasma_cannon", "Plasma Cannon", "plasma", 0x57a0ff, "Large charged energy orb.", { damage: 38, projectileSpeed: 58, cooldown: .9, spread: .008, ammo: 5, reload: 1.45, recoil: 3.6, radius: 3.6, terrainRadius: 2.7, projectileRadius: .42 }),
 
   // Full library: rapid fire
   weapon("Rapid Fire", "submachine_gun", "Submachine Gun", "projectile", 0x7dff9c, "Mobile close-range bullet stream.", { damage: 5, projectileSpeed: 190, cooldown: .06, spread: .055, ammo: 40, reload: 1.25, recoil: .24, hitscan: true, preferredRange: 11, maxUsefulRange: 32 }),
@@ -73,7 +74,7 @@ const weaponList = [
   weapon("Rapid Fire", "plasma_repeater", "Plasma Repeater", "projectile", 0x42f5e6, "Rapid near-instant energy streaks with a persistent visible trail.", { damage: 9, projectileSpeed: 180, cooldown: .12, spread: .025, ammo: 24, reload: 1.35, recoil: .4, projectileRadius: .16, energy: true, hitscan: true }),
   weapon("Rapid Fire", "needle_launcher", "Needle Launcher", "projectile", 0xdf9cff, "Needles pierce through two fighters in one line.", { damage: 12, projectileSpeed: 260, cooldown: .16, spread: .009, ammo: 18, reload: 1.3, recoil: .35, penetration: 1, hitscan: true, preferredRange: 36, maxUsefulRange: 220 }),
   weapon("Rapid Fire", "burst_rifle", "Burst Rifle", "burst", 0x8dffcf, "Timed three-round precision burst.", { damage: 10, burstCount: 3, burstInterval: .065, projectileSpeed: 245, cooldown: .52, spread: .018, ammo: 24, reload: 1.45, recoil: 1.3, hitscan: true }),
-  weapon("Rapid Fire", "flamethrower", "Flamethrower", "flame", 0xff6a24, "Continuous 11.5-metre cone with distance and edge falloff.", { damage: 4, projectileSpeed: 0, cooldown: .115, spread: 0, ammo: 48, reload: 1.8, recoil: .08, reach: 11.5, coneAngle: .22 }),
+  weapon("Close Quarters", "flamethrower", "Flamethrower", "flame", 0xff6a24, "Continuous 11.5-metre cone with distance and edge falloff.", { damage: 4, projectileSpeed: 0, cooldown: .115, spread: 0, ammo: 48, reload: 1.8, recoil: .08, reach: 11.5, coneAngle: .22 }),
 
   // Full library: explosive
   weapon("Explosive", "cluster_grenade", "Cluster Grenade", "grenade", 0xff9f68, "Splits into six secondary bomblets.", { damage: 18, projectileSpeed: 15, cooldown: 1.15, ammo: 3, reload: 1.7, recoil: 2.2, radius: 2.8, terrainRadius: 2.3, fuse: 1.05, gravity: 17, bounces: 1, arcLift: 8.5, split: 6 }),
@@ -84,13 +85,13 @@ const weaponList = [
   weapon("Explosive", "napalm_launcher", "Napalm Launcher", "rocket", 0xff6a2a, "Ignites a persistent damaging fire zone.", { damage: 28, projectileSpeed: 42, cooldown: 1.1, ammo: 4, reload: 1.65, recoil: 3.8, radius: 4.2, terrainRadius: 2.5, hazard: "napalm", hazardDuration: 6, maxActiveHazards: 2 }),
   weapon("Explosive", "implosion_bomb", "Implosion Bomb", "grenade", 0xa986ff, "Collapses its blast inward and drags fighters together.", { damage: 38, projectileSpeed: 17, cooldown: 1.25, ammo: 3, reload: 1.8, recoil: 5, radius: 7.2, terrainRadius: 2, fuse: 1.5, gravity: 16, bounces: 1, arcLift: 8, pull: true }),
 
-  // Full library: energy
-  weapon("Energy", "laser_beam", "Laser Beam", "beam", 0xff365d, "Instant straight beam with no travel cutoff.", { damage: 24, projectileSpeed: 0, cooldown: .38, spread: .001, ammo: 10, reload: 1.35, recoil: 1.1 }),
-  weapon("Energy", "charged_energy_rifle", "Charged Energy Rifle", "rail", 0x79b8ff, "Hold to charge, then release a piercing precision shot.", { damage: 76, projectileSpeed: 610, cooldown: 1.65, spread: .001, ammo: 3, reload: 2, recoil: 5.4, penetration: 1, hitscan: true, chargeTime: 1.05, minCharge: .18 }),
+  // Full library: energy and precision
+  weapon("Precision", "laser_beam", "Laser Beam", "beam", 0xff365d, "Instant straight beam with no travel cutoff.", { damage: 24, projectileSpeed: 0, cooldown: .38, spread: .001, ammo: 10, reload: 1.35, recoil: 1.1 }),
+  weapon("Precision", "charged_energy_rifle", "Charged Energy Rifle", "rail", 0x79b8ff, "Hold to charge, then release a piercing precision shot.", { damage: 76, projectileSpeed: 610, cooldown: 1.65, spread: .001, ammo: 3, reload: 2, recoil: 5.4, penetration: 1, hitscan: true, chargeTime: 1.05, minCharge: .18 }),
   weapon("Energy", "arc_lightning", "Arc Lightning", "chain", 0x8df7ff, "Lightning jumps between nearby opponents.", { damage: 27, projectileSpeed: 0, cooldown: .72, ammo: 8, reload: 1.4, recoil: .7, reach: 34, chains: 3 }),
   weapon("Energy", "pulse_cannon", "Pulse Cannon", "plasma", 0x4c8dff, "Wide impulse pulse for controlling space.", { damage: 31, projectileSpeed: 72, cooldown: .72, ammo: 7, reload: 1.4, recoil: 5.2, radius: 4.8, terrainRadius: 1.5, projectileRadius: .48, presentationPayload: "pulse" }),
   weapon("Energy", "gravity_beam", "Gravity Beam", "beam", 0xbf7cff, "A maintained tractor tether pulls its target toward you.", { damage: 3.5, projectileSpeed: 0, cooldown: .12, ammo: 30, reload: 1.5, recoil: 0, beamPull: 15, maintained: true, preferredRange: 20, maxUsefulRange: 65 }),
-  weapon("Energy", "disintegration_weapon", "Disintegration Weapon", "beam", 0xf5f7ff, "Piercing beam erases cover in its path.", { damage: 44, projectileSpeed: 0, cooldown: 1.2, ammo: 4, reload: 1.8, recoil: 2.8, penetration: 4, terrainRadius: 4.5 }),
+  weapon("Precision", "disintegration_weapon", "Disintegration Weapon", "beam", 0xf5f7ff, "Piercing beam erases cover in its path.", { damage: 44, projectileSpeed: 0, cooldown: 1.2, ammo: 4, reload: 1.8, recoil: 2.8, penetration: 4, terrainRadius: 4.5 }),
 
   // Full library: unusual
   weapon("Unusual", "black_hole_generator", "Black-Hole Generator", "plasma", 0x5d3b99, "Creates a singularity that pulls and damages nearby fighters.", { damage: 18, projectileSpeed: 34, cooldown: 1.8, ammo: 2, reload: 2.2, recoil: 5, radius: 4, terrainRadius: 2, projectileRadius: .5, hazard: "black_hole", hazardDuration: 5, maxActiveHazards: 2 }),
