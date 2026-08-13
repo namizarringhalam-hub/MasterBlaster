@@ -5,9 +5,6 @@ import { weaponPresentation } from "./weaponPresentation.js";
 const clamp = THREE.MathUtils.clamp;
 export const PROJECTILE_SPAWN_OFFSET = .08;
 
-let haloTexture;
-const badgeTextures = new Map();
-
 function material(color, emissive = 0, options = {}) {
   return new THREE.MeshPhysicalMaterial({
     color,
@@ -30,68 +27,6 @@ function part(geometry, mat, x, y, z, shadows = false) {
   mesh.castShadow = shadows;
   mesh.receiveShadow = shadows;
   return mesh;
-}
-
-function radialTexture() {
-  if (haloTexture) return haloTexture;
-  const size = 32;
-  const data = new Uint8Array(size * size * 4);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const distance = Math.hypot(x / (size - 1) * 2 - 1, y / (size - 1) * 2 - 1);
-      const alpha = Math.round(255 * Math.pow(Math.max(0, 1 - distance), 2.4));
-      const offset = (y * size + x) * 4;
-      data[offset] = data[offset + 1] = data[offset + 2] = 255;
-      data[offset + 3] = alpha;
-    }
-  }
-  haloTexture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
-  haloTexture.minFilter = THREE.LinearFilter;
-  haloTexture.magFilter = THREE.LinearFilter;
-  haloTexture.generateMipmaps = false;
-  haloTexture.needsUpdate = true;
-  return haloTexture;
-}
-
-function badgeTexture(id) {
-  const number = Math.max(1, Number(String(id).match(/\d+/)?.[0] || 1));
-  if (badgeTextures.has(number)) return badgeTextures.get(number);
-  const size = 32;
-  const data = new Uint8Array(size * size * 4);
-  const shape = (x, y, style) => {
-    if (style === 0) return Math.abs(x) + Math.abs(y) < .92;
-    if (style === 1) return x * x + y * y < .76;
-    if (style === 2) return y > -.82 && y < .78 && Math.abs(x) < (.78 - y) * .55;
-    return Math.abs(x) < .76 && Math.abs(y) < .84 && Math.abs(x) + Math.abs(y) * .5 < 1.04;
-  };
-  const style = (number - 1) % 4;
-  const cut = Math.floor((number - 1) / 4) % 4;
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const nx = (x + .5) / size * 2 - 1;
-      const ny = (y + .5) / size * 2 - 1;
-      const outer = shape(nx, ny, style);
-      const inner = shape(nx / .7, ny / .7, style);
-      if (!outer) continue;
-      const pattern = cut === 0 ? Math.abs(nx) < .105
-        : cut === 1 ? Math.abs(ny) < .105
-          : cut === 2 ? Math.abs(nx - ny) < .13
-            : Math.abs(nx + ny) < .12 || Math.abs(nx - ny) < .12;
-      const bright = inner && !pattern;
-      const offset = (y * size + x) * 4;
-      data[offset] = bright ? 255 : 4;
-      data[offset + 1] = bright ? 255 : 7;
-      data[offset + 2] = bright ? 255 : 13;
-      data[offset + 3] = 255;
-    }
-  }
-  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
-  texture.minFilter = THREE.NearestFilter;
-  texture.magFilter = THREE.NearestFilter;
-  texture.generateMipmaps = false;
-  texture.needsUpdate = true;
-  badgeTextures.set(number, texture);
-  return texture;
 }
 
 function limb(geometry, mat, x, y, z) {
@@ -305,13 +240,6 @@ export class Fighter {
     this.weaponGroup.position.set(.38, 1.4, .28);
     this.rig.add(this.weaponGroup);
 
-    const shadowMaterial = new THREE.MeshBasicMaterial({
-      map: radialTexture(), color: 0x000000, transparent: true, opacity: .2,
-      alphaTest: .015, depthWrite: false, toneMapped: false
-    });
-    const shadow = part(new THREE.PlaneGeometry(1.8, 1.35), shadowMaterial, 0, .022, 0);
-    shadow.name = "Soft contact shadow";
-    shadow.rotation.x = -Math.PI / 2;
     const ringMaterial = new THREE.MeshBasicMaterial({
       color: this.accent,
       transparent: true,
@@ -335,45 +263,13 @@ export class Fighter {
     }), 0, .055, 0, false);
     this.freezeRing.rotation.x = -Math.PI / 2;
     this.freezeRing.renderOrder = 4;
-    const haloMaterial = new THREE.SpriteMaterial({
-      map: radialTexture(),
-      color: this.accent,
-      transparent: true,
-      opacity: .14,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      toneMapped: false
-    });
-    this.readabilityHalo = new THREE.Sprite(haloMaterial);
-    this.readabilityHalo.position.set(0, 1.38, -.08);
-    this.readabilityHalo.scale.set(2.85, 3.65, 1);
-    this.readabilityHalo.renderOrder = 2;
-    this.freezeAura = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: radialTexture(),
-      color: 0xa9efff,
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      toneMapped: false
-    }));
-    this.freezeAura.position.set(0, 1.35, -.05);
-    this.freezeAura.scale.set(3.15, 3.95, 1);
-    this.freezeAura.renderOrder = 3;
-    this.identityBeacon = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: badgeTexture(this.id),
-      color: this.accent,
-      transparent: true,
-      opacity: .94,
-      alphaTest: .04,
-      depthWrite: false,
-      sizeAttenuation: false,
-      toneMapped: false
-    }));
-    this.identityBeacon.position.set(0, 2.82, 0);
-    this.identityBeacon.scale.set(.034, .034, 1);
+    this.identityBeacon = part(new THREE.OctahedronGeometry(.12, 0), material(this.accent, this.accent, {
+      emissiveIntensity: 1.8, roughness: .16, metalness: .3, transparent: true, opacity: .94, depthWrite: false
+    }), 0, 2.82, 0, false);
+    this.identityBeacon.name = "Identity beacon";
+    this.identityBeacon.scale.set(.78, 1.32, .52);
     this.identityBeacon.renderOrder = 5;
-    group.add(shadow, this.identityRing, this.freezeRing, this.readabilityHalo, this.freezeAura, this.identityBeacon);
+    group.add(this.identityRing, this.freezeRing, this.identityBeacon);
     return group;
   }
 
@@ -698,7 +594,6 @@ export class Fighter {
     this.chargeLevel = 0;
     this.chargingWeaponId = null;
     this.freezeRing.material.opacity = 0;
-    this.freezeAura.material.opacity = 0;
     this.deaths += 1;
     this.deathTimer = 1.4;
     return true;
@@ -722,7 +617,6 @@ export class Fighter {
     this.accentMaterial.emissiveIntensity = 2.8 * fade;
     this.darkMaterial.emissiveIntensity = .5 * burst;
     this.identityRing.material.opacity = .62 * fade;
-    this.readabilityHalo.material.opacity = .32 * burst * fade;
     this.identityBeacon.material.opacity = fade;
     if (this.deathTimer === 0) this.group.visible = false;
   }
@@ -748,7 +642,6 @@ export class Fighter {
     this.accentMaterial.emissiveIntensity = 1.25;
     this.darkMaterial.emissiveIntensity = .025;
     this.identityRing.material.opacity = .46;
-    this.readabilityHalo.material.opacity = .14;
     this.identityBeacon.material.opacity = .94;
     this.reloadTimer = 0;
     this.reloadWeaponId = null;
@@ -986,14 +879,12 @@ export class Fighter {
     this.freezeRing.material.opacity = frozen ? .4 + freezePulse * .28 : 0;
     this.freezeRing.scale.setScalar(1 + freezePulse * .16);
     this.freezeRing.rotation.z -= dt * (frozen ? 1.6 : 0);
-    this.freezeAura.material.opacity = frozen ? .16 + freezePulse * .08 : 0;
     this.identityRing.material.opacity = hit ? .62 + hitWave * .32 : .34 + pulse * .17;
     this.identityRing.scale.setScalar(1 + pulse * .045);
     this.identityRing.rotation.z += dt * .32;
-    this.readabilityHalo.material.opacity = hit ? .22 + hitWave * .18 : .12 + locomotion * .06;
     this.identityBeacon.position.y = 2.82 + Math.sin(time * .7) * .04;
     this.identityBeacon.material.opacity = hit ? 1 : .86 + pulse * .12;
-    this.identityBeacon.scale.setScalar((hit ? .041 : .034) * (1 + pulse * .06));
+    this.identityBeacon.scale.set(.78, 1.32, .52).multiplyScalar((hit ? 1.18 : 1) * (1 + pulse * .06));
   }
 
   forwardPoint(distance) {

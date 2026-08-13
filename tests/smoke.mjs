@@ -140,7 +140,9 @@ for (const [id, weapon] of Object.entries(WEAPONS)) {
   assert.ok(model.weaponGroup.children.length >= 3, `${id} has a layered held-weapon model`);
   assert.ok(model.weaponMuzzleDistance > .3, `${id} exposes a valid muzzle or strike origin`);
   assert.equal(model.group.getObjectByProperty("castShadow", true), undefined, `${id} cannot create blocky per-fighter shadow-map patches`);
-  assert.equal(model.group.getObjectByName("Soft contact shadow")?.geometry?.type, "PlaneGeometry", `${id} uses the shared feathered contact shadow`);
+  assert.equal(model.group.getObjectByName("Soft contact shadow"), undefined, `${id} has no transparent floor quad that can leak into WebGPU ambient occlusion`);
+  assert.equal(model.group.getObjectByProperty("isSprite", true), undefined, `${id} has no camera-facing sprite quad that can leak rectangular normals into WebGPU ambient occlusion`);
+  assert.equal(model.group.getObjectByName("Identity beacon")?.geometry?.type, "OctahedronGeometry", `${id} keeps a real 3D identity beacon without a transparent quad`);
   if (id === "boomerang_blade") assert.equal(model.weaponSpinner?.geometry?.type, "TorusGeometry", "the equipped Boomerang reaches its authored spinning-disc bracer branch");
   model.dispose();
 
@@ -457,7 +459,7 @@ const flameFighter = new Fighter(
 assert.ok(flameFighter.weaponMuzzleDistance > 1.4 && flameFighter.weaponGroup.children.length >= 6, "the Flamethrower has a distinct long-nozzle and fuel-tank silhouette");
 flameFighter.slowTimer = 1;
 flameFighter.update(.016, new THREE.Vector3(), new THREE.Vector3(0, 0, 1), {}, worldB);
-assert.ok(flameFighter.freezeAura.material.opacity > 0 && flameFighter.freezeRing.material.opacity > 0, "the cyan frozen-state cue remains visible while slowed");
+assert.ok(flameFighter.freezeRing.material.opacity > 0, "the geometry-based cyan frozen-state cue remains visible while slowed");
 applyWeaponStatus(flameFighter, WEAPONS.freeze_gun);
 assert.equal(flameFighter.slowTimer, 4.5, "repeated Freeze Gun hits refresh rather than add their duration");
 applyWeaponStatus(flameFighter, WEAPONS.freeze_gun);
@@ -465,7 +467,7 @@ assert.equal(flameFighter.slowTimer, 4.5, "rapid Freeze Gun hits cannot stack in
 flameFighter.takeHit(100);
 applyWeaponStatus(flameFighter, WEAPONS.freeze_gun);
 assert.equal(flameFighter.slowTimer, 0, "death clears the frozen status immediately");
-assert.equal(flameFighter.freezeAura.material.opacity, 0, "death clears the frozen-state visual immediately");
+assert.equal(flameFighter.freezeRing.material.opacity, 0, "death clears the frozen-state visual immediately");
 flameFighter.dispose();
 
 const closeTarget = { alive: true, radius: .72, position: new THREE.Vector3(0, 0, 2) };
