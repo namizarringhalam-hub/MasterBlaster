@@ -323,6 +323,20 @@ windowListeners.pointercancel({ pointerType: "touch", pointerId: 10 });
 assert.equal(touchInput.touchMove.id, 9, "cancelling an ignored finger preserves the active walking finger");
 windowListeners.pointercancel({ pointerType: "touch", pointerId: 9 });
 assert.deepEqual(touchInput.touchDirection(), { x: 0, y: 0 }, "cancelling the walking finger clears movement");
+let lockRequests = 0;
+const desktopCanvas = {
+  addEventListener(type, listener) { canvasListeners[type] = listener; },
+  requestPointerLock() { lockRequests++; }
+};
+const desktopInput = new InputManager(desktopCanvas);
+canvasListeners.pointerdown({ pointerType: "mouse", button: 0, preventDefault() {} });
+assert.equal(lockRequests, 1, "the first gameplay click requests mouse capture");
+assert.equal(desktopInput.mouse.left, false, "the click used to capture the mouse is consumed instead of firing");
+assert.equal(desktopInput.tapped("MouseLeft"), false, "the capture click never queues a projectile shot");
+globalThis.document.pointerLockElement = desktopCanvas;
+canvasListeners.pointerdown({ pointerType: "mouse", button: 0, preventDefault() {} });
+assert.equal(desktopInput.mouse.left, true, "left click fires normally after mouse capture is active");
+assert.equal(desktopInput.tapped("MouseLeft"), true, "captured clicks still queue normal weapon input");
 if (previousAddEventListener) globalThis.addEventListener = previousAddEventListener;
 else delete globalThis.addEventListener;
 if (previousDocument) globalThis.document = previousDocument;
