@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import * as THREE from "three/webgpu";
 import { chooseBotSlot, botFireChance, botWeaponPolicy, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
 import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
-import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, LOADOUT_PRESET_COUNT, LOADOUT_SLOTS, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, seededRandom, seedFromText, swapStolenWeapon, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
+import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, LOADOUT_SLOTS, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, seededRandom, seedFromText, swapStolenWeapon, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
 import { InputManager, TOUCH_LOOK_GAIN, clearTouchActions, shouldCaptureGameKey, touchLookDelta, touchMoveDelta, updateOrbit } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, flameConeFactor, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
@@ -28,6 +28,8 @@ assert.match(renderPipelineSource, /this\.direct = coarsePointer[\s\S]*?if \(!na
 assert.match(renderPipelineSource, /catch \(error\)[\s\S]*?degradeToDirect\(error\)/, "post-processing failures degrade to direct rendering");
 assert.match(mainSource, /sessionStorage\.setItem\("blaster-force-webgl", "1"\)[\s\S]*?location\.reload\(\)/, "WebGPU device loss restarts through the WebGL2 recovery path");
 assert.match(mainSource, /renderPipeline\.setReducedMotion\(this\.settings\.reducedMotion\)/, "reduced-motion changes immediately retune the active pipeline");
+assert.match(mainSource, /data-setting="graphics"[\s\S]*?"low", "medium", "high"/, "settings expose low, medium, and high graphics quality");
+assert.match(mainSource, /renderPipeline\?\.setQuality\(this\.graphics\.level\)/, "graphics changes immediately retune the active render pipeline");
 assert.match(renderPipelineSource, /this\.reducedMotion = Boolean\(reducedMotion\)[\s\S]*?highLoadBloom = bloom\(sceneColor, this\.reducedMotion \? \.16 : \.3/, "a newly-created sixteen-player bloom profile inherits Reduced Motion");
 assert.match(mainSource, /damageVignetteTimer = setTimeout\([\s\S]*?classList\.remove\("visible"\)[\s\S]*?reducedMotion \? 120 : 520/, "the damage vignette clears explicitly even when CSS animations are disabled");
 assert.doesNotMatch(mainSource, /grapple\.line\.geometry\.setFromPoints/, "grapple rope updates reuse fixed GPU buffers");
@@ -63,6 +65,10 @@ globalThis.localStorage = {
   setItem: (_key, value) => { settingsStorage = value; }
 };
 const legacySettings = loadSettings();
+assert.equal(legacySettings.graphics, "high", "existing players migrate to High graphics without changing the current default appearance");
+assert.deepEqual(graphicsProfile("high", false, 3), { level: "high", pixelRatio: 1.65, combatQuality: 1 }, "High preserves the current desktop resolution and effect density");
+assert.ok(graphicsProfile("medium", false, 3).pixelRatio < 1.65 && graphicsProfile("medium", false, 3).combatQuality < 1, "Medium reduces resolution and effect density");
+assert.ok(graphicsProfile("low", false, 3).pixelRatio < graphicsProfile("medium", false, 3).pixelRatio && graphicsProfile("low", false, 3).combatQuality < graphicsProfile("medium", false, 3).combatQuality, "Low applies the lightest render profile");
 assert.deepEqual(legacySettings.loadout, savedSet, "legacy loadout-only settings migrate without changing weapon order");
 assert.deepEqual(legacySettings.loadoutPresets, [null, null, null], "legacy settings gain three empty preset slots");
 legacySettings.loadoutPresets[0] = { name: "Control", weaponIds: [...savedSet] };

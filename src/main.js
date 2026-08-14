@@ -8,7 +8,7 @@ import { CombatVisuals } from "./combatVisuals.js";
 import { ArenaWorld } from "./world.js";
 import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reticleAim } from "./player.js";
 import { InputManager, clearTouchActions, updateOrbit } from "./input.js";
-import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "./gameData.js";
+import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "./gameData.js";
 import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, clampBotCount, nearestTarget, safestSpawn, shouldBotPlaceWall } from "./botBrain.js";
 import { NeonRenderPipeline } from "./renderPipeline.js";
 
@@ -87,6 +87,9 @@ function capabilities() {
 class BlasterBattle {
   constructor() {
     this.capabilities = capabilities();
+    this.settings = loadSettings();
+    this.coarsePointer = matchMedia("(pointer: coarse)").matches;
+    this.graphics = graphicsProfile(this.settings.graphics, this.coarsePointer, devicePixelRatio);
     this.forceWebGL = sessionStorage.getItem("blaster-force-webgl") === "1"
       || new URLSearchParams(location.search).get("renderer") === "webgl";
     this.renderer = new THREE.WebGPURenderer({
@@ -97,8 +100,7 @@ class BlasterBattle {
       forceWebGL: this.forceWebGL,
       powerPreference: "high-performance"
     });
-    const coarsePointer = matchMedia("(pointer: coarse)").matches;
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, coarsePointer ? 1.3 : 1.65));
+    this.renderer.setPixelRatio(this.graphics.pixelRatio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.02;
@@ -119,7 +121,6 @@ class BlasterBattle {
     this.cameraPitch = -.08;
     this.cameraFocus = new THREE.Vector3();
     this.sound = new SoundBoard();
-    this.settings = loadSettings();
     this.sound.setVolume(this.settings.volume);
     this.sound.setMix({ music: this.settings.musicVolume, effects: this.settings.effectsVolume, ambience: this.settings.ambienceVolume });
     this.sound.setDynamicRange(this.settings.dynamicRange);
@@ -158,7 +159,8 @@ class BlasterBattle {
     environment.dispose();
     this.renderPipeline = new NeonRenderPipeline(this.renderer, this.scene, this.camera, {
       reducedMotion: this.settings.reducedMotion,
-      coarsePointer: matchMedia("(pointer: coarse)").matches
+      coarsePointer: this.coarsePointer,
+      quality: this.graphics.level
     });
     const reportDeviceLost = this.renderer.onDeviceLost.bind(this.renderer);
     this.renderer.onDeviceLost = (info) => {
@@ -213,6 +215,14 @@ class BlasterBattle {
     this.renderer.setSize(innerWidth, innerHeight, false);
     this.camera.aspect = innerWidth / innerHeight;
     this.camera.updateProjectionMatrix();
+  }
+
+  applyGraphicsSettings() {
+    this.graphics = graphicsProfile(this.settings.graphics, this.coarsePointer, devicePixelRatio);
+    this.settings.graphics = this.graphics.level;
+    this.renderer.setPixelRatio(this.graphics.pixelRatio);
+    this.renderPipeline?.setQuality(this.graphics.level);
+    this.resize();
   }
 
   clearMatch() {
@@ -388,6 +398,11 @@ class BlasterBattle {
           <header><button class="back" data-screen="main">← Back</button><p>LOCAL PREFERENCES</p></header>
           <h1>Settings</h1>
           <div class="settings-grid">
+            <label>Graphics quality
+              <select data-setting="graphics">
+                ${["low", "medium", "high"].map((value) => `<option ${this.settings.graphics === value ? "selected" : ""}>${value}</option>`).join("")}
+              </select>
+            </label>
             <label>Blood and impact effects
               <select data-setting="blood">
                 ${["off", "reduced", "full"].map((value) => `<option ${this.settings.blood === value ? "selected" : ""}>${value}</option>`).join("")}
@@ -637,6 +652,7 @@ class BlasterBattle {
   }
 
   saveSettingsForm() {
+    this.settings.graphics = ui.querySelector('[data-setting="graphics"]').value;
     this.settings.blood = ui.querySelector('[data-setting="blood"]').value;
     this.settings.shake = Number(ui.querySelector('[data-setting="shake"]').value);
     this.settings.volume = Number(ui.querySelector('[data-setting="volume"]').value);
@@ -650,6 +666,7 @@ class BlasterBattle {
     this.settings.reducedMotion = ui.querySelector('[data-setting="reducedMotion"]').checked;
     document.documentElement.classList.toggle("reduce-motion", this.settings.reducedMotion);
     this.renderPipeline.setReducedMotion(this.settings.reducedMotion);
+    this.applyGraphicsSettings();
     saveSettings(this.settings);
     this.renderMain();
   }
@@ -670,7 +687,7 @@ class BlasterBattle {
     this.world = new ArenaWorld(this.scene, this.seed);
     this.combatVisuals = new CombatVisuals(this.scene, {
       reducedMotion: this.settings.reducedMotion,
-      quality: matchMedia("(pointer: coarse)").matches ? .68 : 1
+      quality: this.graphics.combatQuality
     });
     const spawns = this.world.spawnPoints();
     const playerLoadout = this.settings.loadout.length === 5 ? this.settings.loadout : DEFAULT_LOADOUT;

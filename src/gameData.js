@@ -146,6 +146,18 @@ export function excessOwnedProjectiles(projectiles, owner, weaponId, limit) {
 }
 
 export const DEFAULT_LOADOUT = LOADOUT_SLOTS.map((slot) => slot.defaultWeapon);
+const GRAPHICS_LEVELS = new Set(["low", "medium", "high"]);
+
+export function graphicsProfile(level = "high", coarsePointer = false, deviceScale = 1) {
+  const resolved = GRAPHICS_LEVELS.has(level) ? level : "high";
+  const pixelCap = resolved === "low" ? (coarsePointer ? .85 : 1)
+    : resolved === "medium" ? (coarsePointer ? 1.05 : 1.3)
+      : coarsePointer ? 1.3 : 1.65;
+  const combatQuality = resolved === "low" ? .5
+    : resolved === "medium" ? (coarsePointer ? .6 : .75)
+      : coarsePointer ? .68 : 1;
+  return { level: resolved, pixelRatio: Math.min(Math.max(.5, Number(deviceScale) || 1), pixelCap), combatQuality };
+}
 
 function validLoadout(value) {
   return Array.isArray(value) ? [...new Set(value.filter((id) => WEAPONS[id]))].slice(0, LOADOUT_SLOTS.length) : [];
@@ -202,6 +214,7 @@ function defaults() {
   return {
     displayName: "Rookie",
     blood: "reduced",
+    graphics: "high",
     shake: 60,
     reducedMotion: false,
     volume: 70,
@@ -233,7 +246,8 @@ export function loadSettings() {
     const defaultLoadoutPreset = Number.isInteger(saved.defaultLoadoutPreset) && loadoutPresets[saved.defaultLoadoutPreset]
       ? saved.defaultLoadoutPreset
       : null;
-    return { ...defaults(), ...saved, loadout, loadoutPresets, defaultLoadoutPreset };
+    const graphics = GRAPHICS_LEVELS.has(saved.graphics) ? saved.graphics : "high";
+    return { ...defaults(), ...saved, graphics, loadout, loadoutPresets, defaultLoadoutPreset };
   } catch {
     return defaults();
   }

@@ -4,11 +4,13 @@ import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 
 export class NeonRenderPipeline {
-  constructor(renderer, scene, camera, { reducedMotion = false, coarsePointer = false } = {}) {
+  constructor(renderer, scene, camera, { reducedMotion = false, coarsePointer = false, quality = "high" } = {}) {
     this.renderer = renderer;
     this.scene = scene;
     this.camera = camera;
     this.reducedMotion = Boolean(reducedMotion);
+    this.quality = ["low", "medium", "high"].includes(quality) ? quality : "high";
+    this.coarsePointer = coarsePointer;
     this.highLoadMode = false;
     this.highLoadPipeline = null;
     this.highLoadBloom = null;
@@ -16,7 +18,10 @@ export class NeonRenderPipeline {
     this.nativeWebGPU = nativeWebGPU;
     this.direct = coarsePointer;
     this.profile = nativeWebGPU ? "WEBGPU MOBILE DIRECT" : coarsePointer ? "WEBGL2 MOBILE DIRECT" : "WEBGL2 BLOOM";
-    if (this.direct) return;
+    if (this.direct) {
+      this.setQuality(this.quality);
+      return;
+    }
 
     this.pipeline = new THREE.RenderPipeline(renderer);
     if (!nativeWebGPU) {
@@ -24,6 +29,7 @@ export class NeonRenderPipeline {
       this.bloomPass = bloom(sceneColor, reducedMotion ? .16 : .28, .3, 1.08);
       this.bloomPass.resolutionScale = .34;
       this.pipeline.outputNode = sceneColor.add(this.bloomPass);
+      this.setQuality(this.quality);
       return;
     }
     const scenePass = pass(scene, camera);
@@ -52,13 +58,13 @@ export class NeonRenderPipeline {
     const finalColor = sceneColor.mul(vec4(vec3(grounding), 1));
 
     this.pipeline.outputNode = finalColor.add(bloomPass);
-    this.profile = "WEBGPU ULTRA";
+    this.setQuality(this.quality);
   }
 
   render() {
-    if (this.direct) return this.renderer.render(this.scene, this.camera);
+    if (this.direct || this.quality === "low") return this.renderer.render(this.scene, this.camera);
     try {
-      (this.highLoadMode ? this.highLoadPipeline : this.pipeline).render();
+      (this.nativeWebGPU && (this.highLoadMode || this.quality === "medium") ? this.highLoadPipeline : this.pipeline).render();
     } catch (error) {
       this.degradeToDirect(error);
       this.renderer.render(this.scene, this.camera);
@@ -67,26 +73,57 @@ export class NeonRenderPipeline {
 
   setReducedMotion(reducedMotion) {
     this.reducedMotion = Boolean(reducedMotion);
-    if (this.bloomPass) this.bloomPass.strength.value = this.nativeWebGPU ? reducedMotion ? .22 : .44 : reducedMotion ? .16 : .28;
-    if (this.highLoadBloom) this.highLoadBloom.strength.value = reducedMotion ? .16 : .3;
+    this.updateBloomQuality();
+  }
+
+  ensurePerformancePipeline() {
+    if (!this.nativeWebGPU || this.highLoadPipeline) return;
+    this.highLoadPipeline = new THREE.RenderPipeline(this.renderer);
+    const sceneColor = pass(this.scene, this.camera).getTextureNode("output");
+    this.highLoadBloom = bloom(sceneColor, this.reducedMotion ? .16 : .3, .3, 1.08);
+    this.highLoadBloom.resolutionScale = .34;
+    this.highLoadPipeline.outputNode = sceneColor.add(this.highLoadBloom);
+  }
+
+  updateBloomQuality() {
+    if (this.bloomPass) {
+      this.bloomPass.strength.value = this.reducedMotion ? (this.nativeWebGPU ? .22 : .16)
+        : this.quality === "medium" ? (this.nativeWebGPU ? .3 : .2)
+          : this.nativeWebGPU ? .44 : .28;
+      this.bloomPass.resolutionScale = this.quality === "medium" ? (this.nativeWebGPU ? .4 : .26) : this.nativeWebGPU ? .5 : .34;
+    }
+    if (this.highLoadBloom) this.highLoadBloom.strength.value = this.reducedMotion ? .16 : this.quality === "medium" ? .24 : .3;
+  }
+
+  setQuality(quality = "high") {
+    this.quality = ["low", "medium", "high"].includes(quality) ? quality : "high";
+    if (this.direct) {
+      this.profile = `${this.nativeWebGPU ? "WEBGPU" : "WEBGL2"} MOBILE DIRECT · ${this.quality.toUpperCase()}`;
+      return this.quality;
+    }
+    if (this.nativeWebGPU && this.quality === "medium") this.ensurePerformancePipeline();
+    this.updateBloomQuality();
+    this.profile = this.quality === "low" ? `${this.nativeWebGPU ? "WEBGPU" : "WEBGL2"} LOW DIRECT`
+      : !this.nativeWebGPU ? this.quality === "medium" ? "WEBGL2 MEDIUM BLOOM" : "WEBGL2 BLOOM"
+        : this.quality === "medium" ? "WEBGPU MEDIUM BLOOM"
+          : this.highLoadMode ? "WEBGPU 16P BLOOM" : "WEBGPU ULTRA";
+    return this.quality;
   }
 
   setHighLoadMode(enabled) {
     if (this.direct) return;
     if (!this.nativeWebGPU) {
       this.highLoadMode = false;
-      this.profile = "WEBGL2 BLOOM";
+      this.updateBloomQuality();
+      this.profile = this.quality === "low" ? "WEBGL2 LOW DIRECT" : this.quality === "medium" ? "WEBGL2 MEDIUM BLOOM" : "WEBGL2 BLOOM";
       return;
     }
     this.highLoadMode = Boolean(enabled);
-    if (this.highLoadMode && !this.highLoadPipeline) {
-      this.highLoadPipeline = new THREE.RenderPipeline(this.renderer);
-      const sceneColor = pass(this.scene, this.camera).getTextureNode("output");
-      this.highLoadBloom = bloom(sceneColor, this.reducedMotion ? .16 : .3, .3, 1.08);
-      this.highLoadBloom.resolutionScale = .34;
-      this.highLoadPipeline.outputNode = sceneColor.add(this.highLoadBloom);
-    }
-    this.profile = this.highLoadMode ? "WEBGPU 16P BLOOM" : "WEBGPU ULTRA";
+    if (this.quality === "medium" || (this.highLoadMode && this.quality === "high")) this.ensurePerformancePipeline();
+    this.updateBloomQuality();
+    this.profile = this.quality === "low" ? "WEBGPU LOW DIRECT"
+      : this.quality === "medium" ? "WEBGPU MEDIUM BLOOM"
+        : this.highLoadMode ? "WEBGPU 16P BLOOM" : "WEBGPU ULTRA";
   }
 
   degradeToDirect(reason) {
