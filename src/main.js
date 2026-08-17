@@ -14,6 +14,7 @@ import { NeonRenderPipeline } from "./renderPipeline.js";
 
 const canvas = document.querySelector("#game-canvas");
 const ui = document.querySelector("#ui-root");
+const REMATCH_SESSION_KEY = "blaster-pending-rematch";
 const clamp = THREE.MathUtils.clamp;
 const WEAPON_CATEGORY_BY_ID = Object.fromEntries(WEAPON_GROUPS.flatMap((group) => group.ids.map((id) => [id, group])));
 const WEAPON_INDEX_BY_ID = Object.fromEntries(Object.keys(WEAPONS).map((id, index) => [id, index]));
@@ -177,6 +178,10 @@ class BlasterBattle {
     this.resize();
     addEventListener("resize", () => this.resize());
     addEventListener("blur", () => clearTouchActions(this.touch));
+    this.resumeAudioGesture = () => {
+      if (this.resumeAudioAfterReload()) removeEventListener("pointerdown", this.resumeAudioGesture, true);
+    };
+    addEventListener("pointerdown", this.resumeAudioGesture, { passive: true, capture: true });
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) {
         clearTouchActions(this.touch);
@@ -185,6 +190,7 @@ class BlasterBattle {
       this.sound.setPaused(document.hidden || this.paused);
     });
     await this.renderer.setAnimationLoop((time) => this.frame(time));
+    this.resumePendingRematch();
   }
 
   setupLights() {
@@ -487,7 +493,7 @@ class BlasterBattle {
       if (button.dataset.weaponSlot) return this.players[0]?.switchSlot(Number(button.dataset.weaponSlot));
       if (button.dataset.action === "start") return this.captureSetupAndStart();
       if (button.dataset.action === "pause") return this.togglePause();
-      if (button.dataset.action === "rematch") return this.startMatch();
+      if (button.dataset.action === "rematch") return this.queueRematch();
       if (button.dataset.action === "save-settings") return this.saveSettingsForm();
     };
     ui.onchange = (event) => {
@@ -677,9 +683,45 @@ class BlasterBattle {
     this.renderMain();
   }
 
+  queueRematch() {
+    sessionStorage.setItem(REMATCH_SESSION_KEY, JSON.stringify({
+      seed: this.seed, mode: this.mode, botDifficulty: this.botDifficulty,
+      botCount: this.settings.botCount, queuedAt: Date.now()
+    }));
+    location.reload();
+  }
+
+  resumePendingRematch() {
+    const raw = sessionStorage.getItem(REMATCH_SESSION_KEY);
+    if (!raw) return false;
+    sessionStorage.removeItem(REMATCH_SESSION_KEY);
+    try {
+      const saved = JSON.parse(raw);
+      if (!saved?.seed || Date.now() - Number(saved.queuedAt) > 30000) return false;
+      this.seed = String(saved.seed).slice(0, 12);
+      this.mode = ["quick", "private", "training"].includes(saved.mode) ? saved.mode : "training";
+      this.botDifficulty = ["rookie", "normal", "veteran"].includes(saved.botDifficulty) ? saved.botDifficulty : "normal";
+      this.settings.botCount = clampBotCount(saved.botCount);
+      this.startMatch();
+      return true;
+    } catch { return false; }
+  }
+
+  resumeAudioAfterReload() {
+    if (this.state !== "play") return false;
+    const needsMatchAudio = !this.sound.context;
+    if (!this.sound.resume()) return false;
+    if (!needsMatchAudio) return true;
+    this.sound.setVolume(this.settings.volume);
+    this.sound.setMix({ music: this.settings.musicVolume, effects: this.settings.effectsVolume, ambience: this.settings.ambienceVolume });
+    this.sound.startAmbience(this.world?.theme.id);
+    this.sound.setMusicIntensity(.42);
+    this.sound.startMusic("combat", this.seed);
+    return true;
+  }
+
   startMatch() {
     this.clearMatch();
-    this.rebuildRenderPipeline();
     this.state = "play";
     this.paused = false;
     this.matchTime = 180;
