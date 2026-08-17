@@ -19,6 +19,32 @@
       <canvas id="game-canvas"></canvas>
       <div id="ui-root"></div>
     </div>
+    <div id="rematch-loading" class="rematch-loading" role="status" aria-live="polite" aria-atomic="true" hidden>
+      <div class="rematch-loading-grid" aria-hidden="true"></div>
+      <section class="rematch-loading-card">
+        <p class="kicker">ARENA RECALIBRATION</p>
+        <div class="rematch-loading-core" aria-hidden="true"><i></i><i></i><span></span></div>
+        <h1>Rebuilding the battlefield</h1>
+        <p>Closing the previous graphics session and loading a clean arena.</p>
+        <div class="rematch-loading-track" aria-hidden="true"><i></i></div>
+        <small><b data-rematch-seed>BLAST-01</b><span>SAME SEED</span><span>FRESH RENDERER</span></small>
+      </section>
+    </div>
+    <script>
+      try {
+        const pending = sessionStorage.getItem("blaster-pending-rematch");
+        if (pending) {
+          const saved = JSON.parse(pending);
+          const queuedAt = Number(saved?.queuedAt);
+          const age = Date.now() - queuedAt;
+          if (saved?.seed && Number.isFinite(queuedAt) && age >= 0 && age <= 30000) {
+            const loading = document.querySelector("#rematch-loading");
+            loading.hidden = false;
+            loading.querySelector("[data-rematch-seed]").textContent = String(saved.seed).slice(0, 12);
+          } else sessionStorage.removeItem("blaster-pending-rematch");
+        }
+      } catch { sessionStorage.removeItem("blaster-pending-rematch"); }
+    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

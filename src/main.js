@@ -14,6 +14,7 @@ import { NeonRenderPipeline } from "./renderPipeline.js";
 
 const canvas = document.querySelector("#game-canvas");
 const ui = document.querySelector("#ui-root");
+const rematchLoading = document.querySelector("#rematch-loading");
 const REMATCH_SESSION_KEY = "blaster-pending-rematch";
 const clamp = THREE.MathUtils.clamp;
 const WEAPON_CATEGORY_BY_ID = Object.fromEntries(WEAPON_GROUPS.flatMap((group) => group.ids.map((id) => [id, group])));
@@ -688,23 +689,42 @@ class BlasterBattle {
       seed: this.seed, mode: this.mode, botDifficulty: this.botDifficulty,
       botCount: this.settings.botCount, queuedAt: Date.now()
     }));
-    location.reload();
+    this.setRematchLoading(true, this.seed);
+    requestAnimationFrame(() => requestAnimationFrame(() => location.reload()));
+  }
+
+  setRematchLoading(visible, seed = this.seed) {
+    if (!rematchLoading) return;
+    rematchLoading.hidden = !visible;
+    if (visible) rematchLoading.querySelector("[data-rematch-seed]").textContent = String(seed).slice(0, 12);
   }
 
   resumePendingRematch() {
     const raw = sessionStorage.getItem(REMATCH_SESSION_KEY);
-    if (!raw) return false;
+    if (!raw) {
+      this.setRematchLoading(false);
+      return false;
+    }
     sessionStorage.removeItem(REMATCH_SESSION_KEY);
     try {
       const saved = JSON.parse(raw);
-      if (!saved?.seed || Date.now() - Number(saved.queuedAt) > 30000) return false;
+      const queuedAt = Number(saved?.queuedAt);
+      const age = Date.now() - queuedAt;
+      if (!saved?.seed || !Number.isFinite(queuedAt) || age < 0 || age > 30000) {
+        this.setRematchLoading(false);
+        return false;
+      }
       this.seed = String(saved.seed).slice(0, 12);
       this.mode = ["quick", "private", "training"].includes(saved.mode) ? saved.mode : "training";
       this.botDifficulty = ["rookie", "normal", "veteran"].includes(saved.botDifficulty) ? saved.botDifficulty : "normal";
       this.settings.botCount = clampBotCount(saved.botCount);
       this.startMatch();
+      this.hideRematchLoadingAfterFrame = true;
       return true;
-    } catch { return false; }
+    } catch {
+      this.setRematchLoading(false);
+      return false;
+    }
   }
 
   resumeAudioAfterReload() {
@@ -940,6 +960,10 @@ class BlasterBattle {
     if (this.state === "play" && this.input.tapped("Escape")) this.togglePause();
     if (this.state === "play" && !this.paused) this.update(dt);
     this.renderScene();
+    if (this.hideRematchLoadingAfterFrame) {
+      this.hideRematchLoadingAfterFrame = false;
+      this.setRematchLoading(false);
+    }
     if (this.state === "play" && !this.paused) this.updatePerformanceSample(rawDt);
     this.input.endFrame();
   }
@@ -2238,5 +2262,7 @@ class BlasterBattle {
 
 new BlasterBattle().init().catch((error) => {
   console.error("Blaster Battle renderer failed to initialize", error);
+  try { sessionStorage.removeItem(REMATCH_SESSION_KEY); } catch {}
+  if (rematchLoading) rematchLoading.hidden = true;
   ui.innerHTML = `<main class="menu-shell"><section class="hero-panel"><p class="kicker">RENDERER ERROR</p><h1>Graphics initialization failed.</h1><p class="lead">Update your browser or enable WebGL2, then reload.</p></section></main>`;
 });

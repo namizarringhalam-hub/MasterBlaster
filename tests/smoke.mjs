@@ -10,12 +10,13 @@ import { NeonRenderPipeline } from "../src/renderPipeline.js";
 import { ArenaWorld } from "../src/world.js";
 import { weaponPresentation } from "../src/weaponPresentation.js";
 
-const [mainSource, renderPipelineSource, worldSource, serviceWorkerSource, stylesSource] = await Promise.all([
+const [mainSource, renderPipelineSource, worldSource, serviceWorkerSource, stylesSource, indexSource] = await Promise.all([
   readFile(new URL("../src/main.js", import.meta.url), "utf8"),
   readFile(new URL("../src/renderPipeline.js", import.meta.url), "utf8"),
   readFile(new URL("../src/world.js", import.meta.url), "utf8"),
   readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
-  readFile(new URL("../src/styles.css", import.meta.url), "utf8")
+  readFile(new URL("../src/styles.css", import.meta.url), "utf8"),
+  readFile(new URL("../index.html", import.meta.url), "utf8")
 ]);
 assert.doesNotMatch(mainSource, /serviceWorker\.register/, "the game no longer installs the stale offline cache");
 assert.match(mainSource, /reticleAim\(player, this\.camera\.position, this\.camera\.getWorldDirection/, "weapons fire through the visible camera's exact center ray");
@@ -80,6 +81,13 @@ assert.equal(disposedRenderResources.length, 6, "repeated match cleanup is idemp
 assert.match(mainSource, /dataset\.action === "rematch"\) return this\.queueRematch\(\)/, "the results button uses the clean renderer rematch path");
 assert.match(mainSource, /queueRematch\(\)[\s\S]*?sessionStorage\.setItem\(REMATCH_SESSION_KEY[\s\S]*?location\.reload\(\)/, "rematches preserve match state and restart with a fresh graphics device");
 assert.match(mainSource, /resumePendingRematch\(\)[\s\S]*?sessionStorage\.removeItem\(REMATCH_SESSION_KEY\)[\s\S]*?this\.startMatch\(\)/, "the reload consumes the rematch exactly once and automatically starts the same seed");
+assert.match(indexSource, /id="rematch-loading"[\s\S]*?sessionStorage\.getItem\("blaster-pending-rematch"\)[\s\S]*?type="module"/, "the rematch loader appears before the new renderer module starts");
+assert.match(indexSource, /Number\.isFinite\(queuedAt\)[\s\S]*?age >= 0 && age <= 30000[\s\S]*?sessionStorage\.removeItem\("blaster-pending-rematch"\)/, "only a fresh, valid rematch can reveal the bootstrap loader");
+assert.match(mainSource, /queueRematch\(\)[\s\S]*?setRematchLoading\(true[\s\S]*?requestAnimationFrame\(\(\) => requestAnimationFrame/, "the loading screen receives a paint before rematch navigation");
+assert.match(mainSource, /resumePendingRematch\(\)[\s\S]*?this\.startMatch\(\);[\s\S]*?hideRematchLoadingAfterFrame = true/, "a restored match keeps the loader until its arena is ready to render");
+assert.match(mainSource, /frame\(time\)[\s\S]*?this\.renderScene\(\);[\s\S]*?hideRematchLoadingAfterFrame[\s\S]*?setRematchLoading\(false\)/, "the loading screen clears only after the first restored arena frame");
+assert.match(stylesSource, /\.rematch-loading\[hidden\] \{ display: none; \}[\s\S]*?@keyframes rematch-track/, "the loading screen has a deterministic hidden state and animated progress treatment");
+assert.match(mainSource, /init\(\)\.catch[\s\S]*?sessionStorage\.removeItem\(REMATCH_SESSION_KEY\)[\s\S]*?rematchLoading\.hidden = true[\s\S]*?RENDERER ERROR/, "renderer startup errors cannot remain trapped behind a persistent rematch loader");
 assert.doesNotMatch(mainSource, /startMatch\(\)\s*\{\s*this\.clearMatch\(\);\s*this\.rebuildRenderPipeline\(\)/, "no rematch can rebuild post-processing on a live graphics device");
 assert.match(mainSource, /addEventListener\("pointerdown", this\.resumeAudioGesture, \{ passive: true, capture: true \}\)/, "the first canvas or HUD gesture restores browser-gated rematch audio on every device");
 assert.match(mainSource, /resumeAudioAfterReload\(\)[\s\S]*?startAmbience\(this\.world\?\.theme\.id\)[\s\S]*?startMusic\("combat", this\.seed\)[\s\S]*?return true/, "rematch audio restoration includes the full ambience and music mix");
@@ -513,6 +521,21 @@ assert.equal(fighter.reload(), true, "an empty weapon starts reloading");
 fighter.switchSlot(0);
 fighter.update(WEAPONS.railgun.reload + .05, new THREE.Vector3(), fighter.aim, {}, worldB);
 assert.equal(fighter.ammo.railgun, WEAPONS.railgun.ammo, "reload completion refills the weapon that started the reload after a slot switch");
+for (const id of fighter.loadout) fighter.ammo[id] = 0;
+fighter.takeHit(100);
+fighter.reloadTimer = 1;
+fighter.reloadWeaponId = fighter.weapon.id;
+fighter.pendingBurst = { weaponId: "burst_rifle", remaining: 2, timer: .05 };
+fighter.chargeTimer = .8;
+fighter.chargeLevel = .8;
+fighter.chargingWeaponId = "charged_energy_rifle";
+fighter.respawn(new THREE.Vector3());
+assert.ok(fighter.loadout.every((id) => fighter.ammo[id] === WEAPONS[id].ammo), "respawning refills every weapon in the fighter's loadout");
+assert.deepEqual(
+  [fighter.reloadTimer, fighter.reloadWeaponId, fighter.pendingBurst, fighter.chargeTimer, fighter.chargeLevel, fighter.chargingWeaponId],
+  [0, null, null, 0, 0, null],
+  "respawning clears reload, burst, and charge state alongside the ammunition refill"
+);
 
 const flameFighter = new Fighter(
   worldScene,

@@ -643,6 +643,7 @@ export class Fighter {
     this.darkMaterial.emissiveIntensity = .025;
     this.identityRing.material.opacity = .46;
     this.identityBeacon.material.opacity = .94;
+    this.ammo = Object.fromEntries(this.loadout.map((id) => [id, WEAPONS[id].ammo]));
     this.reloadTimer = 0;
     this.reloadWeaponId = null;
     this.attackTimer = .7;
