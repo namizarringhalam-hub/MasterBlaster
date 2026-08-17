@@ -685,15 +685,17 @@ export class Fighter {
     this.controlMove.copy(move);
     const movementScale = this.slowTimer > 0 ? .48 : 1;
     const desired = moving ? move.clone().normalize().multiplyScalar(9 * movementScale) : new THREE.Vector3();
-    if (this.grounded) {
+    // Grapple physics owns horizontal acceleration while attached. Ground
+    // locomotion damping here would erase its pull before every movement step.
+    if (!this.grapple && this.grounded) {
       this.velocity.x = THREE.MathUtils.damp(this.velocity.x, desired.x, 11, dt);
       this.velocity.z = THREE.MathUtils.damp(this.velocity.z, desired.z, 11, dt);
-    } else {
-      const acceleration = (this.grapple ? 15 : 7) * movementScale;
+    } else if (!this.grapple) {
+      const acceleration = 7 * movementScale;
       this.velocity.x += desired.x / 9 * acceleration * dt;
       this.velocity.z += desired.z / 9 * acceleration * dt;
       const horizontalSpeed = Math.hypot(this.velocity.x, this.velocity.z);
-      const limit = this.grapple ? 44 : 16;
+      const limit = 16;
       if (horizontalSpeed > limit) {
         this.velocity.x *= limit / horizontalSpeed;
         this.velocity.z *= limit / horizontalSpeed;
@@ -729,12 +731,12 @@ export class Fighter {
     const time = performance.now() * .009;
     const horizontalSpeed = Math.hypot(this.velocity.x, this.velocity.z);
     const locomotion = clamp(horizontalSpeed / 9, 0, 1);
-    if (this.grounded && moving) this.gaitPhase = (this.gaitPhase + dt * (5.2 + horizontalSpeed * .72)) % (Math.PI * 2);
+    const grappled = Boolean(this.grapple);
+    if (this.grounded && moving && !grappled) this.gaitPhase = (this.gaitPhase + dt * (5.2 + horizontalSpeed * .72)) % (Math.PI * 2);
     const gait = Math.sin(this.gaitPhase);
     const landing = this.landTimer > 0
       ? this.landStrength * Math.sin((1 - this.landTimer / .22) * Math.PI)
       : 0;
-    const grappled = Boolean(this.grapple);
     const hitProgress = 1 - clamp(this.hitTimer / .5, 0, 1);
     const hitWave = this.hitTimer > 0 ? Math.sin(hitProgress * Math.PI) : 0;
     let grappleSide = 0;
@@ -746,12 +748,12 @@ export class Fighter {
     }
     let leftLegTarget;
     let rightLegTarget;
-    if (this.grounded) {
-      leftLegTarget = moving ? gait * (.5 + locomotion * .34) + landing * .8 : landing * .8;
-      rightLegTarget = moving ? -gait * (.5 + locomotion * .34) + landing * .8 : landing * .8;
-    } else if (grappled) {
+    if (grappled) {
       leftLegTarget = .94 + clamp(-this.velocity.y * .024, -.28, .34) - grappleSide * .18;
       rightLegTarget = -.52 + clamp(-this.velocity.y * .018, -.2, .28) + grappleSide * .18;
+    } else if (this.grounded) {
+      leftLegTarget = moving ? gait * (.5 + locomotion * .34) + landing * .8 : landing * .8;
+      rightLegTarget = moving ? -gait * (.5 + locomotion * .34) + landing * .8 : landing * .8;
     } else {
       const tuck = clamp(Math.abs(this.velocity.y) / 18, .12, .52);
       leftLegTarget = this.velocity.y > 0 ? .48 + tuck * .55 : .18 + tuck;
@@ -842,13 +844,13 @@ export class Fighter {
     this.weaponGroup.rotation.y = THREE.MathUtils.damp(this.weaponGroup.rotation.y, melee && !thrustMotion ? attackSwing * (meleeMotion === "saw" ? .12 : .72) : 0, 19, dt);
     this.weaponGroup.rotation.z = THREE.MathUtils.damp(this.weaponGroup.rotation.z, melee ? -.18 - attackSwing * (meleeMotion === "overhead" ? .26 : meleeMotion === "saw" ? .1 : .85) : grappled ? Math.sin(time * .42) * .035 : 0, 16, dt);
     this.weaponGroup.position.x = THREE.MathUtils.damp(this.weaponGroup.position.x, melee ? .45 : reloadingPose ? .22 : .38, 18, dt);
-    this.weaponGroup.position.y = THREE.MathUtils.damp(this.weaponGroup.position.y, 1.4 - landing * .11 + (this.grounded && moving ? gait * .025 : 0), 20, dt);
+    this.weaponGroup.position.y = THREE.MathUtils.damp(this.weaponGroup.position.y, 1.4 - landing * .11 + (this.grounded && moving && !grappled ? gait * .025 : 0), 20, dt);
     this.weaponGroup.position.z = THREE.MathUtils.damp(this.weaponGroup.position.z, .28 - this.recoilVisual * .46 + thrustMotion * .58, 24, dt);
     this.weaponGroup.scale.set(1 + this.recoilVisual * .04, 1 + this.recoilVisual * .04, 1 - this.recoilVisual * .08);
     if (this.weaponGlowMaterial) this.weaponGlowMaterial.emissiveIntensity = 1.35 + this.chargeLevel * (2.4 + Math.sin(time * 2.4) * .55);
     if (this.weaponSpinner) this.weaponSpinner.rotation.z += dt * (this.attackTimer > 0 ? 32 : 5);
     if (this.weaponPiston) this.weaponPiston.position.z = THREE.MathUtils.damp(this.weaponPiston.position.z, attacking ? .42 * attackSwing : 0, 24, dt);
-    const bob = this.grounded && moving ? Math.abs(gait) * .075 : Math.sin(time * .45) * .018;
+    const bob = this.grounded && moving && !grappled ? Math.abs(gait) * .075 : Math.sin(time * .45) * .018;
     this.rig.position.y = bob - landing * .27;
     const airStretch = this.grounded ? 0 : clamp(Math.abs(this.velocity.y) / 36, 0, .09);
     this.rig.scale.set(1.07 + landing * .14 - airStretch * .35, 1.04 - landing * .27 + airStretch, 1.07 + landing * .14 - airStretch * .35);

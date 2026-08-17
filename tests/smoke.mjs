@@ -591,6 +591,28 @@ const pull60 = smoothPull(60);
 assert.ok(pull60.speeds.every((speed, index) => index === 0 || speed >= pull60.speeds[index - 1] - .001), "grapple pull accelerates smoothly without stop-start velocity spikes");
 assert.ok(pull60.player.velocity.x > 30 && pull60.player.velocity.x < 31.1, "grapple pull converges on one predictable travel speed");
 assert.ok(Math.abs(smoothPull(30).player.velocity.x - smoothPull(120).player.velocity.x) < .05, "grapple pull is stable across frame rates");
+const groundedGrappler = new Fighter(
+  worldScene,
+  { id: "grounded-grapple", name: "Grounded Grappler", color: 0x26d9ff, accent: 0xd9fbff },
+  DEFAULT_LOADOUT,
+  new THREE.Vector3()
+);
+groundedGrappler.grapple = { anchor: new THREE.Vector3(100, 1.4, 0), wraps: [], ropeLength: 90, pullSpeed: 0 };
+const flatFloor = {
+  resolve(position) { position.y = 0; return { grounded: true, ceiling: false, ledge: null, floor: 0 }; },
+  boostAt() { return null; }
+};
+let previousPullSpeed = 0;
+let maximumGroundRelaxation = 0;
+for (let frame = 0; frame < 120; frame++) {
+  groundedGrappler.update(1 / 60, new THREE.Vector3(-1, 0, 0), new THREE.Vector3(1, 0, 0), { jump: false }, flatFloor);
+  maximumGroundRelaxation = Math.max(maximumGroundRelaxation, previousPullSpeed - groundedGrappler.velocity.x);
+  applyGrapplePhysics(groundedGrappler, 1 / 60);
+  previousPullSpeed = groundedGrappler.velocity.x;
+}
+assert.ok(maximumGroundRelaxation < .001, "ground contact and opposing walking input cannot relax grapple velocity between pulls");
+assert.ok(groundedGrappler.velocity.x > 30, "the grapple retains authority over grounded locomotion until release");
+groundedGrappler.dispose();
 const wrappedPlayer = {
   position: new THREE.Vector3(), velocity: new THREE.Vector3(), controlMove: new THREE.Vector3(), slowTimer: 0,
   grapple: { anchor: new THREE.Vector3(20, 10, 0), wraps: [new THREE.Vector3(0, 10, 10)], ropeLength: 25 }
