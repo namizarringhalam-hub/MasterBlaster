@@ -6,6 +6,16 @@ import { ao } from "three/addons/tsl/display/GTAONode.js";
 export class NeonRenderPipeline {
   constructor(renderer, scene, camera, { reducedMotion = false, coarsePointer = false, quality = "high" } = {}) {
     this.renderer = renderer;
+    this.rendererState = THREE.RendererUtils.saveRendererState(renderer);
+    this.rendererXrEnabled = renderer.xr?.enabled ?? false;
+    this.passState = {
+      transparent: renderer.transparent,
+      opaque: renderer.opaque,
+      contextNode: renderer.contextNode,
+      sceneName: scene.name,
+      overrideMaterial: scene.overrideMaterial,
+      cameraLayerMask: camera.layers?.mask
+    };
     this.scene = scene;
     this.camera = camera;
     this.reducedMotion = Boolean(reducedMotion);
@@ -14,6 +24,9 @@ export class NeonRenderPipeline {
     this.highLoadMode = false;
     this.highLoadPipeline = null;
     this.highLoadBloom = null;
+    this.highLoadScenePass = null;
+    this.scenePass = null;
+    this.aoPass = null;
     const nativeWebGPU = renderer.backend.isWebGPUBackend === true;
     this.nativeWebGPU = nativeWebGPU;
     this.direct = coarsePointer;
@@ -25,14 +38,15 @@ export class NeonRenderPipeline {
 
     this.pipeline = new THREE.RenderPipeline(renderer);
     if (!nativeWebGPU) {
-      const sceneColor = pass(scene, camera).getTextureNode("output");
+      this.scenePass = pass(scene, camera);
+      const sceneColor = this.scenePass.getTextureNode("output");
       this.bloomPass = bloom(sceneColor, reducedMotion ? .16 : .28, .3, 1.08);
       this.bloomPass.resolutionScale = .34;
       this.pipeline.outputNode = sceneColor.add(this.bloomPass);
       this.setQuality(this.quality);
       return;
     }
-    const scenePass = pass(scene, camera);
+    const scenePass = this.scenePass = pass(scene, camera);
     scenePass.setMRT(mrt({ output, normal: normalView }));
 
     const sceneColor = scenePass.getTextureNode("output");
@@ -48,6 +62,7 @@ export class NeonRenderPipeline {
     const normal = scenePass.getTextureNode("normal");
     const depth = scenePass.getTextureNode("depth");
     const aoPass = ao(depth, normal, camera);
+    this.aoPass = aoPass;
     aoPass.resolutionScale = .5;
     aoPass.radius.value = 1.6;
     aoPass.thickness.value = 2.2;
@@ -79,7 +94,8 @@ export class NeonRenderPipeline {
   ensurePerformancePipeline() {
     if (!this.nativeWebGPU || this.highLoadPipeline) return;
     this.highLoadPipeline = new THREE.RenderPipeline(this.renderer);
-    const sceneColor = pass(this.scene, this.camera).getTextureNode("output");
+    this.highLoadScenePass = pass(this.scene, this.camera);
+    const sceneColor = this.highLoadScenePass.getTextureNode("output");
     this.highLoadBloom = bloom(sceneColor, this.reducedMotion ? .16 : .3, .3, 1.08);
     this.highLoadBloom.resolutionScale = .34;
     this.highLoadPipeline.outputNode = sceneColor.add(this.highLoadBloom);
@@ -129,19 +145,41 @@ export class NeonRenderPipeline {
   degradeToDirect(reason) {
     if (this.direct) return;
     console.warn("HDR render pipeline disabled; continuing with direct rendering.", reason);
-    this.pipeline?.dispose();
-    this.highLoadPipeline?.dispose();
-    this.pipeline = null;
-    this.highLoadPipeline = null;
-    this.bloomPass = null;
-    this.highLoadBloom = null;
+    // A failed node pass can leave WebGPU bound to an offscreen target. Restore
+    // the canvas and output state before the direct fallback draws its first frame.
+    try {
+      THREE.RendererUtils.restoreRendererState(this.renderer, this.rendererState);
+    } catch {
+      try { this.renderer.setRenderTarget?.(null); } catch {}
+      try { this.renderer.setMRT?.(null); } catch {}
+      try { this.renderer.setRenderObjectFunction?.(null); } catch {}
+      this.renderer.autoClear = true;
+    }
+    this.renderer.transparent = this.passState.transparent;
+    this.renderer.opaque = this.passState.opaque;
+    this.renderer.contextNode = this.passState.contextNode;
+    this.scene.name = this.passState.sceneName;
+    this.scene.overrideMaterial = this.passState.overrideMaterial;
+    if (this.camera.layers && this.passState.cameraLayerMask != null) this.camera.layers.mask = this.passState.cameraLayerMask;
+    if (this.renderer.xr) this.renderer.xr.enabled = this.rendererXrEnabled;
+    this.disposePipelineResources();
     this.direct = true;
     this.highLoadMode = false;
     this.profile = "DIRECT SAFETY";
   }
 
   dispose() {
-    this.pipeline?.dispose();
-    this.highLoadPipeline?.dispose();
+    this.disposePipelineResources();
+  }
+
+  disposePipelineResources() {
+    for (const resource of [this.pipeline, this.highLoadPipeline, this.scenePass, this.highLoadScenePass, this.bloomPass, this.highLoadBloom, this.aoPass]) resource?.dispose?.();
+    this.pipeline = null;
+    this.highLoadPipeline = null;
+    this.scenePass = null;
+    this.highLoadScenePass = null;
+    this.bloomPass = null;
+    this.highLoadBloom = null;
+    this.aoPass = null;
   }
 }

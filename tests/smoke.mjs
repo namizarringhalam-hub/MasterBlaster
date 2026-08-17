@@ -6,6 +6,7 @@ import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
 import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, LOADOUT_SLOTS, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, seededRandom, seedFromText, swapStolenWeapon, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
 import { InputManager, TOUCH_LOOK_GAIN, clearTouchActions, shouldCaptureGameKey, touchLookDelta, touchMoveDelta, updateOrbit } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, flameConeFactor, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
+import { NeonRenderPipeline } from "../src/renderPipeline.js";
 import { ArenaWorld } from "../src/world.js";
 import { weaponPresentation } from "../src/weaponPresentation.js";
 
@@ -26,6 +27,58 @@ assert.match(mainSource, /this\.renderPipeline\.render\(\)/, "the game renders t
 assert.match(renderPipelineSource, /RenderPipeline[\s\S]*?bloom\([\s\S]*?ao\(/, "the HDR pipeline combines bloom with ambient grounding");
 assert.match(renderPipelineSource, /this\.direct = coarsePointer[\s\S]*?if \(!nativeWebGPU\)[\s\S]*?bloom\([\s\S]*?renderer\.render\(this\.scene, this\.camera\)/, "desktop WebGL2 keeps lightweight bloom while coarse devices retain a framebuffer-safe direct path");
 assert.match(renderPipelineSource, /catch \(error\)[\s\S]*?degradeToDirect\(error\)/, "post-processing failures degrade to direct rendering");
+const recoveryRenderer = {
+  backend: { isWebGPUBackend: false }, toneMapping: "ACES", toneMappingExposure: 1.02, outputColorSpace: "sRGB", xr: { enabled: false }, target: null, cubeFace: 0, mipLevel: 0,
+  mrt: null, renderObjectFunction: null, pixelRatio: 1.5, clearColor: new THREE.Color(0x07111d), clearAlpha: 1, autoClear: true, scissorTest: false,
+  transparent: true, opaque: true, contextNode: "baseline-context", directFrames: 0,
+  getRenderTarget() { return this.target; }, getActiveCubeFace() { return this.cubeFace; }, getActiveMipmapLevel() { return this.mipLevel; },
+  getRenderObjectFunction() { return this.renderObjectFunction; }, getPixelRatio() { return this.pixelRatio; }, getMRT() { return this.mrt; },
+  getClearColor(target) { return target.copy(this.clearColor); }, getClearAlpha() { return this.clearAlpha; }, getScissorTest() { return this.scissorTest; },
+  setRenderTarget(target, cubeFace = 0, mipLevel = 0) { this.target = target; this.cubeFace = cubeFace; this.mipLevel = mipLevel; },
+  setRenderObjectFunction(value) { this.renderObjectFunction = value; }, setPixelRatio(value) { this.pixelRatio = value; }, setMRT(value) { this.mrt = value; },
+  setClearColor(value, alpha) { this.clearColor.set(value); this.clearAlpha = alpha; }, setScissorTest(value) { this.scissorTest = value; },
+  render() {
+    assert.equal(this.target, null, "direct recovery renders to the visible canvas");
+    assert.equal(this.mrt, null, "direct recovery cannot inherit the failed pass MRT");
+    assert.equal(this.renderObjectFunction, null, "direct recovery uses the normal scene draw function");
+    assert.equal(this.autoClear, true, "direct recovery clears the visible framebuffer");
+    assert.equal(this.scissorTest, false, "direct recovery is not trapped in a post-effect scissor rectangle");
+    assert.equal(this.transparent, true); assert.equal(this.opaque, true); assert.equal(this.contextNode, "baseline-context");
+    this.directFrames++;
+  }
+};
+const recoveryScene = { name: "Arena", overrideMaterial: null };
+const recoveryCamera = { layers: { mask: 7 } };
+const recoveryPipeline = new NeonRenderPipeline(recoveryRenderer, recoveryScene, recoveryCamera, { coarsePointer: true });
+recoveryPipeline.direct = false;
+const disposedRenderResources = [];
+recoveryPipeline.pipeline = {
+  render() {
+    recoveryRenderer.setRenderTarget("stale-offscreen-target", 3, 2); recoveryRenderer.setMRT("stale-mrt"); recoveryRenderer.setRenderObjectFunction(() => {});
+    recoveryRenderer.setClearColor(0x000000, 0); recoveryRenderer.autoClear = false; recoveryRenderer.setScissorTest(true);
+    recoveryRenderer.transparent = false; recoveryRenderer.opaque = false; recoveryRenderer.contextNode = "stale-context";
+    recoveryScene.name = "Broken pass"; recoveryScene.overrideMaterial = "stale-material"; recoveryCamera.layers.mask = 0;
+    recoveryRenderer.toneMapping = "corrupt"; recoveryRenderer.outputColorSpace = "corrupt"; recoveryRenderer.xr.enabled = true;
+    throw new Error("simulated rematch pass failure");
+  },
+  dispose() { disposedRenderResources.push("pipeline"); }
+};
+for (const name of ["scenePass", "highLoadScenePass", "bloomPass", "highLoadBloom", "aoPass"]) recoveryPipeline[name] = { dispose() { disposedRenderResources.push(name); } };
+const originalWarn = console.warn;
+console.warn = () => {};
+try { recoveryPipeline.render(); } finally { console.warn = originalWarn; }
+assert.equal(recoveryRenderer.directFrames, 1, "a failed rematch pass immediately produces a visible direct frame");
+assert.equal(recoveryRenderer.toneMapping, "ACES");
+assert.equal(recoveryRenderer.outputColorSpace, "sRGB");
+assert.equal(recoveryRenderer.xr.enabled, false);
+assert.equal(recoveryScene.name, "Arena");
+assert.equal(recoveryScene.overrideMaterial, null);
+assert.equal(recoveryCamera.layers.mask, 7);
+assert.deepEqual(disposedRenderResources.sort(), ["aoPass", "bloomPass", "highLoadBloom", "highLoadScenePass", "pipeline", "scenePass"].sort(), "fallback releases every post-processing render target");
+recoveryPipeline.dispose();
+assert.equal(disposedRenderResources.length, 6, "repeated match cleanup is idempotent and cannot leak old GPU targets");
+assert.match(mainSource, /startMatch\(\)[\s\S]*?clearMatch\(\);\s*this\.rebuildRenderPipeline\(\)/, "every new match replaces stale post-processing targets before rendering");
+assert.match(renderPipelineSource, /disposePipelineResources\(\)[\s\S]*?scenePass[\s\S]*?highLoadScenePass[\s\S]*?bloomPass[\s\S]*?highLoadBloom[\s\S]*?aoPass/, "rematches release scene, bloom, and ambient-occlusion render targets");
 assert.match(mainSource, /sessionStorage\.setItem\("blaster-force-webgl", "1"\)[\s\S]*?location\.reload\(\)/, "WebGPU device loss restarts through the WebGL2 recovery path");
 assert.match(mainSource, /renderPipeline\.setReducedMotion\(this\.settings\.reducedMotion\)/, "reduced-motion changes immediately retune the active pipeline");
 assert.match(mainSource, /data-setting="graphics"[\s\S]*?"low", "medium", "high"/, "settings expose low, medium, and high graphics quality");

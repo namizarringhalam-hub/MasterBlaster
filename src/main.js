@@ -157,11 +157,7 @@ class BlasterBattle {
     this.scene.environment = environment.fromScene(new RoomEnvironment(), .04).texture;
     this.scene.environmentIntensity = .82;
     environment.dispose();
-    this.renderPipeline = new NeonRenderPipeline(this.renderer, this.scene, this.camera, {
-      reducedMotion: this.settings.reducedMotion,
-      coarsePointer: this.coarsePointer,
-      quality: this.graphics.level
-    });
+    this.rebuildRenderPipeline();
     const reportDeviceLost = this.renderer.onDeviceLost.bind(this.renderer);
     this.renderer.onDeviceLost = (info) => {
       reportDeviceLost(info);
@@ -223,6 +219,16 @@ class BlasterBattle {
     this.renderer.setPixelRatio(this.graphics.pixelRatio);
     this.renderPipeline?.setQuality(this.graphics.level);
     this.resize();
+  }
+
+  rebuildRenderPipeline() {
+    this.renderPipeline?.dispose();
+    this.renderer.setRenderTarget(null);
+    this.renderPipeline = new NeonRenderPipeline(this.renderer, this.scene, this.camera, {
+      reducedMotion: this.settings.reducedMotion,
+      coarsePointer: this.coarsePointer,
+      quality: this.graphics.level
+    });
   }
 
   clearMatch() {
@@ -673,6 +679,7 @@ class BlasterBattle {
 
   startMatch() {
     this.clearMatch();
+    this.rebuildRenderPipeline();
     this.state = "play";
     this.paused = false;
     this.matchTime = 180;
