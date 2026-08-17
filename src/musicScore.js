@@ -42,12 +42,6 @@ export const MUSIC_SAMPLE_MANIFEST = freeze({
   cymbal: freeze({ files: freeze([
     freeze({ url: "/audio/music/cymbal.wav", trim: 1.73 }), freeze({ url: "/audio/music/cymbal-2.wav", trim: 1.4 })
   ]) }),
-  anvil: freeze({ files: freeze([
-    freeze({ url: "/audio/music/anvil.wav", trim: 1.43 }), freeze({ url: "/audio/music/anvil-2.wav", trim: 1.21 }), freeze({ url: "/audio/music/anvil-3.wav", trim: 1.55 })
-  ]) }),
-  celloPizz: freeze({ files: freeze([
-    freeze({ url: "/audio/music/cello-pizz.wav", rootMidi: 38, trim: 1.21 }), freeze({ url: "/audio/music/cello-pizz-a2.wav", rootMidi: 45, trim: 1.01 }), freeze({ url: "/audio/music/cello-pizz-c3.wav", rootMidi: 48, trim: 1.01 }), freeze({ url: "/audio/music/cello-pizz-d4.wav", rootMidi: 62, trim: 1.03 })
-  ]) }),
   celloSpic: freeze({ files: freeze([
     freeze({ url: "/audio/music/cello-spic.wav", rootMidi: 38, trim: .93 }), freeze({ url: "/audio/music/cello-spic-a2.wav", rootMidi: 45, trim: .95 }), freeze({ url: "/audio/music/cello-spic-c3.wav", rootMidi: 48, trim: 1.28 })
   ]) }),
@@ -60,10 +54,7 @@ export const MUSIC_SAMPLE_MANIFEST = freeze({
   hornSustain: freeze({ files: freeze([
     freeze({ url: "/audio/music/horn-sustain.wav", rootMidi: 38, trim: .25 }), freeze({ url: "/audio/music/horn-sustain-a2.wav", rootMidi: 45, trim: .38 }), freeze({ url: "/audio/music/horn-sustain-c3.wav", rootMidi: 48, trim: .3 }), freeze({ url: "/audio/music/horn-sustain-d4.wav", rootMidi: 62, trim: .28 })
   ]) }),
-  tromboneBuzz: freeze({ files: freeze([freeze({ url: "/audio/music/trombone-buzz.wav", rootMidi: 38, trim: 1.2 })]) }),
-  violinSpic: freeze({ files: freeze([
-    freeze({ url: "/audio/music/violin-spic.wav", rootMidi: 60, trim: .76 }), freeze({ url: "/audio/music/violin-spic-g4.wav", rootMidi: 67, trim: .97 }), freeze({ url: "/audio/music/violin-spic-c5.wav", rootMidi: 72, trim: .94 })
-  ]) })
+  tromboneBuzz: freeze({ files: freeze([freeze({ url: "/audio/music/trombone-buzz.wav", rootMidi: 38, trim: 1.2 })]) })
 });
 
 const SCENES = freeze({
@@ -187,37 +178,40 @@ export function musicEventsForStep(input = {}) {
 
   if (scene === "countdown") {
     if (step % 4 === 0) events.push(recorded("countdown-drum", step, "battleDrum", 3, .105 + step * .002, { rate: 1 + step / 128, wet: .05 }));
-    if (step === 12) events.push(recorded("countdown-anvil", step, "anvil", 4, .08, { wet: .14 }));
+    if (step === 12) events.push(recorded("countdown-cymbal", step, "cymbal", 4, .06, { wet: .14 }));
     return freeze(events);
   }
 
   if (scene.startsWith("results")) {
     if (step === 0) {
-      events.push(recorded("result-bed", step, "celloTrem", 16, .042, { midi: root + 12, wet: .18, attack: .08, release: .32 }));
-      events.push(recorded("result-horn", step, "hornSustain", 12, scene === "results-win" ? .065 : .04, { midi: root + 12, wet: .2, attack: .035, release: .3 }));
-      if (scene === "results-win") events.push(recorded("result-cymbal", step, "cymbal", 10, .055, { wet: .18 }));
+      events.push(recorded("result-low-strings", step, "celloTrem", 16, .052, { midi: root, wet: .2, attack: .08, release: .36, filterHz: 4400 }));
+      events.push(recorded("result-low-brass", step, "tromboneBuzz", 12, scene === "results-win" ? .072 : .05, { midi: root, wet: .16, attack: .02, release: .3, filterHz: 3000 }));
+      events.push(recorded("result-horn", step, "hornSustain", 12, scene === "results-win" ? .062 : .042, { midi: root + 7, wet: .19, attack: .04, release: .32, filterHz: 5200 }));
+      if (scene === "results-win") {
+        events.push(recorded("result-drum", step, "battleDrum", 4, .09, { rate: .9, wet: .08 }));
+        events.push(recorded("result-cymbal", step, "cymbal", 10, .052, { wet: .18 }));
+      }
     }
-    if (step % 4 === 0) {
-      const interval = scene === "results-win" ? [0, 3, 7, 12][step / 4] : [7, 5, 3, 0][step / 4];
-      events.push(recorded("result-motif", step, "violinSpic", 3, .05, { midi: root + 24 + harmonicInterval(interval, chordIndex), pan: step < 8 ? -.12 : .12, wet: .16 }));
-    }
+    if (step === 8 && scene === "results-win") events.push(recorded("result-brass-answer", step, "hornStaccato", 4, .06, { midi: root + 7, pan: .08, wet: .12 }));
+    if (step === 12 && scene === "results-loss") events.push(recorded("result-loss-drum", step, "battleDrum", 4, .052, { rate: .78, wet: .12 }));
     return freeze(events);
   }
 
   if (scene === "menu") {
     if (step === 0) {
-      events.push(recorded("menu-bed", step, "celloTrem", 16, .034, { midi: root + 12, wet: .2, attack: .12, release: .34 }));
-      events.push(recorded("menu-horizon", step, "hornSustain", 14, .025, { midi: root + 19, pan: .16, wet: .24, attack: .16, release: .38 }));
+      events.push(recorded("menu-low-strings", step, "celloTrem", 16, .04, { midi: root, wet: .2, attack: .14, release: .38, filterHz: 4200 }));
+      events.push(recorded("menu-low-brass", step, "tromboneBuzz", 12, .032, { midi: root, pan: -.08, wet: .16, attack: .06, release: .34, filterHz: 2600 }));
+      if (bar % 2 === 0) events.push(recorded("menu-horizon", step, "hornSustain", 14, .029, { midi: root + 7, pan: .12, wet: .22, attack: .14, release: .4, filterHz: 4800 }));
     }
-    if (step === 2 || step === 10) events.push(recorded("menu-pulse", step, "celloPizz", 3, .035, { midi: root + (step === 2 ? 12 : 19), pan: step === 2 ? -.18 : .18, wet: .12 }));
+    if (bar % 4 === 3 && step === 12) events.push(recorded("menu-drum", step, "battleDrum", 4, .036, { rate: .82, wet: .1 }));
     return freeze(events);
   }
 
   if (step === 0) {
-    events.push(recorded("low-strings", step, "celloTrem", 16, .035 + energy * .025, { midi: root + 12, pan: -.14, wet: .15, attack: .08, release: .3, filterHz: 5200 }));
+    events.push(recorded("low-strings", step, "celloTrem", 16, .04 + energy * .025, { midi: root, pan: -.14, wet: .15, attack: .08, release: .3, filterHz: 4800 }));
     if (energy >= .36) {
       const hornNotes = energy >= .7 ? [0, 7] : [0];
-      for (const interval of hornNotes) events.push(recorded("brass-bed", step, "hornSustain", 14, .025 + energy * .025, { midi: root + 12 + harmonicInterval(interval, chordIndex), pan: interval ? .18 : -.08, wet: .18, attack: .05, release: .28 }));
+      for (const interval of hornNotes) events.push(recorded("brass-bed", step, "hornSustain", 14, .028 + energy * .025, { midi: root + harmonicInterval(interval, chordIndex), pan: interval ? .18 : -.08, wet: .18, attack: .05, release: .28, filterHz: 5200 }));
     }
     if (energy >= .72 && ["assault", "onslaught"].includes(section.name)) events.push(recorded("crash", step, "cymbal", 12, .045 + energy * .02, { wet: .17 }));
   }
@@ -225,7 +219,7 @@ export function musicEventsForStep(input = {}) {
   if (step % rule.pulse === 0) {
     const pulseIndex = Math.floor(step / Math.max(1, rule.pulse));
     const interval = [0, 0, 7, 3, 0, 7, 10, 7][pulseIndex % 8];
-    events.push(recorded("cello-ostinato", step, energy >= .52 ? "celloSpic" : "celloPizz", Math.max(1, rule.pulse), .038 + energy * .032, {
+    events.push(recorded("cello-ostinato", step, "celloSpic", Math.max(1, rule.pulse), .038 + energy * .032, {
       midi: root + harmonicInterval(interval, chordIndex), pan: step % 4 ? -.1 : .1, wet: .055, filterHz: 4300 + energy * 3300
     }));
   }
@@ -241,18 +235,18 @@ export function musicEventsForStep(input = {}) {
     events.push(recorded("horn-accent", step, "hornStaccato", 2, .036 + energy * .03, { midi: root + 12 + harmonicInterval(accents[step / 4 | 0], chordIndex), pan: step < 8 ? -.16 : .16, wet: .12 }));
   }
 
-  if (sceneRule.melody && energy >= .76 && !["intro", "breath"].includes(section.name)) {
-    const rhythm = fillBar ? [1, 5, 9, 12, 14] : [2, 6, 10, 14];
-    if (rhythm.includes(step)) {
-      const motif = seededMusicChoice(MUSIC.motifs, `${seed}:orchestral:${Math.floor(bar / 4)}`);
-      const index = rhythm.indexOf(step) + (bar % 2) * 2;
-      events.push(recorded("violin-answer", step, "violinSpic", step >= 12 ? 3 : 2, .032 + energy * .024, {
-        midi: root + 24 + harmonicInterval(motif[index % motif.length], chordIndex), pan: step % 4 ? .2 : -.2, wet: .15, filterHz: 8500
-      }));
-    }
+  if (sceneRule.melody && energy >= .76 && !["intro", "breath"].includes(section.name) && [6, 14].includes(step)) {
+    const motif = seededMusicChoice(MUSIC.motifs, `${seed}:brass:${Math.floor(bar / 4)}`);
+    const interval = motif[(step === 6 ? 1 : 5) % motif.length];
+    events.push(recorded("brass-answer", step, "hornStaccato", 3, .04 + energy * .024, {
+      midi: root + harmonicInterval(interval, chordIndex), pan: step === 6 ? -.16 : .16, wet: .11, filterHz: 5600
+    }));
   }
 
-  if (fillBar && energy >= .68 && step === 12) events.push(recorded("metal-transition", step, "anvil", 4, .04 + energy * .025, { wet: .14 }));
+  if (fillBar && energy >= .68 && step === 12) {
+    events.push(recorded("transition-drum", step, "battleDrum", 4, .06 + energy * .025, { rate: .88, wet: .1 }));
+    events.push(recorded("transition-cymbal", step, "cymbal", 4, .036 + energy * .018, { wet: .14 }));
+  }
   if (fillBar && energy >= .78 && [13, 14, 15].includes(step)) events.push(recorded("drum-fill", step, "battleDrum", 1, .045 + energy * .025, { rate: 1 + (step - 14) * .08, pan: (step - 14) * .13, wet: .055 }));
   if (section.name === "resolve" && bar % 32 === 31 && step === 12) {
     events.push(recorded("cadence", step, "hornSustain", 4, .07, { midi: MUSIC.tonicMidi + 12, wet: .22, attack: .02, release: .3 }));

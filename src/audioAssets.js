@@ -93,21 +93,68 @@ function ballistic(sampleRate) {
 
 function energy(sampleRate) {
   return render(sampleRate, .34, 0x773a, (t, random, state) => {
-    const chirp = 310 + 2100 * (1 - Math.exp(-t * 19));
-    state.phase += Math.PI * 2 * chirp / sampleRate;
-    const core = Math.sin(state.phase) + .28 * Math.sin(state.phase * 2.013) + .13 * Math.sin(state.phase * 3.97);
-    const fizz = random() * Math.exp(-t * 18);
-    return core * curve(t, .001, 8.2) * .62 + fizz * .16;
+    const white = random();
+    state.low += (white - state.low) * .035;
+    const crack = (white - state.low) * (t < .045 ? 1 : .26) * Math.exp(-t * 13);
+    const surge = state.low * 3.2 * curve(t, .001, 7.4);
+    const arc = random() * (Math.sin(t * 117) > .72 ? 1 : .12) * Math.exp(-t * 9);
+    return crack * .72 + surge * .58 + arc * .24;
   }, .86);
 }
 
 function mechanical(sampleRate) {
   return render(sampleRate, .115, 0x8871, (t, random, state) => {
-    const clickA = Math.sin(Math.PI * 2 * 1780 * t) * Math.exp(-t * 95);
-    const clickB = t > .036 ? Math.sin(Math.PI * 2 * 940 * (t - .036)) * Math.exp(-(t - .036) * 120) : 0;
-    const grit = random() * Math.exp(-t * 82);
-    return clickA * .68 + clickB * .4 + grit * .18;
+    const white = random(); state.low += (white - state.low) * .11;
+    const attack = (white - state.low) * Math.exp(-t * 92);
+    const latch = t > .036 ? state.low * 3.6 * Math.exp(-(t - .036) * 78) : 0;
+    const grit = random() * Math.exp(-t * 58);
+    return attack * .82 + latch * .56 + grit * .18;
   }, .76);
+}
+
+function heavyUi(sampleRate) {
+  return render(sampleRate, .24, 0xc191, (t, random, state) => {
+    const white = random(); state.low += (white - state.low) * .028;
+    const thud = state.low * 4.6 * curve(t, .001, 14);
+    const latch = t > .055 ? (white - state.low) * Math.exp(-(t - .055) * 52) : 0;
+    return thud * .82 + latch * .32;
+  }, .82);
+}
+
+function whoosh(sampleRate) {
+  return render(sampleRate, .62, 0xc2a7, (t, random, state) => {
+    const white = random(); state.low += (white - state.low) * (.012 + t * .05);
+    const air = white - state.low;
+    const envelope = Math.sin(Math.PI * Math.min(1, t / .62)) ** 1.6;
+    return air * envelope * (.62 + state.low * 1.8);
+  }, .84);
+}
+
+function iceCrack(sampleRate) {
+  return render(sampleRate, .46, 0xc3bd, (t, random, state) => {
+    const white = random(); state.low += (white - state.low) * .22;
+    const shards = (white - state.low) * (Math.sin(t * 173) > .45 ? 1 : .18) * Math.exp(-t * 7.5);
+    const body = state.low * 2.4 * curve(t, .001, 9);
+    return shards * .72 + body * .28;
+  }, .8);
+}
+
+function cableSnap(sampleRate) {
+  return render(sampleRate, .38, 0xc4d3, (t, random, state) => {
+    const white = random(); state.low += (white - state.low) * .06;
+    const tension = (white - state.low) * Math.exp(-t * 11);
+    const clamp = t > .09 ? state.low * 3.4 * Math.exp(-(t - .09) * 30) : 0;
+    return tension * .52 + clamp * .64;
+  }, .82);
+}
+
+function texture(sampleRate, seconds, seed, color = .03, grit = .35, peak = .72) {
+  return render(sampleRate, seconds, seed, (t, random, state) => {
+    const white = random(); state.low += (white - state.low) * color;
+    const broad = white - state.low;
+    const movement = .72 + .18 * Math.sin(t * 3.7) + .1 * Math.sin(t * 11.3 + 1.2);
+    return (state.low * (2.4 - grit) + broad * grit) * movement;
+  }, peak);
 }
 
 function flame(sampleRate) {
@@ -142,7 +189,12 @@ export function createProceduralAudioAssets(sampleRate = 48000) {
   return Object.freeze({
     kick: kick(rate), snare: snare(rate), clap: clap(rate), hatClosed: hat(rate), hatOpen: hat(rate, true),
     impact: impact(rate), explosion: impact(rate, true), ballistic: ballistic(rate), energy: energy(rate),
-    mechanical: mechanical(rate), flame: flame(rate), footstep: footstep(rate), transition: transition(rate)
+    mechanical: mechanical(rate), heavyUi: heavyUi(rate), whoosh: whoosh(rate), iceCrack: iceCrack(rate), cableSnap: cableSnap(rate),
+    flame: flame(rate), footstep: footstep(rate), transition: transition(rate),
+    chargeLoop: texture(rate, 1.6, 0xd101, .018, .42), weaponLoop: texture(rate, 1.7, 0xd202, .045, .58),
+    grappleLoop: texture(rate, 1.5, 0xd303, .08, .7), hazardLoop: texture(rate, 1.8, 0xd404, .014, .46),
+    projectileLoop: texture(rate, 1.45, 0xd505, .065, .66), ambienceFoundry: texture(rate, 2.2, 0xd606, .009, .32, .64),
+    ambienceIon: texture(rate, 2.2, 0xd707, .035, .56, .66), ambienceSolar: texture(rate, 2.2, 0xd808, .02, .42, .65)
   });
 }
 

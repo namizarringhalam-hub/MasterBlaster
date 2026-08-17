@@ -10,12 +10,13 @@ const audioParam = (value = 0) => ({
   linearRampToValueAtTime(next) { this.value = next; }
 });
 const audioNode = () => ({
-  frequency: audioParam(), Q: audioParam(), gain: audioParam(), stopped: false,
+  frequency: audioParam(), playbackRate: audioParam(1), Q: audioParam(), gain: audioParam(), stopped: false,
   connect() { return this; }, start() {}, stop() { this.stopped = true; }
 });
 const context = {
   currentTime: 10,
-  createOscillator: audioNode,
+  createOscillator() { throw new Error("live oscillators are forbidden"); },
+  createBufferSource: audioNode,
   createBiquadFilter: audioNode,
   createGain: audioNode
 };
@@ -23,13 +24,14 @@ const context = {
 const sound = new SoundBoard();
 sound.context = context;
 sound.master = audioNode();
+for (const name of ["chargeLoop", "weaponLoop", "flame", "projectileLoop"]) sound.sampleBank[name] = { duration: 1 };
 
 sound.updateWeaponLoop("fighter", WEAPONS.minigun, true);
 const minigunLoop = sound.weaponLoops.get("fighter");
 sound.updateWeaponLoop("fighter", WEAPONS.gravity_beam, true);
 const gravityLoop = sound.weaponLoops.get("fighter");
 assert.notEqual(gravityLoop, minigunLoop, "hot-switching maintained weapons creates a fresh sound identity");
-assert.equal(minigunLoop.oscillator.stopped, true, "the previous maintained oscillator is stopped during a hot switch");
+assert.equal(minigunLoop.source.stopped, true, "the previous maintained texture is stopped during a hot switch");
 assert.equal(gravityLoop.weaponId, "gravity_beam", "the replacement loop carries the new weapon profile");
 
 sound.updateChargeLoop("bot", WEAPONS.charged_energy_rifle, .8, .4);

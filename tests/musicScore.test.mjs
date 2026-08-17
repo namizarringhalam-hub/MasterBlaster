@@ -52,10 +52,10 @@ for (const [name, asset] of Object.entries(MUSIC_SAMPLE_MANIFEST)) {
     assert.ok(calibratedRms >= .074 && calibratedRms <= .122, `${fileConfig.url} has calibrated source loudness (${calibratedRms.toFixed(3)} RMS)`);
   }
 }
-assert.ok(Object.keys(MUSIC_SAMPLE_MANIFEST).length >= 11, "the score has a broad recorded orchestral/percussion palette");
-assert.ok(recordingCount >= 33, "recurring percussion and pitched instruments use round robins or nearby root zones");
-for (const name of ["battleDrum", "fieldSnare", "anvil"]) assert.ok(MUSIC_SAMPLE_MANIFEST[name].files.length >= 3, `${name} avoids machine-gun repetition with three recorded takes`);
-for (const name of ["celloPizz", "celloSpic", "celloTrem", "hornStaccato", "hornSustain"]) {
+assert.ok(Object.keys(MUSIC_SAMPLE_MANIFEST).length >= 8, "the score has a broad recorded low-orchestral and percussion palette");
+assert.ok(recordingCount >= 23, "recurring percussion and pitched instruments use round robins or nearby root zones");
+for (const name of ["battleDrum", "fieldSnare"]) assert.ok(MUSIC_SAMPLE_MANIFEST[name].files.length >= 3, `${name} avoids machine-gun repetition with three recorded takes`);
+for (const name of ["celloSpic", "celloTrem", "hornStaccato", "hornSustain"]) {
   assert.deepEqual(MUSIC_SAMPLE_MANIFEST[name].files.slice(0, 3).map((file) => file.rootMidi), [38, 45, 48], `${name} has closely spaced lower root zones`);
 }
 const allScoreEvents = [];
@@ -66,12 +66,14 @@ for (const event of allScoreEvents.filter((event) => Number.isFinite(event.midi)
   const roots = MUSIC_SAMPLE_MANIFEST[event.sample].files.map((file) => file.rootMidi).filter(Number.isFinite);
   assert.ok(Math.min(...roots.map((root) => Math.abs(event.midi - root))) <= 7, `${event.layer} MIDI ${event.midi} stays within seven semitones of a recorded root`);
 }
+assert.ok(allScoreEvents.every((event) => !["violinSpic", "celloPizz", "anvil"].includes(event.sample)), "no thin violin, plucked bong, or anvil-bong voice can enter any score scene");
+assert.ok(Math.max(...allScoreEvents.filter((event) => Number.isFinite(event.midi)).map((event) => event.midi)) <= 63, "the entire score stays in a weighty low and middle register");
 
 const input = { seed: "BLAST-01", bar: 21, scene: "combat", intensity: .9 };
 const score = musicEventsForBar(input);
 assert.deepEqual(score, musicEventsForBar(input), "the same match state always creates the same arrangement");
-assert.ok(score.length > 28, "a high-intensity onslaught has a complete orchestral arrangement");
-for (const layer of ["low-strings", "brass-bed", "cello-ostinato", "low-brass", "battle-drum", "field-snare", "horn-accent", "violin-answer"]) {
+assert.ok(score.length > 24, "a high-intensity onslaught has a complete orchestral arrangement");
+for (const layer of ["low-strings", "brass-bed", "cello-ostinato", "low-brass", "battle-drum", "field-snare", "horn-accent", "brass-answer"]) {
   assert.ok(score.some((event) => event.layer === layer), `${layer} participates in the onslaught arrangement`);
 }
 assert.ok(score.every((event) => event.kind === "recorded" && MUSIC_SAMPLE_MANIFEST[event.sample]), "all musical voices use recorded performances");
@@ -81,13 +83,14 @@ assert.ok(score.every((event) => event.gain > 0 && event.gain <= 1));
 
 const quiet = musicEventsForBar({ seed: "BLAST-01", bar: 8, scene: "combat", intensity: .1 });
 assert.ok(quiet.some((event) => event.layer === "low-strings"));
-assert.ok(!quiet.some((event) => ["battle-drum", "field-snare", "horn-accent", "violin-answer"].includes(event.layer)));
+assert.ok(!quiet.some((event) => ["battle-drum", "field-snare", "horn-accent", "brass-answer"].includes(event.layer)));
 assert.ok(score.length > quiet.length * 2, "fighting density adds real orchestral layers instead of merely turning up volume");
 
 assert.deepEqual(musicEventsForStep({ scene: "paused" }), []);
 assert.ok(musicEventsForBar({ scene: "menu" }).every((event) => event.kind === "recorded"));
-assert.ok(musicEventsForBar({ scene: "countdown" }).some((event) => event.layer === "countdown-anvil"));
-assert.ok(musicEventsForBar({ scene: "results-win" }).some((event) => event.layer === "result-motif"));
+assert.ok(musicEventsForBar({ scene: "countdown" }).some((event) => event.layer === "countdown-cymbal"));
+assert.ok(musicEventsForBar({ scene: "results-win" }).some((event) => event.layer === "result-brass-answer"));
+assert.ok(musicEventsForBar({ scene: "results-win" }).some((event) => event.layer === "result-low-brass"));
 assert.ok(musicEventsForBar({ bar: 31, scene: "combat", intensity: 1 }).some((event) => event.layer === "cadence"), "the 32-bar form earns a composed cadence before looping");
 assert.doesNotThrow(() => musicEventsForBar({ bar: -5, step: 200, intensity: Infinity, scene: "unknown" }));
 
