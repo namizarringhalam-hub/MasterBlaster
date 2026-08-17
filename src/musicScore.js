@@ -6,17 +6,22 @@ export const MUSIC = freeze({
   beatsPerBar: 4,
   stepsPerBar: 16,
   tonicMidi: 38, // D2
-  roots: freeze([0, -4, -2, -5]), // Dm - Bb - C - A
+  roots: freeze([0, -4, -2, -5, 0, 5, -4, -5]), // Dm - Bb - C - A - Dm - Gm - Bb - A
   chords: freeze([
     freeze([0, 3, 7]),
     freeze([0, 4, 7]),
     freeze([0, 4, 7]),
+    freeze([0, 4, 7]),
+    freeze([0, 3, 7, 10]),
+    freeze([0, 3, 7]),
+    freeze([0, 4, 7, 9]),
     freeze([0, 4, 7])
   ]),
   motifs: freeze([
-    freeze([0, 3, 7, 10, 7, 5]),
-    freeze([7, 10, 12, 15, 12, 10]),
-    freeze([0, 7, 5, 3, 2, 3])
+    freeze([0, 3, 7, 10, 7, 5, 3, 2]),
+    freeze([7, 10, 12, 15, 12, 10, 7, 5]),
+    freeze([0, 7, 5, 3, 2, 3, 5, 7]),
+    freeze([12, 10, 7, 5, 3, 5, 2, 0])
   ]),
   kick: freeze([1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0]),
   snare: freeze([0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]),
@@ -48,6 +53,11 @@ const SECTION_RULES = freeze({
   drop: freeze({ bassDivisor: 1, hat: 2, kick: freeze([0, 3, 6, 8, 10, 14]), voicing: 12 }),
   resolve: freeze({ bassDivisor: 2, hat: 4, kick: freeze([0, 8]), voicing: 0 })
 });
+
+const LEAD_RHYTHMS = freeze([
+  freeze([0, 3, 6, 10, 12]), freeze([0, 2, 7, 9, 14]),
+  freeze([1, 4, 6, 11, 15]), freeze([0, 5, 8, 10, 13])
+]);
 
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 
@@ -114,7 +124,7 @@ function scoreContext({ seed = "BLAST-01", bar = 0, step = 0, scene = "combat", 
 }
 
 function harmonicInterval(interval, chordIndex) {
-  return chordIndex === 3 && ((interval % 12) + 12) % 12 === 3 ? interval + 1 : interval;
+  return chordIndex % 4 === 3 && ((interval % 12) + 12) % 12 === 3 ? interval + 1 : interval;
 }
 
 export function musicEventsForStep(input = {}) {
@@ -127,7 +137,8 @@ export function musicEventsForStep(input = {}) {
 
   if (step === 0) {
     const padGain = scene === "menu" ? .034 : .026 + energy * .018;
-    for (const interval of chord) events.push(tone("pad", step, root + 24 + interval + sectionRule.voicing, 16, padGain, "triangle", (interval - 3.5) / 8, 1800 + energy * 2600));
+    for (const interval of chord) events.push(tone("pad", step, root + 24 + harmonicInterval(interval, chordIndex) + sectionRule.voicing, 16, padGain / Math.sqrt(chord.length / 3), "triangle", (interval - 3.5) / 9, 1800 + energy * 2600));
+    if (scene === "combat" && energy >= .78 && ["b", "drop"].includes(section.name)) events.push(noise("crash", step, 6, .038 + energy * .012, 7600, -.16));
   }
 
   if (scene === "countdown") {
@@ -162,22 +173,34 @@ export function musicEventsForStep(input = {}) {
   if (sceneRule.percussion && energy >= .3 && MUSIC.snare[step]) {
     events.push(noise("snare", step, 2, .048 + energy * .025, 1650));
     events.push(tone("snare-body", step, 54, 1, .026, "triangle", 0, 520));
+    if (energy >= .72) events.push(noise("clap", step, 2, .022 + energy * .012, 3200, step === 4 ? -.09 : .09));
   }
   const hatInterval = sectionRule.hat && energy >= .72 ? Math.min(2, sectionRule.hat) : sectionRule.hat || 99;
   if (sceneRule.percussion && energy >= .42 && step % hatInterval === (hatInterval === 2 ? 1 : 2)) {
-    events.push(noise("hat", step, fillBar && step === 14 ? 2 : 1, .018 + energy * .012, 7200, step % 4 ? .32 : -.32));
+    const open = energy >= .86 && (step === 7 || (fillBar && step === 15));
+    events.push(noise(open ? "open-hat" : "hat", step, open ? 3 : 1, .018 + energy * .012, 7200, step % 4 ? .32 : -.32));
   }
-  if (energy >= .45 && step % 2 === 0 && section.name !== "breakdown") {
+  if (energy >= .45 && step % 2 === 0 && section.name !== "breakdown" && !([6, 14].includes(step) && bar % 2)) {
     const direction = seededMusicChoice([1, -1], `${seed}:arp:${bar}`);
     const index = direction > 0 ? (step / 2) % chord.length : chord.length - 1 - ((step / 2) % chord.length);
-    events.push(tone("arp", step, root + 24 + chord[index], 1, .018 + energy * .015, "triangle", step % 4 ? .24 : -.24, 3400 + energy * 2200));
+    const octave = section.name === "drop" && step >= 8 ? 12 : 0;
+    events.push(tone("arp", step, root + 24 + harmonicInterval(chord[index], chordIndex) + octave, 1, .018 + energy * .015, "triangle", step % 4 ? .24 : -.24, 3400 + energy * 2200));
   }
-  if (sceneRule.lead && energy >= .8 && !["intro", "breakdown"].includes(section.name) && step % 3 === 0) {
+  const leadRhythm = LEAD_RHYTHMS[Math.floor(bar / 2) % LEAD_RHYTHMS.length];
+  if (sceneRule.lead && energy >= .8 && !["intro", "breakdown"].includes(section.name) && leadRhythm.includes(step)) {
     const motif = seededMusicChoice(MUSIC.motifs, `${seed}:motif:${Math.floor(bar / 8)}`);
-    events.push(tone("lead", step, root + 24 + harmonicInterval(motif[Math.floor(step / 3) % motif.length], chordIndex), 2, .03 + energy * .02, "sawtooth", step % 2 ? .12 : -.12, 4200));
+    const phraseIndex = leadRhythm.indexOf(step) + (bar % 2) * 3;
+    events.push(tone("lead", step, root + 24 + harmonicInterval(motif[phraseIndex % motif.length], chordIndex), step >= 12 ? 3 : 2, .03 + energy * .02, "sawtooth", step % 2 ? .12 : -.12, 4200));
+  }
+  if (sceneRule.lead && energy >= .92 && section.name === "drop" && [5, 13].includes(step)) {
+    const answer = harmonicInterval(chord[(bar + step) % chord.length], chordIndex);
+    events.push(tone("counterlead", step, root + 36 + answer, 2, .022, "triangle", step === 5 ? -.28 : .28, 5200));
   }
   if (energy >= .72 && fillBar && step === 12 && ["b", "drop"].includes(section.name)) {
     events.push(noise("riser", step, 4, .045, 4800));
+  }
+  if (sceneRule.percussion && energy >= .74 && fillBar && [13, 14, 15].includes(step)) {
+    events.push(tone("tom", step, 50 - (step - 13) * 4, 1, .037 + energy * .012, "sine", (step - 14) * .18, 720));
   }
   if (section.name === "resolve" && bar % 32 === 31 && step === 12) {
     events.push(tone("cadence", step, MUSIC.tonicMidi + 36, 4, .06, "triangle", 0, 3600));

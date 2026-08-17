@@ -1,5 +1,6 @@
 import { MUSIC, musicEventsForStep } from "./musicScore.js";
 import { weaponPresentation } from "./weaponPresentation.js";
+import { createProceduralAudioAssets } from "./audioAssets.js";
 
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 const MASTER_GAIN = .52;
@@ -86,6 +87,7 @@ export class SoundBoard {
     this.master = null;
     this.compressor = null;
     this.noiseBuffer = null;
+    this.sampleBank = {};
     this.enabled = true;
     this.volume = 70;
     this.buses = {};
@@ -148,7 +150,14 @@ export class SoundBoard {
     this.limiter.ratio.value = 20;
     this.limiter.attack?.setValueAtTime?.(.001, context.currentTime);
     this.limiter.release?.setValueAtTime?.(.08, context.currentTime);
-    this.master.connect(this.compressor).connect(this.limiter);
+    if (context.createWaveShaper) {
+      this.saturator = context.createWaveShaper();
+      const curve = new Float32Array(2048);
+      for (let index = 0; index < curve.length; index++) { const x = index / (curve.length - 1) * 2 - 1; curve[index] = Math.tanh(x * 1.35) / Math.tanh(1.35); }
+      this.saturator.curve = curve;
+      this.saturator.oversample = "4x";
+      this.master.connect(this.saturator).connect(this.compressor).connect(this.limiter);
+    } else this.master.connect(this.compressor).connect(this.limiter);
     if (context.createAnalyser) {
       this.peakMeter = context.createAnalyser();
       this.peakMeter.fftSize = 256;
@@ -164,8 +173,16 @@ export class SoundBoard {
     this.musicFilter = context.createBiquadFilter();
     this.musicFilter.type = "lowpass";
     this.musicFilter.frequency.value = 6400;
+    this.musicLowShelf = context.createBiquadFilter();
+    this.musicLowShelf.type = "lowshelf";
+    this.musicLowShelf.frequency.value = 150;
+    this.musicLowShelf.gain.value = 1.4;
+    this.musicHighShelf = context.createBiquadFilter();
+    this.musicHighShelf.type = "highshelf";
+    this.musicHighShelf.frequency.value = 4200;
+    this.musicHighShelf.gain.value = 1.1;
     this.buses.music.disconnect?.();
-    this.buses.music.connect(this.musicFilter).connect(this.master);
+    this.buses.music.connect(this.musicLowShelf).connect(this.musicFilter).connect(this.musicHighShelf).connect(this.master);
     if (context.createConvolver) {
       const impulse = this._impulseBuffer(1.15, 2.8);
       this.reverb = context.createConvolver();
@@ -179,6 +196,16 @@ export class SoundBoard {
       this.musicReverbGain.gain.value = .11;
       this.musicReverb.connect(this.musicReverbGain).connect(this.buses.music);
     }
+    if (context.createDelay) {
+      this.musicDelay = context.createDelay(1);
+      this.musicDelay.delayTime.value = (60 / MUSIC.bpm) * .75;
+      this.musicDelayFeedback = context.createGain();
+      this.musicDelayFeedback.gain.value = .27;
+      this.musicDelayGain = context.createGain();
+      this.musicDelayGain.gain.value = .14;
+      this.musicDelay.connect(this.musicDelayFeedback).connect(this.musicDelay);
+      this.musicDelay.connect(this.musicDelayGain).connect(this.buses.music);
+    }
     this.noiseBuffer = context.createBuffer(2, context.sampleRate * 2, context.sampleRate);
     for (let channel = 0; channel < this.noiseBuffer.numberOfChannels; channel++) {
       const noise = this.noiseBuffer.getChannelData(channel);
@@ -189,7 +216,18 @@ export class SoundBoard {
         noise[index] = white * .62 + previous * .38;
       }
     }
-    if (context.createPeriodicWave) this.musicWave = context.createPeriodicWave(new Float32Array([0, 1, .34, .16, .08, .035]), new Float32Array(6));
+    const proceduralAssets = createProceduralAudioAssets(context.sampleRate);
+    this.sampleBank = Object.fromEntries(Object.entries(proceduralAssets).map(([name, data]) => [name, this._audioBufferFromMono(data)]));
+    if (context.createPeriodicWave) {
+      const wave = (partials) => context.createPeriodicWave(new Float32Array(partials.length), new Float32Array(partials));
+      this.musicWaves = {
+        pad: wave([0, 1, .46, .2, .11, .07, .03, .018]),
+        bass: wave([0, 1, .56, .18, .12, .04, .025]),
+        pluck: wave([0, 1, .72, .48, .31, .2, .12, .07, .04]),
+        lead: wave([0, 1, .62, .37, .22, .14, .08, .05, .025])
+      };
+      this.musicWave = this.musicWaves.lead;
+    }
     this.setVolume(this.volume);
     this.setMix(this.mix);
     this.setDynamicRange(this.dynamicRange);
@@ -203,6 +241,12 @@ export class SoundBoard {
       for (let index = 0; index < length; index++) data[index] = (Math.random() * 2 - 1) * (1 - index / length) ** decay;
     }
     return impulse;
+  }
+
+  _audioBufferFromMono(data) {
+    const buffer = this.context.createBuffer(1, data.length, this.context.sampleRate);
+    buffer.getChannelData(0).set(data);
+    return buffer;
   }
 
   _bus(name) { return this.buses[name] || this.master; }
@@ -250,12 +294,13 @@ export class SoundBoard {
   }
 
   _mix(input = 1, fallbackPan = 0) {
-    if (typeof input === "number") return { gain: clamp(input, 0, 1.5), pan: clamp(fallbackPan, -1, 1), occluded: false };
-    if (input?.local) return { gain: clamp(input.volume ?? 1, 0, 1.5), pan: 0, occluded: false };
+    if (typeof input === "number") return { gain: clamp(input, 0, 1.5), pan: clamp(fallbackPan, -1, 1), occluded: false, distanceRatio: 0 };
+    if (input?.local) return { gain: clamp(input.volume ?? 1, 0, 1.5), pan: 0, occluded: false, distanceRatio: 0 };
     const position = input?.position;
-    if (!position) return { gain: clamp(input?.volume ?? 1, 0, 1.5), pan: clamp(input?.pan ?? fallbackPan, -1, 1), occluded: Boolean(input?.occluded) };
-    const spatial = spatialMix(this.listenerPosition, [position.x || 0, position.y || 0, position.z || 0], this.listenerForward, input.maxDistance || 180);
-    return { gain: spatial.gain * clamp(input.volume ?? 1, 0, 1.5), pan: spatial.pan, occluded: Boolean(input.occluded) };
+    if (!position) return { gain: clamp(input?.volume ?? 1, 0, 1.5), pan: clamp(input?.pan ?? fallbackPan, -1, 1), occluded: Boolean(input?.occluded), distanceRatio: 0 };
+    const maxDistance = input.maxDistance || 180;
+    const spatial = spatialMix(this.listenerPosition, [position.x || 0, position.y || 0, position.z || 0], this.listenerForward, maxDistance);
+    return { gain: spatial.gain * clamp(input.volume ?? 1, 0, 1.5), pan: spatial.pan, occluded: Boolean(input.occluded), distanceRatio: clamp(spatial.distance / maxDistance) };
   }
 
   _allow(key, interval = 0) {
@@ -265,8 +310,8 @@ export class SoundBoard {
     return true;
   }
 
-  _claimVoice(priority) {
-    while (this.totalVoiceCount() >= VOICE_LIMIT) if (!this._evictForPriority(priority)) return false;
+  _claimVoice(priority, requesterGroup = "sfx") {
+    while (this.totalVoiceCount() >= VOICE_LIMIT) if (!this._evictForPriority(priority, requesterGroup)) return false;
     return true;
   }
 
@@ -309,14 +354,15 @@ export class SoundBoard {
         try { weakest.source.stop(this.context?.currentTime || 0); } catch {}
       }
     }
-    while (this.totalVoiceCount() + count > VOICE_LIMIT) if (!this._evictForPriority(priority)) return false;
+    while (this.totalVoiceCount() + count > VOICE_LIMIT) if (!this._evictForPriority(priority, "continuous")) return false;
     return true;
   }
 
   _trackContinuous(source, metadata = {}) { this.continuousSources.set(source, { priority: 0, ...metadata }); }
-  _evictForPriority(priority) {
+  _evictForPriority(priority, requesterGroup = "sfx") {
+    const musicCount = [...this.activeVoices].filter((voice) => voice.group === "music").length;
     const candidates = [
-      ...[...this.activeVoices].map((voice) => ({ kind: "active", source: voice.source, priority: voice.priority || 0, voice })),
+      ...[...this.activeVoices].filter((voice) => !(requesterGroup !== "music" && voice.group === "music" && musicCount <= 8)).map((voice) => ({ kind: "active", source: voice.source, priority: voice.priority || 0, voice })),
       ...[...this.continuousSources].map(([source, metadata]) => ({ kind: "continuous", source, priority: metadata?.priority || 0 })),
       ...[...this.fadingSources].map(([source, metadata]) => ({ kind: "fading", source, priority: metadata?.priority || 0 }))
     ].sort((a, b) => a.priority - b.priority);
@@ -342,7 +388,7 @@ export class SoundBoard {
     else source.onended = cleanup;
   }
 
-  _route(node, busName, pan = 0, wet = 0) {
+  _route(node, busName, pan = 0, wet = 0, delay = 0) {
     let tail = node;
     let panner = null;
     if (this.context.createStereoPanner) {
@@ -358,11 +404,16 @@ export class SoundBoard {
       send.gain.value = wet;
       node.connect(send).connect(reverb);
     }
+    if (delay > 0 && busName === "music" && this.musicDelay) {
+      const send = this.context.createGain();
+      send.gain.value = delay;
+      node.connect(send).connect(this.musicDelay);
+    }
     return panner;
   }
 
   tone(frequency, duration, type = "sine", volume = .1, slide = 1, options = {}) {
-    if (!this.enabled || !this.context || !this._claimVoice(options.priority ?? 45)) return false;
+    if (!this.enabled || !this.context || !this._claimVoice(options.priority ?? 45, options.group || "sfx")) return false;
     const now = Math.max(this.context.currentTime, options.at ?? this.context.currentTime);
     const attack = Math.min(duration * .35, options.attack ?? .004);
     const release = Math.min(duration * .8, options.release ?? Math.max(.025, duration * .45));
@@ -370,7 +421,8 @@ export class SoundBoard {
     const filter = this.context.createBiquadFilter();
     const gain = this.context.createGain();
     osc.type = type;
-    if (options.periodic && this.musicWave && osc.setPeriodicWave) osc.setPeriodicWave(this.musicWave);
+    const selectedWave = typeof options.periodic === "string" ? this.musicWaves?.[options.periodic] : this.musicWave;
+    if (options.periodic && selectedWave && osc.setPeriodicWave) osc.setPeriodicWave(selectedWave);
     osc.frequency.setValueAtTime(Math.max(28, frequency), now);
     osc.frequency.exponentialRampToValueAtTime?.(Math.max(28, frequency * slide), now + duration);
     if (osc.detune && Number.isFinite(options.detune)) osc.detune.value = options.detune;
@@ -382,7 +434,7 @@ export class SoundBoard {
     gain.gain.setValueAtTime?.(Math.max(.0001, volume), Math.max(now + attack, now + duration - release));
     gain.gain.exponentialRampToValueAtTime?.(.0001, now + duration);
     osc.connect(filter).connect(gain);
-    this._route(gain, options.bus || "weapon", options.pan || 0, options.wet || 0);
+    this._route(gain, options.bus || "weapon", options.pan || 0, options.wet || 0, options.delay || 0);
     osc.start(now);
     osc.stop(now + duration + .025);
     this._track(osc, options.priority ?? 45, options.group || "sfx");
@@ -390,7 +442,7 @@ export class SoundBoard {
   }
 
   noise(duration = .12, volume = .05, frequency = 1100, options = {}) {
-    if (!this.enabled || !this.context || !this.noiseBuffer || !this._claimVoice(options.priority ?? 40)) return false;
+    if (!this.enabled || !this.context || !this.noiseBuffer || !this._claimVoice(options.priority ?? 40, options.group || "sfx")) return false;
     const now = Math.max(this.context.currentTime, options.at ?? this.context.currentTime);
     const source = this.context.createBufferSource();
     const filter = this.context.createBiquadFilter();
@@ -403,10 +455,36 @@ export class SoundBoard {
     gain.gain.linearRampToValueAtTime(volume, now + (options.attack ?? .002));
     gain.gain.exponentialRampToValueAtTime?.(.0001, now + duration);
     source.connect(filter).connect(gain);
-    this._route(gain, options.bus || "impact", options.pan || 0, options.wet ?? .03);
+    this._route(gain, options.bus || "impact", options.pan || 0, options.wet ?? .03, options.delay || 0);
     source.start(now, Math.random() * .7);
     source.stop(now + duration + .02);
     this._track(source, options.priority ?? 40, options.group || "sfx");
+    return true;
+  }
+
+  sample(name, volume = .1, options = {}) {
+    const buffer = this.sampleBank?.[name];
+    if (!this.enabled || !this.context || !buffer || !this._claimVoice(options.priority ?? 45, options.group || "sfx")) return false;
+    const now = Math.max(this.context.currentTime, options.at ?? this.context.currentTime);
+    const source = this.context.createBufferSource();
+    const filter = this.context.createBiquadFilter();
+    const gain = this.context.createGain();
+    source.buffer = buffer;
+    if (source.playbackRate) source.playbackRate.value = clamp(options.rate ?? 1, .55, 1.8);
+    if (source.detune && Number.isFinite(options.detune)) source.detune.value = options.detune;
+    filter.type = options.filterType || "lowpass";
+    filter.frequency.value = options.filter ?? 14000;
+    filter.Q.value = options.q ?? .55;
+    gain.gain.setValueAtTime(Math.max(.0001, volume), now);
+    const duration = buffer.duration / (source.playbackRate?.value || 1);
+    const release = Math.min(duration * .75, options.release ?? .08);
+    gain.gain.setValueAtTime?.(Math.max(.0001, volume), Math.max(now, now + duration - release));
+    gain.gain.exponentialRampToValueAtTime?.(.0001, now + duration);
+    source.connect(filter).connect(gain);
+    this._route(gain, options.bus || "impact", options.pan || 0, options.wet ?? .03, options.delay || 0);
+    source.start(now);
+    source.stop(now + duration + .025);
+    this._track(source, options.priority ?? 45, options.group || "sfx");
     return true;
   }
 
@@ -421,20 +499,20 @@ export class SoundBoard {
     const handling = weapon ? weaponAudioProfile(weapon) : null;
     const handlingPitch = handling ? handling.pitchRatio * (1 + handling.detune / 2400) : 1;
     const v = mix.gain;
-    if (type === "uiHover") return this._allow(type, .045) && this.tone(980, .035, "sine", .022 * v, .88, ui);
-    if (type === "uiConfirm") { this.tone(620, .075, "triangle", .055 * v, 1.45, ui); this.tone(930, .09, "sine", .032 * v, 1.08, { ...ui, at: now + .035 }); return true; }
-    if (type === "uiBack") return this.tone(520, .11, "triangle", .05 * v, .58, ui);
-    if (type === "uiInvalid") { this.tone(118, .16, "square", .045 * v, .82, ui); this.noise(.045, .02 * v, 900, ui); return true; }
-    if (type === "weaponSelect") { this.noise(.04 + (handling?.tail || .2) * .025, .032 * v, 1700 + (handling?.formant || 2800) * .24, ui); this.tone(330 * handlingPitch, .09, handling?.accentWave || "triangle", .05 * v, 1.35 + (handling?.accentSlide || 1) * .18, ui); return true; }
-    if (type === "pause") return this.tone(420, .18, "sine", .06 * v, .5, ui);
-    if (type === "resume") { this.tone(330, .12, "triangle", .055 * v, 1.5, ui); this.tone(660, .16, "sine", .035 * v, 1.05, { ...ui, at: now + .06 }); return true; }
+    if (type === "uiHover") { if (!this._allow(type, .045)) return false; this.sample("mechanical", .011 * v, { ...ui, rate: 1.65, filter: 6200 }); return this.tone(980, .035, "sine", .018 * v, .88, ui); }
+    if (type === "uiConfirm") { this.sample("energy", .025 * v, { ...ui, rate: 1.45, filter: 5200 }); this.tone(620, .075, "triangle", .055 * v, 1.45, ui); this.tone(930, .09, "sine", .032 * v, 1.08, { ...ui, at: now + .035 }); return true; }
+    if (type === "uiBack") { this.sample("energy", .014 * v, { ...ui, rate: .7, filter: 3600 }); return this.tone(520, .11, "triangle", .04 * v, .58, ui); }
+    if (type === "uiInvalid") { this.sample("mechanical", .024 * v, { ...ui, rate: .68, filter: 2400 }); this.tone(118, .16, "square", .035 * v, .82, ui); return true; }
+    if (type === "weaponSelect") { this.sample("mechanical", .024 * v, { ...ui, rate: clamp(handlingPitch, .75, 1.45), filter: 1800 + (handling?.formant || 2800) }); this.tone(330 * handlingPitch, .09, handling?.accentWave || "triangle", .04 * v, 1.35 + (handling?.accentSlide || 1) * .18, ui); return true; }
+    if (type === "pause") { this.sample("energy", .018 * v, { ...ui, rate: .62, filter: 3200 }); return this.tone(420, .18, "sine", .045 * v, .5, ui); }
+    if (type === "resume") { this.sample("energy", .018 * v, { ...ui, rate: 1.12, filter: 4800 }); this.tone(330, .12, "triangle", .045 * v, 1.5, ui); this.tone(660, .16, "sine", .028 * v, 1.05, { ...ui, at: now + .06 }); return true; }
     if (type === "matchStart" || type === "go") { this.tone(82, .38, "sine", .12 * v, .48, { ...local, priority: 96 }); this.tone(660, .32, "sawtooth", .075 * v, 1.7, { ...local, priority: 96 }); return true; }
     if (type === "countdown") return this.tone(440, .11, "square", .07 * v, 1.12, ui);
     if (type === "win" || type === "loss") { const up = type === "win"; [0, 3, 7, 12].forEach((semitone, index) => this.tone(293.66 * 2 ** ((up ? semitone : 7 - semitone / 2) / 12), .42, "triangle", .06 * v, 1.02, { ...ui, at: now + index * .11, priority: 100, wet: .08 })); return true; }
     if (type === "jump" || type === "boost") { this.noise(.12, .045 * v, 1450, local); this.tone(type === "boost" ? 105 : 155, .22, "sawtooth", .055 * v, type === "boost" ? 3.2 : 1.8, local); return true; }
-    if (type === "land") { this.noise(.11, .065 * v, 260, local); this.tone(62, .16, "sine", .075 * v, .5, local); return true; }
-    if (type === "footstep") { if (!this._allow(`step:${spatial?.actorId || "local"}`, spatial?.local ? .12 : .18)) return false; this.noise(.05, .026 * v, 520 + (spatial?.strength || .5) * 420, local); this.tone(86, .055, "sine", .018 * v, .72, local); return true; }
-    if (type === "reload" || type === "reloadComplete") { const complete = type === "reloadComplete"; this.noise(.045 + (handling?.noise || .3) * .025, .045 * v, (complete ? 2500 : 1350) * handlingPitch, local); this.tone((complete ? 580 : 230) * handlingPitch, .075 + (handling?.tail || .25) * .055, handling?.accentWave || "square", .035 * v, complete ? 1.18 + (handling?.accentRatio || 1) * .12 : .58 + (handling?.accentSlide || 1) * .06, local); return true; }
+    if (type === "land") { this.sample("impact", .052 * v, { ...local, rate: .82, wet: .025 }); this.tone(62, .16, "sine", .055 * v, .5, local); return true; }
+    if (type === "footstep") { if (!this._allow(`step:${spatial?.actorId || "local"}`, spatial?.local ? .12 : .18)) return false; if (!this.sample("footstep", .028 * v, { ...local, rate: .94 + (spatial?.strength || .5) * .12, wet: .018 })) this.noise(.05, .026 * v, 520 + (spatial?.strength || .5) * 420, local); return true; }
+    if (type === "reload" || type === "reloadComplete") { const complete = type === "reloadComplete"; this.sample("mechanical", .038 * v, { ...local, rate: (complete ? 1.18 : .84) * handlingPitch, filter: mix.occluded ? 1050 : 6800 }); this.tone((complete ? 580 : 230) * handlingPitch, .075 + (handling?.tail || .25) * .055, handling?.accentWave || "square", .028 * v, complete ? 1.18 + (handling?.accentRatio || 1) * .12 : .58 + (handling?.accentSlide || 1) * .06, local); return true; }
     if (type === "empty") return this._allow(`empty:${weapon?.id || "generic"}`, .13) && this.tone(1180 * handlingPitch + (handling?.formant || 2600) * .1, .03 + (handling?.tail || .2) * .018, handling?.accentWave || "square", .035 * v, .26 + (handling?.accentSlide || 1) * .06, local);
     if (type === "lowAmmo") { this.tone(740, .055, "square", .028 * v, .92, local); this.tone(620, .055, "square", .024 * v, .9, { ...local, at: now + .07 }); return true; }
     if (type === "equip") { this.noise(.04 + (handling?.noise || .3) * .025, .034 * v, 1250 + (handling?.formant || 2600) * .18, world); this.tone(260 * handlingPitch, .075 + (handling?.tail || .2) * .05, handling?.accentWave || "triangle", .035 * v, 1.22 + (handling?.accentRatio || 1) * .16, world); return true; }
@@ -442,14 +520,14 @@ export class SoundBoard {
     if (type.startsWith("grapple")) {
       const pitches = { grappleFire: 270, grappleAttach: 92, grappleMiss: 180, grappleWrap: 720, grappleRelease: 340 };
       const pitch = pitches[type] || 420;
-      this.noise(type === "grappleAttach" ? .12 : .07, .04 * v, type === "grappleWrap" ? 1800 : 900, local);
+      this.sample(type === "grappleAttach" ? "impact" : "mechanical", .03 * v, { ...local, rate: type === "grappleWrap" ? 1.35 : .92, filter: type === "grappleWrap" ? 4800 : 2600 });
       this.tone(pitch, type === "grappleAttach" ? .26 : .14, type === "grappleAttach" ? "sine" : "triangle", .06 * v, type === "grappleRelease" ? 2.2 : .54, local);
       return true;
     }
     if (type === "hitConfirm" || type === "elimination") { const kill = type === "elimination"; this.tone(kill ? 920 : 1280, kill ? .16 : .055, "sine", (kill ? .07 : .04) * v, kill ? .62 : 1.3, { ...ui, priority: kill ? 100 : 92 }); if (kill) this.tone(460, .22, "triangle", .055 * v, 1.7, { ...ui, at: now + .045, priority: 100 }); return true; }
-    if (type === "damage" || type === "death") { const death = type === "death"; this.noise(death ? .35 : .12, (death ? .1 : .06) * v, death ? 260 : 620, { ...local, priority: death ? 100 : 94 }); this.tone(death ? 74 : 130, death ? .55 : .18, "sawtooth", .07 * v, death ? .35 : .68, { ...local, priority: death ? 100 : 94 }); this.duckMusic(death ? .52 : .26, death ? .32 : .12); return true; }
+    if (type === "damage" || type === "death") { const death = type === "death"; this.sample(death ? "explosion" : "impact", (death ? .09 : .055) * v, { ...local, priority: death ? 100 : 94, rate: death ? .76 : 1.08, wet: death ? .12 : .035 }); this.tone(death ? 74 : 130, death ? .55 : .18, "sawtooth", .055 * v, death ? .35 : .68, { ...local, priority: death ? 100 : 94 }); this.duckMusic(death ? .52 : .26, death ? .32 : .12); return true; }
     if (type === "respawn") { this.noise(.24, .04 * v, 2600, local); this.tone(180, .42, "sine", .07 * v, 3.8, local); return true; }
-    if (type === "bounce") { if (!this._allow(`bounce:${spatial?.ownerId || "world"}:${weapon?.id || "object"}`, .055)) return false; this.tone(520 + (weapon ? weaponPresentation(weapon).signature * 820 : 0), .07, "triangle", .05 * v, .56, world); this.noise(.035, .022 * v, 1900, world); return true; }
+    if (type === "bounce") { if (!this._allow(`bounce:${spatial?.ownerId || "world"}:${weapon?.id || "object"}`, .055)) return false; this.sample("mechanical", .027 * v, { ...world, rate: .76 + (weapon ? weaponPresentation(weapon).signature * .5 : 0) }); this.tone(520 + (weapon ? weaponPresentation(weapon).signature * 820 : 0), .07, "triangle", .034 * v, .56, world); return true; }
     if (type === "stick" || type === "arm") { this.noise(.06, .04 * v, type === "stick" ? 620 : 2100, world); this.tone(type === "arm" ? 1120 : 180, .09, "square", .035 * v, type === "arm" ? 1.08 : .62, world); return true; }
     if (type === "split") { this.noise(.12, .07 * v, 1400, world); [0, 1, 2].forEach((index) => this.tone(340 + index * 170, .11, "triangle", .025 * v, 1.4, { ...world, at: now + index * .025 })); return true; }
     if (["teleport", "steal", "construct"].includes(type)) { this.tone(type === "teleport" ? 240 : type === "steal" ? 410 : 180, .28, "sine", .065 * v, 3.1, world); this.tone(type === "construct" ? 720 : 980, .2, "triangle", .04 * v, .48, { ...world, at: now + .045 }); return true; }
@@ -469,8 +547,13 @@ export class SoundBoard {
     if (!this._allow(`fire:${spatial?.ownerId || "local"}:${weapon.id}`, remote && profile.rapid ? .08 : profile.rapid ? .025 : .012) || mix.gain <= 0) return false;
     const volume = Math.min(.105, Math.max(.006, .092 * mix.gain));
     const pitch = profile.audioPitch * identity[1] * (.96 + profile.signature * .08);
-    const opts = { bus: "weapon", pan: mix.pan, priority: remote ? 46 : 90, wet: remote ? .065 : .025, filter: mix.occluded ? 1100 : 11000, detune: authored.detune };
+    const distanceWet = remote ? .045 + mix.distanceRatio * .16 : .025;
+    const distanceFilter = mix.occluded ? 1100 : 11000 - mix.distanceRatio * 5200;
+    const opts = { bus: "weapon", pan: mix.pan, priority: remote ? 46 : 90, wet: distanceWet, filter: distanceFilter, detune: authored.detune };
     const now = this.context?.currentTime || 0;
+    const microVariation = 1 + ((((identityHash(`${weapon.id}:${Math.floor(now * 1000)}`) >>> 4) % 11) - 5) * .006);
+    const renderedLayer = profile.delivery === "flame" || profile.payload === "fireball" ? "flame" : profile.delivery === "melee" ? "impact" : profile.energy || ["beam", "rail", "chain"].includes(profile.delivery) ? "energy" : ["rocket", "grenade"].includes(profile.delivery) || weapon.type === "mine" ? "mechanical" : "ballistic";
+    this.sample(renderedLayer, volume * (renderedLayer === "ballistic" ? .72 : .58), { ...opts, rate: clamp(microVariation * authored.pitchRatio ** .18, .72, 1.42), filter: mix.occluded ? 1050 : Math.min(12500, 5200 + authored.formant) });
     const accent = () => this.tone(pitch * authored.accentRatio, .026 + authored.tail * .028, authored.accentWave, volume * (.1 + authored.noise * .09), authored.accentSlide, { ...opts, at: now + .008, filter: mix.occluded ? 1050 : authored.formant });
     if (profile.payload === "fireball") {
       this.noise(.16, volume * .82, 480, opts); this.tone(104, .2, "sawtooth", volume, 1.9, opts); this.tone(pitch * 1.4, .11, "triangle", volume * .42, .44, opts); accent(); return true;
@@ -517,9 +600,11 @@ export class SoundBoard {
     const mix = this._mix(spatial, fallbackPan);
     if (mix.gain <= 0 || !this._allow(`impact:${weapon.id}:${surface}`, weapon.radius ? .055 : .018)) return false;
     const volume = Math.min(.12, Math.max(.005, .09 * mix.gain));
-    const opts = { bus: "impact", pan: mix.pan, priority: weapon.radius ? 82 : surface === "player" ? 74 : 58, wet: .075, filter: mix.occluded ? 1050 : 11000 };
+    const opts = { bus: "impact", pan: mix.pan, priority: weapon.radius ? 82 : surface === "player" ? 74 : 58, wet: .055 + mix.distanceRatio * .2, filter: mix.occluded ? 1050 : 11000 - mix.distanceRatio * 5600 };
     const pitch = profile.audioPitch * identity[1];
     const inward = ["gravity", "implosion"].includes(profile.payload);
+    const surfaceRate = surface === "player" ? .78 : surface === "metal" ? 1.28 : surface === "wall" ? 1.08 : .94;
+    this.sample(weapon.radius ? "explosion" : profile.payload === "fireball" ? "flame" : profile.energy ? "energy" : "impact", volume * (weapon.radius ? .92 : .62), { ...opts, rate: surfaceRate * (.94 + profile.signature * .12), filter: mix.occluded ? 1050 : surface === "player" ? 4600 : 10500, wet: weapon.radius ? .13 : .065 });
     if (weapon.radius || ["blast", "cluster", "napalm", "mortar"].includes(profile.payload)) {
       this.noise(.22 + profile.weight * .13, volume, 220 + profile.weight * 220, opts); this.tone(Math.max(38, pitch * .24), .34 + identity[3] * .18, "sawtooth", volume * .9, inward ? 2.7 : .3, opts); this.tone(42, .46, "sine", volume * .54, .52, opts); return true;
     }
@@ -563,11 +648,20 @@ export class SoundBoard {
     if (loop?.weaponId !== weapon.id) { this.stopWeaponLoop(id); loop = null; }
     if (!loop) {
       const priority = typeof spatial === "object" && spatial.local ? 58 : 26;
-      if (!this._claimContinuous(1, priority)) return false;
-      const profile = weaponPresentation(weapon), oscillator = this.context.createOscillator(), filter = this.context.createBiquadFilter(), gain = this.context.createGain();
+      const profile = weaponPresentation(weapon), layered = Boolean(this.sampleBank?.flame && (spatial?.local || mix.gain >= .72) && (profile.delivery === "flame" || ["beam", "chain"].includes(profile.delivery)));
+      if (!this._claimContinuous(layered ? 2 : 1, priority)) return false;
+      const oscillator = this.context.createOscillator(), filter = this.context.createBiquadFilter(), gain = this.context.createGain();
       oscillator.type = profile.payload === "gravity" ? "sine" : weapon.spin || weapon.id === "flamethrower" ? "sawtooth" : "triangle";
       filter.type = "lowpass"; filter.Q.value = .8; gain.gain.value = .0001; oscillator.connect(filter).connect(gain); const panner = this._route(gain, "weapon", mix.pan, .035); oscillator.start();
-      loop = { nodes: [oscillator], oscillator, panner, filter, gain, profile, weaponId: weapon.id }; this.weaponLoops.set(id, loop); this._trackContinuous(oscillator, { priority, group: "weapon", map: this.weaponLoops, id });
+      const nodes = [oscillator];
+      if (layered) {
+        const texture = this.context.createBufferSource(), textureFilter = this.context.createBiquadFilter(), textureGain = this.context.createGain();
+        texture.buffer = profile.delivery === "flame" ? this.sampleBank.flame : this.noiseBuffer; texture.loop = true;
+        textureFilter.type = profile.delivery === "flame" ? "bandpass" : "highpass"; textureFilter.frequency.value = profile.delivery === "flame" ? 720 : 1800;
+        textureGain.gain.value = profile.delivery === "flame" ? .36 : .12; texture.connect(textureFilter).connect(textureGain).connect(gain); texture.start(); nodes.push(texture);
+      }
+      loop = { nodes, oscillator, panner, filter, gain, profile, weaponId: weapon.id }; this.weaponLoops.set(id, loop);
+      for (const node of nodes) this._trackContinuous(node, { priority, group: "weapon", map: this.weaponLoops, id });
     }
     const volume = Math.max(.002, .032 * mix.gain), base = loop.profile.payload === "gravity" ? 58 : weapon.id === "chainsaw" ? 72 : weapon.id === "flamethrower" ? 46 : 54;
     loop.oscillator.frequency.setTargetAtTime(base + (weapon.spin ? 54 : 20), now, .035);
@@ -733,7 +827,7 @@ export class SoundBoard {
     this.musicNextTime = startAt;
     if (Number.isFinite(intensity)) this.musicIntensity = this.musicTargetIntensity = clamp(intensity);
     this.musicBarIntensity = this.musicIntensity;
-    this.noise(.24, .025, 3600, { bus: "music", group: "music", priority: 9, at: startAt, attack: .06, wet: .1 });
+    if (!this.sample("transition", .045, { bus: "music", group: "music", priority: 9, at: startAt, wet: .14, filter: 6200 })) this.noise(.24, .025, 3600, { bus: "music", group: "music", priority: 9, at: startAt, attack: .06, wet: .1 });
   }
 
   _stopMusicVoicesAt(at) {
@@ -789,7 +883,7 @@ export class SoundBoard {
     this.musicStep = 0;
     this.musicNextTime = at;
     this.musicIntensity = this.musicTargetIntensity = this.musicBarIntensity = intensity;
-    this.noise(.2, .035, 4200, { bus: "music", group: "music", priority: 96, at, attack: .01, wet: .08 });
+    this.sample("impact", .075, { bus: "music", group: "music", priority: 96, at, wet: .1 });
     this.tone(82, .38, "sine", .12, .48, { bus: "movement", group: "go", priority: 100, at });
     this.tone(660, .32, "sawtooth", .075, 1.7, { bus: "movement", group: "go", priority: 100, at });
   }
@@ -818,7 +912,7 @@ export class SoundBoard {
         this.pendingMusicScene = null;
         this.musicScene = transition.scene;
         if (transition.reset) this.musicStep = 0;
-        this.noise(.32, .028, 3600, { bus: "music", group: "music", priority: 9, at: this.musicNextTime, attack: .08, wet: .12 });
+        if (!this.sample("transition", .045, { bus: "music", group: "music", priority: 9, at: this.musicNextTime, wet: .14, filter: 6200 })) this.noise(.32, .028, 3600, { bus: "music", group: "music", priority: 9, at: this.musicNextTime, attack: .08, wet: .12 });
         this.tone(this.musicScene.startsWith("results") ? 146.83 : 73.42, .42, "sine", .04, this.musicScene === "combat" ? 2.1 : .62, { bus: "music", group: "music", priority: 9, at: this.musicNextTime, wet: .1 });
         step = 0;
       }
@@ -836,18 +930,33 @@ export class SoundBoard {
 
   _scheduleMusicEvent(event, at, stepDuration) {
     const duration = Math.max(.035, event.durationSteps * stepDuration * .94);
-    const common = { bus: "music", group: "music", priority: 8, at, pan: event.pan, filter: event.filterHz, wet: event.layer === "pad" ? .1 : .035, attack: event.layer === "pad" ? .08 : .003, release: event.layer === "pad" ? .24 : undefined };
-    if (event.kind === "noise") this.noise(duration, event.gain, event.filterHz, { ...common, filterType: event.layer === "hat" ? "highpass" : "bandpass" });
-    else if (event.layer === "pad") {
-      this.tone(event.frequency, duration, "triangle", event.gain * .58, 1.003, { ...common, detune: -7 });
-      this.tone(event.frequency, duration, "sawtooth", event.gain * .34, .997, { ...common, detune: 7, pan: -event.pan });
+    const common = { bus: "music", group: "music", priority: 8, at, pan: event.pan, filter: event.filterHz, wet: event.layer === "pad" ? .14 : .045, attack: event.layer === "pad" ? .12 : .003, release: event.layer === "pad" ? .34 : undefined };
+    if (event.layer === "kick") this.sample("kick", event.gain * .92, { ...common, wet: .015, rate: .98 + event.gain * .12 });
+    else if (event.layer === "snare") this.sample("snare", event.gain * .82, { ...common, wet: .08, rate: .97 + (event.step % 3) * .018 });
+    else if (event.layer === "clap") this.sample("clap", event.gain * .82, { ...common, wet: .12 });
+    else if (event.layer === "hat" || event.layer === "open-hat" || event.layer === "crash") {
+      const open = event.layer !== "hat";
+      this.sample(open ? "hatOpen" : "hatClosed", event.gain * (open ? .72 : .8), { ...common, wet: open ? .1 : .025, rate: event.layer === "crash" ? .72 : .96 + (event.step % 4) * .016, filterType: "highpass", filter: event.filterHz });
+    } else if (event.layer === "pad") {
+      this.tone(event.frequency, duration, "sine", event.gain * .45, 1.001, { ...common, periodic: "pad", detune: -11, pan: clamp(event.pan - .12, -1, 1) });
+      this.tone(event.frequency, duration, "sine", event.gain * .37, .999, { ...common, periodic: "pad", detune: 11, pan: clamp(-event.pan + .12, -1, 1) });
     } else if (event.layer === "bass") {
-      this.tone(event.frequency, duration, "sine", event.gain * .82, .998, common);
-      this.tone(event.frequency * 2, duration * .72, "square", event.gain * .19, .99, { ...common, filter: Math.min(900, event.filterHz) });
-    } else if (event.layer === "kick") {
-      this.tone(event.frequency, duration, "sine", event.gain, .34, common);
-      this.noise(.022, event.gain * .22, 4200, { ...common, filterType: "highpass", wet: 0 });
-    } else this.tone(event.frequency, duration, event.wave, event.gain, event.layer === "riser" ? 2.5 : 1.005, { ...common, periodic: event.layer === "lead" });
+      this.tone(event.frequency, duration, "sine", event.gain * .72, .997, { ...common, wet: .012, filter: Math.min(620, event.filterHz) });
+      this.tone(event.frequency * 2, duration * .76, "sine", event.gain * .24, .985, { ...common, periodic: "bass", wet: .018, filter: Math.min(1050, event.filterHz) });
+    } else if (event.layer === "arp" || event.layer === "menu-motif") {
+      this.tone(event.frequency, duration, "sine", event.gain * .9, .992, { ...common, periodic: "pluck", attack: .001, release: duration * .76, delay: .2, wet: .075 });
+    } else if (["lead", "counterlead", "result-motif", "cadence"].includes(event.layer)) {
+      const leadWet = event.layer === "lead" ? .11 : .16;
+      this.tone(event.frequency, duration, "sine", event.gain * .7, 1.004, { ...common, periodic: "lead", detune: -6, delay: .24, wet: leadWet });
+      this.tone(event.frequency, duration * .94, "sine", event.gain * .31, .996, { ...common, periodic: "lead", detune: 7, pan: clamp(-event.pan - .08, -1, 1), delay: .2, wet: leadWet });
+    } else if (event.layer === "riser") {
+      this.noise(duration, event.gain, event.filterHz, { ...common, attack: duration * .7, filterType: "highpass", wet: .12 });
+      this.tone(event.frequency, duration, "sine", event.gain * .24, 2.5, { ...common, periodic: "lead", attack: duration * .45, wet: .12 });
+    } else if (event.layer === "tom") {
+      this.tone(event.frequency, duration * 1.8, "sine", event.gain, .48, { ...common, wet: .07, attack: .001 });
+      this.sample("impact", event.gain * .13, { ...common, rate: 1.35, wet: .035 });
+    } else if (event.kind === "noise") this.noise(duration, event.gain, event.filterHz, { ...common, filterType: "bandpass" });
+    else this.tone(event.frequency, duration, event.wave, event.gain, 1.005, common);
   }
 
   duckMusic(amount = .3, duration = .14) {

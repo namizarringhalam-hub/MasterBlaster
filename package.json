@@ -7,7 +7,7 @@
     "build": "vite build && node scripts/prepare-sites.mjs && node tests/hosting.mjs",
     "dev": "vite --host 127.0.0.1",
     "start": "npm run build && node server.mjs",
-    "test": "node tests/smoke.mjs && node tests/botBrain.test.mjs && node tests/audioLifecycle.test.mjs && node tests/audioQuality.test.mjs && node tests/musicScore.test.mjs && node tests/weaponStress.mjs"
+    "test": "node tests/smoke.mjs && node tests/botBrain.test.mjs && node tests/audioLifecycle.test.mjs && node tests/audioAssets.test.mjs && node tests/audioQuality.test.mjs && node tests/musicScore.test.mjs && node tests/weaponStress.mjs"
   },
   "dependencies": {
     "three": "0.185.1",

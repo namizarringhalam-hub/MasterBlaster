@@ -1344,7 +1344,7 @@ class BlasterBattle {
     this.spawnTracer(start, end, weapon, player, weapon.type === "rail" ? .16 : .105, weapon.type === "rail" ? .095 : .045);
     if (wall && !hits.length) {
       this.combatVisuals?.impact(wall, weapon, player, { size: weapon.type === "rail" ? 1.25 : .72, normal: aim.clone().negate() });
-      this.sound.playImpact(weapon, this.audioSpatial(wall, false, .72, player.id), 0, "world");
+      this.sound.playImpact(weapon, this.audioSpatial(wall, false, .72, player.id), 0, "wall");
     }
   }
 
@@ -1356,7 +1356,7 @@ class BlasterBattle {
     let end = wall || start.clone().addScaledVector(direction, 1000);
     let terrainPasses = weapon.terrainRadius ? weapon.penetration || 0 : 0;
     while (wall && terrainPasses > 0 && this.world.destroy(wall, weapon.terrainRadius) > 0) {
-      this.sound.playImpact(weapon, this.audioSpatial(wall, false, .64, player.id), 0, "world");
+      this.sound.playImpact(weapon, this.audioSpatial(wall, false, .64, player.id), 0, "wall");
       cursor = wall.clone().addScaledVector(direction, Math.max(.8, weapon.terrainRadius * .35));
       wall = this.world.grapplePoint(cursor, direction);
       end = wall || start.clone().addScaledVector(direction, 1000);
@@ -1372,7 +1372,7 @@ class BlasterBattle {
     }
     if (weapon.terrainRadius && wall && !weapon.penetration) this.world.destroy(wall, weapon.terrainRadius);
     this.spawnTracer(start, end, weapon, player, .13);
-    if (wall && !targets.length) this.sound.playImpact(weapon, this.audioSpatial(wall, false, .72, player.id), 0, "world");
+    if (wall && !targets.length) this.sound.playImpact(weapon, this.audioSpatial(wall, false, .72, player.id), 0, "wall");
   }
 
   fireChain(player, weapon) {
@@ -1606,7 +1606,7 @@ class BlasterBattle {
     else if (shot.weapon.radius) this.explode(shot);
     else {
       this.combatVisuals?.impact(shot.mesh.position, shot.weapon, shot.owner, { size: 1.05 });
-      this.sound.playImpact(shot.weapon, this.audioSpatial(shot.mesh.position, false, .78, shot.owner.id), 0, "world");
+      this.sound.playImpact(shot.weapon, this.audioSpatial(shot.mesh.position, false, .78, shot.owner.id), 0, "wall");
     }
     this.removeProjectile(index);
   }

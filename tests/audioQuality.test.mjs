@@ -91,11 +91,30 @@ for (let index = 0; index < 40; index++) protectedPool.continuousSources.set(aud
 for (let index = 0; index < 8; index++) protectedPool.activeVoices.add({ source: audioNode(), priority: 100, group: "critical" });
 assert.equal(protectedPool._claimContinuous(1, 24), false, "an equal-priority remote loop never evicts a priority-100 transient");
 assert.equal([...protectedPool.activeVoices].filter((voice) => voice.priority === 100).length, 8, "critical transient voices remain intact when a lower-value loop is rejected");
+const musicReservePool = new SoundBoard();
+musicReservePool.context = { ...context, currentTime: 13.5 };
+musicReservePool.noiseBuffer = {};
+for (let index = 0; index < 8; index++) musicReservePool.activeVoices.add({ source: audioNode(), priority: 8, group: "music" });
+for (let index = 0; index < 40; index++) musicReservePool.continuousSources.set(audioNode(), { priority: 4, group: "remote" });
+musicReservePool.play("elimination");
+assert.equal([...musicReservePool.activeVoices].filter((voice) => voice.group === "music").length, 8, "peak combat keeps an eight-voice musical foundation while critical cues preempt weaker remote loops");
+assert.ok([...musicReservePool.activeVoices].some((voice) => voice.priority === 100), "reserved music and critical tactical cues coexist at the hard voice ceiling");
 const turnoverPool = new SoundBoard();
 turnoverPool.context = { ...context, currentTime: 14 };
 for (let index = 0; index < 40; index++) turnoverPool.fadingSources.set(audioNode(), { priority: 4 });
 assert.equal(turnoverPool._claimContinuous(1, 76), true, "a priority projectile can reclaim sustained-budget space from a low-priority fading tail");
 assert.equal(turnoverPool.fadingSources.size, 39, "continuous-budget arbitration stops and removes the weakest fading tail immediately");
+
+const textureSound = new SoundBoard();
+textureSound.context = { ...context, currentTime: 15 };
+textureSound.master = audioNode();
+textureSound.noiseBuffer = {};
+textureSound.sampleBank.flame = {};
+textureSound.setListener({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 });
+assert.equal(textureSound.updateWeaponLoop("near-flame", WEAPONS.flamethrower, true, { position: { x: 2, y: 0, z: 3 }, volume: 1 }), true);
+assert.equal(textureSound.weaponLoops.get("near-flame").nodes.length, 2, "a nearby remote sustained weapon receives the same rendered texture layer as the local weapon");
+assert.equal(textureSound.continuousSources.size, 2, "the richer nearby loop remains accounted inside the sustained-source budget");
+textureSound.stopAll();
 
 sound.buses.music = audioNode();
 sound.buses.ambience = audioNode();
@@ -173,6 +192,7 @@ for (const event of ["uiHover", "weaponSelect", "jump", "empty", "grappleMiss", 
 assert.match(mainSource, /setListener\(this\.camera\.position/, "the audio listener follows the camera");
 assert.match(mainSource, /updateFighter\(player\.id,[\s\S]*?reloading: player\.reloadTimer > 0/, "fighter state transitions drive reload, landing, death, and respawn cues");
 assert.match(mainSource, /playImpact\(shot\.weapon, this\.audioSpatial\(position/, "explosions use listener-relative position and distance");
+assert.ok((mainSource.match(/playImpact\([^\n]+"wall"\)/g) || []).length >= 4, "hitscan and projectile wall collisions request the authored wall-impact treatment");
 assert.match(mainSource, /setMusicIntensity\(/, "combat continuously drives adaptive music intensity");
 assert.match(mainSource, /startCountdown\(this\.seed, \.42\)/, "gameplay and the score share one authoritative audio-clock countdown");
 assert.match(mainSource, /audibleHazards[\s\S]*?distanceToSquared[\s\S]*?slice\(0, 4\)/, "the four nearest hazards receive tactical loop priority");
@@ -183,5 +203,7 @@ assert.match(audioSource, /musicReverb\.connect\(this\.musicReverbGain\)\.connec
 assert.match(audioSource, /if \(step === 0\) this\.musicBarIntensity = this\.musicIntensity/, "adaptive layers use one stable intensity snapshot per bar");
 assert.match(audioSource, /linearRampToValueAtTime\?\.\(\.0001, now \+ fade\)/, "music teardown performs a real gain fade before source stops");
 assert.match(audioSource, /_route\(gain, "weapon", mix\.pan, \.1\)/, "weapon hazards stay audible through the effects bus when ambience is muted");
+assert.match(audioSource, /distanceWet = remote \? \.045 \+ mix\.distanceRatio \* \.16/, "distant weapon reports gain a longer environmental tail instead of only becoming quieter");
+for (const cue of ["uiHover", "uiBack", "uiInvalid", "weaponSelect", "pause", "resume"]) assert.match(audioSource, new RegExp(`type === "${cue}"[^\\n]+this\\.sample`), `${cue} uses a rendered transient under its tonal UI identity`);
 
 console.log("AAA audio coverage, spatialization, identity, mix, and overload checks passed.");
