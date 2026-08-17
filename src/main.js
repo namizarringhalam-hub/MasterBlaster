@@ -15,8 +15,8 @@ import { combatMusicIntensity } from "./musicScore.js";
 
 const canvas = document.querySelector("#game-canvas");
 const ui = document.querySelector("#ui-root");
-const rematchLoading = document.querySelector("#rematch-loading");
-const REMATCH_SESSION_KEY = "blaster-pending-rematch";
+const matchLoading = document.querySelector("#match-loading");
+const MATCH_SESSION_KEY = "blaster-pending-match";
 const clamp = THREE.MathUtils.clamp;
 const WEAPON_CATEGORY_BY_ID = Object.fromEntries(WEAPON_GROUPS.flatMap((group) => group.ids.map((id) => [id, group])));
 const WEAPON_INDEX_BY_ID = Object.fromEntries(Object.keys(WEAPONS).map((id, index) => [id, index]));
@@ -151,6 +151,7 @@ class BlasterBattle {
     this.performanceSample = this.freshPerformanceSample();
     this.audioMixTimer = 0;
     this.combatMusicPulse = 0;
+    this.freshSessionReady = false;
     this.setupLights();
   }
 
@@ -193,7 +194,7 @@ class BlasterBattle {
       this.sound.setPaused(document.hidden || this.paused);
     });
     await this.renderer.setAnimationLoop((time) => this.frame(time));
-    this.resumePendingRematch();
+    this.resumePendingMatch();
   }
 
   setupLights() {
@@ -687,44 +688,51 @@ class BlasterBattle {
   }
 
   queueRematch() {
-    sessionStorage.setItem(REMATCH_SESSION_KEY, JSON.stringify({
+    this.queueMatchStart(true);
+  }
+
+  queueMatchStart(sameSeed = false) {
+    sessionStorage.setItem(MATCH_SESSION_KEY, JSON.stringify({
       seed: this.seed, mode: this.mode, botDifficulty: this.botDifficulty,
-      botCount: this.settings.botCount, queuedAt: Date.now()
+      botCount: this.settings.botCount, sameSeed, queuedAt: Date.now()
     }));
-    this.setRematchLoading(true, this.seed);
+    this.setMatchLoading(true, this.seed, sameSeed);
     requestAnimationFrame(() => requestAnimationFrame(() => location.reload()));
   }
 
-  setRematchLoading(visible, seed = this.seed) {
-    if (!rematchLoading) return;
-    rematchLoading.hidden = !visible;
-    if (visible) rematchLoading.querySelector("[data-rematch-seed]").textContent = String(seed).slice(0, 12);
+  setMatchLoading(visible, seed = this.seed, sameSeed = false) {
+    if (!matchLoading) return;
+    matchLoading.hidden = !visible;
+    if (!visible) return;
+    matchLoading.querySelector("[data-match-seed]").textContent = String(seed).slice(0, 12);
+    matchLoading.querySelector("[data-match-kind]").textContent = sameSeed ? "SAME SEED" : "NEW SESSION";
   }
 
-  resumePendingRematch() {
-    const raw = sessionStorage.getItem(REMATCH_SESSION_KEY);
+  resumePendingMatch() {
+    const raw = sessionStorage.getItem(MATCH_SESSION_KEY);
     if (!raw) {
-      this.setRematchLoading(false);
+      this.setMatchLoading(false);
       return false;
     }
-    sessionStorage.removeItem(REMATCH_SESSION_KEY);
+    sessionStorage.removeItem(MATCH_SESSION_KEY);
     try {
       const saved = JSON.parse(raw);
       const queuedAt = Number(saved?.queuedAt);
       const age = Date.now() - queuedAt;
       if (!saved?.seed || !Number.isFinite(queuedAt) || age < 0 || age > 30000) {
-        this.setRematchLoading(false);
+        this.setMatchLoading(false);
         return false;
       }
       this.seed = String(saved.seed).slice(0, 12);
       this.mode = ["quick", "private", "training"].includes(saved.mode) ? saved.mode : "training";
       this.botDifficulty = ["rookie", "normal", "veteran"].includes(saved.botDifficulty) ? saved.botDifficulty : "normal";
       this.settings.botCount = clampBotCount(saved.botCount);
+      this.freshSessionReady = true;
       this.startMatch();
-      this.hideRematchLoadingAfterFrame = true;
+      this.hideMatchLoadingAfterFrame = true;
       return true;
     } catch {
-      this.setRematchLoading(false);
+      this.setMatchLoading(false);
       return false;
     }
   }
@@ -743,6 +751,8 @@ class BlasterBattle {
   }
 
   startMatch() {
+    if (!this.freshSessionReady) return this.queueMatchStart(false);
+    this.freshSessionReady = false;
     this.clearMatch();
     this.state = "play";
     this.paused = false;
@@ -970,9 +980,9 @@ class BlasterBattle {
     if (this.state === "play" && this.input.tapped("Escape")) this.togglePause();
     if (this.state === "play" && !this.paused) this.update(dt);
     this.renderScene();
-    if (this.hideRematchLoadingAfterFrame) {
-      this.hideRematchLoadingAfterFrame = false;
-      this.setRematchLoading(false);
+    if (this.hideMatchLoadingAfterFrame) {
+      this.hideMatchLoadingAfterFrame = false;
+      this.setMatchLoading(false);
     }
     if (this.state === "play" && !this.paused) this.updatePerformanceSample(rawDt);
     this.input.endFrame();
@@ -2281,7 +2291,7 @@ class BlasterBattle {
 
 new BlasterBattle().init().catch((error) => {
   console.error("Blaster Battle renderer failed to initialize", error);
-  try { sessionStorage.removeItem(REMATCH_SESSION_KEY); } catch {}
-  if (rematchLoading) rematchLoading.hidden = true;
+  try { sessionStorage.removeItem(MATCH_SESSION_KEY); } catch {}
+  if (matchLoading) matchLoading.hidden = true;
   ui.innerHTML = `<main class="menu-shell"><section class="hero-panel"><p class="kicker">RENDERER ERROR</p><h1>Graphics initialization failed.</h1><p class="lead">Update your browser or enable WebGL2, then reload.</p></section></main>`;
 });
