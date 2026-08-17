@@ -572,7 +572,25 @@ fighter.grapple = { anchor: new THREE.Vector3(20, 20, 0), ropeLength: 24 };
 const ropeBefore = fighter.grapple.ropeLength;
 applyGrapplePhysics(fighter, .1);
 assert.ok(fighter.velocity.x > 0 && fighter.velocity.y > 0, "the grapple actively pulls toward elevated anchors");
-assert.ok(ropeBefore - fighter.grapple.ropeLength >= 2.1, "the strengthened grapple reels in decisively while attached");
+assert.ok(ropeBefore - fighter.grapple.ropeLength >= 1.79, "the grapple reels in decisively while attached");
+const smoothPull = (fps) => {
+  const dt = 1 / fps;
+  const player = {
+    position: new THREE.Vector3(), velocity: new THREE.Vector3(), controlMove: new THREE.Vector3(), slowTimer: 0,
+    grapple: { anchor: new THREE.Vector3(100, 1.4, 0), wraps: [], ropeLength: 90, pullSpeed: 0 }
+  };
+  const speeds = [];
+  for (let frame = 0; frame < fps; frame++) {
+    applyGrapplePhysics(player, dt);
+    speeds.push(player.velocity.x);
+    player.position.addScaledVector(player.velocity, dt);
+  }
+  return { player, speeds };
+};
+const pull60 = smoothPull(60);
+assert.ok(pull60.speeds.every((speed, index) => index === 0 || speed >= pull60.speeds[index - 1] - .001), "grapple pull accelerates smoothly without stop-start velocity spikes");
+assert.ok(pull60.player.velocity.x > 30 && pull60.player.velocity.x < 31.1, "grapple pull converges on one predictable travel speed");
+assert.ok(Math.abs(smoothPull(30).player.velocity.x - smoothPull(120).player.velocity.x) < .05, "grapple pull is stable across frame rates");
 const wrappedPlayer = {
   position: new THREE.Vector3(), velocity: new THREE.Vector3(), controlMove: new THREE.Vector3(), slowTimer: 0,
   grapple: { anchor: new THREE.Vector3(20, 10, 0), wraps: [new THREE.Vector3(0, 10, 10)], ropeLength: 25 }

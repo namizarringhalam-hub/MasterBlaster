@@ -11,6 +11,7 @@ import { InputManager, clearTouchActions, updateOrbit } from "./input.js";
 import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "./gameData.js";
 import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, clampBotCount, nearestTarget, safestSpawn, shouldBotPlaceWall } from "./botBrain.js";
 import { NeonRenderPipeline } from "./renderPipeline.js";
+import { combatMusicIntensity } from "./musicScore.js";
 
 const canvas = document.querySelector("#game-canvas");
 const ui = document.querySelector("#ui-root");
@@ -149,6 +150,7 @@ class BlasterBattle {
     this.touch = {};
     this.performanceSample = this.freshPerformanceSample();
     this.audioMixTimer = 0;
+    this.combatMusicPulse = 0;
     this.setupLights();
   }
 
@@ -749,6 +751,7 @@ class BlasterBattle {
     this.countdownBeat = 8;
     this.audioCountdown = false;
     this.performanceSample = this.freshPerformanceSample();
+    this.combatMusicPulse = 0;
     const fighterCount = 1 + clampBotCount(this.settings.botCount);
     // The full post stack is ideal for normal matches. Sixteen-fighter sessions use
     // the lighter WebGPU bloom profile to preserve effects under maximum material load.
@@ -921,6 +924,7 @@ class BlasterBattle {
   updateAudio(dt) {
     const local = this.players[0];
     if (!local) return;
+    this.combatMusicPulse *= Math.exp(-dt * 1.55);
     this.sound.setListener(this.camera.position, this.camera.getWorldDirection(new THREE.Vector3()));
     this.audioMixTimer -= dt;
     if (this.audioMixTimer <= 0) {
@@ -929,7 +933,13 @@ class BlasterBattle {
       const danger = clamp((100 - local.health) / 100, 0, 1);
       const finalMinute = this.matchTime < 60 ? 1 - this.matchTime / 60 : 0;
       const scorePressure = clamp(Math.max(...this.scores) / Math.max(1, this.targetScore), 0, 1);
-      this.sound.setMusicIntensity(.2 + speed * .18 + danger * .2 + finalMinute * .22 + scorePressure * .18);
+      const nearbyEnemies = clamp(this.players.filter((player) => player !== local && player.alive && player.position.distanceToSquared(local.position) < 38 ** 2).length / 4, 0, 1);
+      const nearbyProjectiles = clamp(this.projectiles.filter((shot) => shot.owner !== local && shot.mesh.position.distanceToSquared(local.position) < 24 ** 2).length / 5, 0, 1);
+      const nearbyHazards = clamp(this.hazards.filter((hazard) => hazard.mesh.position.distanceToSquared(local.position) < 30 ** 2).length / 3, 0, 1);
+      this.sound.setMusicIntensity(combatMusicIntensity({
+        combatPulse: this.combatMusicPulse, nearbyEnemies, nearbyProjectiles, nearbyHazards,
+        healthDanger: danger, speed, finalMinute, scorePressure
+      }));
       this.sound.updateAmbience({ danger, speed });
     }
     for (const player of this.players) {
@@ -1004,7 +1014,7 @@ class BlasterBattle {
     this.updateHazards(dt);
     this.updateDecoys(dt);
     this.updateEffects(dt);
-    this.combatVisuals?.update(dt, this.players[0]);
+    this.combatVisuals?.update(dt);
     this.updateRespawns(dt);
     this.updateAudio(dt);
     this.updateHud();
@@ -1180,10 +1190,10 @@ class BlasterBattle {
     line.frustumCulled = false;
     line.computeLineDistances();
     this.scene.add(line);
-    player.grapple = { anchor, line, wraps: [], ropeLength: Math.max(5, start.distanceTo(anchor) * .92) };
+    player.grapple = { anchor, line, wraps: [], ropeLength: Math.max(5, start.distanceTo(anchor) * .92), pullSpeed: 0 };
     const direction = anchor.clone().sub(start).normalize();
     const approachSpeed = player.velocity.dot(direction);
-    if (approachSpeed < 15) player.velocity.addScaledVector(direction, 15 - approachSpeed);
+    player.grapple.pullSpeed = Math.max(0, approachSpeed);
     this.sound.play("grappleAttach", null, this.audioSpatial(anchor, local, local ? 1 : .42, player.id));
   }
 
@@ -1230,6 +1240,7 @@ class BlasterBattle {
         .filter(({ shot }) => shot.owner === player && shot.weapon.id === weapon.id && shot.stuck);
       if (triggerTap && charges.length) {
         player.attackTimer = weapon.cooldown;
+        this.combatMusicPulse = Math.max(this.combatMusicPulse, player === this.players[0] ? .72 : .4);
         for (const { shot, index } of charges.reverse()) {
           this.explode(shot);
           this.removeProjectile(index);
@@ -1245,6 +1256,7 @@ class BlasterBattle {
     if (fireMode === "burst") return this.beginBurst(player, weapon);
     player.attackTimer = weapon.cooldown;
     player.ammo[weapon.id] -= 1;
+    this.combatMusicPulse = Math.max(this.combatMusicPulse, player === this.players[0] ? .52 : player.position.distanceToSquared(this.players[0].position) < 42 ** 2 ? .32 : this.combatMusicPulse);
     player.recoil();
     const listener = this.players[0];
     const distanceScale = player === listener ? 1 : Math.max(.18, 1 - player.position.distanceTo(listener.position) / 110) * .42;
@@ -1268,6 +1280,7 @@ class BlasterBattle {
     if (!rounds) return player.reload();
     player.attackTimer = weapon.cooldown;
     player.ammo[weapon.id] -= rounds;
+    this.combatMusicPulse = Math.max(this.combatMusicPulse, player === this.players[0] ? .56 : player.position.distanceToSquared(this.players[0].position) < 42 ** 2 ? .34 : this.combatMusicPulse);
     this.fireBurstRound(player, weapon);
     player.pendingBurst = rounds > 1 ? { weaponId: weapon.id, remaining: rounds - 1, timer: weapon.burstInterval } : null;
   }
@@ -1976,6 +1989,9 @@ class BlasterBattle {
 
   damagePlayer(target, damage, push, attacker, weapon = null) {
     const killed = target.takeHit(damage, push);
+    if (target === this.players[0] || attacker === this.players[0] || target.position.distanceToSquared(this.players[0].position) < 34 ** 2) {
+      this.combatMusicPulse = Math.max(this.combatMusicPulse, killed ? 1 : .76);
+    }
     this.spawnImpact(target.position, target, weapon, attacker);
     this.showCombatFeedback(target, attacker, weapon, killed);
     if (!killed) return;
@@ -2120,7 +2136,10 @@ class BlasterBattle {
       node.textContent = isReloading ? "RELOAD" : charge || `${player.ammo[weapon.id]}/${weapon.ammo}${armed ? ` · ${armed} ARMED` : ""}`;
     });
     this.hud.scoreboard.classList.toggle("visible", this.input.down("Tab"));
-    this.hud.motionVignette.style.setProperty("--motion", clamp((player.velocity.length() - 14) / 30, 0, 1).toFixed(3));
+    const motion = this.settings.reducedMotion ? 0 : clamp((player.velocity.length() - 14) / 30, 0, 1);
+    const grappleBlur = player.grapple && this.graphics.level !== "low" ? motion * (this.graphics.level === "high" ? 3.2 : 1.7) : 0;
+    this.hud.motionVignette.style.setProperty("--motion", motion.toFixed(3));
+    this.hud.motionVignette.style.setProperty("--environment-blur", `${grappleBlur.toFixed(2)}px`);
     this.hud.motionVignette.classList.toggle("grappling", Boolean(player.grapple));
   }
 

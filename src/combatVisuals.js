@@ -390,11 +390,7 @@ export class CombatVisuals {
     }
     this.bloodLayer.instanceMatrix.needsUpdate = true;
     this.bloodLayer.instanceColor.needsUpdate = true;
-    this.speedStreakCapacity = Math.round(28 * this.quality);
-    this.speedStreakLayer = instancedLayer(new THREE.ConeGeometry(.045, 1.15, 4, 1, true), this.speedStreakCapacity, .32);
-    this.speedStreakLayer.name = "Momentum speed streaks";
-    this.speedStreakLayer.count = 0;
-    this.group.add(this.flashOuter, this.flashInner, this.tracerOuter, this.tracerInner, this.ringOuter, this.ringInner, this.sparkLayer, this.bloodLayer, this.speedStreakLayer);
+    this.group.add(this.flashOuter, this.flashInner, this.tracerOuter, this.tracerInner, this.ringOuter, this.ringInner, this.sparkLayer, this.bloodLayer);
 
     // Four recycled lights preserve spatial continuity during crossfire without
     // multiplying illumination by fighter count.
@@ -440,8 +436,6 @@ export class CombatVisuals {
     this.fireSide = new THREE.Vector3();
     this.fireRise = new THREE.Vector3();
     this.fireBack = new THREE.Vector3();
-    this.speedSide = new THREE.Vector3();
-    this.speedRise = new THREE.Vector3();
     this.offset = new THREE.Vector3();
     this.effectTime = 0;
   }
@@ -788,7 +782,7 @@ export class CombatVisuals {
     light.userData.life = life;
   }
 
-  update(dt, focusPlayer = null) {
+  update(dt) {
     this.effectTime += dt;
     this.updateFireballs();
     this.updateFlashes(dt);
@@ -796,41 +790,10 @@ export class CombatVisuals {
     this.updateRings(dt);
     this.updateSparks(dt);
     this.updateBlood(dt);
-    this.updateSpeedStreaks(focusPlayer);
     for (const light of this.combatLights) {
       light.userData.life = Math.max(0, light.userData.life - dt);
       light.intensity = THREE.MathUtils.damp(light.intensity, light.userData.life > 0 ? light.intensity : 0, 22, dt);
     }
-  }
-
-  updateSpeedStreaks(player) {
-    const speed = player?.alive ? player.velocity.length() : 0;
-    const strength = this.reducedMotion ? 0 : clamp((speed - 13) / 30, 0, 1);
-    const visible = strength > .025 ? Math.max(5, Math.ceil(this.speedStreakCapacity * strength)) : 0;
-    this.speedStreakLayer.count = visible;
-    if (!visible) return;
-    this.direction.copy(player.velocity).normalize();
-    this.speedSide.crossVectors(this.direction, UP);
-    if (this.speedSide.lengthSq() < .01) this.speedSide.set(1, 0, 0);
-    else this.speedSide.normalize();
-    this.speedRise.crossVectors(this.speedSide, this.direction).normalize();
-    this.quaternion.setFromUnitVectors(UP, this.direction);
-    const tint = this.color.set(player.accent ?? 0x6feeff).lerp(WHITE, .28);
-    for (let index = 0; index < visible; index++) {
-      const phase = (this.effectTime * (1.35 + strength * 2.4) + index * .6180339) % 1;
-      const angle = index * 2.39996 + this.effectTime * .14;
-      const radius = 1.65 + (index % 6) * .42;
-      this.position.copy(player.position)
-        .addScaledVector(this.direction, (phase - .5) * 11)
-        .addScaledVector(this.speedSide, Math.cos(angle) * radius)
-        .addScaledVector(this.speedRise, Math.sin(angle) * radius)
-        .addScaledVector(UP, 1.25);
-      this.scale.set(1, .72 + strength * 3.2 * (1 - phase * .25), 1);
-      this.matrix.compose(this.position, this.quaternion, this.scale);
-      this.speedStreakLayer.setMatrixAt(index, this.matrix);
-      this.speedStreakLayer.setColorAt(index, tint);
-    }
-    this.markUpdated(this.speedStreakLayer);
   }
 
   updateFireballs() {

@@ -41,8 +41,13 @@ for (let burst = 0; burst < 45; burst++) {
 assert.ok(visuals.cursors.tracer - synchronizedTracerStart >= fighters.length * 45, "synchronized sixteen-player Arc Lightning and minigun bursts stay active without dropping their presentation events");
 
 assert.equal(fighters.length, 16, "the stress matrix renders a full sixteen-fighter match");
-assert.equal(visuals.group.children.length, 11, "rapid effects, pooled splatters, momentum streaks, response lights, and Fireballs stay in fixed render groups");
-assert.equal(visuals.speedStreakCapacity, 28, "momentum streaks stay in one fixed-capacity instance batch");
+assert.equal(visuals.group.children.length, 10, "rapid effects, pooled splatters, response lights, and Fireballs stay in fixed render groups");
+assert.equal(visuals.group.getObjectByName("Momentum speed streaks"), undefined, "the local cone shower has been removed from the grapple presentation");
+const speedPresentationCss = await readFile(new URL("../src/styles.css", import.meta.url), "utf8");
+const speedPresentationMain = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
+assert.match(speedPresentationCss, /backdrop-filter: blur\(var\(--environment-blur/, "grapple speed applies a peripheral speed-dependent environment blur");
+assert.match(speedPresentationCss, /grapple-speed-pulse/, "outer speed lines have a distinct animated pulse");
+assert.match(speedPresentationMain, /this\.graphics\.level !== "low"[\s\S]*?environment-blur/, "speed blur respects graphics quality and stays disabled on Low");
 assert.equal(visuals.flashes.length, 64, "sixteen-fighter muzzle flashes stay below the fixed pool capacity");
 assert.equal(visuals.tracers.length, 128, "sixteen-fighter rapid tracers stay below the fixed pool capacity");
 assert.equal(visuals.rings.length, 80, "sixteen-fighter impact rings stay below the fixed pool capacity");

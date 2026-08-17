@@ -928,17 +928,15 @@ export function applyGrapplePhysics(player, dt) {
 
   const direction = towardAnchor.multiplyScalar(1 / distance);
   const movementScale = player.slowTimer > 0 ? .55 : 1;
-  player.grapple.ropeLength = Math.max(5, player.grapple.ropeLength - 22 * movementScale * dt);
+  player.grapple.ropeLength = Math.max(5, player.grapple.ropeLength - 18 * movementScale * dt);
   let wrappedLength = 0;
   for (let index = 0; index < wraps.length; index++) wrappedLength += wraps[index].distanceTo(wraps[index + 1] || player.grapple.anchor);
   const stretch = Math.max(0, distance - Math.max(1, player.grapple.ropeLength - wrappedLength));
-  player.velocity.addScaledVector(direction, (38 + stretch * 13) * movementScale * dt);
-
-  // A taut rope cancels only outward velocity. Tangential speed survives and becomes the swing.
-  if (stretch > 0) {
-    const radialSpeed = player.velocity.dot(direction);
-    if (radialSpeed < 0) player.velocity.addScaledVector(direction, -radialSpeed * .96);
-  }
+  const targetPullSpeed = 31 * movementScale;
+  player.grapple.pullSpeed = THREE.MathUtils.damp(Math.max(0, player.grapple.pullSpeed || 0), targetPullSpeed, 8.5, dt);
+  const radialSpeed = player.velocity.dot(direction);
+  const nextRadialSpeed = THREE.MathUtils.damp(radialSpeed, player.grapple.pullSpeed, stretch > 0 ? 15 : 10, dt);
+  player.velocity.addScaledVector(direction, nextRadialSpeed - radialSpeed);
 
   const steering = player.controlMove.clone().sub(direction.clone().multiplyScalar(player.controlMove.dot(direction)));
   if (steering.lengthSq() > .01) player.velocity.addScaledVector(steering.normalize(), 14 * movementScale * dt);

@@ -1,4 +1,4 @@
-import { MUSIC, musicEventsForStep } from "./musicScore.js";
+import { MUSIC, MUSIC_SAMPLE_MANIFEST, musicEventsForStep, tempoForIntensity } from "./musicScore.js";
 import { weaponPresentation } from "./weaponPresentation.js";
 import { createProceduralAudioAssets } from "./audioAssets.js";
 
@@ -88,6 +88,11 @@ export class SoundBoard {
     this.compressor = null;
     this.noiseBuffer = null;
     this.sampleBank = {};
+    this.musicSamples = {};
+    this.musicSamplePromise = null;
+    this.musicSamplesReady = false;
+    this.musicRoundRobin = new Map();
+    this.pendingMusicStart = null;
     this.enabled = true;
     this.volume = 70;
     this.buses = {};
@@ -112,6 +117,7 @@ export class SoundBoard {
     this.musicIntensity = .22;
     this.musicTargetIntensity = .22;
     this.musicBarIntensity = .22;
+    this.musicBpm = MUSIC.bpm;
     this.pendingMusicScene = null;
     this.musicCountdown = null;
     this.countdownStepsScheduled = 0;
@@ -218,16 +224,7 @@ export class SoundBoard {
     }
     const proceduralAssets = createProceduralAudioAssets(context.sampleRate);
     this.sampleBank = Object.fromEntries(Object.entries(proceduralAssets).map(([name, data]) => [name, this._audioBufferFromMono(data)]));
-    if (context.createPeriodicWave) {
-      const wave = (partials) => context.createPeriodicWave(new Float32Array(partials.length), new Float32Array(partials));
-      this.musicWaves = {
-        pad: wave([0, 1, .46, .2, .11, .07, .03, .018]),
-        bass: wave([0, 1, .56, .18, .12, .04, .025]),
-        pluck: wave([0, 1, .72, .48, .31, .2, .12, .07, .04]),
-        lead: wave([0, 1, .62, .37, .22, .14, .08, .05, .025])
-      };
-      this.musicWave = this.musicWaves.lead;
-    }
+    this._loadMusicSamples();
     this.setVolume(this.volume);
     this.setMix(this.mix);
     this.setDynamicRange(this.dynamicRange);
@@ -247,6 +244,49 @@ export class SoundBoard {
     const buffer = this.context.createBuffer(1, data.length, this.context.sampleRate);
     buffer.getChannelData(0).set(data);
     return buffer;
+  }
+
+  _loadMusicSamples() {
+    if (this.musicSamplePromise || !this.context || typeof fetch !== "function") return this.musicSamplePromise;
+    const context = this.context;
+    const fallbacks = { battleDrum: "kick", fieldSnare: "snare", cymbal: "hatOpen", anvil: "impact", celloPizz: "mechanical", celloSpic: "mechanical", celloTrem: "transition", hornStaccato: "energy", hornSustain: "transition", tromboneBuzz: "explosion", violinSpic: "energy" };
+    const decodeFile = async (file) => {
+      let lastError;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const response = await fetch(file.url, { cache: attempt ? "reload" : "default" });
+          if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+          return { buffer: await context.decodeAudioData(await response.arrayBuffer()), rootMidi: file.rootMidi ?? null, trim: file.trim ?? 1 };
+        } catch (error) {
+          lastError = error;
+          if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 90 * (attempt + 1)));
+        }
+      }
+      throw lastError;
+    };
+    this.musicSamplePromise = Promise.all(Object.entries(MUSIC_SAMPLE_MANIFEST).map(async ([name, asset]) => {
+      const decoded = (await Promise.allSettled(asset.files.map(decodeFile))).filter((entry) => entry.status === "fulfilled").map((entry) => entry.value);
+      if (decoded.length) this.musicSamples[name] = decoded;
+      else {
+        const fallback = this.sampleBank[fallbacks[name]];
+        if (fallback) this.musicSamples[name] = [{ buffer: fallback, rootMidi: asset.files[0]?.rootMidi ?? null, trim: 1 }];
+        console.warn(`Music sample ${name} used its rendered fail-safe after three load attempts`);
+      }
+    })).then(() => {
+      if (this.context !== context) return this.musicSamples;
+      this.musicSamplesReady = Object.keys(MUSIC_SAMPLE_MANIFEST).every((name) => this.musicSamples[name]?.length);
+      this._resumePendingMusic();
+      return this.musicSamples;
+    });
+    return this.musicSamplePromise;
+  }
+
+  _resumePendingMusic() {
+    if (!this.musicSamplesReady || !this.pendingMusicStart || this.musicPaused) return;
+    const pending = this.pendingMusicStart;
+    this.pendingMusicStart = null;
+    if (pending.scene === "countdown") this.startCountdown(pending.seed, pending.combatIntensity);
+    else this.startMusic(pending.scene, pending.seed);
   }
 
   _bus(name) { return this.buses[name] || this.master; }
@@ -421,8 +461,6 @@ export class SoundBoard {
     const filter = this.context.createBiquadFilter();
     const gain = this.context.createGain();
     osc.type = type;
-    const selectedWave = typeof options.periodic === "string" ? this.musicWaves?.[options.periodic] : this.musicWave;
-    if (options.periodic && selectedWave && osc.setPeriodicWave) osc.setPeriodicWave(selectedWave);
     osc.frequency.setValueAtTime(Math.max(28, frequency), now);
     osc.frequency.exponentialRampToValueAtTime?.(Math.max(28, frequency * slide), now + duration);
     if (osc.detune && Number.isFinite(options.detune)) osc.detune.value = options.detune;
@@ -485,6 +523,48 @@ export class SoundBoard {
     source.start(now);
     source.stop(now + duration + .025);
     this._track(source, options.priority ?? 45, options.group || "sfx");
+    return true;
+  }
+
+  musicSample(name, volume = .1, options = {}) {
+    const bank = this.musicSamples?.[name];
+    const entries = Array.isArray(bank) ? bank : bank ? [{ buffer: bank, rootMidi: options.rootMidi ?? null, trim: 1 }] : [];
+    if (!this.enabled || !this.context || !entries.length || !this._claimVoice(options.priority ?? 8, "music")) return false;
+    let candidates = entries;
+    if (Number.isFinite(options.midi) && entries.some((entry) => Number.isFinite(entry.rootMidi))) {
+      const distance = Math.min(...entries.filter((entry) => Number.isFinite(entry.rootMidi)).map((entry) => Math.abs(options.midi - entry.rootMidi)));
+      candidates = entries.filter((entry) => Number.isFinite(entry.rootMidi) && Math.abs(options.midi - entry.rootMidi) === distance);
+    }
+    const roundRobin = this.musicRoundRobin.get(name) || 0;
+    this.musicRoundRobin.set(name, roundRobin + 1);
+    const selected = candidates[roundRobin % candidates.length];
+    const buffer = selected.buffer;
+    const now = Math.max(this.context.currentTime, options.at ?? this.context.currentTime);
+    const source = this.context.createBufferSource();
+    const filter = this.context.createBiquadFilter();
+    const gain = this.context.createGain();
+    const rootMidi = Number.isFinite(selected.rootMidi) ? selected.rootMidi : options.rootMidi;
+    const semitones = Number.isFinite(options.midi) && Number.isFinite(rootMidi) ? options.midi - rootMidi : 0;
+    const rate = clamp(2 ** (semitones / 12) * (options.rate || 1), .38, 3.2);
+    source.buffer = buffer;
+    if (source.playbackRate) source.playbackRate.value = rate;
+    filter.type = "lowpass";
+    filter.frequency.value = options.filter ?? 12000;
+    filter.Q.value = .5;
+    const available = buffer.duration / rate;
+    const duration = Math.max(.04, Math.min(available, options.duration ?? available));
+    const attack = Math.min(duration * .4, options.attack ?? .006);
+    const release = Math.min(duration * .7, options.release ?? .1);
+    gain.gain.setValueAtTime(.0001, now);
+    const calibratedVolume = Math.max(.0001, volume * (selected.trim ?? 1));
+    gain.gain.linearRampToValueAtTime(calibratedVolume, now + attack);
+    gain.gain.setValueAtTime?.(calibratedVolume, Math.max(now + attack, now + duration - release));
+    gain.gain.exponentialRampToValueAtTime?.(.0001, now + duration);
+    source.connect(filter).connect(gain);
+    this._route(gain, "music", options.pan || 0, options.wet ?? .08, options.delay || 0);
+    source.start(now);
+    source.stop(now + duration + .025);
+    this._track(source, options.priority ?? 8, "music");
     return true;
   }
 
@@ -803,6 +883,13 @@ export class SoundBoard {
   startMusic(scene = "menu", seed = "BLAST-01") {
     if (!this.context || !this.enabled) return false;
     if (scene === "countdown") return Boolean(this.startCountdown(seed));
+    if (!this.musicSamplesReady) {
+      this.musicCountdown = null;
+      this.pendingMusicStart = { scene, seed };
+      this._loadMusicSamples();
+      return true;
+    }
+    this.pendingMusicStart = null;
     this.musicSeed = seed || "BLAST-01"; this.musicPaused = false; this.musicSuspended = false;
     if (this.musicTimer) {
       if (scene === "combat" && this.musicScene === "countdown") return true;
@@ -812,6 +899,7 @@ export class SoundBoard {
     }
     this.musicCountdown = null;
     this.musicScene = scene;
+    this.musicBpm = scene === "combat" ? tempoForIntensity(this.musicTargetIntensity, this.musicBpm) : MUSIC.tempoTiers[0];
     this.musicStep = 0; this.musicNextTime = this.context.currentTime + .05;
     this.musicTimer = setInterval(() => this._scheduleMusic(), 25);
     this._scheduleMusic();
@@ -827,7 +915,8 @@ export class SoundBoard {
     this.musicNextTime = startAt;
     if (Number.isFinite(intensity)) this.musicIntensity = this.musicTargetIntensity = clamp(intensity);
     this.musicBarIntensity = this.musicIntensity;
-    if (!this.sample("transition", .045, { bus: "music", group: "music", priority: 9, at: startAt, wet: .14, filter: 6200 })) this.noise(.24, .025, 3600, { bus: "music", group: "music", priority: 9, at: startAt, attack: .06, wet: .1 });
+    this.musicBpm = scene === "combat" ? tempoForIntensity(this.musicIntensity, this.musicBpm) : MUSIC.tempoTiers[0];
+    this.musicSample(scene.startsWith("results") ? "cymbal" : "anvil", .052, { priority: 9, at: startAt, wet: .17 });
   }
 
   _stopMusicVoicesAt(at) {
@@ -842,8 +931,17 @@ export class SoundBoard {
 
   startCountdown(seed = "BLAST-01", combatIntensity = .42) {
     if (!this.context || !this.enabled) return null;
+    if (!this.musicSamplesReady) {
+      const beatDuration = 60 / MUSIC.countdownBpm;
+      this.musicSeed = seed || "BLAST-01";
+      this.musicCountdown = { pending: true, startTime: null, endTime: null, beatDuration, combatIntensity: clamp(combatIntensity), completed: false };
+      this.pendingMusicStart = { scene: "countdown", seed, combatIntensity };
+      this._loadMusicSamples();
+      return this.getCountdownState();
+    }
+    this.pendingMusicStart = null;
     const now = this.context.currentTime;
-    const beatDuration = 60 / MUSIC.bpm;
+    const beatDuration = 60 / MUSIC.countdownBpm;
     const startTime = now + .05;
     const endTime = startTime + beatDuration * 8;
     this.musicSeed = seed || "BLAST-01";
@@ -856,6 +954,7 @@ export class SoundBoard {
     this.musicNextTime = startTime;
     this.musicIntensity = this.musicBarIntensity = .3;
     this.musicTargetIntensity = .3;
+    this.musicBpm = MUSIC.countdownBpm;
     this.countdownStepsScheduled = 0;
     this.musicCountdown = { startTime, endTime, beatDuration, combatIntensity: clamp(combatIntensity), completed: false };
     if (!this.musicTimer) this.musicTimer = setInterval(() => this._scheduleMusic(), 25);
@@ -866,6 +965,7 @@ export class SoundBoard {
   getCountdownState() {
     if (!this.context || !this.musicCountdown) return null;
     const gate = this.musicCountdown;
+    if (gate.pending) return { startTime: null, endTime: null, remaining: gate.beatDuration * 8, beatsRemaining: 8, active: true, pending: true };
     const now = this.musicPaused && this.musicPauseTime != null ? this.musicPauseTime : this.context.currentTime;
     const remaining = Math.max(0, gate.endTime - now);
     const elapsed = Math.max(0, now - gate.startTime);
@@ -883,7 +983,9 @@ export class SoundBoard {
     this.musicStep = 0;
     this.musicNextTime = at;
     this.musicIntensity = this.musicTargetIntensity = this.musicBarIntensity = intensity;
-    this.sample("impact", .075, { bus: "music", group: "music", priority: 96, at, wet: .1 });
+    this.musicBpm = tempoForIntensity(intensity, MUSIC.bpm);
+    this.musicSample("anvil", .082, { priority: 96, at, wet: .14 });
+    this.musicSample("cymbal", .06, { priority: 96, at, wet: .18 });
     this.tone(82, .38, "sine", .12, .48, { bus: "movement", group: "go", priority: 100, at });
     this.tone(660, .32, "sawtooth", .075, 1.7, { bus: "movement", group: "go", priority: 100, at });
   }
@@ -901,7 +1003,6 @@ export class SoundBoard {
 
   _scheduleMusic() {
     if (!this.context || !this.enabled || this.musicPaused) return;
-    const stepDuration = 60 / MUSIC.bpm / MUSIC.stepsPerBeat;
     const horizon = this.context.currentTime + .12;
     this.musicIntensity += (this.musicTargetIntensity - this.musicIntensity) * .08;
     while (this.musicNextTime < horizon) {
@@ -912,15 +1013,19 @@ export class SoundBoard {
         this.pendingMusicScene = null;
         this.musicScene = transition.scene;
         if (transition.reset) this.musicStep = 0;
-        if (!this.sample("transition", .045, { bus: "music", group: "music", priority: 9, at: this.musicNextTime, wet: .14, filter: 6200 })) this.noise(.32, .028, 3600, { bus: "music", group: "music", priority: 9, at: this.musicNextTime, attack: .08, wet: .12 });
-        this.tone(this.musicScene.startsWith("results") ? 146.83 : 73.42, .42, "sine", .04, this.musicScene === "combat" ? 2.1 : .62, { bus: "music", group: "music", priority: 9, at: this.musicNextTime, wet: .1 });
+        this.musicBpm = this.musicScene === "combat" ? tempoForIntensity(this.musicIntensity, this.musicBpm) : MUSIC.tempoTiers[0];
+        this.musicSample(this.musicScene.startsWith("results") ? "cymbal" : "anvil", .052, { priority: 9, at: this.musicNextTime, wet: .17 });
         step = 0;
       }
       const bar = Math.floor(this.musicStep / MUSIC.stepsPerBar);
-      if (step === 0) this.musicBarIntensity = this.musicIntensity;
+      if (step === 0) {
+        this.musicBarIntensity = this.musicIntensity;
+        if (this.musicScene === "combat") this.musicBpm = tempoForIntensity(this.musicBarIntensity, this.musicBpm);
+        if (this.musicDelay) this.musicDelay.delayTime.setTargetAtTime?.((60 / this.musicBpm) * .75, this.musicNextTime, .015);
+      }
+      const stepDuration = 60 / (this.musicScene === "countdown" ? MUSIC.countdownBpm : this.musicBpm) / MUSIC.stepsPerBeat;
       if (this.musicScene === "countdown") {
         this.countdownStepsScheduled++;
-        if (step % MUSIC.stepsPerBeat === 0) this.tone(440, .11, "square", .07, 1.12, { bus: "ui", group: "countdown", priority: 92, at: this.musicNextTime });
       }
       const events = musicEventsForStep({ seed: this.musicSeed, bar, step, scene: this.musicScene, intensity: this.musicBarIntensity });
       for (const event of events) this._scheduleMusicEvent(event, this.musicNextTime, stepDuration);
@@ -930,33 +1035,13 @@ export class SoundBoard {
 
   _scheduleMusicEvent(event, at, stepDuration) {
     const duration = Math.max(.035, event.durationSteps * stepDuration * .94);
-    const common = { bus: "music", group: "music", priority: 8, at, pan: event.pan, filter: event.filterHz, wet: event.layer === "pad" ? .14 : .045, attack: event.layer === "pad" ? .12 : .003, release: event.layer === "pad" ? .34 : undefined };
-    if (event.layer === "kick") this.sample("kick", event.gain * .92, { ...common, wet: .015, rate: .98 + event.gain * .12 });
-    else if (event.layer === "snare") this.sample("snare", event.gain * .82, { ...common, wet: .08, rate: .97 + (event.step % 3) * .018 });
-    else if (event.layer === "clap") this.sample("clap", event.gain * .82, { ...common, wet: .12 });
-    else if (event.layer === "hat" || event.layer === "open-hat" || event.layer === "crash") {
-      const open = event.layer !== "hat";
-      this.sample(open ? "hatOpen" : "hatClosed", event.gain * (open ? .72 : .8), { ...common, wet: open ? .1 : .025, rate: event.layer === "crash" ? .72 : .96 + (event.step % 4) * .016, filterType: "highpass", filter: event.filterHz });
-    } else if (event.layer === "pad") {
-      this.tone(event.frequency, duration, "sine", event.gain * .45, 1.001, { ...common, periodic: "pad", detune: -11, pan: clamp(event.pan - .12, -1, 1) });
-      this.tone(event.frequency, duration, "sine", event.gain * .37, .999, { ...common, periodic: "pad", detune: 11, pan: clamp(-event.pan + .12, -1, 1) });
-    } else if (event.layer === "bass") {
-      this.tone(event.frequency, duration, "sine", event.gain * .72, .997, { ...common, wet: .012, filter: Math.min(620, event.filterHz) });
-      this.tone(event.frequency * 2, duration * .76, "sine", event.gain * .24, .985, { ...common, periodic: "bass", wet: .018, filter: Math.min(1050, event.filterHz) });
-    } else if (event.layer === "arp" || event.layer === "menu-motif") {
-      this.tone(event.frequency, duration, "sine", event.gain * .9, .992, { ...common, periodic: "pluck", attack: .001, release: duration * .76, delay: .2, wet: .075 });
-    } else if (["lead", "counterlead", "result-motif", "cadence"].includes(event.layer)) {
-      const leadWet = event.layer === "lead" ? .11 : .16;
-      this.tone(event.frequency, duration, "sine", event.gain * .7, 1.004, { ...common, periodic: "lead", detune: -6, delay: .24, wet: leadWet });
-      this.tone(event.frequency, duration * .94, "sine", event.gain * .31, .996, { ...common, periodic: "lead", detune: 7, pan: clamp(-event.pan - .08, -1, 1), delay: .2, wet: leadWet });
-    } else if (event.layer === "riser") {
-      this.noise(duration, event.gain, event.filterHz, { ...common, attack: duration * .7, filterType: "highpass", wet: .12 });
-      this.tone(event.frequency, duration, "sine", event.gain * .24, 2.5, { ...common, periodic: "lead", attack: duration * .45, wet: .12 });
-    } else if (event.layer === "tom") {
-      this.tone(event.frequency, duration * 1.8, "sine", event.gain, .48, { ...common, wet: .07, attack: .001 });
-      this.sample("impact", event.gain * .13, { ...common, rate: 1.35, wet: .035 });
-    } else if (event.kind === "noise") this.noise(duration, event.gain, event.filterHz, { ...common, filterType: "bandpass" });
-    else this.tone(event.frequency, duration, event.wave, event.gain, 1.005, common);
+    const priority = event.layer.startsWith("countdown-") ? 92 : 8;
+    this.musicSample(event.sample, event.gain, {
+      priority, at, duration, pan: event.pan, filter: event.filterHz,
+      wet: event.wet, attack: event.attack, release: event.release,
+      midi: event.midi, rootMidi: event.rootMidi, rate: event.rate,
+      delay: ["violin-answer", "result-motif"].includes(event.layer) ? .12 : 0
+    });
   }
 
   duckMusic(amount = .3, duration = .14) {
@@ -976,9 +1061,10 @@ export class SoundBoard {
       const shift = Math.max(0, now - this.musicPauseTime);
       this.musicCountdown.startTime += shift;
       this.musicCountdown.endTime += shift;
-      this.musicNextTime = this.musicCountdown.startTime + this.musicStep * (60 / MUSIC.bpm / MUSIC.stepsPerBeat);
+      this.musicNextTime = this.musicCountdown.startTime + this.musicStep * (60 / MUSIC.countdownBpm / MUSIC.stepsPerBeat);
     }
     if (!this.musicPaused) this.musicPauseTime = null;
+    if (!this.musicPaused) this._resumePendingMusic();
     this.buses.music?.gain.setTargetAtTime(this._musicBusGain(), now, .08);
     this.musicFilter?.frequency.setTargetAtTime(paused ? 650 : 6400, now, .09);
     this.buses.ambience?.gain.setTargetAtTime(this._ambienceBusGain(), now, .08);
@@ -988,6 +1074,7 @@ export class SoundBoard {
 
   stopMusic(fade = .2) {
     if (this.musicTimer) clearInterval(this.musicTimer);
+    this.pendingMusicStart = null;
     this.musicTimer = null;
     this.musicCountdown = null;
     this.musicPauseTime = null;
