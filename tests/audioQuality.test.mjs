@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { AUDIO_EVENTS, MUSIC_PROGRAM_GAIN, SoundBoard, spatialMix, weaponAudioProfile, WEAPON_AUDIO_IDENTITIES } from "../src/audio.js";
+import { AUDIO_EVENTS, MUSIC_ASSET_REVISION, MUSIC_PROGRAM_GAIN, SoundBoard, spatialMix, weaponAudioProfile, WEAPON_AUDIO_IDENTITIES } from "../src/audio.js";
 import { WEAPONS } from "../src/gameData.js";
 import { MUSIC_SAMPLE_MANIFEST } from "../src/musicScore.js";
 
@@ -29,6 +29,7 @@ assert.equal(new Set(Object.values(WEAPON_AUDIO_IDENTITIES).map(([identity]) => 
 assert.equal(new Set(Object.values(WEAPONS).map((weapon) => JSON.stringify(weaponAudioProfile(weapon)))).size, 47, "every explicit identity resolves to a unique rendered-sample profile");
 const loudestMusicTrim = Math.max(...Object.values(MUSIC_SAMPLE_MANIFEST).flatMap((role) => role.files.map((file) => file.trim || 1)));
 assert.ok(MUSIC_PROGRAM_GAIN >= 4 && .11 * loudestMusicTrim * MUSIC_PROGRAM_GAIN < .9, "the orchestral program is present at gameplay level while retaining pre-bus transient headroom");
+assert.match(MUSIC_ASSET_REVISION, /^orchestra-\d+$/, "recorded music requests carry an explicit cache revision");
 for (const event of ["uiHover", "weaponSelect", "jump", "land", "reload", "empty", "grappleFire", "grappleAttach", "grappleRelease", "hitConfirm", "elimination", "damage", "death", "respawn", "bounce", "stick", "split", "hazardSpawn", "hazardEnd"]) {
   assert.ok(AUDIO_EVENTS.includes(event), `${event} is part of the authored event catalog`);
 }
@@ -305,6 +306,7 @@ assert.doesNotMatch(audioSource, /createOscillator\(|this\.tone\(|this\.noise\(|
 assert.match(audioSource, /musicReverb\.connect\(this\.musicReverbGain\)\.connect\(this\.buses\.music\)/, "music reverb returns through the user-controlled music bus");
 assert.match(audioSource, /if \(step === 0\) \{[\s\S]*?musicBarIntensity = this\.musicIntensity[\s\S]*?tempoForIntensity\(this\.musicBarIntensity/, "intensity and tempo change together only on a stable bar boundary");
 assert.match(audioSource, /_loadMusicSamples\(\)[\s\S]*?decodeAudioData/, "the production mixer decodes the recorded music bank");
+assert.match(audioSource, /fetch\(`\$\{file\.url\}\$\{separator\}bank=\$\{MUSIC_ASSET_REVISION\}`/, "runtime music fetches bypass stale CDN fallbacks with the tested bank revision");
 assert.match(audioSource, /pendingMusicStart\?\.scene === "countdown"\) this\.pendingMusicStart = null[\s\S]*?musicCountdown = null/, "a failed recorded countdown releases to the frame-clock GO instead of starting combat early on retry");
 const musicScheduler = audioSource.slice(audioSource.indexOf("_scheduleMusicEvent(event"), audioSource.indexOf("duckMusic(", audioSource.indexOf("_scheduleMusicEvent(event")));
 assert.match(musicScheduler, /musicSample\(event\.sample/, "all score events travel through the recorded-sample player");

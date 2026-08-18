@@ -9,6 +9,7 @@ const VOICE_LIMIT = 48;
 const CONTINUOUS_LIMIT = 40;
 const MUSIC_PRIORITY = 34;
 export const MUSIC_PROGRAM_GAIN = 4.2;
+export const MUSIC_ASSET_REVISION = "orchestra-2";
 
 export const AUDIO_EVENTS = Object.freeze([
   "uiHover", "uiConfirm", "uiBack", "uiInvalid", "weaponSelect", "pause", "resume",
@@ -250,7 +251,8 @@ export class SoundBoard {
       let lastError;
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          const response = await fetch(file.url, { cache: attempt ? "reload" : "default" });
+          const separator = file.url.includes("?") ? "&" : "?";
+          const response = await fetch(`${file.url}${separator}bank=${MUSIC_ASSET_REVISION}`, { cache: attempt ? "reload" : "default" });
           if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
           return { buffer: await context.decodeAudioData(await response.arrayBuffer()), rootMidi: file.rootMidi ?? null, trim: file.trim ?? 1 };
         } catch (error) {

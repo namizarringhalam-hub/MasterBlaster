@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
+import { MUSIC_ASSET_REVISION } from "../src/audio.js";
 import { MUSIC_SAMPLE_MANIFEST } from "../src/musicScore.js";
 
 const types = {
@@ -30,7 +31,7 @@ assert.equal(response.status, 200, "the deployed root falls back to client/index
 assert.match(await response.text(), /<title>Blaster Battle<\/title>/, "the deployed root serves the game shell");
 
 for (const file of Object.values(MUSIC_SAMPLE_MANIFEST).flatMap((role) => role.files)) {
-  const musicResponse = await worker.fetch(new Request(`https://example.test${file.url}`), { ASSETS: clientAssets });
+  const musicResponse = await worker.fetch(new Request(`https://example.test${file.url}?bank=${MUSIC_ASSET_REVISION}`), { ASSETS: clientAssets });
   assert.equal(musicResponse.status, 200, `${file.url} is included in the deployed client`);
   assert.equal(musicResponse.headers.get("content-type"), "audio/wav", `${file.url} is served as audio instead of the SPA fallback`);
   assert.equal(Buffer.from(await musicResponse.arrayBuffer()).subarray(0, 4).toString("ascii"), "RIFF", `${file.url} contains WAV bytes`);
