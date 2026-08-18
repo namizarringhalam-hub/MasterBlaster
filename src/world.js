@@ -3,6 +3,7 @@ import { abs, color, fract, length, max, min, mix, sin, smoothstep, time, unifor
 import { MAP_THEMES, seededRandom, seedFromText } from "./gameData.js";
 
 const TAU = Math.PI * 2;
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const DISTRICT_PALETTES = {
   foundry: [0x28e7ff, 0xff4f87, 0xffc247, 0x9d7bff],
   solar: [0xffc34f, 0xff526f, 0x43ddff, 0xa7ff66],
@@ -227,6 +228,18 @@ export class ArenaWorld {
     this.temporaryWalls = [];
     this.rotors = [];
     this.pulsers = [];
+    this.obstacleCellSize = 16;
+    this.obstacleGrid = new Map();
+    this.dynamicObstacles = new Set();
+    this.obstacleQuery = [];
+    this.obstacleQueryStamp = 0;
+    this.collisionDirection = new THREE.Vector3();
+    this.collisionBox = new THREE.Box3();
+    this.collisionHit = new THREE.Vector3();
+    this.collisionProbe = new THREE.Vector3();
+    this.collisionRay = new THREE.Ray();
+    this.sweeperLocal = new THREE.Vector3();
+    this.sweeperPush = new THREE.Vector3();
     this.textures = [
       proceduralPanelTexture(`${seed}-structure`, 4),
       proceduralPanelTexture(`${seed}-ground`, 28),
@@ -337,6 +350,78 @@ export class ArenaWorld {
     }
     this.addDistantSkyline();
     this.addAtmosphere();
+    this.buildObstacleIndex();
+    this.freezeStaticTransforms();
+  }
+
+  obstacleCell(value) {
+    return Math.floor(value / this.obstacleCellSize);
+  }
+
+  obstacleCellKey(x, z) {
+    return x * 4096 + z;
+  }
+
+  buildObstacleIndex() {
+    this.obstacleGrid.clear();
+    this.dynamicObstacles = new Set(this.movers.map((mover) => mover.obstacle));
+    for (const item of this.obstacles) {
+      item.removed = false;
+      if (this.dynamicObstacles.has(item)) continue;
+      const minX = this.obstacleCell(item.x - item.w / 2);
+      const maxX = this.obstacleCell(item.x + item.w / 2);
+      const minZ = this.obstacleCell(item.z - item.d / 2);
+      const maxZ = this.obstacleCell(item.z + item.d / 2);
+      for (let x = minX; x <= maxX; x++) for (let z = minZ; z <= maxZ; z++) {
+        const key = this.obstacleCellKey(x, z);
+        const cell = this.obstacleGrid.get(key);
+        if (cell) cell.push(item);
+        else this.obstacleGrid.set(key, [item]);
+      }
+    }
+  }
+
+  nearbyObstacles(minX, maxX, minZ, maxZ) {
+    const found = this.obstacleQuery;
+    found.length = 0;
+    const stamp = ++this.obstacleQueryStamp;
+    const cellMinX = this.obstacleCell(minX);
+    const cellMaxX = this.obstacleCell(maxX);
+    const cellMinZ = this.obstacleCell(minZ);
+    const cellMaxZ = this.obstacleCell(maxZ);
+    for (let x = cellMinX; x <= cellMaxX; x++) for (let z = cellMinZ; z <= cellMaxZ; z++) {
+      const cell = this.obstacleGrid.get(this.obstacleCellKey(x, z));
+      if (!cell) continue;
+      for (const item of cell) {
+        if (item.removed || item.queryStamp === stamp) continue;
+        item.queryStamp = stamp;
+        found.push(item);
+      }
+    }
+    for (const item of this.dynamicObstacles) {
+      if (item.removed || item.queryStamp === stamp) continue;
+      if (item.x + item.w / 2 < minX || item.x - item.w / 2 > maxX || item.z + item.d / 2 < minZ || item.z - item.d / 2 > maxZ) continue;
+      item.queryStamp = stamp;
+      found.push(item);
+    }
+    return found;
+  }
+
+  freezeStaticTransforms() {
+    const animated = new Set([
+      ...this.rotors.map((entry) => entry.object),
+      ...this.pulsers.map((entry) => entry.object),
+      ...this.movers.map((entry) => entry.obstacle.mesh),
+      ...this.portals.flatMap((entry) => [entry.ring, entry.inner]),
+      ...this.sweepers.map((entry) => entry.group),
+      this.motes
+    ]);
+    this.group.updateMatrixWorld(true);
+    this.group.traverse((object) => {
+      if (animated.has(object)) return;
+      object.updateMatrix();
+      object.matrixAutoUpdate = false;
+    });
   }
 
   districtIndexAt(x, z) {
@@ -1505,6 +1590,10 @@ export class ArenaWorld {
     fieldMaterial.colorNode = mix(color(0x06111b), color(wallColor), grid.mul(.72).add(scan.mul(.18)));
     fieldMaterial.opacityNode = grid.mul(.48).add(.16).mul(fade);
     obstacle.mesh.material = fieldMaterial;
+    obstacle.dynamic = true;
+    this.dynamicObstacles.add(obstacle);
+    obstacle.mesh.updateMatrix();
+    obstacle.mesh.matrixAutoUpdate = false;
     this.temporaryWalls.push({ obstacle, life: lifetime, fade });
     return obstacle;
   }
@@ -1529,6 +1618,8 @@ export class ArenaWorld {
       if (wall.life > 0) continue;
       this.group.remove(wall.obstacle.mesh);
       this.obstacles.splice(this.obstacles.indexOf(wall.obstacle), 1);
+      wall.obstacle.removed = true;
+      this.dynamicObstacles.delete(wall.obstacle);
       wall.obstacle.mesh.geometry.dispose();
       wall.obstacle.mesh.material.dispose();
       this.temporaryWalls.splice(index, 1);
@@ -1580,9 +1671,9 @@ export class ArenaWorld {
       sweeper.group.rotation.y += dt * sweeper.speed;
       for (const player of players) {
         if (!player.alive || player.sweeperCooldown > 0 || Math.abs(player.position.y - sweeper.position.y) > 2.4) continue;
-        const local = player.position.clone().sub(sweeper.position).applyAxisAngle(new THREE.Vector3(0, 1, 0), -sweeper.group.rotation.y);
+        const local = this.sweeperLocal.copy(player.position).sub(sweeper.position).applyAxisAngle(Y_AXIS, -sweeper.group.rotation.y);
         if (Math.abs(local.x) > sweeper.length / 2 || Math.abs(local.z) > 1) continue;
-        const push = player.position.clone().sub(sweeper.position).setY(0);
+        const push = this.sweeperPush.copy(player.position).sub(sweeper.position).setY(0);
         if (!push.lengthSq()) push.set(1, 0, 0);
         player.velocity.addScaledVector(push.normalize(), 18);
         player.velocity.y = Math.max(player.velocity.y, 8);
@@ -1615,7 +1706,7 @@ export class ArenaWorld {
 
   surfaceHeightAt(position, ceiling = position.y + .5) {
     let height = 0;
-    for (const item of this.obstacles) {
+    for (const item of this.nearbyObstacles(position.x, position.x, position.z, position.z)) {
       const inside = Math.abs(position.x - item.x) <= item.w / 2 && Math.abs(position.z - item.z) <= item.d / 2;
       if (inside && item.top <= ceiling && item.top > height) height = item.top;
     }
@@ -1633,7 +1724,7 @@ export class ArenaWorld {
     let ledge = null;
     if (grounded) position.y = floor;
 
-    for (const item of this.obstacles) {
+    for (const item of this.nearbyObstacles(position.x - radius, position.x + radius, position.z - radius, position.z + radius)) {
       if (grounded && Math.abs(position.y - item.top) < .08) continue;
       const minX = item.x - item.w / 2 - radius;
       const maxX = item.x + item.w / 2 + radius;
@@ -1647,12 +1738,23 @@ export class ArenaWorld {
       }
       const verticallyOverlaps = position.y < item.top - .08 && position.y + 2.25 > item.baseY + .08;
       if (!verticallyOverlaps || !insideFootprint) continue;
-      const pushes = [
-        [position.x - minX, "x", minX], [maxX - position.x, "x", maxX],
-        [position.z - minZ, "z", minZ], [maxZ - position.z, "z", maxZ]
-      ];
-      pushes.sort((a, b) => a[0] - b[0]);
-      position[pushes[0][1]] = pushes[0][2];
+      let pushDistance = position.x - minX;
+      let pushAxis = "x";
+      let pushValue = minX;
+      if (maxX - position.x < pushDistance) {
+        pushDistance = maxX - position.x;
+        pushValue = maxX;
+      }
+      if (position.z - minZ < pushDistance) {
+        pushDistance = position.z - minZ;
+        pushAxis = "z";
+        pushValue = minZ;
+      }
+      if (maxZ - position.z < pushDistance) {
+        pushAxis = "z";
+        pushValue = maxZ;
+      }
+      position[pushAxis] = pushValue;
       const rise = item.top - position.y;
       if (rise > .15 && rise <= 3.25 && (!ledge || item.top < ledge.top)) {
         const inward = new THREE.Vector3(item.x - position.x, 0, item.z - position.z);
@@ -1671,25 +1773,32 @@ export class ArenaWorld {
 
   projectileHit(position, radius = .2) {
     if (Math.abs(position.x) >= this.size || Math.abs(position.z) >= this.size || position.y <= 0 || position.y >= this.height + 18) return true;
-    return this.obstacles.some((item) =>
-      position.x + radius > item.x - item.w / 2 &&
-      position.x - radius < item.x + item.w / 2 &&
-      position.z + radius > item.z - item.d / 2 &&
-      position.z - radius < item.z + item.d / 2 &&
-      position.y + radius > item.baseY &&
-      position.y - radius < item.top
-    );
+    for (const item of this.nearbyObstacles(position.x - radius, position.x + radius, position.z - radius, position.z + radius)) {
+      if (position.x + radius > item.x - item.w / 2 &&
+        position.x - radius < item.x + item.w / 2 &&
+        position.z + radius > item.z - item.d / 2 &&
+        position.z - radius < item.z + item.d / 2 &&
+        position.y + radius > item.baseY &&
+        position.y - radius < item.top) return true;
+    }
+    return false;
   }
 
-  constrainCamera(origin, desired, clearance = .45) {
-    const direction = desired.clone().sub(origin);
+  constrainCamera(origin, desired, clearance = .45, target = new THREE.Vector3()) {
+    const direction = this.collisionDirection.copy(desired).sub(origin);
     const distance = direction.length();
-    if (!distance) return desired.clone();
-    const ray = new THREE.Ray(origin, direction.normalize());
-    const box = new THREE.Box3();
-    const hit = new THREE.Vector3();
+    if (!distance) return target.copy(desired);
+    direction.normalize();
+    const ray = this.collisionRay.set(origin, direction);
+    const box = this.collisionBox;
+    const hit = this.collisionHit;
     let safeDistance = distance;
-    for (const item of this.obstacles) {
+    for (const item of this.nearbyObstacles(
+      Math.min(origin.x, desired.x) - clearance,
+      Math.max(origin.x, desired.x) + clearance,
+      Math.min(origin.z, desired.z) - clearance,
+      Math.max(origin.z, desired.z) + clearance
+    )) {
       box.min.set(item.x - item.w / 2 - clearance, item.baseY - clearance, item.z - item.d / 2 - clearance);
       box.max.set(item.x + item.w / 2 + clearance, item.top + clearance, item.z + item.d / 2 + clearance);
       if (box.containsPoint(origin)) continue;
@@ -1703,7 +1812,7 @@ export class ArenaWorld {
     this.cameraRaycaster.far = safeDistance;
     const visualHit = this.cameraRaycaster.intersectObjects(this.cameraOccluders, false)[0];
     if (visualHit) safeDistance = Math.min(safeDistance, Math.max(.18, visualHit.distance - clearance));
-    return origin.clone().addScaledVector(direction, safeDistance);
+    return target.copy(origin).addScaledVector(direction, safeDistance);
   }
 
   destroy(position, radius) {
@@ -1714,6 +1823,7 @@ export class ArenaWorld {
       this.group.remove(item.mesh);
       this.obstacles.splice(this.obstacles.indexOf(item), 1);
       this.destructibles.splice(this.destructibles.indexOf(item), 1);
+      item.removed = true;
       removed += 1;
     }
     return removed;
@@ -1733,14 +1843,17 @@ export class ArenaWorld {
   }
 
   ropeObstacle(origin, target) {
-    const delta = target.clone().sub(origin);
+    const delta = this.collisionDirection.copy(target).sub(origin);
     const length = delta.length();
     if (length < .1) return null;
-    const ray = new THREE.Ray(origin, delta.multiplyScalar(1 / length));
-    const box = new THREE.Box3();
-    const hit = new THREE.Vector3();
+    const ray = this.collisionRay.set(origin, delta.multiplyScalar(1 / length));
+    const box = this.collisionBox;
+    const hit = this.collisionHit;
     let nearest = null;
-    for (const item of this.obstacles) {
+    for (const item of this.nearbyObstacles(
+      Math.min(origin.x, target.x), Math.max(origin.x, target.x),
+      Math.min(origin.z, target.z), Math.max(origin.z, target.z)
+    )) {
       box.min.set(item.x - item.w / 2, item.baseY, item.z - item.d / 2);
       box.max.set(item.x + item.w / 2, item.top, item.z + item.d / 2);
       if (box.containsPoint(origin) || !ray.intersectBox(box, hit)) continue;
@@ -1756,15 +1869,18 @@ export class ArenaWorld {
   }
 
   effectBlocked(origin, target) {
-    const delta = target.clone().sub(origin);
+    const delta = this.collisionDirection.copy(target).sub(origin);
     const length = delta.length();
     if (length < .1) return false;
     const direction = delta.multiplyScalar(1 / length);
-    const ray = new THREE.Ray(origin, direction);
-    const box = new THREE.Box3();
-    const hit = new THREE.Vector3();
-    const probe = origin.clone().addScaledVector(direction, .08);
-    for (const item of this.obstacles) {
+    const ray = this.collisionRay.set(origin, direction);
+    const box = this.collisionBox;
+    const hit = this.collisionHit;
+    const probe = this.collisionProbe.copy(origin).addScaledVector(direction, .08);
+    for (const item of this.nearbyObstacles(
+      Math.min(origin.x, target.x), Math.max(origin.x, target.x),
+      Math.min(origin.z, target.z), Math.max(origin.z, target.z)
+    )) {
       box.min.set(item.x - item.w / 2, item.baseY, item.z - item.d / 2);
       box.max.set(item.x + item.w / 2, item.top, item.z + item.d / 2);
       const contact = ray.intersectBox(box, hit);

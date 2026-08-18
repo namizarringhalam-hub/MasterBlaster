@@ -82,6 +82,16 @@ export class Fighter {
     this.velocity = new THREE.Vector3();
     this.controlMove = new THREE.Vector3();
     this.aim = new THREE.Vector3(0, 0, 1);
+    this.desiredMove = new THREE.Vector3();
+    this.previousPosition = new THREE.Vector3();
+    this.botOrigin = new THREE.Vector3();
+    this.botTarget = new THREE.Vector3();
+    this.botAimOffset = new THREE.Vector3();
+    this.botForward = new THREE.Vector3();
+    this.botMoveForward = new THREE.Vector3();
+    this.botMove = new THREE.Vector3();
+    this.botProbe = new THREE.Vector3();
+    this.botChargeDistances = [];
     this.radius = .72;
     this.health = 100;
     this.slotIndex = 0;
@@ -684,7 +694,9 @@ export class Fighter {
     const moving = move.lengthSq() > .001;
     this.controlMove.copy(move);
     const movementScale = this.slowTimer > 0 ? .48 : 1;
-    const desired = moving ? move.clone().normalize().multiplyScalar(9 * movementScale) : new THREE.Vector3();
+    const desired = this.desiredMove.copy(move);
+    if (moving) desired.normalize().multiplyScalar(9 * movementScale);
+    else desired.set(0, 0, 0);
     // Grapple physics owns horizontal acceleration while attached. Ground
     // locomotion damping here would erase its pull before every movement step.
     if (!this.grapple && this.grounded) {
@@ -703,7 +715,7 @@ export class Fighter {
     }
     this.velocity.y -= 19 * dt;
     const fallSpeed = Math.max(0, -this.velocity.y);
-    const previous = this.position.clone();
+    const previous = this.previousPosition.copy(this.position);
     this.position.addScaledVector(this.velocity, dt);
 
     const collision = world.resolve(this.position, this.radius, previous);

@@ -84,12 +84,16 @@ export function botRemoteChargeAction(weapon, {
   maxCharges = 3
 } = {}) {
   if (!weapon || weapon.type !== "remote") return "hold";
-  const armed = armedChargeDistances.filter(Number.isFinite);
   const blastRadius = Math.max(.1, weapon.radius || 5);
-  if (armed.some((distance) => distance <= blastRadius * .92)) return "detonate";
+  let armed = 0;
+  for (const distance of armedChargeDistances) {
+    if (!Number.isFinite(distance)) continue;
+    armed++;
+    if (distance <= blastRadius * .92) return "detonate";
+  }
   const policy = botWeaponPolicy(weapon);
   const usefulPlacement = visible && targetDistance >= policy.min && targetDistance <= policy.max;
-  return usefulPlacement && ammo > 0 && armed.length < Math.max(1, maxCharges) ? "place" : "hold";
+  return usefulPlacement && ammo > 0 && armed < Math.max(1, maxCharges) ? "place" : "hold";
 }
 
 function rangeScore(distance, { min, preferred, max }) {
@@ -100,7 +104,10 @@ function rangeScore(distance, { min, preferred, max }) {
 }
 
 export function chooseBotSlot(loadout, distance, random = Math.random) {
-  const scored = loadout.map((id, index) => {
+  let bestIndex = 0;
+  let bestScore = -Infinity;
+  for (let index = 0; index < loadout.length; index++) {
+    const id = loadout[index];
     const weapon = WEAPONS[id];
     const policy = botWeaponPolicy(weapon);
     let score = random() * .25 + rangeScore(distance, policy);
@@ -110,10 +117,12 @@ export function chooseBotSlot(loadout, distance, random = Math.random) {
     else if (policy.intent === "trap") score += distance < 7 ? .38 : -.18;
     else if (["cover", "decoy", "remote", "ricochet"].includes(policy.intent)) score += .18;
     else if (["area", "control", "suppress"].includes(policy.intent)) score += .12;
-    return { index, score };
-  });
-  scored.sort((a, b) => b.score - a.score);
-  return scored[0].index;
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = index;
+    }
+  }
+  return bestIndex;
 }
 
 export function botFireChance(distance, visible, weapon) {

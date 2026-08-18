@@ -18,6 +18,21 @@ const FIRE_TONGUES = [
   ["flameC", -.5, -.18, 2.15, .4, 4.3]
 ];
 export const FIREBALL_INSTANCE_CAPACITY = 4096;
+const PROJECTILE_GEOMETRIES = new Map();
+const PROJECTILE_GEOMETRY_TYPES = new WeakMap();
+let projectileGeometryTypeId = 0;
+
+function sharedGeometry(Type, ...parameters) {
+  if (!PROJECTILE_GEOMETRY_TYPES.has(Type)) PROJECTILE_GEOMETRY_TYPES.set(Type, ++projectileGeometryTypeId);
+  const key = `${PROJECTILE_GEOMETRY_TYPES.get(Type)}:${parameters.join(",")}`;
+  let geometry = PROJECTILE_GEOMETRIES.get(key);
+  if (!geometry) {
+    geometry = new Type(...parameters);
+    geometry.userData.sharedProjectile = true;
+    PROJECTILE_GEOMETRIES.set(key, geometry);
+  }
+  return geometry;
+}
 
 function glowMaterial(opacity = 1) {
   return new THREE.MeshBasicMaterial({
@@ -33,7 +48,6 @@ function glowMaterial(opacity = 1) {
 function visualMesh(geometry, material, position = null) {
   const mesh = new THREE.Mesh(geometry, material);
   if (position) mesh.position.copy(position);
-  mesh.frustumCulled = false;
   return mesh;
 }
 
@@ -63,7 +77,7 @@ function impactFamily(profile, explosive) {
 }
 
 function addTail(group, radius, length, material) {
-  const tail = visualMesh(new THREE.ConeGeometry(radius, length, 6, 1, true), material);
+  const tail = visualMesh(sharedGeometry(THREE.ConeGeometry, radius, length, 6, 1, true), material);
   tail.rotation.x = Math.PI / 2;
   tail.position.z = -length * .55;
   tail.userData.trail = { axis: "y", length, offset: .55 };
@@ -88,65 +102,65 @@ function addPayloadDecorator(group, profile, radius, materials, movingParts, pul
   let mesh;
   let motion = "spin";
   if (profile.payload === "gravity" || profile.payload === "implosion") {
-    mesh = visualMesh(new THREE.TorusGeometry(radius * 1.8, radius * .12, 5, 18), identity);
+    mesh = visualMesh(sharedGeometry(THREE.TorusGeometry, radius * 1.8, radius * .12, 5, 18), identity);
     mesh.rotation.x = Math.PI / 2;
     motion = "inward";
   } else if (profile.payload === "freeze") {
     identity.wireframe = true;
-    mesh = visualMesh(new THREE.OctahedronGeometry(radius * 1.75, 0), identity);
+    mesh = visualMesh(sharedGeometry(THREE.OctahedronGeometry, radius * 1.75, 0), identity);
     mesh.scale.set(.72, 1.45, .72);
     motion = "crystal";
   } else if (profile.payload === "teleport" || profile.payload === "steal") {
     mesh = profile.payload === "teleport"
-      ? visualMesh(new THREE.TorusGeometry(radius * 1.75, radius * .09, 4, 18), identity)
-      : visualMesh(new THREE.TorusKnotGeometry(radius * .78, radius * .11, 24, 4, 2, 3), identity);
+      ? visualMesh(sharedGeometry(THREE.TorusGeometry, radius * 1.75, radius * .09, 4, 18), identity)
+      : visualMesh(sharedGeometry(THREE.TorusKnotGeometry, radius * .78, radius * .11, 24, 4, 2, 3), identity);
     mesh.rotation.x = Math.PI / 2;
     motion = "scan";
   } else if (profile.payload === "disrupt") {
-    mesh = visualMesh(new THREE.TorusGeometry(radius * 2.05, radius * .09, 4, 20), identity);
+    mesh = visualMesh(sharedGeometry(THREE.TorusGeometry, radius * 2.05, radius * .09, 4, 20), identity);
     mesh.rotation.x = Math.PI / 2;
     motion = "hoop";
   } else if (profile.payload === "cluster") {
-    mesh = visualMesh(new THREE.TorusGeometry(radius * 1.52, radius * .2, 3, 6), identity);
+    mesh = visualMesh(sharedGeometry(THREE.TorusGeometry, radius * 1.52, radius * .2, 3, 6), identity);
     mesh.rotation.x = Math.PI / 2;
   } else if (profile.payload === "sticky") {
-    mesh = visualMesh(new THREE.TorusGeometry(radius * 1.34, radius * .16, 4, 8), identity);
+    mesh = visualMesh(sharedGeometry(THREE.TorusGeometry, radius * 1.34, radius * .16, 4, 8), identity);
     mesh.rotation.x = Math.PI / 2;
     mesh.position.z = -radius * .28;
     motion = "armed";
   } else if (profile.payload === "ricochet") {
     identity.wireframe = true;
-    mesh = visualMesh(new THREE.OctahedronGeometry(radius * 1.42, 0), identity);
+    mesh = visualMesh(sharedGeometry(THREE.OctahedronGeometry, radius * 1.42, 0), identity);
     mesh.rotation.z = Math.PI / 4;
   } else if (profile.payload === "drill") {
-    mesh = visualMesh(new THREE.ConeGeometry(radius * 1.18, radius * 2.7, 7), materials.hot);
+    mesh = visualMesh(sharedGeometry(THREE.ConeGeometry, radius * 1.18, radius * 2.7, 7), materials.hot);
     mesh.rotation.x = Math.PI / 2;
     mesh.position.z = radius * 1.75;
     motion = "drill";
   } else if (profile.payload === "wall") {
     identity.wireframe = true;
-    mesh = visualMesh(new THREE.BoxGeometry(radius * 2.15, radius * 1.55, radius * .48), identity);
+    mesh = visualMesh(sharedGeometry(THREE.BoxGeometry, radius * 2.15, radius * 1.55, radius * .48), identity);
     motion = "scan";
   } else if (profile.payload === "decoy") {
     identity.wireframe = true;
-    mesh = visualMesh(new THREE.DodecahedronGeometry(radius * 1.42, 0), identity);
+    mesh = visualMesh(sharedGeometry(THREE.DodecahedronGeometry, radius * 1.42, 0), identity);
     motion = "scan";
   } else if (profile.payload === "tornado") {
-    mesh = visualMesh(new THREE.TorusKnotGeometry(radius * .78, radius * .1, 22, 4, 2, 3), identity);
+    mesh = visualMesh(sharedGeometry(THREE.TorusKnotGeometry, radius * .78, radius * .1, 22, 4, 2, 3), identity);
     motion = "hoop";
   } else if (profile.payload === "napalm") {
-    mesh = visualMesh(new THREE.TorusGeometry(radius * 1.4, radius * .13, 4, 9), identity);
+    mesh = visualMesh(sharedGeometry(THREE.TorusGeometry, radius * 1.4, radius * .13, 4, 9), identity);
     mesh.rotation.x = Math.PI / 2;
     motion = "armed";
   } else if (profile.payload === "penetrator") {
-    mesh = visualMesh(new THREE.BoxGeometry(radius * .38, radius * .38, radius * 3.3), identity);
+    mesh = visualMesh(sharedGeometry(THREE.BoxGeometry, radius * .38, radius * .38, radius * 3.3), identity);
     motion = "drill";
   } else if (profile.payload === "pulse") {
-    mesh = visualMesh(new THREE.TorusGeometry(radius * 1.62, radius * .12, 5, 20), identity);
+    mesh = visualMesh(sharedGeometry(THREE.TorusGeometry, radius * 1.62, radius * .12, 5, 20), identity);
     mesh.rotation.x = Math.PI / 2;
     motion = "hoop";
   } else if (profile.payload === "mortar") {
-    mesh = visualMesh(new THREE.ConeGeometry(radius * .72, radius * 1.65, 6, 1, true), identity);
+    mesh = visualMesh(sharedGeometry(THREE.ConeGeometry, radius * .72, radius * 1.65, 6, 1, true), identity);
     mesh.rotation.x = Math.PI;
     mesh.position.y = radius * 1.35;
     motion = "armed";
@@ -193,41 +207,41 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
 
   if (family === "rail") {
     addScreenTrail(group, Math.max(.14, radius * 1.18), Math.max(4.2, speedTail), shotIdentity);
-    const needle = visualMesh(new THREE.BoxGeometry(radius * .72, radius * .72, 2.45), hot);
+    const needle = visualMesh(sharedGeometry(THREE.BoxGeometry, radius * .72, radius * .72, 2.45), hot);
     needle.position.z = -.55;
-    const railHalo = visualMesh(new THREE.OctahedronGeometry(radius * 1.18, 0), core);
+    const railHalo = visualMesh(sharedGeometry(THREE.OctahedronGeometry, radius * 1.18, 0), core);
     railHalo.scale.z = 2.1;
     group.add(needle, railHalo);
     pulseParts.push(railHalo);
   } else if (family === "rocket") {
     const dark = new THREE.MeshStandardMaterial({ color: 0x07101c, roughness: .32, metalness: .65 });
-    const body = visualMesh(new THREE.CylinderGeometry(radius * .68, radius * .9, radius * 2.7, 8), dark);
+    const body = visualMesh(sharedGeometry(THREE.CylinderGeometry, radius * .68, radius * .9, radius * 2.7, 8), dark);
     body.rotation.x = Math.PI / 2;
-    const nose = visualMesh(new THREE.ConeGeometry(radius * .82, radius * 1.45, 8), core);
+    const nose = visualMesh(sharedGeometry(THREE.ConeGeometry, radius * .82, radius * 1.45, 8), core);
     nose.rotation.x = Math.PI / 2;
     nose.position.z = radius * 1.85;
-    const band = visualMesh(new THREE.TorusGeometry(radius * .83, radius * .15, 5, 12), identityMaterial());
+    const band = visualMesh(sharedGeometry(THREE.TorusGeometry, radius * .83, radius * .15, 5, 12), identityMaterial());
     band.position.z = -.1;
-    const flame = visualMesh(new THREE.ConeGeometry(radius * .62, radius * 1.2, 6), hot);
+    const flame = visualMesh(sharedGeometry(THREE.ConeGeometry, radius * .62, radius * 1.2, 6), hot);
     flame.rotation.x = -Math.PI / 2;
     flame.position.z = -radius * 1.76;
     group.add(body, nose, band, flame);
     pulseParts.push(flame, addTail(group, radius * 1.6, Math.max(1.65, speedTail), soft()));
   } else if (family === "grenade") {
-    const shell = visualMesh(new THREE.IcosahedronGeometry(radius, 0), core);
+    const shell = visualMesh(sharedGeometry(THREE.IcosahedronGeometry, radius, 0), core);
     const cageMaterial = identityMaterial().clone();
     cageMaterial.wireframe = true;
-    const cage = visualMesh(new THREE.IcosahedronGeometry(radius * 1.36, 1), cageMaterial);
-    const belt = visualMesh(new THREE.TorusGeometry(radius * 1.08, radius * .13, 5, 12), identityMaterial());
+    const cage = visualMesh(sharedGeometry(THREE.IcosahedronGeometry, radius * 1.36, 1), cageMaterial);
+    const belt = visualMesh(sharedGeometry(THREE.TorusGeometry, radius * 1.08, radius * .13, 5, 12), identityMaterial());
     belt.rotation.x = Math.PI / 2;
-    const fuse = visualMesh(new THREE.OctahedronGeometry(radius * .33, 0), hot);
+    const fuse = visualMesh(sharedGeometry(THREE.OctahedronGeometry, radius * .33, 0), hot);
     fuse.position.y = radius * 1.2;
     group.add(shell, cage, belt, fuse);
     movingParts.push(cage, belt);
     pulseParts.push(cage, fuse);
     if (!mine) {
       for (let index = 0; index < 3; index++) {
-        const dot = visualMesh(new THREE.SphereGeometry(radius * (.42 - index * .07), 6, 4), soft());
+        const dot = visualMesh(sharedGeometry(THREE.SphereGeometry, radius * (.42 - index * .07), 6, 4), soft());
         dot.position.z = -radius * (2.2 + index * 1.45);
         group.add(dot);
       }
@@ -237,15 +251,15 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
     auraMaterial.color.copy(FIRE_DARK).multiplyScalar(1.8);
     const flameMaterial = glowMaterial(.78);
     flameMaterial.color.copy(FIRE).multiplyScalar(2.5);
-    const aura = visualMesh(new THREE.SphereGeometry(radius * 1.42, 9, 7), auraMaterial);
-    const ember = visualMesh(new THREE.SphereGeometry(radius, 11, 8), core);
-    const whiteCore = visualMesh(new THREE.IcosahedronGeometry(radius * .54, 1), hot);
+    const aura = visualMesh(sharedGeometry(THREE.SphereGeometry, radius * 1.42, 9, 7), auraMaterial);
+    const ember = visualMesh(sharedGeometry(THREE.SphereGeometry, radius, 11, 8), core);
+    const whiteCore = visualMesh(sharedGeometry(THREE.IcosahedronGeometry, radius * .54, 1), hot);
     const flames = [
       [0, .12, 2.7, .62],
       [.48, -.12, 1.9, .38],
       [-.42, .22, 1.65, .34]
     ].map(([x, y, length, width]) => {
-      const flame = visualMesh(new THREE.ConeGeometry(radius * width, radius * length, 7, 1, true), flameMaterial);
+      const flame = visualMesh(sharedGeometry(THREE.ConeGeometry, radius * width, radius * length, 7, 1, true), flameMaterial);
       flame.rotation.x = -Math.PI / 2;
       flame.position.set(radius * x, radius * y, -radius * length * .48);
       return flame;
@@ -254,29 +268,29 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
     movingParts.push(ember, ...flames);
     pulseParts.push(aura, whiteCore, ...flames, addTail(group, radius * .68, Math.max(1.7, speedTail * 1.15), flameMaterial.clone()));
   } else if (family === "plasma") {
-    const orb = visualMesh(new THREE.SphereGeometry(radius, 10, 8), core);
-    const hotOrb = visualMesh(new THREE.OctahedronGeometry(radius * .48, 1), hot);
+    const orb = visualMesh(sharedGeometry(THREE.SphereGeometry, radius, 10, 8), core);
+    const hotOrb = visualMesh(sharedGeometry(THREE.OctahedronGeometry, radius * .48, 1), hot);
     const cageMaterial = identityMaterial().clone();
     cageMaterial.wireframe = true;
-    const cage = visualMesh(new THREE.IcosahedronGeometry(radius * 1.38, 1), cageMaterial);
-    const orbit = visualMesh(new THREE.TorusGeometry(radius * 1.55, radius * .08, 4, 16), identityMaterial());
+    const cage = visualMesh(sharedGeometry(THREE.IcosahedronGeometry, radius * 1.38, 1), cageMaterial);
+    const orbit = visualMesh(sharedGeometry(THREE.TorusGeometry, radius * 1.55, radius * .08, 4, 16), identityMaterial());
     orbit.rotation.x = Math.PI / 2;
     group.add(orb, hotOrb, cage, orbit);
     movingParts.push(cage, orbit);
     pulseParts.push(cage, orbit, addTail(group, radius * .8, Math.max(.65, speedTail * .75), soft()));
   } else if (family === "disc") {
-    const blade = visualMesh(new THREE.TorusGeometry(radius * 1.15, radius * .28, 6, 16), core);
-    const rim = visualMesh(new THREE.TorusGeometry(radius * 1.52, radius * .09, 5, 18), identityMaterial());
+    const blade = visualMesh(sharedGeometry(THREE.TorusGeometry, radius * 1.15, radius * .28, 6, 16), core);
+    const rim = visualMesh(sharedGeometry(THREE.TorusGeometry, radius * 1.52, radius * .09, 5, 18), identityMaterial());
     blade.rotation.x = rim.rotation.x = Math.PI / 2;
-    const hub = visualMesh(new THREE.OctahedronGeometry(radius * .48, 0), hot);
+    const hub = visualMesh(sharedGeometry(THREE.OctahedronGeometry, radius * .48, 0), hot);
     group.add(blade, rim, hub);
     movingParts.push(blade, rim);
     pulseParts.push(addTail(group, radius * .45, speedTail, soft()));
   } else {
     const length = Math.max(.18, radius * 2.8);
-    const bolt = visualMesh(new THREE.CapsuleGeometry(radius * .62, length, 2, 6), hot);
+    const bolt = visualMesh(sharedGeometry(THREE.CapsuleGeometry, radius * .62, length, 2, 6), hot);
     bolt.rotation.x = Math.PI / 2;
-    const tip = visualMesh(new THREE.ConeGeometry(radius * .92, Math.max(.22, radius * 2), 5), core);
+    const tip = visualMesh(sharedGeometry(THREE.ConeGeometry, radius * .92, Math.max(.22, radius * 2), 5), core);
     tip.rotation.x = Math.PI / 2;
     tip.position.z = Math.max(.12, radius * 1.4);
     const fast = profile.rapid || profile.delivery === "spread";
@@ -285,7 +299,7 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
     if (fast) {
       addScreenTrail(group, trailRadius, speedTail, shotIdentity);
     } else {
-      const collar = visualMesh(new THREE.TorusGeometry(radius * .82, radius * .1, 4, 10), identityMaterial());
+      const collar = visualMesh(sharedGeometry(THREE.TorusGeometry, radius * .82, radius * .1, 4, 10), identityMaterial());
       collar.position.z = -length * .3;
       group.add(collar);
       pulseParts.push(collar, addTail(group, trailRadius, speedTail, soft()));
@@ -326,7 +340,7 @@ function instancedLayer(geometry, capacity, opacity) {
 }
 
 function slots(length) {
-  return Array.from({ length }, () => ({ life: 0 }));
+  return Array.from({ length }, () => ({ life: 0, visible: false }));
 }
 
 function bloodSplatGeometry() {
@@ -407,6 +421,7 @@ export class CombatVisuals {
     this.group.add(this.combatLightGroup);
 
     this.fireballs = new Set();
+    this.fireballCount = 0;
     this.fireballGroup = new THREE.Group();
     this.fireballGroup.name = "Instanced persistent Fireballs";
     this.fireballLayers = {
@@ -798,6 +813,13 @@ export class CombatVisuals {
 
   updateFireballs() {
     const layers = this.fireballLayers;
+    if (this.fireballs.size === 0) {
+      if (this.fireballCount !== 0) {
+        for (const layer of this.fireballLayerList) layer.count = 0;
+        this.fireballCount = 0;
+      }
+      return;
+    }
     let index = 0;
     for (const anchor of this.fireballs) {
       if (index >= FIREBALL_INSTANCE_CAPACITY) break;
@@ -864,18 +886,26 @@ export class CombatVisuals {
       index += 1;
     }
     for (const layer of this.fireballLayerList) layer.count = index;
+    this.fireballCount = index;
     this.markUpdated(...this.fireballLayerList);
   }
 
   updateFlashes(dt) {
+    let dirty = false;
     for (let index = 0; index < this.flashes.length; index++) {
       const slot = this.flashes[index];
       slot.life -= dt;
       if (slot.life <= 0) {
-        this.flashOuter.setMatrixAt(index, HIDDEN);
-        this.flashInner.setMatrixAt(index, HIDDEN);
+        if (slot.visible) {
+          this.flashOuter.setMatrixAt(index, HIDDEN);
+          this.flashInner.setMatrixAt(index, HIDDEN);
+          slot.visible = false;
+          dirty = true;
+        }
         continue;
       }
+      slot.visible = true;
+      dirty = true;
       const fade = clamp(slot.life / slot.maxLife, 0, 1);
       const flicker = .9 + Math.sin((1 - fade) * 18 + slot.profile.signature * 9) * .1;
       this.quaternion.setFromUnitVectors(UP, slot.direction);
@@ -890,18 +920,25 @@ export class CombatVisuals {
       const hotMix = slot.profile.delivery === "flame" || slot.profile.delivery === "melee" ? .28 : slot.profile.energy ? .76 : .58;
       this.flashInner.setColorAt(index, this.color.copy(slot.weaponColor).lerp(WHITE, hotMix).multiplyScalar(.78 + fade * .22));
     }
-    this.markUpdated(this.flashOuter, this.flashInner);
+    if (dirty) this.markUpdated(this.flashOuter, this.flashInner);
   }
 
   updateTracers(dt) {
+    let dirty = false;
     for (let index = 0; index < this.tracers.length; index++) {
       const slot = this.tracers[index];
       slot.life -= dt;
       if (slot.life <= 0) {
-        this.tracerOuter.setMatrixAt(index, HIDDEN);
-        this.tracerInner.setMatrixAt(index, HIDDEN);
+        if (slot.visible) {
+          this.tracerOuter.setMatrixAt(index, HIDDEN);
+          this.tracerInner.setMatrixAt(index, HIDDEN);
+          slot.visible = false;
+          dirty = true;
+        }
         continue;
       }
+      slot.visible = true;
+      dirty = true;
       const fade = clamp(slot.life / slot.maxLife, 0, 1);
       this.direction.copy(slot.end).sub(slot.start);
       const length = this.direction.length();
@@ -925,18 +962,25 @@ export class CombatVisuals {
       const hotMix = flame ? .18 : melee ? .28 : slot.closeRapid ? .72 : slot.profile.payload === "gravity" ? .42 : slot.profile.precision ? .84 : slot.profile.energy ? .68 : .58;
       this.tracerInner.setColorAt(index, this.color.copy(slot.weaponColor).lerp(WHITE, hotMix).multiplyScalar(.74 + fade * .26));
     }
-    this.markUpdated(this.tracerOuter, this.tracerInner);
+    if (dirty) this.markUpdated(this.tracerOuter, this.tracerInner);
   }
 
   updateRings(dt) {
+    let dirty = false;
     for (let index = 0; index < this.rings.length; index++) {
       const slot = this.rings[index];
       slot.life -= dt;
       if (slot.life <= 0) {
-        this.ringOuter.setMatrixAt(index, HIDDEN);
-        this.ringInner.setMatrixAt(index, HIDDEN);
+        if (slot.visible) {
+          this.ringOuter.setMatrixAt(index, HIDDEN);
+          this.ringInner.setMatrixAt(index, HIDDEN);
+          slot.visible = false;
+          dirty = true;
+        }
         continue;
       }
+      slot.visible = true;
+      dirty = true;
       const progress = 1 - clamp(slot.life / slot.maxLife, 0, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
       const inward = slot.family === "gravity" || slot.family === "implosion";
@@ -1043,17 +1087,24 @@ export class CombatVisuals {
             : .62;
       this.ringInner.setColorAt(index, this.color.copy(slot.weaponColor).lerp(WHITE, hotMix).multiplyScalar(.65 + fade * .35));
     }
-    this.markUpdated(this.ringOuter, this.ringInner);
+    if (dirty) this.markUpdated(this.ringOuter, this.ringInner);
   }
 
   updateSparks(dt) {
+    let dirty = false;
     for (let index = 0; index < this.sparks.length; index++) {
       const slot = this.sparks[index];
       slot.life -= dt;
       if (slot.life <= 0) {
-        this.sparkLayer.setMatrixAt(index, HIDDEN);
+        if (slot.visible) {
+          this.sparkLayer.setMatrixAt(index, HIDDEN);
+          slot.visible = false;
+          dirty = true;
+        }
         continue;
       }
+      slot.visible = true;
+      dirty = true;
       const fade = clamp(slot.life / slot.maxLife, 0, 1);
       slot.velocity.y -= slot.gravity * dt;
       slot.position.addScaledVector(slot.velocity, dt);
@@ -1076,17 +1127,24 @@ export class CombatVisuals {
       this.sparkLayer.setMatrixAt(index, this.matrix);
       this.sparkLayer.setColorAt(index, this.color.copy(slot.color).multiplyScalar(.45 + fade * .55));
     }
-    this.markUpdated(this.sparkLayer);
+    if (dirty) this.markUpdated(this.sparkLayer);
   }
 
   updateBlood(dt) {
+    let dirty = false;
     for (let index = 0; index < this.bloodDecals.length; index++) {
       const slot = this.bloodDecals[index];
       slot.life -= dt;
       if (slot.life <= 0) {
-        this.bloodLayer.setMatrixAt(index, HIDDEN);
+        if (slot.visible) {
+          this.bloodLayer.setMatrixAt(index, HIDDEN);
+          slot.visible = false;
+          dirty = true;
+        }
         continue;
       }
+      slot.visible = true;
+      dirty = true;
       const fade = clamp(slot.life / slot.maxLife, 0, 1);
       const progress = 1 - fade;
       this.quaternion.setFromUnitVectors(FORWARD, slot.normal);
@@ -1098,7 +1156,7 @@ export class CombatVisuals {
       this.bloodLayer.setMatrixAt(index, this.matrix);
       this.bloodLayer.setColorAt(index, this.color.copy(BLOOD).multiplyScalar(.28 + fade * .72));
     }
-    this.markUpdated(this.bloodLayer);
+    if (dirty) this.markUpdated(this.bloodLayer);
   }
 
   markUpdated(...layers) {

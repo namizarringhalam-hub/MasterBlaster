@@ -298,7 +298,7 @@ assert.match(mainSource, /startCountdown\(this\.seed, \.42\)/, "gameplay and the
 assert.match(mainSource, /resumeAudioAfterReload\(\)[\s\S]*?matchStartDelay > 0[\s\S]*?startCountdown\(this\.seed, \.42\)[\s\S]*?else this\.sound\.startMusic\("combat"/, "the first post-reload gesture restores the authored countdown before combat music instead of skipping the score");
 assert.match(mainSource, /update\(dt\) \{[\s\S]*?awaitingAudioGesture[\s\S]*?return;[\s\S]*?matchStartDelay > 0/, "a fresh match cannot consume its countdown before the browser receives an audio-unlocking gesture");
 assert.match(mainSource, /setMusicScene\("menu"\)[\s\S]*?sound\.context\) this\.sound\.startMusic\("menu"/, "returning to the menu restarts music if its scheduler was interrupted");
-assert.match(mainSource, /audibleHazards[\s\S]*?distanceToSquared[\s\S]*?slice\(0, 4\)/, "the four nearest hazards receive tactical loop priority");
+assert.match(mainSource, /selectNearestAudio\(\s*this\.hazards, local\.position, 4/, "the four nearest hazards receive tactical loop priority without sorting the full hazard list");
 assert.match(mainSource, /button\.dataset\.weaponSlot != null \? WEAPONS\[this\.players\[0\]\?\.loadout/, "direct HUD and touch slot selection carries the selected weapon's handling identity");
 assert.match(mainSource, /startMusic\(`results-\$\{humanWon \? "win" : "loss"\}`/, "match results explicitly start a dedicated musical resolution even if the scheduler was interrupted");
 const audioSource = fs.readFileSync(new URL("../src/audio.js", import.meta.url), "utf8");

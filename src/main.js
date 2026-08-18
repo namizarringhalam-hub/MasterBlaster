@@ -9,7 +9,7 @@ import { ArenaWorld } from "./world.js";
 import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reticleAim } from "./player.js";
 import { InputManager, clearTouchActions, updateOrbit } from "./input.js";
 import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "./gameData.js";
-import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, clampBotCount, nearestTarget, safestSpawn, shouldBotPlaceWall } from "./botBrain.js";
+import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, clampBotCount, safestSpawn, shouldBotPlaceWall } from "./botBrain.js";
 import { NeonRenderPipeline } from "./renderPipeline.js";
 import { combatMusicIntensity } from "./musicScore.js";
 
@@ -20,6 +20,45 @@ const MATCH_SESSION_KEY = "blaster-pending-match";
 const clamp = THREE.MathUtils.clamp;
 const WEAPON_CATEGORY_BY_ID = Object.fromEntries(WEAPON_GROUPS.flatMap((group) => group.ids.map((id) => [id, group])));
 const WEAPON_INDEX_BY_ID = Object.fromEntries(Object.keys(WEAPONS).map((id, index) => [id, index]));
+const WEAPON_CATEGORY_SLUG_BY_ID = Object.fromEntries(Object.values(WEAPONS).map((weapon) => [weapon.id, weapon.category.toLowerCase().replaceAll(" ", "-")]));
+const WEAPON_CSS_COLOR_BY_ID = Object.fromEntries(Object.values(WEAPONS).map((weapon) => [weapon.id, `#${weapon.color.toString(16).padStart(6, "0")}`]));
+const CAMERA_ALTERNATIVE_ANGLES = [-2.35, -1.57, -.78, .78, 1.57, 2.35, Math.PI];
+const CAMERA_ALTERNATIVE_HEIGHTS = [5.2, -3.2];
+const CAMERA_UP = new THREE.Vector3(0, 1, 0);
+
+function projectileNeedsLoop(shot) {
+  return !shot.mine && !shot.stuck && (shot.weapon.type === "rocket" || shot.weapon.type === "grenade" || shot.weapon.returning || ["fireball", "drill"].includes(shot.weapon.presentationPayload));
+}
+
+function selectNearestAudio(items, origin, limit, accept, distances, ids, output) {
+  output.clear();
+  let count = 0;
+  for (const item of items) {
+    if (accept && !accept(item)) continue;
+    const distance = item.mesh.position.distanceToSquared(origin);
+    if (count === limit && distance >= distances[limit - 1]) continue;
+    let insert = Math.min(count, limit - 1);
+    while (insert > 0 && distance < distances[insert - 1]) {
+      distances[insert] = distances[insert - 1];
+      ids[insert] = ids[insert - 1];
+      insert--;
+    }
+    distances[insert] = distance;
+    ids[insert] = item.audioId;
+    if (count < limit) count++;
+  }
+  for (let index = 0; index < count; index++) output.add(ids[index]);
+  return output;
+}
+
+function setText(node, value) {
+  const text = String(value);
+  if (node.textContent !== text) node.textContent = text;
+}
+
+function setStyle(node, property, value) {
+  if (node.style.getPropertyValue(property) !== value) node.style.setProperty(property, value);
+}
 
 function weaponPreviewVariables(weapon, index) {
   const length = 27 + index % 7 * 1.35;
@@ -123,6 +162,25 @@ class BlasterBattle {
     this.cameraYaw = 0;
     this.cameraPitch = -.08;
     this.cameraFocus = new THREE.Vector3();
+    this.cameraScratch = {
+      forward: new THREE.Vector3(), flatForward: new THREE.Vector3(), right: new THREE.Vector3(),
+      pivot: new THREE.Vector3(), desired: new THREE.Vector3(), offset: new THREE.Vector3(),
+      candidateDesired: new THREE.Vector3(), candidate: new THREE.Vector3(), target: new THREE.Vector3(),
+      constrained: new THREE.Vector3(), motionLead: new THREE.Vector3(), focus: new THREE.Vector3(),
+      menuPosition: new THREE.Vector3(0, 22, 29)
+    };
+    this.cameraClearance = { actual: 0, target: 0 };
+    this.listenerDirection = new THREE.Vector3();
+    this.aimDirection = new THREE.Vector3();
+    this.aimTargets = [];
+    this.nearestAudioDistances = new Float64Array(6);
+    this.nearestAudioIds = Array(6);
+    this.audibleProjectileIds = new Set();
+    this.audibleHazardIds = new Set();
+    this.armedCounts = new Map();
+    this.hazardTarget = new THREE.Vector3();
+    this.hazardOffset = new THREE.Vector3();
+    this.hazardPush = new THREE.Vector3();
     this.sound = new SoundBoard();
     this.sound.setVolume(this.settings.volume);
     this.sound.setMix({ music: this.settings.musicVolume, effects: this.settings.effectsVolume, ambience: this.settings.ambienceVolume });
@@ -944,17 +1002,25 @@ class BlasterBattle {
     const local = this.players[0];
     if (!local) return;
     this.combatMusicPulse *= Math.exp(-dt * 1.55);
-    this.sound.setListener(this.camera.position, this.camera.getWorldDirection(new THREE.Vector3()));
+    this.sound.setListener(this.camera.position, this.camera.getWorldDirection(this.listenerDirection));
     this.audioMixTimer -= dt;
     if (this.audioMixTimer <= 0) {
       this.audioMixTimer = .25;
       const speed = clamp(local.velocity.length() / 38, 0, 1);
       const danger = clamp((100 - local.health) / 100, 0, 1);
       const finalMinute = this.matchTime < 60 ? 1 - this.matchTime / 60 : 0;
-      const scorePressure = clamp(Math.max(...this.scores) / Math.max(1, this.targetScore), 0, 1);
-      const nearbyEnemies = clamp(this.players.filter((player) => player !== local && player.alive && player.position.distanceToSquared(local.position) < 38 ** 2).length / 4, 0, 1);
-      const nearbyProjectiles = clamp(this.projectiles.filter((shot) => shot.owner !== local && shot.mesh.position.distanceToSquared(local.position) < 24 ** 2).length / 5, 0, 1);
-      const nearbyHazards = clamp(this.hazards.filter((hazard) => hazard.mesh.position.distanceToSquared(local.position) < 30 ** 2).length / 3, 0, 1);
+      let leadingScore = 0;
+      let enemyCount = 0;
+      let projectileCount = 0;
+      let hazardCount = 0;
+      for (const score of this.scores) leadingScore = Math.max(leadingScore, score);
+      for (const player of this.players) if (player !== local && player.alive && player.position.distanceToSquared(local.position) < 38 ** 2) enemyCount++;
+      for (const shot of this.projectiles) if (shot.owner !== local && shot.mesh.position.distanceToSquared(local.position) < 24 ** 2) projectileCount++;
+      for (const hazard of this.hazards) if (hazard.mesh.position.distanceToSquared(local.position) < 30 ** 2) hazardCount++;
+      const scorePressure = clamp(leadingScore / Math.max(1, this.targetScore), 0, 1);
+      const nearbyEnemies = clamp(enemyCount / 4, 0, 1);
+      const nearbyProjectiles = clamp(projectileCount / 5, 0, 1);
+      const nearbyHazards = clamp(hazardCount / 3, 0, 1);
       this.sound.setMusicIntensity(combatMusicIntensity({
         combatPulse: this.combatMusicPulse, nearbyEnemies, nearbyProjectiles, nearbyHazards,
         healthDanger: danger, speed, finalMinute, scorePressure
@@ -976,9 +1042,10 @@ class BlasterBattle {
         speed: player.velocity.length()
       });
     }
-    const audibleHazards = new Set([...this.hazards]
-      .sort((a, b) => a.mesh.position.distanceToSquared(local.position) - b.mesh.position.distanceToSquared(local.position))
-      .slice(0, 4).map((hazard) => hazard.audioId));
+    const audibleHazards = selectNearestAudio(
+      this.hazards, local.position, 4, null,
+      this.nearestAudioDistances, this.nearestAudioIds, this.audibleHazardIds
+    );
     for (const hazard of this.hazards) this.sound.updateHazardLoop(hazard.audioId, hazard.weapon, audibleHazards.has(hazard.audioId), this.audioSpatial(hazard.mesh.position, false, .72, hazard.audioId));
   }
 
@@ -1071,7 +1138,9 @@ class BlasterBattle {
     let move = cameraRelative(directionFromKeys(this.input), this.cameraYaw);
     move.add(cameraRelative(directionFromTouch(this.input.touchDirection()), this.cameraYaw));
     if (move.lengthSq() > 1) move.normalize();
-    const aim = reticleAim(player, this.camera.position, this.camera.getWorldDirection(new THREE.Vector3()), this.world, [...this.players, ...this.decoys]);
+    this.aimTargets.length = 0;
+    this.aimTargets.push(...this.players, ...this.decoys);
+    const aim = reticleAim(player, this.camera.position, this.camera.getWorldDirection(this.aimDirection), this.world, this.aimTargets);
     const jump = this.input.tapped("Space") || this.touch.jumpTap;
     if (jump && player.grounded) this.sound.play("jump", null, { local: true });
     player.update(dt, move, aim, { jump }, this.world);
@@ -1098,23 +1167,44 @@ class BlasterBattle {
       return;
     }
     const human = this.players[0];
-    const enemyDecoys = this.decoys.filter((decoy) => decoy.alive && decoy.owner !== bot);
-    const distractingDecoy = enemyDecoys
-      .filter((decoy) => bot.position.distanceToSquared(decoy.position) < 30 ** 2)
-      .sort((a, b) => bot.position.distanceToSquared(a.position) - bot.position.distanceToSquared(b.position))[0];
-    const target = distractingDecoy || (human?.alive && bot.position.distanceToSquared(human.position) < 28 ** 2
-      ? human
-      : nearestTarget(bot, [...this.players, ...enemyDecoys]));
+    let distractingDecoy = null;
+    let distractingDistance = 30 ** 2;
+    for (const decoy of this.decoys) {
+      if (!decoy.alive || decoy.owner === bot) continue;
+      const distanceSq = bot.position.distanceToSquared(decoy.position);
+      if (distanceSq < distractingDistance) {
+        distractingDistance = distanceSq;
+        distractingDecoy = decoy;
+      }
+    }
+    let target = distractingDecoy;
+    if (!target && human?.alive && bot.position.distanceToSquared(human.position) < 28 ** 2) target = human;
+    if (!target) {
+      let closest = Infinity;
+      const playerCount = this.players.length;
+      const total = playerCount + this.decoys.length;
+      for (let index = 0; index < total; index++) {
+        const candidate = index < playerCount ? this.players[index] : this.decoys[index - playerCount];
+        if (candidate === bot || !candidate.alive || candidate.owner === bot) continue;
+        const distanceSq = bot.position.distanceToSquared(candidate.position);
+        if (distanceSq < closest) {
+          closest = distanceSq;
+          target = candidate;
+        }
+      }
+    }
     if (!target) {
       this.sound.updateWeaponLoop(bot.id, bot.weapon, false);
       this.sound.stopChargeLoop(bot.id);
       return;
     }
-    const origin = bot.position.clone().add(new THREE.Vector3(0, 1.25, 0));
-    const targetPoint = target.position.clone().add(new THREE.Vector3(0, 1.05, 0));
-    const aimOffset = targetPoint.sub(origin);
+    const origin = bot.botOrigin.copy(bot.position);
+    origin.y += 1.25;
+    const targetPoint = bot.botTarget.copy(target.position);
+    targetPoint.y += 1.05;
+    const aimOffset = bot.botAimOffset.copy(targetPoint).sub(origin);
     const distance = aimOffset.length();
-    const visible = !this.world.ropeBlocked(origin, origin.clone().add(aimOffset));
+    const visible = !this.world.ropeBlocked(origin, targetPoint);
     bot.botThink -= dt;
     if (bot.botThink <= 0) {
       bot.botThink = this.botDifficulty === "veteran" ? .25 : this.botDifficulty === "rookie" ? .75 : .48;
@@ -1123,15 +1213,16 @@ class BlasterBattle {
       bot.switchSlot(chooseBotSlot(bot.loadout, distance));
       if (bot.slotIndex !== previousSlot) this.sound.play("equip", bot.weapon, this.audioSpatial(bot.position, false, .28, bot.id));
     }
-    const forward = aimOffset.lengthSq() ? aimOffset.clone().normalize() : new THREE.Vector3();
-    const moveForward = forward.clone().setY(0).normalize();
-    const side = new THREE.Vector3(-moveForward.z, 0, moveForward.x).multiplyScalar(bot.botDodge);
+    const forward = bot.botForward.copy(aimOffset);
+    if (forward.lengthSq()) forward.normalize();
+    const moveForward = bot.botMoveForward.copy(forward).setY(0);
+    if (moveForward.lengthSq()) moveForward.normalize();
+    const move = bot.botMove.set(-moveForward.z, 0, moveForward.x).multiplyScalar(bot.botDodge * .62);
     const preferred = botWeaponPolicy(bot.weapon).preferred;
-    const move = side.multiplyScalar(.62);
     if (distance > preferred + 3) move.add(moveForward);
     if (distance < preferred - 3) move.addScaledVector(moveForward, -1);
     if (bot.grounded && move.lengthSq() > .01) {
-      const probe = bot.position.clone().addScaledVector(move.clone().normalize(), 2.8);
+      const probe = bot.botProbe.copy(bot.position).addScaledVector(move, 2.8 / Math.sqrt(move.lengthSq()));
       if (this.world.surfaceHeightAt(probe, bot.position.y + 2) < bot.position.y - 1.5) move.multiplyScalar(-.75);
     }
     bot.update(dt, move, forward, { jump: Math.random() < dt * .45 }, this.world);
@@ -1147,16 +1238,20 @@ class BlasterBattle {
         wallNearby, ammo: bot.ammo[bot.weapon.id]
       });
       if (wantsFire) {
-        const placement = bot.position.clone().addScaledVector(moveForward, 4.5);
+        const placement = bot.botProbe.copy(bot.position).addScaledVector(moveForward, 4.5);
         placement.y = this.world.surfaceHeightAt(placement, bot.position.y + 2) + .55;
         bot.aim.copy(placement.sub(origin).normalize());
       }
     }
     if (bot.weapon.type === "remote") {
-      const armedCharges = this.projectiles.filter((shot) => shot.owner === bot && shot.weapon.id === bot.weapon.id && shot.stuck);
+      const armedChargeDistances = bot.botChargeDistances;
+      armedChargeDistances.length = 0;
+      for (const shot of this.projectiles) {
+        if (shot.owner === bot && shot.weapon.id === bot.weapon.id && shot.stuck) armedChargeDistances.push(shot.mesh.position.distanceTo(target.position));
+      }
       const action = botRemoteChargeAction(bot.weapon, {
         targetDistance: distance, visible,
-        armedChargeDistances: armedCharges.map((shot) => shot.mesh.position.distanceTo(target.position)),
+        armedChargeDistances,
         ammo: bot.ammo[bot.weapon.id], maxCharges: bot.weapon.maxCharges
       });
       if (action === "detonate") this.tryFire(bot, true);
@@ -1178,9 +1273,9 @@ class BlasterBattle {
     this.sound.updateWeaponLoop(bot.id, bot.weapon, bot.weapon.maintained && bot.attackTimer > 0, this.audioSpatial(bot.position, false, distanceScale, bot.id));
   }
 
-  mouseAim() {
+  mouseAim(target = new THREE.Vector3()) {
     const horizontal = Math.cos(this.cameraPitch);
-    return new THREE.Vector3(
+    return target.set(
       Math.sin(this.cameraYaw) * horizontal,
       Math.sin(this.cameraPitch),
       Math.cos(this.cameraYaw) * horizontal
@@ -1387,6 +1482,8 @@ class BlasterBattle {
       mesh, owner: player, weapon, velocity, radius,
       life: projectileLifetime(weapon),
       age: 0, bounces: 0, hitTargets: new Set(),
+      previousPosition: new THREE.Vector3(),
+      scratchPosition: new THREE.Vector3(),
       sourceSlot: player.slotIndex,
       firedDirection: direction.clone(),
       remainingPenetration: weapon.penetration || 0,
@@ -1560,18 +1657,18 @@ class BlasterBattle {
     this.scene.add(mesh);
     this.projectiles.push({
       mesh, owner: player, weapon, velocity: new THREE.Vector3(), radius: .35,
-      life: projectileLifetime(weapon), age: 0, mine: true
+      life: projectileLifetime(weapon), age: 0, mine: true,
+      previousPosition: new THREE.Vector3(), scratchPosition: new THREE.Vector3()
     });
     this.sound.play("arm", weapon, this.audioSpatial(placement, player === this.players[0], .8, player.id));
   }
 
   updateProjectiles(dt) {
     const listener = this.players[0];
-    const audibleProjectiles = new Set(this.projectiles
-      .filter((shot) => !shot.mine && !shot.stuck && (shot.weapon.type === "rocket" || shot.weapon.type === "grenade" || shot.weapon.returning || ["fireball", "drill"].includes(shot.weapon.presentationPayload)))
-      .sort((a, b) => a.mesh.position.distanceToSquared(listener.position) - b.mesh.position.distanceToSquared(listener.position))
-      .slice(0, 6)
-      .map((shot) => shot.audioId));
+    const audibleProjectiles = selectNearestAudio(
+      this.projectiles, listener.position, 6, projectileNeedsLoop,
+      this.nearestAudioDistances, this.nearestAudioIds, this.audibleProjectileIds
+    );
     for (let index = this.projectiles.length - 1; index >= 0; index--) {
       const shot = this.projectiles[index];
       this.sound.updateProjectileLoop(shot.audioId, shot.weapon, audibleProjectiles.has(shot.audioId), {
@@ -1588,11 +1685,12 @@ class BlasterBattle {
 
       if (shot.mine) {
         shot.mesh.rotation.y += dt * 2;
-        const target = [...this.players, ...this.decoys].find((player) => player !== shot.owner && player.owner !== shot.owner && player.alive && player.position.distanceTo(shot.mesh.position) < 3.1);
+        const target = this.findProjectileTarget(shot, true);
         if (target && shot.age > .45) shot.life = 0;
       } else if (!shot.stuck) {
         if (shot.weapon.returning && shot.age >= shot.weapon.returning) {
-          const home = shot.owner.position.clone().add(new THREE.Vector3(0, 1.2, 0));
+          const home = shot.scratchPosition.copy(shot.owner.position);
+          home.y += 1.2;
           if (shot.mesh.position.distanceTo(home) < 1.1) {
             this.removeProjectile(index);
             continue;
@@ -1603,13 +1701,11 @@ class BlasterBattle {
         const steps = projectileStepCount(shot.velocity.length(), dt, shot.radius);
         let removed = false;
         for (let step = 0; step < steps; step++) {
-          const previous = shot.mesh.position.clone();
+          const previous = shot.previousPosition.copy(shot.mesh.position);
           shot.mesh.position.addScaledVector(shot.velocity, dt / steps);
           if (shot.weapon.returning) shot.mesh.rotation.y += dt * 18 / steps;
           const worldHit = this.world.projectileHit(shot.mesh.position, shot.radius);
-          const target = !worldHit && [...this.players, ...this.decoys].find((player) =>
-            player !== shot.owner && player.alive && !shot.hitTargets.has(player.id) && projectileTouchesPlayer(player, shot.mesh.position, shot.radius)
-          );
+          const target = !worldHit && this.findProjectileTarget(shot);
           if (target) {
             if (shot.weapon.type === "wall") {
               const placement = previous.clone().addScaledVector(shot.velocity.clone().normalize(), -2);
@@ -1621,7 +1717,8 @@ class BlasterBattle {
               this.sound.play("construct", shot.weapon, this.audioSpatial(previous, false, .75, shot.owner.id));
               this.removeProjectile(index);
             } else if (shot.weapon.sticky || shot.remote) {
-              shot.mesh.position.copy(target.position).add(new THREE.Vector3(0, 1.05, 0));
+              shot.mesh.position.copy(target.position);
+              shot.mesh.position.y += 1.05;
               shot.velocity.set(0, 0, 0);
               shot.stuck = true;
               shot.attachedTarget = target;
@@ -1684,13 +1781,25 @@ class BlasterBattle {
         }
         if (removed) continue;
       } else if (shot.attachedTarget?.alive) {
-        shot.mesh.position.copy(shot.attachedTarget.position).add(new THREE.Vector3(0, 1.05, 0));
+        shot.mesh.position.copy(shot.attachedTarget.position);
+        shot.mesh.position.y += 1.05;
       }
       this.combatVisuals?.updateProjectile(shot, dt);
       if (shot.life <= 0) {
         this.finishProjectile(index, shot);
       }
     }
+  }
+
+  findProjectileTarget(shot, mine = false) {
+    const playerCount = this.players.length;
+    const total = playerCount + this.decoys.length;
+    for (let index = 0; index < total; index++) {
+      const target = index < playerCount ? this.players[index] : this.decoys[index - playerCount];
+      if (target === shot.owner || !target.alive || (mine && target.owner === shot.owner) || (!mine && shot.hitTargets.has(target.id))) continue;
+      if (mine ? target.position.distanceToSquared(shot.mesh.position) < 3.1 ** 2 : projectileTouchesPlayer(target, shot.mesh.position, shot.radius)) return target;
+    }
+    return null;
   }
 
   bounceProjectile(shot, previous) {
@@ -1884,7 +1993,10 @@ class BlasterBattle {
     const velocity = projectileVelocity.clone().setY(0);
     if (velocity.lengthSq()) velocity.normalize().multiplyScalar(weapon.hazardSpeed || 0);
     const audioId = `hazard-${owner.id}-${weapon.id}-${performance.now().toString(36)}`;
-    this.hazards.push({ audioId, mesh, owner, weapon, radius: hazardRadius, life: weapon.hazardDuration, tick: 0, velocity, elapsed: 0, instances, fadeMaterials });
+    this.hazards.push({
+      audioId, mesh, owner, weapon, radius: hazardRadius, life: weapon.hazardDuration, tick: 0, velocity, elapsed: 0, instances, fadeMaterials,
+      previousPosition: new THREE.Vector3(), nextPosition: new THREE.Vector3(), probePosition: new THREE.Vector3()
+    });
     this.sound.play("hazardSpawn", weapon, this.audioSpatial(mesh.position, false, .9, audioId));
   }
 
@@ -1899,12 +2011,14 @@ class BlasterBattle {
       for (const entry of hazard.fadeMaterials || []) entry.material.opacity = entry.baseOpacity * proximityFade;
       hazard.mesh.rotation.y += dt * (hazard.weapon.hazard === "tornado" ? 2.6 : hazard.weapon.hazard === "black_hole" ? -1.4 : .4);
       if (hazard.weapon.hazard === "tornado" && hazard.velocity.lengthSq()) {
-        const previous = hazard.mesh.position.clone();
-        const next = previous.clone().addScaledVector(hazard.velocity, dt);
+        const previous = hazard.previousPosition.copy(hazard.mesh.position);
+        const next = hazard.nextPosition.copy(previous).addScaledVector(hazard.velocity, dt);
         if (this.world.projectileHit(next, .8)) {
-          const probeX = previous.clone().add(new THREE.Vector3(hazard.velocity.x * dt, 0, 0));
-          const probeZ = previous.clone().add(new THREE.Vector3(0, 0, hazard.velocity.z * dt));
+          const probeX = hazard.probePosition.copy(previous);
+          probeX.x += hazard.velocity.x * dt;
           if (this.world.projectileHit(probeX, .8)) hazard.velocity.x *= -1;
+          const probeZ = hazard.probePosition.copy(previous);
+          probeZ.z += hazard.velocity.z * dt;
           if (this.world.projectileHit(probeZ, .8)) hazard.velocity.z *= -1;
         } else hazard.mesh.position.copy(next);
       }
@@ -1929,14 +2043,15 @@ class BlasterBattle {
         hazard.tick = .22;
         for (const player of this.players) {
           if (!player.alive) continue;
-          const targetPoint = player.position.clone().add(new THREE.Vector3(0, 1.05, 0));
-          const offset = targetPoint.clone().sub(hazard.mesh.position);
+          const targetPoint = this.hazardTarget.copy(player.position);
+          targetPoint.y += 1.05;
+          const offset = this.hazardOffset.copy(targetPoint).sub(hazard.mesh.position);
           const distance = offset.length();
           if (distance > hazard.radius) continue;
           if (this.world.effectBlocked(hazard.mesh.position, targetPoint)) continue;
           const factor = 1 - distance / hazard.radius;
           let damage = 0;
-          const push = new THREE.Vector3();
+          const push = this.hazardPush.set(0, 0, 0);
           if (hazard.weapon.hazard === "napalm") {
             damage = 4 * (.35 + factor * .65);
             push.set(0, 1.2, 0);
@@ -2130,41 +2245,48 @@ class BlasterBattle {
             : player.landTimer > 0 ? "landing"
               : !player.grounded ? "airborne"
                 : player.controlMove.lengthSq() > .01 ? "running" : "idle";
-    this.hud.root.dataset.playerState = actionState;
-    this.hud.health.style.width = `${player.health}%`;
-    this.hud.score.textContent = this.scores[0];
-    this.hud.boardScore.forEach((node, index) => { node.textContent = this.scores[index]; });
-    const leaderIndex = this.scores.indexOf(Math.max(...this.scores));
-    this.hud.leaderName.textContent = this.players[leaderIndex].name;
-    this.hud.leaderScore.textContent = this.scores[leaderIndex];
+    if (this.hud.root.dataset.playerState !== actionState) this.hud.root.dataset.playerState = actionState;
+    setStyle(this.hud.health, "width", `${player.health}%`);
+    setText(this.hud.score, this.scores[0]);
+    let leaderIndex = 0;
+    for (let index = 0; index < this.scores.length; index++) {
+      setText(this.hud.boardScore[index], this.scores[index]);
+      if (this.scores[index] > this.scores[leaderIndex]) leaderIndex = index;
+    }
+    setText(this.hud.leaderName, this.players[leaderIndex].name);
+    setText(this.hud.leaderScore, this.scores[leaderIndex]);
     const minutes = Math.floor(this.matchTime / 60).toString().padStart(2, "0");
     const seconds = Math.floor(this.matchTime % 60).toString().padStart(2, "0");
-    this.hud.time.textContent = `${minutes}:${seconds}`;
-    this.hud.grapple.textContent = this.awaitingAudioGesture ? "CLICK / TAP TO START MATCH"
-      : player.grapple ? "GRAPPLE PULLING · RELEASE TO SLINGSHOT" : "GRAPPLE READY · E / RIGHT CLICK";
+    setText(this.hud.time, `${minutes}:${seconds}`);
+    setText(this.hud.grapple, this.awaitingAudioGesture ? "CLICK / TAP TO START MATCH"
+      : player.grapple ? "GRAPPLE PULLING · RELEASE TO SLINGSHOT" : "GRAPPLE READY · E / RIGHT CLICK");
     this.hud.slots.forEach((slot, index) => {
       const weapon = WEAPONS[player.loadout[index]];
       slot.classList.toggle("selected", index === player.slotIndex);
-      slot.dataset.category = weapon.category.toLowerCase().replaceAll(" ", "-");
-      slot.style.setProperty("--weapon", `#${weapon.color.toString(16).padStart(6, "0")}`);
-      this.hud.slotNames[index].textContent = weapon.name;
+      const category = WEAPON_CATEGORY_SLUG_BY_ID[weapon.id];
+      if (slot.dataset.category !== category) slot.dataset.category = category;
+      setStyle(slot, "--weapon", WEAPON_CSS_COLOR_BY_ID[weapon.id]);
+      setText(this.hud.slotNames[index], weapon.name);
     });
+    this.armedCounts.clear();
+    for (const shot of this.projectiles) {
+      if (shot.owner !== player || !shot.stuck || shot.weapon.type !== "remote") continue;
+      this.armedCounts.set(shot.weapon.id, (this.armedCounts.get(shot.weapon.id) || 0) + 1);
+    }
     this.hud.ammo.forEach((node, index) => {
       const weapon = WEAPONS[player.loadout[index]];
       const isReloading = player.reloadTimer > 0 && player.reloadWeaponId === weapon.id;
       const charge = player.chargingWeaponId === weapon.id && weapon.chargeTime
         ? `CHARGE ${Math.round(100 * Math.min(1, player.chargeTimer / weapon.chargeTime))}%`
         : null;
-      const armed = weapon.type === "remote"
-        ? this.projectiles.filter((shot) => shot.owner === player && shot.weapon.id === weapon.id && shot.stuck).length
-        : 0;
-      node.textContent = isReloading ? "RELOAD" : charge || `${player.ammo[weapon.id]}/${weapon.ammo}${armed ? ` · ${armed} ARMED` : ""}`;
+      const armed = weapon.type === "remote" ? this.armedCounts.get(weapon.id) || 0 : 0;
+      setText(node, isReloading ? "RELOAD" : charge || `${player.ammo[weapon.id]}/${weapon.ammo}${armed ? ` · ${armed} ARMED` : ""}`);
     });
     this.hud.scoreboard.classList.toggle("visible", this.input.down("Tab"));
     const motion = this.settings.reducedMotion ? 0 : clamp((player.velocity.length() - 14) / 30, 0, 1);
     const grappleBlur = player.grapple && this.graphics.level !== "low" ? motion * (this.graphics.level === "high" ? 3.2 : 1.7) : 0;
-    this.hud.motionVignette.style.setProperty("--motion", motion.toFixed(3));
-    this.hud.motionVignette.style.setProperty("--environment-blur", `${grappleBlur.toFixed(2)}px`);
+    setStyle(this.hud.motionVignette, "--motion", motion.toFixed(3));
+    setStyle(this.hud.motionVignette, "--environment-blur", `${grappleBlur.toFixed(2)}px`);
     this.hud.motionVignette.classList.toggle("grappling", Boolean(player.grapple));
   }
 
@@ -2228,43 +2350,64 @@ class BlasterBattle {
     const cameraBlend = 1 - Math.exp(-11 * dt);
     const focusBlend = 1 - Math.exp(-15 * dt);
     const player = this.players[0];
+    const scratch = this.cameraScratch;
     if (!player) {
       this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, 62, cameraBlend);
       this.camera.updateProjectionMatrix();
-      this.camera.position.lerp(new THREE.Vector3(0, 22, 29), cameraBlend);
+      this.camera.position.lerp(scratch.menuPosition, cameraBlend);
       this.camera.lookAt(0, 0, 0);
       return;
     }
-    const forward = this.mouseAim();
-    const flatForward = forward.clone().setY(0).normalize();
-    const right = new THREE.Vector3(flatForward.z, 0, -flatForward.x);
-    const pivot = player.position.clone().add(new THREE.Vector3(0, 1.65, 0));
-    const desired = pivot.clone()
+    const forward = this.mouseAim(scratch.forward);
+    const flatForward = scratch.flatForward.copy(forward).setY(0).normalize();
+    const right = scratch.right.set(flatForward.z, 0, -flatForward.x);
+    const pivot = scratch.pivot.copy(player.position);
+    pivot.y += 1.65;
+    const desired = scratch.desired.copy(pivot)
       .addScaledVector(flatForward, -8.25)
-      .addScaledVector(right, 1.05)
-      .add(new THREE.Vector3(0, 2.8 - this.cameraPitch * 1.8, 0));
+      .addScaledVector(right, 1.05);
+    desired.y += 2.8 - this.cameraPitch * 1.8;
     const speed = player.velocity.length();
     const targetFov = 62 + Math.min(11, Math.max(0, speed - 8) * .34) + (player.grapple ? 2.5 : 0);
     this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, cameraBlend);
     this.camera.updateProjectionMatrix();
-    let cameraTarget = this.world.constrainCamera(pivot, desired);
-    if (cameraTarget.distanceTo(pivot) < 5.5) {
-      const offset = desired.clone().sub(pivot);
-      const alternatives = [-2.35, -1.57, -.78, .78, 1.57, 2.35, Math.PI].map((angle) =>
-        this.world.constrainCamera(pivot, pivot.clone().add(offset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), angle)))
-      );
-      alternatives.push(
-        this.world.constrainCamera(pivot, desired.clone().add(new THREE.Vector3(0, 5.2, 0))),
-        this.world.constrainCamera(pivot, desired.clone().add(new THREE.Vector3(0, -3.2, 0)))
-      );
-      for (const candidate of alternatives) if (candidate.distanceTo(pivot) > cameraTarget.distanceTo(pivot)) cameraTarget = candidate;
+    const cameraTarget = this.world.constrainCamera(pivot, desired, .45, scratch.target);
+    let bestDistanceSq = cameraTarget.distanceToSquared(pivot);
+    if (bestDistanceSq < 5.5 ** 2) {
+      const offset = scratch.offset.copy(desired).sub(pivot);
+      for (const angle of CAMERA_ALTERNATIVE_ANGLES) {
+        const alternative = scratch.candidateDesired.copy(offset).applyAxisAngle(CAMERA_UP, angle).add(pivot);
+        const candidate = this.world.constrainCamera(pivot, alternative, .45, scratch.candidate);
+        const distanceSq = candidate.distanceToSquared(pivot);
+        if (distanceSq > bestDistanceSq) {
+          cameraTarget.copy(candidate);
+          bestDistanceSq = distanceSq;
+        }
+      }
+      for (const height of CAMERA_ALTERNATIVE_HEIGHTS) {
+        const alternative = scratch.candidateDesired.copy(desired);
+        alternative.y += height;
+        const candidate = this.world.constrainCamera(pivot, alternative, .45, scratch.candidate);
+        const distanceSq = candidate.distanceToSquared(pivot);
+        if (distanceSq > bestDistanceSq) {
+          cameraTarget.copy(candidate);
+          bestDistanceSq = distanceSq;
+        }
+      }
     }
     this.camera.position.lerp(cameraTarget, cameraBlend);
-    this.camera.position.copy(this.world.constrainCamera(pivot, this.camera.position));
-    if (this.camera.position.distanceTo(pivot) < 3.2 && cameraTarget.distanceTo(pivot) > 4) this.camera.position.copy(cameraTarget);
-    this.cameraClearance = { actual: this.camera.position.distanceTo(pivot), target: cameraTarget.distanceTo(pivot) };
-    const motionLead = player.velocity.clone().setY(0).multiplyScalar(.08);
-    const focus = pivot.addScaledVector(forward, 28).add(motionLead);
+    this.world.constrainCamera(pivot, this.camera.position, .45, scratch.constrained);
+    this.camera.position.copy(scratch.constrained);
+    let actualDistance = this.camera.position.distanceTo(pivot);
+    const targetDistance = Math.sqrt(bestDistanceSq);
+    if (actualDistance < 3.2 && targetDistance > 4) {
+      this.camera.position.copy(cameraTarget);
+      actualDistance = targetDistance;
+    }
+    this.cameraClearance.actual = actualDistance;
+    this.cameraClearance.target = targetDistance;
+    const motionLead = scratch.motionLead.copy(player.velocity).setY(0).multiplyScalar(.08);
+    const focus = scratch.focus.copy(pivot).addScaledVector(forward, 28).add(motionLead);
     if (this.cameraFocus.lengthSq() === 0) this.cameraFocus.copy(focus);
     else this.cameraFocus.lerp(focus, focusBlend);
     this.camera.lookAt(this.cameraFocus);
@@ -2297,7 +2440,7 @@ class BlasterBattle {
     if (!object) return;
     this.scene.remove(object);
     object.traverse?.((child) => {
-      child.geometry?.dispose?.();
+      if (!child.geometry?.userData?.sharedProjectile) child.geometry?.dispose?.();
       if (Array.isArray(child.material)) child.material.forEach((entry) => entry.dispose?.());
       else child.material?.dispose?.();
     });
