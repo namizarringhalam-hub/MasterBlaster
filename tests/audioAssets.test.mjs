@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { analyzeAudioAsset, createProceduralAudioAssets } from "../src/audioAssets.js";
+import { analyzeAudioAsset, createProceduralAudioAssets, createWeaponAudioAssets } from "../src/audioAssets.js";
+import { WEAPON_AUDIO_IDENTITIES } from "../src/audio.js";
+import { WEAPONS } from "../src/gameData.js";
 
 const assets = createProceduralAudioAssets(48000);
 const duplicate = createProceduralAudioAssets(48000);
@@ -43,4 +45,42 @@ for (const name of ["energy", "mechanical", "heavyUi", "chargeLoop", "weaponLoop
   assert.ok(periodicity(assets[name]) < .72, `${name} is textured foley rather than a sustained periodic beep`);
 }
 
-console.log("Rendered procedural sample-bank dynamics, headroom, and timbral separation checks passed.");
+const weaponAssets = createWeaponAudioAssets(16000, Object.values(WEAPONS), WEAPON_AUDIO_IDENTITIES);
+const weaponAssetsAgain = createWeaponAudioAssets(16000, Object.values(WEAPONS), WEAPON_AUDIO_IDENTITIES);
+const fireFingerprints = [];
+for (const weapon of Object.values(WEAPONS)) {
+  for (const kind of ["Fire", "Impact", "Operate"]) {
+    const key = `weapon${kind}:${weapon.id}`;
+    const data = weaponAssets[key], metrics = analyzeAudioAsset(data);
+    assert.ok(data instanceof Float32Array && data.length >= 2400, `${weapon.name} owns a substantive ${kind.toLowerCase()} composite`);
+    assert.deepEqual(data, weaponAssetsAgain[key], `${weapon.name} ${kind.toLowerCase()} is deterministic`);
+    assert.ok(metrics.peak >= .75 && metrics.peak <= .95 && metrics.rms > .055, `${weapon.name} ${kind.toLowerCase()} has calibrated audible weight and headroom`);
+    assert.ok(periodicity(data) < .8, `${weapon.name} ${kind.toLowerCase()} is textured rather than a clean beep`);
+  }
+  const fire = weaponAssets[`weaponFire:${weapon.id}`], metrics = analyzeAudioAsset(fire);
+  const envelope = Array.from({ length: 8 }, (_, segment) => {
+    const from = Math.floor(segment * fire.length / 8), to = Math.floor((segment + 1) * fire.length / 8);
+    let energy = 0;
+    for (let index = from; index < to; index++) energy += fire[index] ** 2;
+    return Math.sqrt(energy / Math.max(1, to - from));
+  });
+  fireFingerprints.push({ id: weapon.id, values: [fire.length / 16000, metrics.rms, metrics.crest / 8, metrics.motion * 10, metrics.crossings / fire.length, ...envelope] });
+  if (weapon.maintained) assert.ok(weaponAssets[`weaponLoop:${weapon.id}`], `${weapon.name} owns a dedicated maintained-operation loop`);
+  if (weapon.chargeTime) assert.ok(weaponAssets[`weaponCharge:${weapon.id}`], `${weapon.name} owns a dedicated charge loop`);
+  if (weapon.projectileSpeed > 0 && !weapon.hitscan) assert.ok(weaponAssets[`weaponFlight:${weapon.id}`], `${weapon.name} owns a dedicated projectile-flight loop`);
+  if (weapon.hazard) assert.ok(weaponAssets[`weaponHazard:${weapon.id}`], `${weapon.name} owns a dedicated hazard loop`);
+}
+for (const [key, data] of Object.entries(weaponAssets).filter(([key]) => /weapon(?:Loop|Charge|Flight|Hazard):/.test(key))) {
+  const rms = analyzeAudioAsset(data).rms;
+  const seam = Math.abs(data[0] - data[data.length - 1]) / Math.max(.000001, rms);
+  const slope = Math.abs((data[1] - data[0]) - (data[data.length - 1] - data[data.length - 2])) / Math.max(.000001, rms);
+  assert.ok(seam < .01 && slope < .04, `${key} has a click-free amplitude and slope boundary`);
+}
+for (let left = 0; left < fireFingerprints.length; left++) for (let right = left + 1; right < fireFingerprints.length; right++) {
+  const distance = Math.sqrt(fireFingerprints[left].values.reduce((sum, value, index) => sum + (value - fireFingerprints[right].values[index]) ** 2, 0));
+  assert.ok(distance > .025, `${fireFingerprints[left].id} and ${fireFingerprints[right].id} retain measurably different duration, spectrum, dynamics, and temporal envelopes`);
+}
+const maintained = ["minigun", "flamethrower", "gravity_beam", "chainsaw"].map((id) => weaponAssets[`weaponLoop:${id}`]);
+assert.equal(new Set(maintained).size, 4, "minigun, flamethrower, gravity beam, and chainsaw never share a maintained texture");
+
+console.log("Rendered sample-bank dynamics and all 47 per-weapon composite identity checks passed.");

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { AUDIO_EVENTS, SoundBoard, spatialMix, weaponAudioProfile, WEAPON_AUDIO_IDENTITIES } from "../src/audio.js";
+import { AUDIO_EVENTS, MUSIC_PROGRAM_GAIN, SoundBoard, spatialMix, weaponAudioProfile, WEAPON_AUDIO_IDENTITIES } from "../src/audio.js";
 import { WEAPONS } from "../src/gameData.js";
 import { MUSIC_SAMPLE_MANIFEST } from "../src/musicScore.js";
 
@@ -27,6 +27,8 @@ const context = {
 assert.deepEqual(Object.keys(WEAPON_AUDIO_IDENTITIES).sort(), Object.keys(WEAPONS).sort(), "all 47 weapons have an explicit audio identity");
 assert.equal(new Set(Object.values(WEAPON_AUDIO_IDENTITIES).map(([identity]) => identity)).size, 47, "every weapon audio identity is unique");
 assert.equal(new Set(Object.values(WEAPONS).map((weapon) => JSON.stringify(weaponAudioProfile(weapon)))).size, 47, "every explicit identity resolves to a unique rendered-sample profile");
+const loudestMusicTrim = Math.max(...Object.values(MUSIC_SAMPLE_MANIFEST).flatMap((role) => role.files.map((file) => file.trim || 1)));
+assert.ok(MUSIC_PROGRAM_GAIN >= 4 && .11 * loudestMusicTrim * MUSIC_PROGRAM_GAIN < .9, "the orchestral program is present at gameplay level while retaining pre-bus transient headroom");
 for (const event of ["uiHover", "weaponSelect", "jump", "land", "reload", "empty", "grappleFire", "grappleAttach", "grappleRelease", "hitConfirm", "elimination", "damage", "death", "respawn", "bounce", "stick", "split", "hazardSpawn", "hazardEnd"]) {
   assert.ok(AUDIO_EVENTS.includes(event), `${event} is part of the authored event catalog`);
 }
@@ -42,6 +44,10 @@ sound.context = context;
 sound.master = audioNode();
 const renderedBuffer = { duration: .8 };
 for (const name of ["impact", "explosion", "ballistic", "energy", "mechanical", "heavyUi", "whoosh", "iceCrack", "cableSnap", "flame", "footstep", "transition", "chargeLoop", "weaponLoop", "grappleLoop", "hazardLoop", "projectileLoop", "ambienceFoundry", "ambienceIon", "ambienceSolar"]) sound.sampleBank[name] = renderedBuffer;
+for (const weapon of Object.values(WEAPONS)) {
+  const profile = weaponAudioProfile(weapon);
+  for (const key of [profile.fireSample, profile.impactSample, profile.operationSample, profile.loopSample, profile.chargeSample, profile.flightSample, profile.hazardSample]) sound.sampleBank[key] = renderedBuffer;
+}
 for (const [name, asset] of Object.entries(MUSIC_SAMPLE_MANIFEST)) sound.musicSamples[name] = [{ buffer: renderedBuffer, rootMidi: asset.files[0]?.rootMidi ?? null, trim: 1 }];
 sound.setVolume(50);
 assert.ok(Math.abs(sound.master.gain.value - .13) < 1e-9, "50% volume follows a perceptual square curve");
@@ -116,6 +122,16 @@ for (let index = 0; index < 40; index++) musicReservePool.continuousSources.set(
 musicReservePool.play("elimination");
 assert.equal([...musicReservePool.activeVoices].filter((voice) => voice.group === "music").length, 8, "peak combat keeps an eight-voice musical foundation while critical cues preempt weaker remote loops");
 assert.ok([...musicReservePool.activeVoices].some((voice) => voice.priority === 100), "reserved music and critical tactical cues coexist at the hard voice ceiling");
+const musicAudibilityPool = new SoundBoard();
+musicAudibilityPool.context = { ...context, currentTime: 13.7 };
+musicAudibilityPool.master = audioNode();
+musicAudibilityPool.buses.music = audioNode();
+musicAudibilityPool.musicSamples.celloTrem = [{ buffer: renderedBuffer, rootMidi: 38, trim: 1 }];
+for (let index = 0; index < 40; index++) musicAudibilityPool.continuousSources.set(audioNode(), { priority: 24, group: "remote" });
+for (let index = 0; index < 8; index++) musicAudibilityPool.activeVoices.add({ source: audioNode(), priority: 90, group: "tactical" });
+assert.equal(musicAudibilityPool.musicSample("celloTrem", .06, { priority: 34, midi: 38 }), true, "the score can reclaim one low-value remote loop instead of going silent in a saturated firefight");
+assert.equal(musicAudibilityPool.continuousSources.size, 39, "music audibility never evicts protected tactical cues when a weaker remote loop is available");
+assert.ok([...musicAudibilityPool.activeVoices].some((voice) => voice.group === "music"), "a recorded musical voice survives the worst supported battle load");
 const turnoverPool = new SoundBoard();
 turnoverPool.context = { ...context, currentTime: 14 };
 for (let index = 0; index < 40; index++) turnoverPool.fadingSources.set(audioNode(), { priority: 4 });
@@ -128,8 +144,8 @@ textureSound.master = audioNode();
 for (const name of ["flame", "weaponLoop", "projectileLoop"]) textureSound.sampleBank[name] = renderedBuffer;
 textureSound.setListener({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 });
 assert.equal(textureSound.updateWeaponLoop("near-flame", WEAPONS.flamethrower, true, { position: { x: 2, y: 0, z: 3 }, volume: 1 }), true);
-assert.equal(textureSound.weaponLoops.get("near-flame").nodes.length, 2, "a nearby remote sustained weapon receives the same rendered texture layer as the local weapon");
-assert.equal(textureSound.continuousSources.size, 2, "the richer nearby loop remains accounted inside the sustained-source budget");
+assert.equal(textureSound.weaponLoops.get("near-flame").nodes.length, 1, "a maintained weapon uses one complete authored per-weapon loop instead of generic stacked textures");
+assert.equal(textureSound.continuousSources.size, 1, "the complete per-weapon loop remains accounted inside the sustained-source budget");
 textureSound.stopAll();
 
 sound.buses.music = audioNode();
@@ -187,6 +203,9 @@ gatedMusic.musicTimer = null;
 
 const failedLoad = new SoundBoard();
 failedLoad.context = { ...context, currentTime: 26 };
+failedLoad.musicLoadCycles = 3;
+failedLoad.pendingMusicStart = { scene: "menu", seed: "RETRY-MENU" };
+failedLoad.musicCountdown = { pending: true };
 const originalFetch = globalThis.fetch;
 const originalWarn = console.warn;
 let loadAttempts = 0;
@@ -197,8 +216,11 @@ globalThis.fetch = originalFetch;
 console.warn = originalWarn;
 const recordedFileCount = Object.values(MUSIC_SAMPLE_MANIFEST).reduce((total, asset) => total + asset.files.length, 0);
 assert.ok(loadAttempts >= recordedFileCount * 3, "each unavailable recorded file receives three load attempts");
-assert.equal(failedLoad.musicSamplesReady, true, "a failed network load releases the gameplay clock instead of hanging the match");
-assert.equal(Object.keys(failedLoad.musicSamples).length, 0, "a total recording failure stays silent instead of reintroducing synthetic music");
+assert.equal(failedLoad.musicSamplesReady, false, "zero decoded instruments is a fatal load state, never a false ready signal");
+assert.equal(failedLoad.musicLoadFailed, true, "the mixer exposes total recorded-bank failure for recovery");
+assert.equal(failedLoad.musicCountdown, null, "a failed bank releases gameplay to the frame-clock countdown instead of hanging the match");
+assert.deepEqual(failedLoad.pendingMusicStart, { scene: "menu", seed: "RETRY-MENU" }, "a transient failure retains the requested menu/results scene for a successful retry");
+assert.equal(Object.keys(failedLoad.musicSamples).length, 0, "a total recording failure never reintroduces synthetic music");
 
 musicContext.currentTime = 30;
 const pausedGate = musicSound.startCountdown("PAUSE-QA", .42);
@@ -272,14 +294,18 @@ assert.match(mainSource, /playImpact\(shot\.weapon, this\.audioSpatial\(position
 assert.ok((mainSource.match(/playImpact\([^\n]+"wall"\)/g) || []).length >= 4, "hitscan and projectile wall collisions request the authored wall-impact treatment");
 assert.match(mainSource, /combatMusicIntensity\(\{[\s\S]*?nearbyEnemies[\s\S]*?nearbyProjectiles[\s\S]*?nearbyHazards/, "real nearby combat telemetry drives adaptive music intensity");
 assert.match(mainSource, /startCountdown\(this\.seed, \.42\)/, "gameplay and the score share one authoritative audio-clock countdown");
+assert.match(mainSource, /resumeAudioAfterReload\(\)[\s\S]*?matchStartDelay > 0[\s\S]*?startCountdown\(this\.seed, \.42\)[\s\S]*?else this\.sound\.startMusic\("combat"/, "the first post-reload gesture restores the authored countdown before combat music instead of skipping the score");
+assert.match(mainSource, /update\(dt\) \{[\s\S]*?awaitingAudioGesture[\s\S]*?return;[\s\S]*?matchStartDelay > 0/, "a fresh match cannot consume its countdown before the browser receives an audio-unlocking gesture");
+assert.match(mainSource, /setMusicScene\("menu"\)[\s\S]*?sound\.context\) this\.sound\.startMusic\("menu"/, "returning to the menu restarts music if its scheduler was interrupted");
 assert.match(mainSource, /audibleHazards[\s\S]*?distanceToSquared[\s\S]*?slice\(0, 4\)/, "the four nearest hazards receive tactical loop priority");
 assert.match(mainSource, /button\.dataset\.weaponSlot != null \? WEAPONS\[this\.players\[0\]\?\.loadout/, "direct HUD and touch slot selection carries the selected weapon's handling identity");
-assert.match(mainSource, /setMusicScene\("results"/, "match results receive a dedicated musical resolution");
+assert.match(mainSource, /startMusic\(`results-\$\{humanWon \? "win" : "loss"\}`/, "match results explicitly start a dedicated musical resolution even if the scheduler was interrupted");
 const audioSource = fs.readFileSync(new URL("../src/audio.js", import.meta.url), "utf8");
 assert.doesNotMatch(audioSource, /createOscillator\(|this\.tone\(|this\.noise\(|\btone\s*\(/, "the runtime audio engine contains no live beep, tone, or oscillator source");
 assert.match(audioSource, /musicReverb\.connect\(this\.musicReverbGain\)\.connect\(this\.buses\.music\)/, "music reverb returns through the user-controlled music bus");
 assert.match(audioSource, /if \(step === 0\) \{[\s\S]*?musicBarIntensity = this\.musicIntensity[\s\S]*?tempoForIntensity\(this\.musicBarIntensity/, "intensity and tempo change together only on a stable bar boundary");
 assert.match(audioSource, /_loadMusicSamples\(\)[\s\S]*?decodeAudioData/, "the production mixer decodes the recorded music bank");
+assert.match(audioSource, /pendingMusicStart\?\.scene === "countdown"\) this\.pendingMusicStart = null[\s\S]*?musicCountdown = null/, "a failed recorded countdown releases to the frame-clock GO instead of starting combat early on retry");
 const musicScheduler = audioSource.slice(audioSource.indexOf("_scheduleMusicEvent(event"), audioSource.indexOf("duckMusic(", audioSource.indexOf("_scheduleMusicEvent(event")));
 assert.match(musicScheduler, /musicSample\(event\.sample/, "all score events travel through the recorded-sample player");
 assert.doesNotMatch(musicScheduler, /this\.tone\(|this\.noise\(/, "the musical scheduler contains no oscillator or noise-synth fallback");

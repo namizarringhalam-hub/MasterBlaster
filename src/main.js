@@ -146,6 +146,7 @@ class BlasterBattle {
     this.matchStartDelay = 0;
     this.countdownBeat = 0;
     this.audioCountdown = false;
+    this.awaitingAudioGesture = false;
     this.targetScore = 10;
     this.touch = {};
     this.performanceSample = this.freshPerformanceSample();
@@ -274,6 +275,7 @@ class BlasterBattle {
     this.clearMatch();
     this.sound.setPaused(false);
     this.sound.setMusicScene("menu");
+    if (this.sound.context) this.sound.startMusic("menu", this.seed);
     const checks = Object.entries(this.capabilities)
       .map(([name, ok]) => `<span class="${ok ? "ok" : "bad"}">${ok ? "●" : "×"} ${name.toUpperCase()}</span>`)
       .join("");
@@ -739,14 +741,20 @@ class BlasterBattle {
 
   resumeAudioAfterReload() {
     if (this.state !== "play") return false;
-    const needsMatchAudio = !this.sound.context;
     if (!this.sound.resume()) return false;
-    if (!needsMatchAudio) return true;
     this.sound.setVolume(this.settings.volume);
     this.sound.setMix({ music: this.settings.musicVolume, effects: this.settings.effectsVolume, ambience: this.settings.ambienceVolume });
     this.sound.startAmbience(this.world?.theme.id);
     this.sound.setMusicIntensity(.42);
-    this.sound.startMusic("combat", this.seed);
+    if (this.matchStartDelay > 0) {
+      const countdown = this.sound.startCountdown(this.seed, .42);
+      if (countdown) {
+        this.audioCountdown = true;
+        this.matchStartDelay = countdown.remaining;
+        this.countdownBeat = countdown.beatsRemaining;
+      }
+    } else this.sound.startMusic("combat", this.seed);
+    this.awaitingAudioGesture = false;
     return true;
   }
 
@@ -760,6 +768,7 @@ class BlasterBattle {
     this.matchStartDelay = 60 / 132 * 8;
     this.countdownBeat = 8;
     this.audioCountdown = false;
+    this.awaitingAudioGesture = !this.sound.context;
     this.performanceSample = this.freshPerformanceSample();
     this.combatMusicPulse = 0;
     const fighterCount = 1 + clampBotCount(this.settings.botCount);
@@ -989,6 +998,11 @@ class BlasterBattle {
   }
 
   update(dt) {
+    if (this.awaitingAudioGesture) {
+      this.updateAudio(dt);
+      this.updateHud();
+      return;
+    }
     if (this.matchStartDelay > 0 || this.audioCountdown) {
       const countdown = this.audioCountdown ? this.sound.getCountdownState() : null;
       if (countdown) {
@@ -2126,7 +2140,8 @@ class BlasterBattle {
     const minutes = Math.floor(this.matchTime / 60).toString().padStart(2, "0");
     const seconds = Math.floor(this.matchTime % 60).toString().padStart(2, "0");
     this.hud.time.textContent = `${minutes}:${seconds}`;
-    this.hud.grapple.textContent = player.grapple ? "GRAPPLE PULLING · RELEASE TO SLINGSHOT" : "GRAPPLE READY · E / RIGHT CLICK";
+    this.hud.grapple.textContent = this.awaitingAudioGesture ? "CLICK / TAP TO START MATCH"
+      : player.grapple ? "GRAPPLE PULLING · RELEASE TO SLINGSHOT" : "GRAPPLE READY · E / RIGHT CLICK";
     this.hud.slots.forEach((slot, index) => {
       const weapon = WEAPONS[player.loadout[index]];
       slot.classList.toggle("selected", index === player.slotIndex);
@@ -2203,7 +2218,7 @@ class BlasterBattle {
         </section>
       </div>`);
     const humanWon = winners.includes(0);
-    this.sound.setMusicScene("results", humanWon ? "win" : "loss");
+    this.sound.startMusic(`results-${humanWon ? "win" : "loss"}`, this.seed);
     this.sound.setMusicIntensity(humanWon ? .58 : .34);
     this.sound.play(humanWon ? "win" : "loss");
     this.bindUi();

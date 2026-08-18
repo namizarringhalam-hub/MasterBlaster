@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { SoundBoard } from "../src/audio.js";
+import { SoundBoard, weaponAudioProfile } from "../src/audio.js";
 import { WEAPONS } from "../src/gameData.js";
 
 const audioParam = (value = 0) => ({
@@ -25,6 +25,11 @@ const sound = new SoundBoard();
 sound.context = context;
 sound.master = audioNode();
 for (const name of ["chargeLoop", "weaponLoop", "flame", "projectileLoop"]) sound.sampleBank[name] = { duration: 1 };
+for (const id of ["minigun", "gravity_beam", "flamethrower", "chainsaw", "charged_energy_rifle"]) {
+  const profile = weaponAudioProfile(WEAPONS[id]);
+  sound.sampleBank[profile.loopSample] = { duration: 1, identity: `${id}-loop` };
+  sound.sampleBank[profile.chargeSample] = { duration: 1, identity: `${id}-charge` };
+}
 
 sound.updateWeaponLoop("fighter", WEAPONS.minigun, true);
 const minigunLoop = sound.weaponLoops.get("fighter");
@@ -33,6 +38,7 @@ const gravityLoop = sound.weaponLoops.get("fighter");
 assert.notEqual(gravityLoop, minigunLoop, "hot-switching maintained weapons creates a fresh sound identity");
 assert.equal(minigunLoop.source.stopped, true, "the previous maintained texture is stopped during a hot switch");
 assert.equal(gravityLoop.weaponId, "gravity_beam", "the replacement loop carries the new weapon profile");
+assert.notEqual(gravityLoop.source.buffer, minigunLoop.source.buffer, "maintained weapons play different authored buffers, not one shared loop at different rates");
 
 sound.updateChargeLoop("bot", WEAPONS.charged_energy_rifle, .8, .4);
 assert.equal(sound.chargeLoops.has("bot"), true, "a charging bot owns one bounded wind-up loop");

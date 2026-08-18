@@ -148,13 +148,24 @@ function cableSnap(sampleRate) {
   }, .82);
 }
 
+function loopSafe(data, sampleRate, fadeSeconds = .035) {
+  const fade = Math.min(Math.floor(data.length / 4), Math.max(8, Math.floor(sampleRate * fadeSeconds)));
+  for (let index = 0; index < fade; index++) {
+    const phase = index / Math.max(1, fade - 1);
+    const gain = Math.sin(phase * Math.PI / 2) ** 2;
+    data[index] *= gain;
+    data[data.length - 1 - index] *= gain;
+  }
+  return data;
+}
+
 function texture(sampleRate, seconds, seed, color = .03, grit = .35, peak = .72) {
-  return render(sampleRate, seconds, seed, (t, random, state) => {
+  return loopSafe(render(sampleRate, seconds, seed, (t, random, state) => {
     const white = random(); state.low += (white - state.low) * color;
     const broad = white - state.low;
     const movement = .72 + .18 * Math.sin(t * 3.7) + .1 * Math.sin(t * 11.3 + 1.2);
     return (state.low * (2.4 - grit) + broad * grit) * movement;
-  }, peak);
+  }, peak), sampleRate);
 }
 
 function flame(sampleRate) {
@@ -182,6 +193,188 @@ function transition(sampleRate) {
     const hit = t > 1.02 ? Math.sin(Math.PI * 2 * (84 - (t - 1.02) * 45) * (t - 1.02)) * Math.exp(-(t - 1.02) * 7) : 0;
     return air * rise * .52 + hit * .78;
   }, .9);
+}
+
+function hashText(value) {
+  let hash = 2166136261;
+  for (const character of String(value)) { hash ^= character.charCodeAt(0); hash = Math.imul(hash, 16777619); }
+  return hash >>> 0;
+}
+
+function weaponFamily(weapon = {}) {
+  if (weapon.type === "melee") return "melee";
+  if (weapon.type === "flame" || weapon.id === "fireball" || weapon.hazard === "napalm") return "fire";
+  if (weapon.hazard === "black_hole" || weapon.pull || weapon.id === "gravity_beam") return "gravity";
+  if (weapon.effect === "freeze") return "ice";
+  if (["rocket", "grenade", "mine", "remote"].includes(weapon.type)) return "launcher";
+  if (["rail", "beam", "chain", "plasma"].includes(weapon.type) || weapon.energy) return "energy";
+  if (["wall", "decoy"].includes(weapon.type) || ["teleport", "steal"].includes(weapon.effect)) return "utility";
+  return "ballistic";
+}
+
+function weaponSpec(weapon, identity = []) {
+  const hash = hashText(`${weapon.id}:${identity[0] || weapon.name}`);
+  const family = weaponFamily(weapon);
+  const unit = (shift) => ((hash >>> shift) & 255) / 255;
+  const durations = { ballistic: .16, launcher: .48, energy: .38, fire: .66, gravity: .72, ice: .43, utility: .4, melee: .36 };
+  return {
+    hash, family,
+    duration: durations[family] + unit(2) * (family === "ballistic" ? .13 : .22),
+    weight: clamp(.22 + (weapon.recoil || 1) / 10 + unit(10) * .24, .2, 1),
+    grit: clamp((identity[2] ?? .45) * .72 + unit(18) * .28, .08, 1),
+    tail: clamp((identity[3] ?? .45) * .75 + unit(24) * .25, .08, 1),
+    bodyHz: 38 + unit(6) * 118,
+    detailHz: 900 + unit(14) * 4300,
+    mechanismAt: .018 + (hash % 7) * .011,
+    secondAt: .07 + ((hash >>> 7) % 8) * .016
+  };
+}
+
+function transientAt(t, at, decay) {
+  return t >= at ? Math.exp(-(t - at) * decay) : 0;
+}
+
+function weaponFire(sampleRate, weapon, identity) {
+  const spec = weaponSpec(weapon, identity);
+  const seconds = weapon.id === "chainsaw" ? .54 : weapon.id === "flamethrower" ? .78 : spec.duration;
+  return render(sampleRate, seconds, spec.hash ^ 0x1f3d5b79, (t, random, state) => {
+    const white = random();
+    state.low += (white - state.low) * (.012 + spec.grit * .075);
+    state.slow = (state.slow || 0) + (white - (state.slow || 0)) * (.003 + spec.weight * .01);
+    const air = white - state.low;
+    const mid = state.low - state.slow;
+    const attack = curve(t, .0006 + (1 - spec.weight) * .0018, 9 + (1 - spec.tail) * 22);
+    const bodyFrequency = spec.bodyHz + 96 * Math.exp(-t * (12 + spec.weight * 12));
+    state.phase += Math.PI * 2 * bodyFrequency / sampleRate;
+    const body = Math.sin(state.phase) * curve(t, .001, 7 + (1 - spec.tail) * 9);
+    const mechanism = (air * .8 + mid * 1.7) * transientAt(t, spec.mechanismAt, 62 + spec.grit * 45);
+    const signature = (air * .65 + mid * 2.1) * transientAt(t, spec.secondAt, 34 + spec.grit * 35);
+
+    if (spec.family === "ballistic") {
+      const crack = air * Math.exp(-t * (42 + spec.grit * 35));
+      const receiver = mechanism + signature * (weapon.id === "burst_rifle" ? .9 : .42);
+      const mass = weapon.id === "shotgun" ? 1.2 : weapon.id === "needle_launcher" ? .22 : .55 + spec.weight * .3;
+      return crack * (.72 + spec.grit * .34) + body * mass + receiver * .42;
+    }
+    if (spec.family === "launcher") {
+      const backblast = (air * .38 + mid * 2.4) * curve(t, .002, 3.8 + (1 - spec.tail) * 5);
+      const tube = body * (.75 + spec.weight * .55);
+      const latch = mechanism * (weapon.type === "mine" || weapon.type === "remote" ? 1.1 : .28);
+      return tube + backblast + latch + signature * .32;
+    }
+    if (spec.family === "fire") {
+      const roar = state.slow * 5 + mid * 1.8 + air * .18;
+      const flutter = .72 + .18 * Math.sin(t * (47 + (spec.hash % 23))) + .1 * Math.sin(t * 113);
+      return roar * curve(t, .006, 3.3 + (1 - spec.tail) * 3) * flutter + body * .34 + mechanism * .16;
+    }
+    if (spec.family === "gravity") {
+      const collapse = (state.slow * 7 + mid * 1.5) * curve(t, .012, 2.4 + (1 - spec.tail) * 3.2);
+      const inward = air * Math.sin(Math.PI * Math.min(1, t / seconds)) ** 2;
+      return collapse + body * 1.05 + inward * .25 + signature * .2;
+    }
+    if (spec.family === "ice") {
+      const shards = air * (Math.sin(t * (181 + spec.hash % 91)) > .18 ? 1 : .08) * Math.exp(-t * (5 + spec.tail * 5));
+      return shards * .86 + mid * attack * .65 + body * .18 + mechanism * .3;
+    }
+    if (spec.family === "melee") {
+      const sweep = air * Math.sin(Math.PI * Math.min(1, t / seconds)) ** 1.45;
+      const strike = (mid * 2.2 + body) * transientAt(t, seconds * (.52 + ((spec.hash >>> 9) % 17) / 100), 18 + spec.weight * 20);
+      if (weapon.id === "chainsaw") return (mid * 2.6 + air * .42) * (.64 + .36 * Math.sin(t * 137) ** 2) * curve(t, .004, 2.4) + strike * .44;
+      if (weapon.id === "hammer") return sweep * .28 + strike * 1.45 + body * .74;
+      if (weapon.id === "knife" || weapon.id === "spear") return sweep * 1.12 + strike * .48 + mechanism * .34;
+      return sweep * .72 + strike * (.72 + spec.weight * .38) + mechanism * .28;
+    }
+    if (spec.family === "utility") {
+      const deploy = (mid * 2.5 + state.slow * 4) * curve(t, .004, 4.8);
+      return deploy * .7 + mechanism * .7 + signature * .48 + air * attack * .22 + body * .28;
+    }
+    const electrical = air * (Math.sin(t * (97 + spec.hash % 79)) > .42 ? 1 : .12) * Math.exp(-t * (6 + spec.grit * 7));
+    const surge = (mid * 2.8 + state.slow * 4.2) * curve(t, .002, 4.2 + (1 - spec.tail) * 5);
+    const railWeight = weapon.type === "rail" || weapon.type === "beam" ? 1.18 : .72;
+    return surge * railWeight + electrical * (.32 + spec.grit * .48) + body * (.38 + spec.weight * .55) + signature * .22;
+  }, .91);
+}
+
+function weaponImpact(sampleRate, weapon, identity) {
+  const spec = weaponSpec(weapon, identity);
+  const explosive = Boolean(weapon.radius || weapon.hazard || ["launcher", "gravity", "fire"].includes(spec.family));
+  const seconds = (explosive ? .62 : .24) + spec.tail * (explosive ? .72 : .26);
+  return render(sampleRate, seconds, spec.hash ^ 0xa7c9214d, (t, random, state) => {
+    const white = random();
+    state.low += (white - state.low) * (.016 + spec.grit * .065);
+    state.slow = (state.slow || 0) + (white - (state.slow || 0)) * (.003 + spec.weight * .008);
+    const debris = white - state.low;
+    const grit = state.low - state.slow;
+    const decay = explosive ? 3.2 + (1 - spec.tail) * 3.4 : 10 + (1 - spec.tail) * 18;
+    state.phase += Math.PI * 2 * (spec.bodyHz * (explosive ? .62 : 1.25) + 70 * Math.exp(-t * 15)) / sampleRate;
+    const body = Math.sin(state.phase) * curve(t, .0008, decay);
+    const scatter = debris * curve(t, .0003, decay * (1.1 + spec.grit));
+    const late = (grit * 2.4 + debris * .3) * transientAt(t, .035 + (spec.hash % 8) * .012, decay * 1.7);
+    if (spec.family === "ice") return scatter * 1.05 * (Math.sin(t * 223) > .08 ? 1 : .1) + body * .2 + late * .54;
+    if (spec.family === "fire") return (state.slow * 5 + grit * 2) * curve(t, .003, 3.4) + scatter * .42 + body * .58;
+    if (spec.family === "gravity") return state.slow * 7 * Math.sin(Math.PI * Math.min(1, t / seconds)) + body * 1.2 + grit * .52;
+    if (spec.family === "energy") return grit * 2.8 * curve(t, .001, decay * .72) + scatter * .55 + body * .62 + late * .35;
+    if (spec.family === "melee") return body * (weapon.id === "hammer" ? 1.35 : .55) + scatter * .48 + late * (.52 + spec.weight * .48);
+    return body * (.62 + spec.weight * .66) + scatter * (.48 + spec.grit * .5) + late * .44 + state.slow * (explosive ? 3.6 : 1.1) * Math.exp(-t * decay);
+  }, explosive ? .94 : .86);
+}
+
+function weaponOperation(sampleRate, weapon, identity) {
+  const spec = weaponSpec(weapon, identity);
+  const seconds = .16 + spec.weight * .16 + (weapon.type === "melee" ? .08 : 0);
+  return render(sampleRate, seconds, spec.hash ^ 0x9c40e62b, (t, random, state) => {
+    const white = random();
+    state.low += (white - state.low) * (.04 + spec.grit * .08);
+    state.slow = (state.slow || 0) + (white - (state.slow || 0)) * .008;
+    const click = (white - state.low) * transientAt(t, .008, 92);
+    const action = (state.low - state.slow) * 2.8 * transientAt(t, spec.mechanismAt + .025, 54);
+    const lock = (white - state.low) * transientAt(t, spec.secondAt, 72);
+    const cloth = (white - state.low) * Math.sin(Math.PI * Math.min(1, t / seconds)) ** 1.5;
+    const heavy = state.slow * 5.2 * curve(t, .002, 12);
+    if (spec.family === "melee") return cloth * .62 + action * .58 + heavy * spec.weight;
+    if (spec.family === "fire") return action * .5 + heavy * .7 + (state.low - state.slow) * curve(t, .003, 7);
+    if (spec.family === "energy" || spec.family === "gravity" || spec.family === "ice") return click * .42 + action * .72 + lock * .36 + heavy * .48;
+    return click * .7 + action * (.62 + spec.weight * .45) + lock * .56 + heavy * .4;
+  }, .78);
+}
+
+function weaponTexture(sampleRate, weapon, identity, kind) {
+  const spec = weaponSpec(weapon, identity);
+  const seeds = { loop: 0x32d8a511, charge: 0x47be9203, projectile: 0x58fc7337, hazard: 0x6e1a4cc9 };
+  const seconds = kind === "charge" ? 1.35 : kind === "hazard" ? 1.8 : 1.45;
+  return loopSafe(render(sampleRate, seconds, spec.hash ^ seeds[kind], (t, random, state) => {
+    const white = random();
+    const color = kind === "projectile" ? .045 : kind === "hazard" ? .012 : .026;
+    state.low += (white - state.low) * (color + spec.grit * .035);
+    state.slow = (state.slow || 0) + (white - (state.slow || 0)) * (.0025 + spec.weight * .006);
+    const air = white - state.low, mid = state.low - state.slow;
+    const cycleA = .68 + .2 * Math.sin(t * (2.7 + (spec.hash % 9) * .17)) + .12 * Math.sin(t * (9 + ((spec.hash >>> 5) % 15)));
+    const cycleB = .72 + .28 * Math.sin(t * (kind === "charge" ? 17 : 37 + (spec.hash % 31))) ** 2;
+    const low = state.slow * (spec.family === "gravity" || spec.family === "launcher" ? 7 : 3.4);
+    const mechanical = mid * (weapon.id === "minigun" || weapon.id === "chainsaw" ? 3.5 : 1.7) * cycleB;
+    const combustion = spec.family === "fire" ? (state.slow * 4.5 + air * .22) * cycleA : 0;
+    const electrical = spec.family === "energy" || spec.family === "ice" ? air * (Math.sin(t * (71 + spec.hash % 53)) > .48 ? .8 : .12) : 0;
+    return (low * .38 + mechanical * .45 + combustion + electrical * .38 + air * (.12 + spec.grit * .2)) * cycleA;
+  }, kind === "hazard" ? .75 : .7), sampleRate);
+}
+
+// These are authored per weapon rather than generic layers with renamed
+// metadata. Each fire, impact and relevant sustained/flight source owns a
+// different rendered buffer and a different temporal/material recipe.
+export function createWeaponAudioAssets(sampleRate = 48000, weapons = [], identities = {}) {
+  const rate = Math.max(8000, Math.floor(Number(sampleRate) || 48000));
+  const assets = {};
+  for (const weapon of weapons) {
+    const identity = identities[weapon.id] || [];
+    assets[`weaponFire:${weapon.id}`] = weaponFire(rate, weapon, identity);
+    assets[`weaponImpact:${weapon.id}`] = weaponImpact(rate, weapon, identity);
+    assets[`weaponOperate:${weapon.id}`] = weaponOperation(rate, weapon, identity);
+    if (weapon.maintained) assets[`weaponLoop:${weapon.id}`] = weaponTexture(rate, weapon, identity, "loop");
+    if (weapon.chargeTime) assets[`weaponCharge:${weapon.id}`] = weaponTexture(rate, weapon, identity, "charge");
+    if ((weapon.projectileSpeed || 0) > 0 && !weapon.hitscan) assets[`weaponFlight:${weapon.id}`] = weaponTexture(rate, weapon, identity, "projectile");
+    if (weapon.hazard) assets[`weaponHazard:${weapon.id}`] = weaponTexture(rate, weapon, identity, "hazard");
+  }
+  return Object.freeze(assets);
 }
 
 export function createProceduralAudioAssets(sampleRate = 48000) {
