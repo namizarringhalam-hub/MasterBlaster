@@ -1200,7 +1200,7 @@ class BlasterBattle {
     }
     const origin = bot.botOrigin.copy(bot.position);
     origin.y += 1.25;
-    const targetPoint = bot.botTarget.copy(target.position);
+    const targetPoint = bot.botTargetPoint.copy(target.position);
     targetPoint.y += 1.05;
     const aimOffset = bot.botAimOffset.copy(targetPoint).sub(origin);
     const distance = aimOffset.length();

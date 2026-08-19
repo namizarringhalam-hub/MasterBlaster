@@ -3,7 +3,20 @@ import fs from "node:fs";
 import * as THREE from "three/webgpu";
 import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
 import { WEAPONS } from "../src/gameData.js";
+import { Fighter } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
+
+const botScene = new THREE.Scene();
+const bot = new Fighter(
+  botScene,
+  { id: "performance-bot", name: "Performance Bot", color: 0x32bedd, accent: 0x9df8ff },
+  ["submachine_gun"],
+  new THREE.Vector3(),
+  true
+);
+assert.ok(bot.botTargetPoint?.isVector3, "bot target-position scratch storage survives AI target initialization");
+assert.equal(bot.botTarget, null, "bot target selection remains independent from its target-position scratch vector");
+bot.dispose();
 
 const scene = new THREE.Scene();
 const world = new ArenaWorld(scene, "PERFORMANCE-GRID");

@@ -85,7 +85,7 @@ export class Fighter {
     this.desiredMove = new THREE.Vector3();
     this.previousPosition = new THREE.Vector3();
     this.botOrigin = new THREE.Vector3();
-    this.botTarget = new THREE.Vector3();
+    this.botTargetPoint = new THREE.Vector3();
     this.botAimOffset = new THREE.Vector3();
     this.botForward = new THREE.Vector3();
     this.botMoveForward = new THREE.Vector3();
