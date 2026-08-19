@@ -2,7 +2,6 @@ import * as THREE from "three/webgpu";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { Line2 } from "three/addons/lines/webgpu/Line2.js";
 import { LineGeometry } from "three/addons/lines/LineGeometry.js";
-import "./styles.css";
 import { SoundBoard } from "./audio.js";
 import { CombatVisuals } from "./combatVisuals.js";
 import { ArenaWorld } from "./world.js";
@@ -211,6 +210,22 @@ class BlasterBattle {
     this.audioMixTimer = 0;
     this.combatMusicPulse = 0;
     this.freshSessionReady = false;
+    this.arenaWarmup = null;
+    this.botTargets = new Map();
+    this.botPlanTimer = 0;
+    this.botPlanPending = false;
+    this.botPlanner = null;
+    if (typeof Worker === "function") {
+      try {
+        this.botPlanner = new Worker(new URL("./botPlanner.worker.js", import.meta.url), { type: "module" });
+        this.botPlanner.onmessage = ({ data }) => {
+          const candidates = new Map([...this.players, ...this.decoys].map((candidate) => [candidate.id, candidate]));
+          for (const [botId, targetId] of data) this.botTargets.set(botId, candidates.get(targetId));
+          this.botPlanPending = false;
+        };
+        this.botPlanner.onerror = () => { this.botPlanner?.terminate(); this.botPlanner = null; this.botPlanPending = false; };
+      } catch { this.botPlanner = null; }
+    }
     this.setupLights();
   }
 
@@ -238,6 +253,11 @@ class BlasterBattle {
       this.renderPipeline.degradeToDirect(info);
     };
     this.renderMain();
+    performance.mark?.("blaster-engine-ready");
+    performance.measure?.("blaster-shell-to-engine", "blaster-shell-visible", "blaster-engine-ready");
+    const prefetchAudio = () => this.sound.prefetchMusic?.();
+    if ("requestIdleCallback" in window) requestIdleCallback(prefetchAudio, { timeout: 1800 });
+    else setTimeout(prefetchAudio, 400);
     this.resize();
     addEventListener("resize", () => this.resize());
     addEventListener("blur", () => clearTouchActions(this.touch));
@@ -324,6 +344,8 @@ class BlasterBattle {
     this.hazards = [];
     this.decoys = [];
     this.effects = [];
+    this.botTargets.clear();
+    this.botPlanPending = false;
     this.sound.stopAll();
   }
 
@@ -856,6 +878,20 @@ class BlasterBattle {
     this.cameraFocus.set(0, 0, 0);
     this.updateCamera(1);
     this.renderHud();
+    this.scene.updateMatrixWorld(true);
+    performance.mark?.("blaster-arena-build-complete");
+    try {
+      const compile = this.renderer.compileAsync?.(this.scene, this.camera);
+      const timeout = new Promise((resolve) => setTimeout(resolve, 2500));
+      this.arenaWarmup = compile ? Promise.race([Promise.resolve(compile), timeout]).catch((error) => console.warn("Arena shader warm-up skipped", error)).finally(() => {
+        this.arenaWarmup = null;
+        performance.mark?.("blaster-arena-gpu-ready");
+        performance.measure?.("blaster-arena-gpu-warmup", "blaster-arena-build-complete", "blaster-arena-gpu-ready");
+      }) : null;
+    } catch (error) {
+      this.arenaWarmup = null;
+      console.warn("Arena shader warm-up skipped", error);
+    }
     this.sound.startAmbience(this.world.theme.id);
     this.sound.setMusicIntensity(.42);
     const countdown = this.sound.startCountdown(this.seed, .42);
@@ -1056,7 +1092,7 @@ class BlasterBattle {
     if (this.state === "play" && this.input.tapped("Escape")) this.togglePause();
     if (this.state === "play" && !this.paused) this.update(dt);
     this.renderScene();
-    if (this.hideMatchLoadingAfterFrame) {
+    if (this.hideMatchLoadingAfterFrame && !this.arenaWarmup) {
       this.hideMatchLoadingAfterFrame = false;
       this.setMatchLoading(false);
     }
@@ -1099,6 +1135,7 @@ class BlasterBattle {
     this.world.update(dt, this.players);
     this.handleWeaponSwitch();
     this.updateHuman(dt);
+    this.updateBotPlanner(dt);
     for (let index = 1; index < this.players.length; index++) this.updateBot(this.players[index], dt);
     for (const player of this.players) this.updateBurst(player, dt);
     this.updateProjectiles(dt);
@@ -1160,6 +1197,19 @@ class BlasterBattle {
     this.touch.fireTap = false;
   }
 
+  updateBotPlanner(dt) {
+    if (!this.botPlanner || this.botPlanPending) return;
+    this.botPlanTimer += dt;
+    if (this.botPlanTimer < .12) return;
+    this.botPlanTimer = 0;
+    this.botPlanPending = true;
+    const snapshot = (actor) => ({ id: actor.id, alive: actor.alive, position: [actor.position.x, actor.position.y, actor.position.z] });
+    this.botPlanner.postMessage({
+      players: this.players.map(snapshot),
+      decoys: this.decoys.map((decoy) => ({ ...snapshot(decoy), ownerId: decoy.owner?.id }))
+    });
+  }
+
   updateBot(bot, dt) {
     if (!bot.alive) {
       this.sound.updateWeaponLoop(bot.id, bot.weapon, false);
@@ -1167,9 +1217,11 @@ class BlasterBattle {
       return;
     }
     const human = this.players[0];
+    let target = this.botTargets.get(bot.id);
+    if (!target?.alive || target === bot || target.owner === bot) target = null;
     let distractingDecoy = null;
     let distractingDistance = 30 ** 2;
-    for (const decoy of this.decoys) {
+    if (!target) for (const decoy of this.decoys) {
       if (!decoy.alive || decoy.owner === bot) continue;
       const distanceSq = bot.position.distanceToSquared(decoy.position);
       if (distanceSq < distractingDistance) {
@@ -1177,7 +1229,7 @@ class BlasterBattle {
         distractingDecoy = decoy;
       }
     }
-    let target = distractingDecoy;
+    target ||= distractingDecoy;
     if (!target && human?.alive && bot.position.distanceToSquared(human.position) < 28 ** 2) target = human;
     if (!target) {
       let closest = Infinity;
@@ -2315,6 +2367,12 @@ class BlasterBattle {
     node.dataset.complete = sample.elapsed >= 60 ? "true" : "false";
     node.dataset.cameraDistance = (this.cameraClearance?.actual || 0).toFixed(2);
     node.dataset.cameraTargetDistance = (this.cameraClearance?.target || 0).toFixed(2);
+    node.dataset.drawCalls = String(this.renderer.info.render.drawCalls);
+    node.dataset.geometries = String(this.renderer.info.memory.geometries);
+    node.dataset.textures = String(this.renderer.info.memory.textures);
+    node.dataset.longTasks = String(globalThis.__blasterPerf?.longTasks || 0);
+    if (performance.memory?.usedJSHeapSize) node.dataset.heapMb = (performance.memory.usedJSHeapSize / 1048576).toFixed(1);
+    node.dataset.budget = sample.elapsed < 10 || (average >= 45 && this.renderer.info.render.drawCalls <= 620) ? "pass" : "watch";
   }
 
   finishMatch() {
@@ -2447,9 +2505,11 @@ class BlasterBattle {
   }
 }
 
-new BlasterBattle().init().catch((error) => {
+const game = new BlasterBattle();
+export const gameReady = game.init().then(() => game).catch((error) => {
   console.error("Blaster Battle renderer failed to initialize", error);
   try { sessionStorage.removeItem(MATCH_SESSION_KEY); } catch {}
   if (matchLoading) matchLoading.hidden = true;
   ui.innerHTML = `<main class="menu-shell"><section class="hero-panel"><p class="kicker">RENDERER ERROR</p><h1>Graphics initialization failed.</h1><p class="lead">Update your browser or enable WebGL2, then reload.</p></section></main>`;
+  throw error;
 });

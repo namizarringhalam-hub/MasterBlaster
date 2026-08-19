@@ -307,6 +307,7 @@ assert.match(audioSource, /musicReverb\.connect\(this\.musicReverbGain\)\.connec
 assert.match(audioSource, /if \(step === 0\) \{[\s\S]*?musicBarIntensity = this\.musicIntensity[\s\S]*?tempoForIntensity\(this\.musicBarIntensity/, "intensity and tempo change together only on a stable bar boundary");
 assert.match(audioSource, /_loadMusicSamples\(\)[\s\S]*?decodeAudioData/, "the production mixer decodes the recorded music bank");
 assert.match(audioSource, /fetch\(`\$\{file\.url\}\$\{separator\}bank=\$\{MUSIC_ASSET_REVISION\}`/, "runtime music fetches bypass stale CDN fallbacks with the tested bank revision");
+assert.match(audioSource, /prefetchMusic\(\)[\s\S]*?criticalRoles[\s\S]*?cache: "force-cache"[\s\S]*?Promise\.allSettled/, "menu-critical recordings warm first and the remaining score fills the immutable cache during idle time");
 assert.match(audioSource, /pendingMusicStart\?\.scene === "countdown"\) this\.pendingMusicStart = null[\s\S]*?musicCountdown = null/, "a failed recorded countdown releases to the frame-clock GO instead of starting combat early on retry");
 const musicScheduler = audioSource.slice(audioSource.indexOf("_scheduleMusicEvent(event"), audioSource.indexOf("duckMusic(", audioSource.indexOf("_scheduleMusicEvent(event")));
 assert.match(musicScheduler, /musicSample\(event\.sample/, "all score events travel through the recorded-sample player");

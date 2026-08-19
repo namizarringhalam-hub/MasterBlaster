@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { WEAPONS } from "../src/gameData.js";
 import { botRemoteChargeAction, botWeaponPolicy, botFireChance, shouldBotPlaceWall } from "../src/botBrain.js";
+import { chooseBotTargets } from "../src/botPlanner.worker.js";
 
 assert.equal(Object.keys(WEAPONS).length, 47);
 for (const weapon of Object.values(WEAPONS)) {
@@ -27,5 +28,15 @@ assert.equal(botRemoteChargeAction(remote, { targetDistance: remote.preferredRan
 assert.equal(botRemoteChargeAction(remote, { targetDistance: remote.preferredRange, visible: true, armedChargeDistances: [30, 35, 40], ammo: 2 }), "hold");
 assert.equal(botRemoteChargeAction(remote, { targetDistance: remote.preferredRange, visible: false, ammo: 2 }), "hold");
 assert.equal(botRemoteChargeAction(WEAPONS.blaster, { targetDistance: 10, visible: true, ammo: 2 }), "hold");
+
+const plannedTargets = chooseBotTargets(
+  [
+    { id: "human", alive: true, position: [0, 0, 0] },
+    { id: "bot-a", alive: true, position: [12, 0, 0] },
+    { id: "bot-b", alive: true, position: [80, 0, 0] }
+  ],
+  [{ id: "decoy", alive: true, ownerId: "human", position: [13, 0, 0] }]
+);
+assert.deepEqual(plannedTargets, [["bot-a", "decoy"], ["bot-b", "decoy"]], "the worker preserves decoy priority and nearest-target fallback off the render thread");
 
 console.log("Bot weapon policy checks passed.");

@@ -12,12 +12,37 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="/og.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/src/styles.css" />
     <title>Blaster Battle</title>
   </head>
   <body>
     <div id="app">
       <canvas id="game-canvas"></canvas>
-      <div id="ui-root"></div>
+      <div id="ui-root">
+        <main class="menu-shell">
+          <section class="hero-panel">
+            <div class="brand-mark"><i></i><span>BLASTER</span><b>BATTLE</b></div>
+            <p class="kicker">BROWSER-NATIVE ARENA COMBAT</p>
+            <h1>Swing fast.<br><em>Blast smart.</em></h1>
+            <p class="lead">Physical projectiles, explosive routes, and a grappling hook that never leaves your side.</p>
+            <div class="primary-actions">
+              <button class="primary" data-boot-mode="quick"><span>QUICK PLAY</span><small>Regional practice queue</small></button>
+              <button data-boot-mode="private"><span>PRIVATE ROOM</span><small>Create or join by code</small></button>
+              <button data-boot-mode="training"><span>TRAINING</span><small>Fight up to 15 adaptive bots</small></button>
+            </div>
+            <div class="secondary-actions">
+              <button data-boot-screen="settings">Settings</button>
+              <button data-boot-screen="credits">Credits</button>
+            </div>
+            <div class="capabilities" role="status" data-boot-status>PREPARING HIGH-PERFORMANCE ENGINE</div>
+          </section>
+          <aside class="feature-rail">
+            <span>01</span><div><b>GRAPPLE</b><small>Momentum is your weapon</small></div>
+            <span>02</span><div><b>47 WEAPONS</b><small>Carry five into combat</small></div>
+            <span>03</span><div><b>DYNAMIC ARENAS</b><small>Moving routes, portals, and hazards</small></div>
+          </aside>
+        </main>
+      </div>
     </div>
     <div id="match-loading" class="rematch-loading" role="status" aria-live="polite" aria-atomic="true" hidden>
       <div class="rematch-loading-grid" aria-hidden="true"></div>
@@ -46,6 +71,6 @@
         }
       } catch { sessionStorage.removeItem("blaster-pending-match"); }
     </script>
-    <script type="module" src="/src/main.js"></script>
+    <script type="module" src="/src/boot.js"></script>
   </body>
 </html>

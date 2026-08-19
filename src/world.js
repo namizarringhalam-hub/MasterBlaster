@@ -4,6 +4,7 @@ import { MAP_THEMES, seededRandom, seedFromText } from "./gameData.js";
 
 const TAU = Math.PI * 2;
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
+const HIDDEN_INSTANCE = new THREE.Matrix4().makeScale(0, 0, 0);
 const DISTRICT_PALETTES = {
   foundry: [0x28e7ff, 0xff4f87, 0xffc247, 0x9d7bff],
   solar: [0xffc34f, 0xff526f, 0x43ddff, 0xa7ff66],
@@ -217,6 +218,7 @@ export class ArenaWorld {
     this.group.name = "Neon Parkour Arena";
     this.obstacles = [];
     this.destructibles = [];
+    this.destructibleBatches = [];
     this.anchors = [];
     this.platforms = [];
     this.cameraOccluders = [];
@@ -350,6 +352,7 @@ export class ArenaWorld {
     }
     this.addDistantSkyline();
     this.addAtmosphere();
+    this.batchDestructibleBodies();
     this.buildObstacleIndex();
     this.freezeStaticTransforms();
   }
@@ -1383,6 +1386,36 @@ export class ArenaWorld {
     return obstacle;
   }
 
+  batchDestructibleBodies() {
+    const groups = new Map();
+    for (const obstacle of this.destructibles) {
+      const source = obstacle.mesh.material;
+      const key = `${source.color.getHex()}:${source.emissive.getHex()}:${source.roughness}:${source.metalness}`;
+      const entries = groups.get(key);
+      if (entries) entries.push(obstacle);
+      else groups.set(key, [obstacle]);
+    }
+    const marker = new THREE.Object3D();
+    for (const entries of groups.values()) {
+      const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), entries[0].mesh.material.clone(), entries.length);
+      mesh.name = "Batched destructible arena bodies";
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      entries.forEach((obstacle, index) => {
+        marker.position.copy(obstacle.mesh.position);
+        marker.scale.set(obstacle.w, obstacle.h, obstacle.d);
+        marker.updateMatrix();
+        mesh.setMatrixAt(index, marker.matrix);
+        obstacle.mesh.material.visible = false;
+        obstacle.batch = { mesh, index };
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+      this.destructibleBatches.push(mesh);
+      this.group.add(mesh);
+    }
+  }
+
   addPlatform(x, top, z, w, d, thickness, color) {
     const platform = this.addBox(x, z, w, d, thickness, color, false, false, top - thickness);
     this.platforms.push(platform);
@@ -1820,6 +1853,10 @@ export class ArenaWorld {
     for (const item of [...this.destructibles]) {
       const center = new THREE.Vector3(item.x, item.baseY + item.h / 2, item.z);
       if (center.distanceTo(position) > radius + Math.max(item.w, item.d, item.h) / 2) continue;
+      if (item.batch) {
+        item.batch.mesh.setMatrixAt(item.batch.index, HIDDEN_INSTANCE);
+        item.batch.mesh.instanceMatrix.needsUpdate = true;
+      }
       this.group.remove(item.mesh);
       this.obstacles.splice(this.obstacles.indexOf(item), 1);
       this.destructibles.splice(this.destructibles.indexOf(item), 1);

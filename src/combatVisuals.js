@@ -327,6 +327,8 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
 
 function instancedLayer(geometry, capacity, opacity) {
   const mesh = new THREE.InstancedMesh(geometry, glowMaterial(opacity), capacity);
+  mesh.updateMatrix();
+  mesh.matrixAutoUpdate = false;
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   mesh.frustumCulled = false;
   mesh.renderOrder = 8;

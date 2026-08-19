@@ -93,6 +93,7 @@ export class SoundBoard {
     this.sampleBank = {};
     this.musicSamples = {};
     this.musicSamplePromise = null;
+    this.musicPrefetchPromise = null;
     this.musicSamplesReady = false;
     this.musicLoadFailed = false;
     this.musicLoadCycles = 0;
@@ -241,6 +242,27 @@ export class SoundBoard {
     const buffer = this.context.createBuffer(1, data.length, this.context.sampleRate);
     buffer.getChannelData(0).set(data);
     return buffer;
+  }
+
+  prefetchMusic() {
+    if (this.musicPrefetchPromise || typeof fetch !== "function") return this.musicPrefetchPromise;
+    const connection = typeof navigator !== "undefined" ? navigator.connection : null;
+    if (connection?.saveData || /(^|-)2g$/.test(connection?.effectiveType || "")) return null;
+    const criticalRoles = new Set(["battleDrum", "celloTrem", "hornSustain", "tromboneBuzz"]);
+    const files = Object.entries(MUSIC_SAMPLE_MANIFEST).flatMap(([role, asset]) => asset.files.map((file) => ({ ...file, critical: criticalRoles.has(role) })));
+    const fetchFile = async (file) => {
+      const separator = file.url.includes("?") ? "&" : "?";
+      const response = await fetch(`${file.url}${separator}bank=${MUSIC_ASSET_REVISION}`, { cache: "force-cache" });
+      if (response.ok) await response.arrayBuffer();
+    };
+    const waitForIdle = () => new Promise((resolve) => {
+      if (typeof requestIdleCallback === "function") requestIdleCallback(resolve, { timeout: 1800 });
+      else setTimeout(resolve, 250);
+    });
+    this.musicPrefetchPromise = Promise.allSettled(files.filter((file) => file.critical).map(fetchFile))
+      .then(waitForIdle)
+      .then(() => Promise.allSettled(files.filter((file) => !file.critical).map(fetchFile)));
+    return this.musicPrefetchPromise;
   }
 
   _loadMusicSamples(force = false) {

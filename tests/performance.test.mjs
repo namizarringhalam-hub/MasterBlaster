@@ -37,6 +37,26 @@ for (let x = -104; x <= 104; x += 8) for (let z = -104; z <= 104; z += 8) {
 assert.ok(candidateTotal / samples < world.obstacles.length * .35, "the spatial grid rejects most arena obstacles before narrow-phase projectile collision");
 assert.ok(world.group.children.some((child) => child.matrixAutoUpdate === false), "static arena transforms are frozen after construction");
 assert.ok(world.movers.every((mover) => mover.obstacle.mesh.matrixAutoUpdate), "moving platforms keep live transforms");
+assert.ok(world.destructibleBatches.length > 0 && world.destructibleBatches.length <= 2, "all breakable arena bodies collapse into at most two identical-quality instanced draws");
+assert.ok(world.destructibles.every((item) => item.batch && item.mesh.material.visible === false), "batched breakable bodies replace their duplicate individual base draws while retaining decorations and collision proxies");
+const batchedVictim = world.destructibles[0];
+const batchedVictimCenter = new THREE.Vector3(batchedVictim.x, batchedVictim.baseY + batchedVictim.h / 2, batchedVictim.z);
+const batchedVictimMesh = batchedVictim.batch.mesh;
+const batchedVictimIndex = batchedVictim.batch.index;
+world.destroy(batchedVictimCenter, .01);
+const hiddenBatchMatrix = new THREE.Matrix4();
+batchedVictimMesh.getMatrixAt(batchedVictimIndex, hiddenBatchMatrix);
+assert.equal(hiddenBatchMatrix.determinant(), 0, "destroyed instanced arena bodies disappear without restoring an individual draw call");
+let renderables = 0;
+const worldGeometries = new Set();
+const worldMaterials = new Set();
+world.group.traverse((object) => {
+  if (!(object.isMesh || object.isLine || object.isPoints)) return;
+  renderables++;
+  if (object.geometry) worldGeometries.add(object.geometry);
+  if (object.material) worldMaterials.add(object.material);
+});
+assert.ok(renderables <= 420 && worldGeometries.size <= 420 && worldMaterials.size <= 300, "the full-quality arena stays inside explicit draw-candidate and GPU-resource budgets");
 
 const visualScene = new THREE.Scene();
 const visuals = new CombatVisuals(visualScene, { quality: 1 });
@@ -66,6 +86,9 @@ const worldSource = fs.readFileSync(new URL("../src/world.js", import.meta.url),
 const playerSource = fs.readFileSync(new URL("../src/player.js", import.meta.url), "utf8");
 const pipelineSource = fs.readFileSync(new URL("../src/renderPipeline.js", import.meta.url), "utf8");
 assert.match(mainSource, /selectNearestAudio\([\s\S]*?this\.projectiles, listener\.position, 6/, "projectile audio uses a bounded nearest-six selector");
+assert.match(mainSource, /new Worker\(new URL\("\.\/botPlanner\.worker\.js"[\s\S]*?updateBotPlanner\(dt\)/, "batched bot target planning runs off the render thread when workers are available");
+assert.match(mainSource, /renderer\.compileAsync\?\.\(this\.scene, this\.camera\)[\s\S]*?arenaWarmup/, "arena shaders and WebGPU pipelines warm behind the match loader");
+assert.match(mainSource, /dataset\.drawCalls[\s\S]*?dataset\.geometries[\s\S]*?dataset\.longTasks[\s\S]*?dataset\.budget/, "live frame telemetry exposes draw, memory, long-task, and performance-budget health");
 const projectileUpdateStart = mainSource.indexOf("\n  updateProjectiles(dt) {");
 assert.doesNotMatch(mainSource.slice(projectileUpdateStart, mainSource.indexOf("\n  bounceProjectile(", projectileUpdateStart)), /\.filter\(|\.sort\(/, "projectile simulation avoids full-list allocation and sorting every frame");
 assert.match(mainSource, /previousPosition\.copy\(shot\.mesh\.position\)/, "projectile substeps reuse a persistent collision position");
@@ -74,6 +97,8 @@ assert.match(worldSource, /nearbyObstacles\([\s\S]*?obstacleGrid/, "arena collis
 assert.match(mainSource, /!child\.geometry\?\.userData\?\.sharedProjectile/, "shared projectile GPU buffers survive individual shot cleanup");
 assert.match(pipelineSource, /aoPass\.samples\.value = 16/, "high graphics retains sixteen-sample ambient occlusion");
 assert.match(pipelineSource, /bloomPass\.resolutionScale = \.5/, "high graphics retains half-resolution HDR bloom");
+assert.ok([visuals.flashOuter, visuals.flashInner, visuals.tracerOuter, visuals.tracerInner, visuals.ringOuter, visuals.ringInner, visuals.sparkLayer]
+  .every((layer) => layer.isInstancedMesh && layer.matrixAutoUpdate === false), "pooled GPU effect layers keep one static object transform and one instanced draw per family");
 
 visuals.dispose();
 world.dispose();
