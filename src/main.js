@@ -390,11 +390,11 @@ class BlasterBattle {
     this.mode = mode;
     const savedDefault = activePresetLoadout(this.settings);
     if (savedDefault) this.settings.loadout = [...savedDefault];
-    if (mode === "quick") {
-      if (!savedDefault) this.settings.loadout = randomLoadout();
-      this.settings.botCount = 7;
-      this.botDifficulty = "normal";
-    }
+    if (mode === "quick" && !savedDefault) this.settings.loadout = randomLoadout();
+    const remembered = this.settings.matchSettings[mode];
+    this.settings.botCount = remembered.botCount;
+    this.botDifficulty = remembered.botDifficulty;
+    this.seed = remembered.seed || (mode === "private" ? this.roomCode() : "BLAST-01");
     const title = mode === "quick" ? "Quick Play" : mode === "private" ? "Private Room" : "Training";
     const detail = mode === "quick"
       ? "Enter the regional practice queue with up to fifteen AI combatants."
@@ -410,7 +410,7 @@ class BlasterBattle {
           <button class="launch primary" data-action="start">START</button>
           <div class="setup-form">
             <label>Display name<input id="display-name" maxlength="18" value="${escapeHtml(this.settings.displayName)}"></label>
-            <label>${mode === "private" ? "Room code" : "Map seed"}<input id="map-seed" maxlength="12" value="${escapeHtml(mode === "private" ? this.roomCode() : this.seed)}"></label>
+            <label>${mode === "private" ? "Room code" : "Map seed"}<input id="map-seed" maxlength="12" value="${escapeHtml(this.seed)}"></label>
             <label>Bot difficulty
               <select id="bot-difficulty">
                 ${["rookie", "normal", "veteran"].map((level) => `<option ${this.botDifficulty === level ? "selected" : ""}>${level}</option>`).join("")}
@@ -584,6 +584,7 @@ class BlasterBattle {
     };
     ui.onchange = (event) => {
       if (event.target.dataset.presetName) this.renamePreset(Number(event.target.dataset.presetName), event.target.value);
+      if (event.target.closest?.(".setup-form")) this.captureSetupPreferences();
     };
     ui.oninput = (event) => {
       if (!["volume", "musicVolume", "effectsVolume", "ambienceVolume"].includes(event.target.dataset.setting)) return;
@@ -741,12 +742,21 @@ class BlasterBattle {
 
   captureSetupAndStart() {
     if (this.settings.loadout.length !== 5) return;
+    this.captureSetupPreferences();
+    this.startMatch();
+  }
+
+  captureSetupPreferences() {
     this.settings.displayName = ui.querySelector("#display-name")?.value.trim() || "Rookie";
     this.seed = ui.querySelector("#map-seed")?.value.trim().toUpperCase() || "BLAST-01";
     this.botDifficulty = ui.querySelector("#bot-difficulty")?.value || "normal";
     this.settings.botCount = clampBotCount(ui.querySelector("#bot-count")?.value);
+    this.settings.matchSettings[this.mode] = {
+      seed: this.seed,
+      botDifficulty: this.botDifficulty,
+      botCount: this.settings.botCount
+    };
     saveSettings(this.settings);
-    this.startMatch();
   }
 
   saveSettingsForm() {

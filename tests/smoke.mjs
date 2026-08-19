@@ -26,7 +26,7 @@ assert.match(mainSource, /\[0, 1, 2\]\.map[\s\S]*data-leader-row/, "the top-righ
 assert.match(mainSource, /dialog-lead[^]*?<button class="launch primary" data-action="start">START<\/button>[^]*?<div class="setup-form">/, "every setup sheet puts one consistently named start action above its controls");
 assert.doesNotMatch(mainSource, /FIND MATCH|CREATE ROOM|START TRAINING/, "setup actions no longer change labels by mode");
 assert.match(mainSource, /reticleAim\(player, this\.camera\.position, this\.camera\.getWorldDirection/, "weapons fire through the visible camera's exact center ray");
-assert.match(mainSource, /mode === "quick"[\s\S]*?settings\.botCount = 7;[\s\S]*?botDifficulty = "normal";/, "Quick Play defaults to seven normal-difficulty bots");
+assert.match(mainSource, /remembered = this\.settings\.matchSettings\[mode\][\s\S]*?botCount = remembered\.botCount[\s\S]*?botDifficulty = remembered\.botDifficulty/, "each setup mode restores its own saved bot settings");
 assert.doesNotMatch(mainSource, /EffectComposer|UnrealBloomPass|composer\.render/, "the game avoids unstable post-processing framebuffers");
 assert.match(mainSource, /new THREE\.WebGPURenderer/, "the game uses Three.js's WebGPU renderer");
 assert.match(mainSource, /await this\.renderer\.init\(\)/, "WebGPU initializes before environment generation");
@@ -154,13 +154,23 @@ saveSettings(legacySettings);
 const persistedPresetSettings = loadSettings();
 settingsStorage = JSON.stringify({ loadoutPresets: [{ name: "Broken", weaponIds: ["railgun", "railgun", "missing"] }], defaultLoadoutPreset: 0 });
 const repairedPresetSettings = loadSettings();
+settingsStorage = JSON.stringify({ matchSettings: {
+  quick: { botCount: 15, botDifficulty: "hard", seed: "quick-15" },
+  private: { botCount: 4, botDifficulty: "rookie", seed: "room42" },
+  training: { botCount: 9, botDifficulty: "normal", seed: "practice" }
+} });
+const persistedMatchSettings = loadSettings();
 delete globalThis.localStorage;
 assert.deepEqual(persistedPresetSettings.loadoutPresets[0], { name: "Control", weaponIds: savedSet }, "saved weapon sets survive a settings reload without losing order");
 assert.equal(persistedPresetSettings.defaultLoadoutPreset, 0, "the default-set choice survives a settings reload");
 assert.deepEqual(repairedPresetSettings.loadoutPresets, [null, null, null], "corrupt and partial presets are discarded safely");
 assert.equal(repairedPresetSettings.defaultLoadoutPreset, null, "an invalid preset cannot remain the default");
+assert.deepEqual(persistedMatchSettings.matchSettings.quick, { botCount: 15, botDifficulty: "veteran", seed: "QUICK-15" }, "Quick Play remembers its last device-local count, difficulty, and seed");
+assert.deepEqual(persistedMatchSettings.matchSettings.private, { botCount: 4, botDifficulty: "rookie", seed: "ROOM42" }, "Private Room keeps an independent setup profile");
+assert.deepEqual(persistedMatchSettings.matchSettings.training, { botCount: 9, botDifficulty: "normal", seed: "PRACTICE" }, "Training keeps an independent setup profile");
+assert.match(mainSource, /closest\?\.\("\.setup-form"\)\) this\.captureSetupPreferences\(\)/, "committed setup changes persist even when the player returns to another menu");
 assert.match(mainSource, /savedDefault = activePresetLoadout\(this\.settings\)[\s\S]*?if \(savedDefault\) this\.settings\.loadout = \[\.\.\.savedDefault\]/, "saved defaults apply to every setup mode");
-assert.match(mainSource, /mode === "quick"[\s\S]*?if \(!savedDefault\) this\.settings\.loadout = randomLoadout\(\)/, "Quick Play randomizes only when no default preset exists");
+assert.match(mainSource, /mode === "quick" && !savedDefault\) this\.settings\.loadout = randomLoadout\(\)/, "Quick Play randomizes only when no default preset exists");
 assert.match(mainSource, /confirm\(`Replace \$\{existing\.name\}/, "overwriting a saved preset requires confirmation");
 assert.match(mainSource, /confirm\(`Clear \$\{preset\.name\}/, "clearing a saved preset requires confirmation");
 assert.match(mainSource, /aria-live="polite"/, "loadout changes are announced to assistive technology");

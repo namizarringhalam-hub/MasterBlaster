@@ -1,5 +1,10 @@
 const SAVE_KEY = "blaster-battle-settings-v1";
 export const LOADOUT_PRESET_COUNT = 3;
+const MATCH_SETTINGS_DEFAULTS = {
+  quick: { botCount: 7, botDifficulty: "normal", seed: "BLAST-01" },
+  private: { botCount: 1, botDifficulty: "normal", seed: "" },
+  training: { botCount: 1, botDifficulty: "normal", seed: "BLAST-01" }
+};
 
 export function topScoreIndices(scores, count = 3) {
   return scores.map((_, index) => index)
@@ -229,6 +234,7 @@ function defaults() {
     ambienceVolume: 65,
     dynamicRange: "standard",
     botCount: 1,
+    matchSettings: structuredClone(MATCH_SETTINGS_DEFAULTS),
     loadout: [...DEFAULT_LOADOUT],
     loadoutPresets: Array(LOADOUT_PRESET_COUNT).fill(null),
     defaultLoadoutPreset: null
@@ -253,7 +259,16 @@ export function loadSettings() {
       ? saved.defaultLoadoutPreset
       : null;
     const graphics = GRAPHICS_LEVELS.has(saved.graphics) ? saved.graphics : "high";
-    return { ...defaults(), ...saved, graphics, loadout, loadoutPresets, defaultLoadoutPreset };
+    const matchSettings = Object.fromEntries(Object.entries(MATCH_SETTINGS_DEFAULTS).map(([mode, fallback]) => {
+      const remembered = saved.matchSettings?.[mode] || {};
+      const difficulty = remembered.botDifficulty === "hard" ? "veteran" : remembered.botDifficulty;
+      return [mode, {
+        botCount: Math.max(1, Math.min(15, Math.trunc(Number(remembered.botCount) || fallback.botCount))),
+        botDifficulty: ["rookie", "normal", "veteran"].includes(difficulty) ? difficulty : fallback.botDifficulty,
+        seed: String(remembered.seed ?? fallback.seed).trim().toUpperCase().slice(0, 12)
+      }];
+    }));
+    return { ...defaults(), ...saved, graphics, loadout, loadoutPresets, defaultLoadoutPreset, matchSettings };
   } catch {
     return defaults();
   }
