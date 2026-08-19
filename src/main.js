@@ -1309,7 +1309,7 @@ class BlasterBattle {
     line.frustumCulled = false;
     line.computeLineDistances();
     this.scene.add(line);
-    player.grapple = { anchor, line, wraps: [], ropeLength: Math.max(5, start.distanceTo(anchor) * .92), pullSpeed: 0 };
+    player.grapple = { anchor, line, wraps: [], ropeLength: Math.max(5, start.distanceTo(anchor) * .92), pullSpeed: 0, launchLift: true };
     const direction = anchor.clone().sub(start).normalize();
     const approachSpeed = player.velocity.dot(direction);
     player.grapple.pullSpeed = Math.max(0, approachSpeed);

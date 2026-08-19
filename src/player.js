@@ -951,6 +951,10 @@ export function applyGrapplePhysics(player, dt) {
   const radialSpeed = player.velocity.dot(direction);
   const nextRadialSpeed = THREE.MathUtils.damp(radialSpeed, player.grapple.pullSpeed, stretch > 0 ? 15 : 10, dt);
   player.velocity.addScaledVector(direction, nextRadialSpeed - radialSpeed);
+  if (player.grapple.launchLift) {
+    player.velocity.y += Math.max(0, direction.y) * 6 * movementScale;
+    player.grapple.launchLift = false;
+  }
 
   const steering = player.controlMove.clone().sub(direction.clone().multiplyScalar(player.controlMove.dot(direction)));
   if (steering.lengthSq() > .01) player.velocity.addScaledVector(steering.normalize(), 14 * movementScale * dt);

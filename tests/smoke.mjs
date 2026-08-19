@@ -575,6 +575,21 @@ const ropeBefore = fighter.grapple.ropeLength;
 applyGrapplePhysics(fighter, .1);
 assert.ok(fighter.velocity.x > 0 && fighter.velocity.y > 0, "the grapple actively pulls toward elevated anchors");
 assert.ok(ropeBefore - fighter.grapple.ropeLength >= 1.79, "the grapple reels in decisively while attached");
+const upwardLaunch = {
+  position: new THREE.Vector3(), velocity: new THREE.Vector3(), controlMove: new THREE.Vector3(), slowTimer: 0,
+  grapple: { anchor: new THREE.Vector3(20, 20, 0), wraps: [], ropeLength: 24, pullSpeed: 0, launchLift: true }
+};
+const upwardDirection = upwardLaunch.grapple.anchor.clone().sub(new THREE.Vector3(0, 1.4, 0)).normalize();
+applyGrapplePhysics(upwardLaunch, 1 / 60);
+const upwardArc = upwardLaunch.velocity.y - upwardLaunch.velocity.dot(upwardDirection) * upwardDirection.y;
+assert.ok(upwardArc > 1, "an upward grapple launches above its straight rope line to begin a visible lift arc");
+assert.equal(upwardLaunch.grapple.launchLift, false, "the launch lift is consumed once instead of disturbing the steady pull");
+const levelLaunch = {
+  position: new THREE.Vector3(), velocity: new THREE.Vector3(), controlMove: new THREE.Vector3(), slowTimer: 0,
+  grapple: { anchor: new THREE.Vector3(20, 1.4, 0), wraps: [], ropeLength: 18, pullSpeed: 0, launchLift: true }
+};
+applyGrapplePhysics(levelLaunch, 1 / 60);
+assert.equal(levelLaunch.velocity.y, 0, "level grapple shots do not receive artificial upward lift");
 const smoothPull = (fps) => {
   const dt = 1 / fps;
   const player = {
