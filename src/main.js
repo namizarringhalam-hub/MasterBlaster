@@ -407,6 +407,7 @@ class BlasterBattle {
           <header><button class="back" data-screen="main">← Back</button><p>${mode.toUpperCase()}</p></header>
           <h1>${title}</h1>
           <p class="dialog-lead">${detail}</p>
+          <button class="launch primary" data-action="start">START</button>
           <div class="setup-form">
             <label>Display name<input id="display-name" maxlength="18" value="${escapeHtml(this.settings.displayName)}"></label>
             <label>${mode === "private" ? "Room code" : "Map seed"}<input id="map-seed" maxlength="12" value="${escapeHtml(mode === "private" ? this.roomCode() : this.seed)}"></label>
@@ -426,7 +427,6 @@ class BlasterBattle {
             <p class="loadout-status" data-loadout-status aria-live="polite"></p>
             <div class="weapon-categories">${this.weaponCategoriesMarkup()}</div>
           </section>
-          <button class="launch primary" data-action="start">${mode === "quick" ? "FIND MATCH" : mode === "private" ? "CREATE ROOM" : "START TRAINING"}</button>
           <p class="prototype-note">Playable MVP slice · Guest session · Internet match fleet is represented locally in this build</p>
         </section>
       </main>`;

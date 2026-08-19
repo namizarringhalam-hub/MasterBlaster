@@ -23,6 +23,8 @@ assert.doesNotMatch(mainSource, /serviceWorker\.register/, "the renderer does no
 assert.match(bootSource, /serviceWorker\.register\("\/sw\.js"/, "the lightweight shell starts immutable caching without waiting for the engine");
 assert.deepEqual(topScoreIndices([2, 7, 7, 4, 9]), [4, 1, 2], "the HUD ranks the top three scores with stable tie ordering");
 assert.match(mainSource, /\[0, 1, 2\]\.map[\s\S]*data-leader-row/, "the top-right HUD renders three leaderboard rows");
+assert.match(mainSource, /dialog-lead[^]*?<button class="launch primary" data-action="start">START<\/button>[^]*?<div class="setup-form">/, "every setup sheet puts one consistently named start action above its controls");
+assert.doesNotMatch(mainSource, /FIND MATCH|CREATE ROOM|START TRAINING/, "setup actions no longer change labels by mode");
 assert.match(mainSource, /reticleAim\(player, this\.camera\.position, this\.camera\.getWorldDirection/, "weapons fire through the visible camera's exact center ray");
 assert.match(mainSource, /mode === "quick"[\s\S]*?settings\.botCount = 7;[\s\S]*?botDifficulty = "normal";/, "Quick Play defaults to seven normal-difficulty bots");
 assert.doesNotMatch(mainSource, /EffectComposer|UnrealBloomPass|composer\.render/, "the game avoids unstable post-processing framebuffers");
