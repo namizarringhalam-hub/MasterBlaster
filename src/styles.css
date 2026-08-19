@@ -427,6 +427,15 @@ input, select {
 .health i { display: block; width: 100%; height: 100%; background: #39e1ff; transition: width .18s ease; }
 .combatant.right .health i { margin-left: auto; background: #f24463; }
 .combatant > small { display: block; margin-top: 9px; color: #8da4b4; font-size: 9px; letter-spacing: .1em; }
+.leaders { padding: 10px 13px 12px; }
+.leaders > small { margin: 0 0 5px; text-align: right; }
+.leaders > .leader-list { display: grid; gap: 2px; }
+.leader-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 7px; min-height: 21px; }
+.leader-row i { color: #708a9d; font: 900 11px/1 "Barlow Condensed", sans-serif; }
+.leader-row b { overflow: hidden; color: #c9d9e4; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.leader-row span { font-size: 19px; }
+.leader-row:first-child i, .leader-row:first-child b { color: #fff; }
+.leader-row:first-child { border-bottom: 1px solid rgba(255, 74, 106, .28); }
 
 .match-state { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); min-width: 230px; padding: 8px 28px 11px; text-align: center; background: linear-gradient(180deg, rgba(4, 13, 25, .92), rgba(5, 16, 29, .68)); border-top: 2px solid rgba(116, 236, 255, .62); clip-path: polygon(8% 0, 92% 0, 100% 76%, 84% 100%, 16% 100%, 0 76%); text-shadow: 0 2px 8px #000; }
 .match-state small, .match-state span { display: block; color: #8da4b4; font-size: 9px; font-weight: 700; letter-spacing: .12em; }
@@ -476,7 +485,7 @@ input, select {
   animation: grapple-speed-pulse .72s ease-in-out infinite;
 }
 .motion-vignette.grappling { opacity: calc(.16 + var(--motion, 0) * .48); }
-.combat-log { position: absolute; top: 96px; right: 22px; width: min(340px, 42vw); text-align: right; }
+.combat-log { position: absolute; top: 132px; right: 22px; width: min(340px, 42vw); text-align: right; }
 .combat-log p { margin: 0 0 5px; padding: 7px 10px; color: #9fb5c5; background: linear-gradient(90deg, transparent, rgba(4, 13, 24, .78)); border-right: 2px solid rgba(100, 229, 255, .5); font: 700 10px/1.2 Inter, sans-serif; animation: combat-log-in .2s ease-out; text-transform: uppercase; }
 .combat-log b { font-weight: 900; }
 
@@ -537,7 +546,7 @@ input, select {
   letter-spacing: .09em;
 }
 
-.pause { position: absolute; top: 94px; right: 22px; min-width: 42px; min-height: 40px; padding: 7px; }
+.pause { position: absolute; top: 132px; right: 22px; min-width: 42px; min-height: 40px; padding: 7px; }
 .scoreboard {
   position: absolute;
   left: 50%;
@@ -593,6 +602,8 @@ input, select {
   .combatant.left { left: 10px; }
   .combatant.right { right: 10px; }
   .combatant b { font-size: 15px; }
+  .leader-row b { font-size: 13px; }
+  .leader-row span { font-size: 16px; }
   .match-state { top: 78px; }
   .pause { top: 112px; right: 10px; }
   .weapon-strip { bottom: 10px; grid-template-columns: repeat(5, 48px); }
@@ -611,10 +622,10 @@ input, select {
   .combatant.right { right: 8px; }
   .combatant > small { display: none; }
   .health { margin-top: 7px; }
-  .match-state { top: 68px; min-width: 198px; padding: 6px 20px 9px; }
+  .match-state { top: 88px; min-width: 198px; padding: 6px 20px 9px; }
   .match-state strong { font-size: 28px; }
-  .pause { top: 78px; right: 8px; }
-  .combat-log { top: 130px; right: 8px; width: 66vw; }
+  .pause { top: 98px; right: 8px; }
+  .combat-log { top: 146px; right: 8px; width: 66vw; }
   .grapple-readout { bottom: 80px; max-width: 210px; text-align: center; }
   .perf-readout { display: none; }
 }
@@ -625,12 +636,16 @@ input, select {
   .combatant.right { right: 6px; }
   .combatant b { font-size: 13px; }
   .combatant span { font-size: 18px; }
+  .leader-row { min-height: 15px; gap: 4px; }
+  .leader-row b { font-size: 11px; }
+  .leader-row span { font-size: 14px; }
+  .leaders > small { margin-bottom: 2px; }
   .combatant > small { margin-top: 5px; font-size: 7px; }
   .health { height: 4px; margin-top: 6px; }
   .match-state { top: 3px; min-width: 190px; padding: 4px 18px 7px; }
   .match-state strong { font-size: 25px; }
-  .pause { top: 62px; right: 6px; min-height: 34px; }
-  .combat-log { top: 65px; right: 6px; width: 40vw; }
+  .pause { top: 70px; right: 6px; min-height: 34px; }
+  .combat-log { top: 72px; right: 6px; width: 40vw; }
   .weapon-strip { bottom: 4px; grid-template-columns: repeat(5, 44px); gap: 3px; }
   .weapon-strip button { min-height: 40px; padding: 3px; }
   .weapon-strip button > span { font-size: 14px; }

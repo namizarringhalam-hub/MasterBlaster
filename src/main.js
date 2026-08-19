@@ -7,7 +7,7 @@ import { CombatVisuals } from "./combatVisuals.js";
 import { ArenaWorld } from "./world.js";
 import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reticleAim } from "./player.js";
 import { InputManager, clearTouchActions, updateOrbit } from "./input.js";
-import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "./gameData.js";
+import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, topScoreIndices, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "./gameData.js";
 import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, clampBotCount, safestSpawn, shouldBotPlaceWall } from "./botBrain.js";
 import { NeonRenderPipeline } from "./renderPipeline.js";
 import { combatMusicIntensity } from "./musicScore.js";
@@ -915,9 +915,11 @@ class BlasterBattle {
           <strong data-time>03:00</strong>
           <span>FIRST TO ${this.targetScore}</span>
         </section>
-        <section class="combatant right">
-          <div><b data-leader-name>${escapeHtml(this.players[0].name)}</b><span data-leader-score>0</span></div>
-          <small>${this.players.length} FIGHTERS · ARENA LEADER</small>
+        <section class="combatant right leaders">
+          <small>TOP 3 · ${this.players.length} FIGHTERS</small>
+          <div class="leader-list">
+            ${[0, 1, 2].map((rank) => `<div class="leader-row" data-leader-row="${rank}"><i>${rank + 1}</i><b data-leader-name="${rank}">${escapeHtml(this.players[rank]?.name || "—")}</b><span data-leader-score="${rank}">0</span></div>`).join("")}
+          </div>
         </section>
         <div class="damage-vignette" data-damage-vignette></div>
         <div class="motion-vignette" data-motion-vignette></div>
@@ -950,8 +952,10 @@ class BlasterBattle {
       health: ui.querySelector('[data-health="0"]'),
       score: ui.querySelector('[data-score="0"]'),
       boardScore: [...ui.querySelectorAll("[data-board-score]")],
-      leaderName: ui.querySelector("[data-leader-name]"),
-      leaderScore: ui.querySelector("[data-leader-score]"),
+      leaderRows: [...ui.querySelectorAll("[data-leader-row]")],
+      leaderNames: [...ui.querySelectorAll("[data-leader-name]")],
+      leaderScores: [...ui.querySelectorAll("[data-leader-score]")],
+      rankedScores: Array(this.scores.length).fill(NaN),
       time: ui.querySelector("[data-time]"),
       grapple: ui.querySelector("[data-grapple]"),
       performance: ui.querySelector("[data-perf]"),
@@ -2300,13 +2304,22 @@ class BlasterBattle {
     if (this.hud.root.dataset.playerState !== actionState) this.hud.root.dataset.playerState = actionState;
     setStyle(this.hud.health, "width", `${player.health}%`);
     setText(this.hud.score, this.scores[0]);
-    let leaderIndex = 0;
+    let rankingChanged = false;
     for (let index = 0; index < this.scores.length; index++) {
       setText(this.hud.boardScore[index], this.scores[index]);
-      if (this.scores[index] > this.scores[leaderIndex]) leaderIndex = index;
+      if (this.hud.rankedScores[index] !== this.scores[index]) {
+        this.hud.rankedScores[index] = this.scores[index];
+        rankingChanged = true;
+      }
     }
-    setText(this.hud.leaderName, this.players[leaderIndex].name);
-    setText(this.hud.leaderScore, this.scores[leaderIndex]);
+    if (rankingChanged) {
+      topScoreIndices(this.scores).forEach((playerIndex, rank) => {
+        this.hud.leaderRows[rank].hidden = false;
+        setText(this.hud.leaderNames[rank], this.players[playerIndex].name);
+        setText(this.hud.leaderScores[rank], this.scores[playerIndex]);
+      });
+      for (let rank = Math.min(3, this.players.length); rank < 3; rank++) this.hud.leaderRows[rank].hidden = true;
+    }
     const minutes = Math.floor(this.matchTime / 60).toString().padStart(2, "0");
     const seconds = Math.floor(this.matchTime % 60).toString().padStart(2, "0");
     setText(this.hud.time, `${minutes}:${seconds}`);

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import * as THREE from "three/webgpu";
 import { chooseBotSlot, botFireChance, botWeaponPolicy, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
 import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
-import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, LOADOUT_SLOTS, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, seededRandom, seedFromText, swapStolenWeapon, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
+import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, LOADOUT_SLOTS, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, seededRandom, seedFromText, swapStolenWeapon, topScoreIndices, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
 import { InputManager, TOUCH_LOOK_GAIN, clearTouchActions, shouldCaptureGameKey, touchLookDelta, touchMoveDelta, updateOrbit } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, flameConeFactor, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
 import { NeonRenderPipeline } from "../src/renderPipeline.js";
@@ -21,6 +21,8 @@ const [mainSource, bootSource, renderPipelineSource, worldSource, serviceWorkerS
 ]);
 assert.doesNotMatch(mainSource, /serviceWorker\.register/, "the renderer does not own service-worker startup");
 assert.match(bootSource, /serviceWorker\.register\("\/sw\.js"/, "the lightweight shell starts immutable caching without waiting for the engine");
+assert.deepEqual(topScoreIndices([2, 7, 7, 4, 9]), [4, 1, 2], "the HUD ranks the top three scores with stable tie ordering");
+assert.match(mainSource, /\[0, 1, 2\]\.map[\s\S]*data-leader-row/, "the top-right HUD renders three leaderboard rows");
 assert.match(mainSource, /reticleAim\(player, this\.camera\.position, this\.camera\.getWorldDirection/, "weapons fire through the visible camera's exact center ray");
 assert.match(mainSource, /mode === "quick"[\s\S]*?settings\.botCount = 7;[\s\S]*?botDifficulty = "normal";/, "Quick Play defaults to seven normal-difficulty bots");
 assert.doesNotMatch(mainSource, /EffectComposer|UnrealBloomPass|composer\.render/, "the game avoids unstable post-processing framebuffers");
