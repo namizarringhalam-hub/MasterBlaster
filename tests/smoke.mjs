@@ -10,15 +10,17 @@ import { NeonRenderPipeline } from "../src/renderPipeline.js";
 import { ArenaWorld } from "../src/world.js";
 import { weaponPresentation } from "../src/weaponPresentation.js";
 
-const [mainSource, renderPipelineSource, worldSource, serviceWorkerSource, stylesSource, indexSource] = await Promise.all([
+const [mainSource, bootSource, renderPipelineSource, worldSource, serviceWorkerSource, stylesSource, indexSource] = await Promise.all([
   readFile(new URL("../src/main.js", import.meta.url), "utf8"),
+  readFile(new URL("../src/boot.js", import.meta.url), "utf8"),
   readFile(new URL("../src/renderPipeline.js", import.meta.url), "utf8"),
   readFile(new URL("../src/world.js", import.meta.url), "utf8"),
   readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
   readFile(new URL("../src/styles.css", import.meta.url), "utf8"),
   readFile(new URL("../index.html", import.meta.url), "utf8")
 ]);
-assert.doesNotMatch(mainSource, /serviceWorker\.register/, "the game no longer installs the stale offline cache");
+assert.doesNotMatch(mainSource, /serviceWorker\.register/, "the renderer does not own service-worker startup");
+assert.match(bootSource, /serviceWorker\.register\("\/sw\.js"/, "the lightweight shell starts immutable caching without waiting for the engine");
 assert.match(mainSource, /reticleAim\(player, this\.camera\.position, this\.camera\.getWorldDirection/, "weapons fire through the visible camera's exact center ray");
 assert.match(mainSource, /mode === "quick"[\s\S]*?settings\.botCount = 7;[\s\S]*?botDifficulty = "normal";/, "Quick Play defaults to seven normal-difficulty bots");
 assert.doesNotMatch(mainSource, /EffectComposer|UnrealBloomPass|composer\.render/, "the game avoids unstable post-processing framebuffers");
@@ -108,9 +110,11 @@ assert.doesNotMatch(mainSource, /data-touch="(?:up|down|left|right)"/, "mobile m
 assert.match(mainSource, /document\.addEventListener\("visibilitychange"/, "page visibility resets are attached to the document that dispatches them");
 assert.match(mainSource, /if \(this\.paused\) \{[\s\S]*?clearTouchActions\(this\.touch\)/, "pausing clears held and queued touch actions");
 assert.match(mainSource, /pointercancel", cancel/, "cancelled action touches cannot replay queued actions");
-assert.match(serviceWorkerSource, /caches\.delete/, "the replacement worker clears old cached builds");
-assert.match(serviceWorkerSource, /clients\.claim/, "the replacement worker takes control before refreshing old clients");
-assert.match(serviceWorkerSource, /registration\.unregister/, "the replacement worker removes itself after cleanup");
+assert.match(serviceWorkerSource, /pathname\.startsWith\("\/assets\/"\)/, "content-hashed engine assets use the local immutable cache");
+assert.match(serviceWorkerSource, /pathname\.startsWith\("\/audio\/"\).*searchParams\.has\("bank"\)/s, "only versioned audio enters the immutable cache");
+assert.match(serviceWorkerSource, /cache\.match\(event\.request\)[\s\S]*if \(cached\) return cached/, "repeat sessions read immutable assets without revalidation");
+assert.doesNotMatch(serviceWorkerSource, /index\.html|navigate\(/, "HTML and navigation requests stay network-managed so new releases cannot go stale");
+assert.match(serviceWorkerSource, /clients\.claim/, "the cache takes control without forcing a disruptive refresh");
 
 const documentedWeaponIds = [
   "arc_lightning", "black_hole_generator", "blaster", "boomerang_blade", "bouncing_bomb", "burst_rifle",

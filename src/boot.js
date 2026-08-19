@@ -5,6 +5,9 @@ let enginePromise;
 
 performance.mark?.("blaster-shell-visible");
 globalThis.__blasterPerf = { shellAt: performance.now(), longTasks: 0, longTaskMs: 0 };
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
+}
 try {
   new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) {
