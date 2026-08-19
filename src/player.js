@@ -952,7 +952,13 @@ export function applyGrapplePhysics(player, dt) {
   const nextRadialSpeed = THREE.MathUtils.damp(radialSpeed, player.grapple.pullSpeed, stretch > 0 ? 15 : 10, dt);
   player.velocity.addScaledVector(direction, nextRadialSpeed - radialSpeed);
   if (player.grapple.launchLift) {
-    player.velocity.y += Math.max(0, direction.y) * 6 * movementScale;
+    const elevation = Math.max(0, direction.y);
+    if (elevation > .03) {
+      const forward = direction.clone().setY(0);
+      if (forward.lengthSq() > .001) player.velocity.addScaledVector(forward.normalize(), (6 + elevation * 4) * movementScale);
+      const lift = (5 + elevation * 10) * movementScale;
+      player.velocity.y = Math.max(player.velocity.y + lift, lift);
+    }
     player.grapple.launchLift = false;
   }
 

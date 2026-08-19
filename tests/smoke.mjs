@@ -583,6 +583,7 @@ const upwardDirection = upwardLaunch.grapple.anchor.clone().sub(new THREE.Vector
 applyGrapplePhysics(upwardLaunch, 1 / 60);
 const upwardArc = upwardLaunch.velocity.y - upwardLaunch.velocity.dot(upwardDirection) * upwardDirection.y;
 assert.ok(upwardArc > 1, "an upward grapple launches above its straight rope line to begin a visible lift arc");
+assert.ok(upwardLaunch.velocity.y > 9 && upwardLaunch.velocity.x > 8, "an upward grapple immediately launches strongly upward and toward its anchor");
 assert.equal(upwardLaunch.grapple.launchLift, false, "the launch lift is consumed once instead of disturbing the steady pull");
 const levelLaunch = {
   position: new THREE.Vector3(), velocity: new THREE.Vector3(), controlMove: new THREE.Vector3(), slowTimer: 0,
