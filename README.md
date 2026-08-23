@@ -1,6 +1,6 @@
-# Blaster Battle
+# Master Blaster
 
-A browser-native Three.js MVP based on the Blaster Battle v2.1 specification.
+A browser-native Three.js MVP based on the Master Blaster v2.1 specification.
 
 ## Run
 

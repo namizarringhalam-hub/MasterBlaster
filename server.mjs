@@ -51,7 +51,7 @@ const server = createServer((request, response) => {
 
 server.on("error", (error) => {
   if (error.code === "EADDRINUSE") {
-    console.log(`Blaster Battle already appears to be running at http://127.0.0.1:${port}/`);
+    console.log(`Master Blaster already appears to be running at http://127.0.0.1:${port}/`);
     process.exit(0);
   }
 
@@ -59,5 +59,5 @@ server.on("error", (error) => {
 });
 
 server.listen(port, "127.0.0.1", () => {
-  console.log(`Blaster Battle is running at http://127.0.0.1:${port}/`);
+  console.log(`Master Blaster is running at http://127.0.0.1:${port}/`);
 });

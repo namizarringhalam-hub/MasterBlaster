@@ -669,4 +669,4 @@ assert.ok(fighter.velocity.length() > speedBeforeRelease, "releasing a fast swin
 
 fighter.dispose();
 worldB.dispose();
-console.log("Blaster Battle smoke check passed.");
+console.log("Master Blaster smoke check passed.");

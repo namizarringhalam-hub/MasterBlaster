@@ -1,6 +1,6 @@
 {
-  "name": "Blaster Battle",
-  "short_name": "Blaster Battle",
+  "name": "Master Blaster",
+  "short_name": "Master Blaster",
   "description": "Fast browser-native 3D arena combat.",
   "start_url": "/",
   "display": "fullscreen",

@@ -362,7 +362,7 @@ class BlasterBattle {
     ui.innerHTML = `
       <main class="menu-shell">
         <section class="hero-panel">
-          <div class="brand-mark"><i></i><span>BLASTER</span><b>BATTLE</b></div>
+          <div class="brand-mark"><i></i><span>MASTER</span><b>BLASTER</b></div>
           <p class="kicker">BROWSER-NATIVE ARENA COMBAT</p>
           <h1>Swing fast.<br><em>Blast smart.</em></h1>
           <p class="lead">Physical projectiles, explosive routes, and a grappling hook that never leaves your side.</p>
@@ -541,10 +541,10 @@ class BlasterBattle {
     ui.innerHTML = `
       <main class="screen">
         <section class="dialog credits-dialog">
-          <header><button class="back" data-screen="main">← Back</button><p>BLASTER BATTLE v0.1</p></header>
+          <header><button class="back" data-screen="main">← Back</button><p>MASTER BLASTER v0.1</p></header>
           <h1>Built for the open web.</h1>
           <p>Three.js rendering, deterministic seeded arenas, Web Audio, Pointer Events, keyboard, mouse, and touch-friendly controls.</p>
-          <p>Game direction follows the Blaster Battle browser-native specification, inspired by the immediate projectile combat and grappling movement of classic arena games.</p>
+          <p>Game direction follows the Master Blaster browser-native specification, inspired by the immediate projectile combat and grappling movement of classic arena games.</p>
         </section>
       </main>`;
     this.bindUi();
@@ -2530,7 +2530,7 @@ class BlasterBattle {
 
 const game = new BlasterBattle();
 export const gameReady = game.init().then(() => game).catch((error) => {
-  console.error("Blaster Battle renderer failed to initialize", error);
+  console.error("Master Blaster renderer failed to initialize", error);
   try { sessionStorage.removeItem(MATCH_SESSION_KEY); } catch {}
   if (matchLoading) matchLoading.hidden = true;
   ui.innerHTML = `<main class="menu-shell"><section class="hero-panel"><p class="kicker">RENDERER ERROR</p><h1>Graphics initialization failed.</h1><p class="lead">Update your browser or enable WebGL2, then reload.</p></section></main>`;

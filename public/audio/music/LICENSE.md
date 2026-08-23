@@ -8,4 +8,4 @@ Edition** by Versilian Studios and its contributors.
 - License text: https://creativecommons.org/publicdomain/zero/1.0/
 
 The recordings were trimmed, converted to mono 32 kHz PCM, normalized, and
-arranged into the original adaptive *Blaster Battle* score.
+arranged into the original adaptive *Master Blaster* score.

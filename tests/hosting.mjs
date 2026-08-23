@@ -31,7 +31,10 @@ const response = await worker.fetch(new Request("https://example.test/"), { ASSE
 assert.equal(response.status, 200, "the deployed root falls back to client/index.html");
 assert.match(response.headers.get("cache-control"), /max-age=0/, "the HTML shell always revalidates so releases cannot become stale");
 const deployedHtml = await response.text();
-assert.match(deployedHtml, /<title>Blaster Battle<\/title>/, "the deployed root serves the game shell");
+assert.match(deployedHtml, /<title>Master Blaster<\/title>/, "the deployed root serves the rebranded game shell");
+assert.match(deployedHtml, /<meta property="og:title" content="Master Blaster"/, "shared links use the Master Blaster title");
+assert.match(deployedHtml, /<span>MASTER<\/span><b>BLASTER<\/b>/, "the server-rendered menu uses the Master Blaster brand");
+assert.doesNotMatch(deployedHtml, /Blaster Battle/i, "the deployed shell contains no retired title");
 assert.match(deployedHtml, /data-boot-mode="quick"/, "the interactive menu shell is server-rendered before the deferred game engine executes");
 assert.match(deployedHtml, /src="\/assets\//, "the production shell loads only its hashed boot module eagerly");
 
@@ -61,4 +64,7 @@ for (const file of Object.values(MUSIC_SAMPLE_MANIFEST).flatMap((role) => role.f
   assert.match(musicResponse.headers.get("cache-control"), /max-age=31536000, immutable/, `${file.url} is reused without a network revalidation on later matches`);
   assert.equal(Buffer.from(await musicResponse.arrayBuffer()).subarray(0, 4).toString("ascii"), "RIFF", `${file.url} contains WAV bytes`);
 }
-console.log("Blaster Battle hosting check passed.");
+const manifest = JSON.parse(await readFile("dist/client/manifest.webmanifest", "utf8"));
+assert.equal(manifest.name, "Master Blaster", "the installable app uses the Master Blaster name");
+assert.equal(manifest.short_name, "Master Blaster", "the installed app label uses the Master Blaster name");
+console.log("Master Blaster hosting check passed.");
