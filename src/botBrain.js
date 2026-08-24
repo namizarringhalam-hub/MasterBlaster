@@ -1,7 +1,8 @@
 import { WEAPONS } from "./gameData.js";
 
-export function clampBotCount(value) {
-  return Math.min(15, Math.max(1, Math.round(Number(value) || 1)));
+export function clampBotCount(value, minimum = 1) {
+  const count = Number(value);
+  return Math.min(15, Math.max(minimum, Math.round(Number.isFinite(count) ? count : minimum)));
 }
 
 export function nearestTarget(bot, players) {

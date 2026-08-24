@@ -165,6 +165,9 @@ assert.deepEqual(persistedPresetSettings.loadoutPresets[0], { name: "Control", w
 assert.equal(persistedPresetSettings.defaultLoadoutPreset, 0, "the default-set choice survives a settings reload");
 assert.deepEqual(repairedPresetSettings.loadoutPresets, [null, null, null], "corrupt and partial presets are discarded safely");
 assert.equal(repairedPresetSettings.defaultLoadoutPreset, null, "an invalid preset cannot remain the default");
+settingsStorage = JSON.stringify({ matchSettings: { private: { botCount: 1, botDifficulty: "normal", seed: "" } } });
+const migratedPrivateSettings = loadSettings();
+assert.equal(migratedPrivateSettings.matchSettings.private.botCount, 0, "the former one-bot private default migrates to zero once");
 assert.deepEqual(persistedMatchSettings.matchSettings.quick, { botCount: 15, botDifficulty: "veteran", seed: "QUICK-15" }, "Quick Play remembers its last device-local count, difficulty, and seed");
 assert.deepEqual(persistedMatchSettings.matchSettings.private, { botCount: 4, botDifficulty: "rookie", seed: "ROOM42" }, "Private Room keeps an independent setup profile");
 assert.deepEqual(persistedMatchSettings.matchSettings.training, { botCount: 9, botDifficulty: "normal", seed: "PRACTICE" }, "Training keeps an independent setup profile");
@@ -365,7 +368,10 @@ assert.ok(shouldCaptureGameKey({ code: "KeyE", target: null }, true), "grapple i
 assert.ok(shouldCaptureGameKey({ code: "Digit5", target: null }, true), "the fifth weapon slot is reachable");
 assert.ok(!shouldCaptureGameKey({ code: "KeyR", ctrlKey: true, target: null }, true), "browser shortcuts are preserved");
 assert.deepEqual(updateOrbit(0, 0, 100, -50), { yaw: -.22, pitch: .11 }, "mouse-right turns the third-person camera right without reversing vertical aim");
-assert.equal(updateOrbit(0, .6, 0, -1000).pitch, .65, "vertical camera aim is clamped before it can flip");
+const verticalPitch = updateOrbit(0, 0, 0, -1000).pitch;
+assert.ok(verticalPitch > Math.PI / 2 - .001 && Math.sin(verticalPitch) > .99999999, "the camera can aim functionally straight up without flipping");
+assert.equal(updateOrbit(0, 0, 0, 1000).pitch, -verticalPitch, "the camera has the same full vertical range downward");
+assert.match(mainSource, /focus\.copy\(this\.camera\.position\)\.addScaledVector\(forward, 28\)/, "the reticle ray stays parallel to the selected pitch instead of converging early on the player");
 assert.equal(TOUCH_LOOK_GAIN, 3.5, "right-side touch aiming is substantially faster than mouse aiming");
 assert.deepEqual(touchLookDelta(20, 30, 70, 5), { x: 175, y: -87.5 }, "right-side dragging applies fast horizontal and vertical touch look");
 assert.deepEqual(touchMoveDelta(20, 30, 24, 34), { x: 0, y: 0 }, "small left-side touch motion stays inside the walking dead zone");
@@ -445,6 +451,7 @@ assert.equal(chooseBotSlot(["shotgun", "railgun"], 30, () => 0), 1, "bot prefers
 assert.ok(botFireChance(10, true, WEAPONS.blaster) > 0, "bot can fire visible projectiles");
 assert.ok(botFireChance(100, true, WEAPONS.machine_gun) > 0, "bots do not treat straight weapons as range-limited");
 assert.equal(clampBotCount(99), 15, "matches allow at most fifteen bots");
+assert.equal(clampBotCount(0, 0), 0, "private rooms may start without bot fillers");
 assert.equal(clampBotCount(0), 1, "matches always include at least one bot");
 const botStub = { alive: true, position: new THREE.Vector3() };
 const nearStub = { alive: true, position: new THREE.Vector3(2, 0, 0) };

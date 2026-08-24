@@ -152,7 +152,7 @@ export class MatchRoom extends DurableObject {
   async initialize(url) {
     if (this.meta && !this.meta.ended && matchTimeRemaining(this.meta.endsAt) > 0) return;
     const now = Date.now();
-    const targetSize = Math.min(MAX_MATCH_PLAYERS, Math.max(2, Math.trunc(finiteNumber(url.searchParams.get("botCount"), 7, 1, 15)) + 1));
+    const targetSize = Math.min(MAX_MATCH_PLAYERS, Math.max(1, Math.trunc(finiteNumber(url.searchParams.get("botCount"), 7, 0, 15)) + 1));
     this.meta = {
       roomCode: normalizeRoomCode(url.pathname.split("/").filter(Boolean).at(-2), "ROOM"),
       seed: normalizeRoomCode(url.searchParams.get("seed"), normalizeRoomCode(url.pathname.split("/").filter(Boolean).at(-2), "BLAST-01")),

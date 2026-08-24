@@ -14,13 +14,13 @@ async function assignment() {
   return response.json();
 }
 
-async function connect(roomCode, name) {
+async function connect(roomCode, name, roomBotCount = botCount) {
   const url = new URL(`/api/rooms/${roomCode}/connect`, origin);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.searchParams.set("v", "1");
   url.searchParams.set("name", name);
   url.searchParams.set("loadout", loadout.join(","));
-  url.searchParams.set("botCount", String(botCount));
+  url.searchParams.set("botCount", String(roomBotCount));
   url.searchParams.set("difficulty", "veteran");
   const socket = new WebSocket(url);
   const messages = [];
@@ -86,4 +86,9 @@ assert.equal(damage.damage, 18);
 
 first.socket.close(1000, "test complete");
 second.socket.close(1000, "test complete");
-console.log("Two-client multiplayer room lifecycle passed.");
+
+const privateRoom = await connect(`P-${Date.now().toString(36).slice(-8)}`, "Solo", 0);
+assert.equal(privateRoom.welcome.players.length, 1);
+assert.equal(privateRoom.welcome.players.some((player) => player.bot), false);
+privateRoom.socket.close(1000, "test complete");
+console.log("Two-client lifecycle and zero-bot private room passed.");

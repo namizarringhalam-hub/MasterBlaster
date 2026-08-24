@@ -2,9 +2,10 @@ const SAVE_KEY = "blaster-battle-settings-v1";
 export const LOADOUT_PRESET_COUNT = 3;
 const MATCH_SETTINGS_DEFAULTS = {
   quick: { botCount: 7, botDifficulty: "normal", seed: "BLAST-01" },
-  private: { botCount: 1, botDifficulty: "normal", seed: "" },
+  private: { botCount: 0, botDifficulty: "normal", seed: "" },
   training: { botCount: 1, botDifficulty: "normal", seed: "BLAST-01" }
 };
+const MATCH_SETTINGS_VERSION = 2;
 
 export function topScoreIndices(scores, count = 3) {
   return scores.map((_, index) => index)
@@ -234,6 +235,7 @@ function defaults() {
     ambienceVolume: 65,
     dynamicRange: "standard",
     botCount: 1,
+    matchSettingsVersion: MATCH_SETTINGS_VERSION,
     matchSettings: structuredClone(MATCH_SETTINGS_DEFAULTS),
     loadout: [...DEFAULT_LOADOUT],
     loadoutPresets: Array(LOADOUT_PRESET_COUNT).fill(null),
@@ -262,13 +264,16 @@ export function loadSettings() {
     const matchSettings = Object.fromEntries(Object.entries(MATCH_SETTINGS_DEFAULTS).map(([mode, fallback]) => {
       const remembered = saved.matchSettings?.[mode] || {};
       const difficulty = remembered.botDifficulty === "hard" ? "veteran" : remembered.botDifficulty;
+      const parsedBotCount = Number(remembered.botCount);
+      const minimumBots = mode === "private" ? 0 : 1;
+      const legacyPrivateDefault = mode === "private" && saved.matchSettingsVersion !== MATCH_SETTINGS_VERSION && parsedBotCount === 1;
       return [mode, {
-        botCount: Math.max(1, Math.min(15, Math.trunc(Number(remembered.botCount) || fallback.botCount))),
+        botCount: legacyPrivateDefault ? 0 : Math.max(minimumBots, Math.min(15, Math.trunc(Number.isFinite(parsedBotCount) ? parsedBotCount : fallback.botCount))),
         botDifficulty: ["rookie", "normal", "veteran"].includes(difficulty) ? difficulty : fallback.botDifficulty,
         seed: String(remembered.seed ?? fallback.seed).trim().toUpperCase().slice(0, 12)
       }];
     }));
-    return { ...defaults(), ...saved, graphics, loadout, loadoutPresets, defaultLoadoutPreset, matchSettings };
+    return { ...defaults(), ...saved, graphics, loadout, loadoutPresets, defaultLoadoutPreset, matchSettingsVersion: MATCH_SETTINGS_VERSION, matchSettings };
   } catch {
     return defaults();
   }

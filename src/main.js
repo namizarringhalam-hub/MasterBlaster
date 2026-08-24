@@ -161,12 +161,11 @@ class BlasterBattle {
     );
     this.cameraYaw = 0;
     this.cameraPitch = -.08;
-    this.cameraFocus = new THREE.Vector3();
     this.cameraScratch = {
       forward: new THREE.Vector3(), flatForward: new THREE.Vector3(), right: new THREE.Vector3(),
       pivot: new THREE.Vector3(), desired: new THREE.Vector3(), offset: new THREE.Vector3(),
       candidateDesired: new THREE.Vector3(), candidate: new THREE.Vector3(), target: new THREE.Vector3(),
-      constrained: new THREE.Vector3(), motionLead: new THREE.Vector3(), focus: new THREE.Vector3(),
+      constrained: new THREE.Vector3(), focus: new THREE.Vector3(),
       menuPosition: new THREE.Vector3(0, 22, 29)
     };
     this.cameraClearance = { actual: 0, target: 0 };
@@ -409,6 +408,7 @@ class BlasterBattle {
     this.settings.botCount = remembered.botCount;
     this.botDifficulty = remembered.botDifficulty;
     this.seed = remembered.seed || (mode === "private" ? this.roomCode() : "BLAST-01");
+    const minimumBots = mode === "private" ? 0 : 1;
     const title = mode === "quick" ? "Quick Play" : mode === "private" ? "Private Room" : "Training";
     const detail = mode === "quick"
       ? "Join an online regional room, filled with AI combatants until more players arrive."
@@ -430,7 +430,7 @@ class BlasterBattle {
                 ${["rookie", "normal", "veteran"].map((level) => `<option ${this.botDifficulty === level ? "selected" : ""}>${level}</option>`).join("")}
               </select>
             </label>
-            <label>Number of bots<input id="bot-count" type="number" min="1" max="15" step="1" value="${clampBotCount(this.settings.botCount)}"></label>
+            <label>Number of bots<input id="bot-count" type="number" min="${minimumBots}" max="15" step="1" value="${clampBotCount(this.settings.botCount, minimumBots)}"></label>
           </div>
           <section class="loadout-builder">
             <div><h2>Choose five weapons</h2><span data-loadout-count>${this.settings.loadout.length}/5 selected</span></div>
@@ -764,7 +764,7 @@ class BlasterBattle {
     this.settings.displayName = ui.querySelector("#display-name")?.value.trim() || "Rookie";
     this.seed = ui.querySelector("#map-seed")?.value.trim().toUpperCase() || "BLAST-01";
     this.botDifficulty = ui.querySelector("#bot-difficulty")?.value || "normal";
-    this.settings.botCount = clampBotCount(ui.querySelector("#bot-count")?.value);
+    this.settings.botCount = clampBotCount(ui.querySelector("#bot-count")?.value, this.mode === "private" ? 0 : 1);
     this.settings.matchSettings[this.mode] = {
       seed: this.seed,
       botDifficulty: this.botDifficulty,
@@ -832,7 +832,7 @@ class BlasterBattle {
       this.seed = String(saved.seed).slice(0, 12);
       this.mode = ["quick", "private", "training"].includes(saved.mode) ? saved.mode : "training";
       this.botDifficulty = ["rookie", "normal", "veteran"].includes(saved.botDifficulty) ? saved.botDifficulty : "normal";
-      this.settings.botCount = clampBotCount(saved.botCount);
+      this.settings.botCount = clampBotCount(saved.botCount, this.mode === "private" ? 0 : 1);
       this.freshSessionReady = true;
       this.startMatch();
       this.hideMatchLoadingAfterFrame = true;
@@ -986,7 +986,6 @@ class BlasterBattle {
     this.respawnTimers = this.players.map(() => 0);
     this.cameraYaw = Math.atan2(this.players[0].aim.x, this.players[0].aim.z);
     this.cameraPitch = this.players[0].position.y > 50 ? -.38 : -.08;
-    this.cameraFocus.set(0, 0, 0);
     this.updateCamera(1);
     this.renderHud();
     this.scene.updateMatrixWorld(true);
@@ -1149,7 +1148,6 @@ class BlasterBattle {
     this.respawnTimers[index] = 0;
     this.networkRespawnRequests.delete(player.id);
     if (index === 0) {
-      this.cameraFocus.set(0, 0, 0);
       this.updateCamera(1);
     }
   }
@@ -2589,7 +2587,6 @@ class BlasterBattle {
       if (this.respawnTimers[index] <= 0) {
         player.respawn(safestSpawn(this.world.spawnPoints(), this.players, player));
         if (index === 0) {
-          this.cameraFocus.set(0, 0, 0);
           this.updateCamera(1);
         }
       }
@@ -2723,7 +2720,6 @@ class BlasterBattle {
 
   updateCamera(dt = 1 / 60) {
     const cameraBlend = 1 - Math.exp(-11 * dt);
-    const focusBlend = 1 - Math.exp(-15 * dt);
     const player = this.players[0];
     const scratch = this.cameraScratch;
     if (!player) {
@@ -2781,11 +2777,8 @@ class BlasterBattle {
     }
     this.cameraClearance.actual = actualDistance;
     this.cameraClearance.target = targetDistance;
-    const motionLead = scratch.motionLead.copy(player.velocity).setY(0).multiplyScalar(.08);
-    const focus = scratch.focus.copy(pivot).addScaledVector(forward, 28).add(motionLead);
-    if (this.cameraFocus.lengthSq() === 0) this.cameraFocus.copy(focus);
-    else this.cameraFocus.lerp(focus, focusBlend);
-    this.camera.lookAt(this.cameraFocus);
+    const focus = scratch.focus.copy(this.camera.position).addScaledVector(forward, 28);
+    this.camera.lookAt(focus);
     if (!this.settings.reducedMotion) this.camera.rotateZ(clamp(-player.velocity.dot(right) * .0024, -.035, .035));
   }
 
