@@ -11,6 +11,7 @@ const types = {
   ".js": "text/javascript",
   ".json": "application/json",
   ".png": "image/png",
+  ".svg": "image/svg+xml",
   ".wav": "audio/wav"
 };
 
@@ -32,7 +33,11 @@ assert.equal(response.status, 200, "the deployed root falls back to client/index
 assert.match(response.headers.get("cache-control"), /max-age=0/, "the HTML shell always revalidates so releases cannot become stale");
 const deployedHtml = await response.text();
 assert.match(deployedHtml, /<title>Master Blaster<\/title>/, "the deployed root serves the rebranded game shell");
-assert.match(deployedHtml, /<meta property="og:title" content="Master Blaster"/, "shared links use the Master Blaster title");
+assert.match(deployedHtml, /<meta property="og:title" content="Master Blaster — Neon Arena Shooter"/, "shared links use the Master Blaster title");
+assert.match(deployedHtml, /<link rel="canonical" href="https:\/\/masterblaster\.se\/"/, "the public domain is canonical");
+assert.match(deployedHtml, /<meta property="og:url" content="https:\/\/masterblaster\.se\/"/, "shared links identify the public domain");
+assert.match(deployedHtml, /<meta property="og:image" content="https:\/\/masterblaster\.se\/og\.png"/, "social crawlers receive an absolute preview image URL");
+assert.match(deployedHtml, /47 weapons, private rooms, and adaptive bots/, "shared links include a useful game description");
 assert.match(deployedHtml, /<span>MASTER<\/span><b>BLASTER<\/b>/, "the server-rendered menu uses the Master Blaster brand");
 assert.doesNotMatch(deployedHtml, /Blaster Battle/i, "the deployed shell contains no retired title");
 assert.match(deployedHtml, /data-boot-mode="quick"/, "the interactive menu shell is server-rendered before the deferred game engine executes");
@@ -67,4 +72,15 @@ for (const file of Object.values(MUSIC_SAMPLE_MANIFEST).flatMap((role) => role.f
 const manifest = JSON.parse(await readFile("dist/client/manifest.webmanifest", "utf8"));
 assert.equal(manifest.name, "Master Blaster", "the installable app uses the Master Blaster name");
 assert.equal(manifest.short_name, "Master Blaster", "the installed app label uses the Master Blaster name");
+assert.ok(manifest.icons.some((icon) => icon.src === "/favicon.svg"), "the installable app publishes its brand icon");
+
+const previewResponse = await worker.fetch(new Request("https://example.test/og.png"), { ASSETS: clientAssets });
+assert.equal(previewResponse.status, 200, "the social preview image is deployed");
+assert.equal(previewResponse.headers.get("content-type"), "image/png", "the social preview is served as a PNG");
+assert.equal(Buffer.from(await previewResponse.arrayBuffer()).subarray(1, 4).toString("ascii"), "PNG", "the social preview contains PNG bytes");
+
+const faviconResponse = await worker.fetch(new Request("https://example.test/favicon.svg"), { ASSETS: clientAssets });
+assert.equal(faviconResponse.status, 200, "the favicon is deployed");
+assert.equal(faviconResponse.headers.get("content-type"), "image/svg+xml", "the favicon has the SVG MIME type");
+assert.match(await faviconResponse.text(), /<svg/, "the favicon contains SVG markup");
 console.log("Master Blaster hosting check passed.");

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Master Blaster">
+  <defs>
+    <linearGradient id="bg" x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#101f35"/>
+      <stop offset="1" stop-color="#030911"/>
+    </linearGradient>
+    <linearGradient id="cyan" x1="12" y1="44" x2="51" y2="20" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#20e8ff"/>
+      <stop offset="1" stop-color="#8ff8ff"/>
+    </linearGradient>
+    <linearGradient id="red" x1="13" y1="27" x2="52" y2="46" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ff285f"/>
+      <stop offset="1" stop-color="#ff694f"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <path d="M11 22h34l8 9H19z" fill="url(#cyan)"/>
+  <path d="M11 42h34l8-9H19z" fill="url(#red)"/>
+  <path d="M18 19h27l6 6H24z" fill="#d9fdff" opacity=".85"/>
+</svg>

@@ -1,10 +1,18 @@
 {
   "name": "Master Blaster",
   "short_name": "Master Blaster",
-  "description": "Fast browser-native 3D arena combat.",
+  "description": "Swing, grapple, and blast through fast online 3D arena combat.",
   "start_url": "/",
   "display": "fullscreen",
   "background_color": "#07111d",
   "theme_color": "#07111d",
-  "orientation": "landscape"
+  "orientation": "landscape",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }
