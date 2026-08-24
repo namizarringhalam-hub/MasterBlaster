@@ -1,4 +1,5 @@
-const SAVE_KEY = "blaster-battle-settings-v1";
+const SAVE_KEY = "master-blaster-settings";
+const LEGACY_SAVE_KEYS = ["blaster-battle-settings-v1"];
 export const LOADOUT_PRESET_COUNT = 3;
 const MATCH_SETTINGS_DEFAULTS = {
   quick: { botCount: 7, botDifficulty: "normal", seed: "BLAST-01" },
@@ -53,6 +54,7 @@ function weapon(category, id, name, type, color, description, stats = {}) {
     ...stats
   };
   if (type === "melee") {
+    value.reload = 0;
     value.preferredRange = value.reach * .8;
     value.maxUsefulRange = value.reach + 1;
   }
@@ -200,6 +202,10 @@ export function weaponFireMode(weapon) {
   return weapon.hitscan ? "hitscan" : "projectile";
 }
 
+export function weaponUsesAmmo(weapon) {
+  return weapon?.type !== "melee";
+}
+
 export function projectileStepCount(speed, dt, radius = .11) {
   return Math.max(1, Math.ceil(Math.max(0, speed * dt) / Math.max(.6, radius * 2)));
 }
@@ -245,7 +251,10 @@ function defaults() {
 
 export function loadSettings() {
   try {
-    const saved = JSON.parse(localStorage.getItem(SAVE_KEY) || "{}");
+    const current = localStorage.getItem(SAVE_KEY);
+    const legacy = current == null ? LEGACY_SAVE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean) : null;
+    const saved = JSON.parse(current ?? legacy ?? "{}");
+    if (current == null && legacy) localStorage.setItem(SAVE_KEY, JSON.stringify(saved));
     const loadout = validLoadout(saved.loadout);
     for (const id of DEFAULT_LOADOUT) if (loadout.length < LOADOUT_SLOTS.length && !loadout.includes(id)) loadout.push(id);
     const loadoutPresets = Array.from({ length: LOADOUT_PRESET_COUNT }, (_, index) => {

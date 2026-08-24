@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import * as THREE from "three/webgpu";
 import { chooseBotSlot, botFireChance, botWeaponPolicy, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
 import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
-import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, LOADOUT_SLOTS, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, seededRandom, seedFromText, swapStolenWeapon, topScoreIndices, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
+import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, LOADOUT_SLOTS, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, seededRandom, seedFromText, swapStolenWeapon, topScoreIndices, weaponFireMode, weaponUsesAmmo, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
 import { InputManager, TOUCH_LOOK_GAIN, clearTouchActions, shouldCaptureGameKey, touchLookDelta, touchMoveDelta, updateOrbit } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, flameConeFactor, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
 import { NeonRenderPipeline } from "../src/renderPipeline.js";
@@ -96,6 +96,8 @@ assert.match(mainSource, /queueMatchStart\(sameSeed = false\)[\s\S]*?setMatchLoa
 assert.match(mainSource, /startMatch\(\)[\s\S]*?this\.state = "play";[\s\S]*?this\.renderHud\(\);[\s\S]*?this\.sound\.setPaused\(false\);[\s\S]*?this\.hideMatchLoadingAfterFrame = true/, "the loader is armed for dismissal only after the arena and gameplay HUD are ready");
 assert.doesNotMatch(mainSource, /this\.startMatch\(\);\s*this\.hideMatchLoadingAfterFrame = true/, "the async match initializer cannot dismiss the loader from an earlier menu frame");
 assert.match(mainSource, /frame\(time\)[\s\S]*?this\.renderScene\(\);[\s\S]*?hideMatchLoadingAfterFrame[\s\S]*?setMatchLoading\(false\)/, "the loading screen clears only after the first restored arena frame");
+assert.match(mainSource, /const cameraTarget = this\.world\.constrainCamera\(pivot, desired[\s\S]*?this\.camera\.position\.lerp\(cameraTarget[\s\S]*?this\.world\.constrainCamera\(pivot, this\.camera\.position/, "camera collision retracts the existing view boom smoothly without changing the player's aim angle");
+assert.doesNotMatch(mainSource, /CAMERA_ALTERNATIVE_ANGLES|candidateDesired|actualDistance < 3\.2/, "camera collision cannot alternate escape sides or teleport across rounded obstacles");
 assert.match(stylesSource, /\.rematch-loading\[hidden\] \{ display: none; \}[\s\S]*?@keyframes rematch-track/, "the loading screen has a deterministic hidden state and animated progress treatment");
 assert.match(mainSource, /game\.init\(\)\.then[\s\S]*?sessionStorage\.removeItem\(MATCH_SESSION_KEY\)[\s\S]*?matchLoading\.hidden = true[\s\S]*?RENDERER ERROR/, "renderer startup errors cannot remain trapped behind a persistent match loader");
 assert.doesNotMatch(mainSource, /startMatch\(\)\s*\{\s*this\.clearMatch\(\);\s*this\.rebuildRenderPipeline\(\)/, "no rematch can rebuild post-processing on a live graphics device");
@@ -137,6 +139,13 @@ assert.equal(LOADOUT_PRESET_COUNT, 3, "players can save exactly three weapon set
 const savedSet = ["railgun", "fireball", "shotgun", "freeze_gun", "grapple_disrupting_pulse"];
 assert.deepEqual(activePresetLoadout({ defaultLoadoutPreset: 1, loadoutPresets: [null, { weaponIds: savedSet }, null] }), savedSet, "the chosen default preset preserves exact weapon order");
 assert.equal(activePresetLoadout({ defaultLoadoutPreset: 0, loadoutPresets: [{ weaponIds: ["railgun"] }] }), null, "incomplete presets cannot override a match loadout");
+const releaseStableStorage = new Map([["blaster-battle-settings-v1", JSON.stringify({ displayName: "Veteran", loadout: savedSet })]]);
+globalThis.localStorage = {
+  getItem: (key) => releaseStableStorage.get(key) ?? null,
+  setItem: (key, value) => releaseStableStorage.set(key, value)
+};
+assert.equal(loadSettings().displayName, "Veteran", "existing device preferences migrate from the retired brand key");
+assert.ok(releaseStableStorage.has("master-blaster-settings"), "preferences move to a stable unversioned key that future builds reuse");
 let settingsStorage = JSON.stringify({ loadout: savedSet });
 globalThis.localStorage = {
   getItem: () => settingsStorage,
@@ -173,6 +182,9 @@ assert.deepEqual(persistedMatchSettings.matchSettings.quick, { botCount: 15, bot
 assert.deepEqual(persistedMatchSettings.matchSettings.private, { botCount: 4, botDifficulty: "rookie", seed: "ROOM42" }, "Private Room keeps an independent setup profile");
 assert.deepEqual(persistedMatchSettings.matchSettings.training, { botCount: 9, botDifficulty: "normal", seed: "PRACTICE" }, "Training keeps an independent setup profile");
 assert.match(mainSource, /closest\?\.\("\.setup-form"\)\) this\.captureSetupPreferences\(\)/, "committed setup changes persist even when the player returns to another menu");
+assert.match(mainSource, /event\.target\.id === "display-name"[\s\S]*?saveSettings\(this\.settings\)/, "display-name edits persist locally without requiring a match start");
+assert.match(mainSource, /toggleLoadout\(id\)[\s\S]*?this\.settings\.loadout = current;[\s\S]*?saveSettings\(this\.settings\)/, "weapon selection changes persist locally as they are made");
+assert.match(mainSource, /closest\?\.\("\.settings-grid"\)\) this\.captureSettingsPreferences\(\)/, "graphics, accessibility, audio, and effects preferences persist when changed");
 assert.match(mainSource, /savedDefault = activePresetLoadout\(this\.settings\)[\s\S]*?if \(savedDefault\) this\.settings\.loadout = \[\.\.\.savedDefault\]/, "saved defaults apply to every setup mode");
 assert.match(mainSource, /mode === "quick" && !savedDefault\) this\.settings\.loadout = randomLoadout\(\)/, "Quick Play randomizes only when no default preset exists");
 assert.match(mainSource, /confirm\(`Replace \$\{existing\.name\}/, "overwriting a saved preset requires confirmation");
@@ -203,8 +215,9 @@ assert.ok(WEAPON_GROUPS.every((group) => group.ids.every((id) => WEAPONS[id].cat
 assert.ok(WEAPON_GROUPS.every((group) => /^#[0-9a-f]{6}$/i.test(group.color)), "every weapon category has a stable menu color");
 assert.ok(WEAPON_GROUPS.every((group) => group.ids.map((id) => WEAPONS[id].name).every((name, index, names) => !index || names[index - 1].localeCompare(name) <= 0)), "weapons are alphabetized inside every category");
 assert.match(mainSource, /weapon-categories[\s\S]*?weaponCategoriesMarkup\(\)[\s\S]*?WEAPON_GROUPS\.map/, "Quick Play, Private Room, and Training share the categorized weapon selector");
-assert.match(mainSource, /class="weapon-capacity">MAG \$\{weapon\.ammo\}/, "every weapon selection card exposes its magazine capacity");
-assert.match(mainSource, /fireHeld && player\.ammo\[player\.weapon\.id\] <= 0 && !player\.pendingBurst\) this\.beginReload\(player\)/, "holding fire automatically begins a reload when the magazine empties");
+assert.match(mainSource, /<small>\$\{weapon\.description\}<\/small><span class="weapon-capacity">\$\{weaponUsesAmmo/, "weapon cards place capacity metadata after their description for bottom alignment");
+assert.match(stylesSource, /\.weapon-choice \.weapon-capacity \{ position: absolute; right: 10px; bottom: 9px;[\s\S]*?font-size: 8px;[\s\S]*?text-align: right/, "weapon capacity is a readable bottom-right classification-style label");
+assert.match(mainSource, /weaponUsesAmmo\(player\.weapon\) && fireHeld && player\.ammo\[player\.weapon\.id\] <= 0/, "holding fire automatically begins a reload only for weapons with magazines");
 assert.match(mainSource, /new MultiplayerClient\(\)[\s\S]*?mode: this\.mode[\s\S]*?roomCode: this\.seed/, "online match modes connect through the multiplayer room client");
 assert.ok(Object.values(WEAPONS).every((weapon) => weapon.name && weapon.description && weapon.category), "every weapon has complete menu metadata");
 const presentationSignatures = new Set();
@@ -285,6 +298,7 @@ assert.equal(WEAPONS.remote_explosive.type, "remote", "remote explosives use pla
 assert.equal(WEAPONS.laser_beam.type, "beam", "laser weapons use instant beams");
 assert.equal(WEAPONS.arc_lightning.type, "chain", "arc lightning chains between targets");
 assert.equal(WEAPONS.hammer.type, "melee", "the melee library uses direct close-range attacks");
+assert.ok(WEAPON_GROUPS.find((group) => group.id === "melee").ids.every((id) => WEAPONS[id].reload === 0 && !weaponUsesAmmo(WEAPONS[id])), "every melee weapon attacks indefinitely without ammunition or reload time");
 assert.equal(WEAPONS.temporary_wall.type, "wall", "the wall projectile creates physical cover");
 assert.equal(WEAPONS.decoy_launcher.type, "decoy", "decoy rounds deploy bot targets");
 assert.equal(WEAPONS.teleport_projectile.effect, "teleport", "teleport projectiles relocate their shooter");
@@ -568,6 +582,17 @@ assert.deepEqual(
   [0, null, null, 0, 0, null],
   "respawning clears reload, burst, and charge state alongside the ammunition refill"
 );
+
+const meleeFighter = new Fighter(
+  worldScene,
+  { id: "melee", name: "Brawler", color: 0xff5c8a, accent: 0xffd3df },
+  ["hammer", "energy_sword", "chainsaw", "spear", "punch_glove"],
+  new THREE.Vector3(3, 0, 0)
+);
+meleeFighter.ammo.hammer = 0;
+assert.equal(meleeFighter.reload(), false, "melee weapons never start a reload cycle");
+assert.equal(meleeFighter.reloadTimer, 0, "melee weapons remain ready without reload downtime");
+meleeFighter.dispose();
 
 const flameFighter = new Fighter(
   worldScene,

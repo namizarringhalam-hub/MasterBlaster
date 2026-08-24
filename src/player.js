@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu";
-import { WEAPONS } from "./gameData.js";
+import { weaponUsesAmmo, WEAPONS } from "./gameData.js";
 import { weaponPresentation } from "./weaponPresentation.js";
 
 const clamp = THREE.MathUtils.clamp;
@@ -577,7 +577,7 @@ export class Fighter {
 
   reload() {
     const weapon = this.weapon;
-    if (this.reloadTimer > 0 || this.ammo[weapon.id] === weapon.ammo) return false;
+    if (!weaponUsesAmmo(weapon) || this.reloadTimer > 0 || this.ammo[weapon.id] === weapon.ammo) return false;
     this.reloadTimer = weapon.reload;
     this.reloadWeaponId = weapon.id;
     return true;

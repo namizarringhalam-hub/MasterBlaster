@@ -7,7 +7,7 @@ import { CombatVisuals } from "./combatVisuals.js";
 import { ArenaWorld } from "./world.js";
 import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reticleAim } from "./player.js";
 import { InputManager, clearTouchActions, updateOrbit } from "./input.js";
-import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, topScoreIndices, weaponFireMode, WEAPON_GROUPS, WEAPONS } from "./gameData.js";
+import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, topScoreIndices, weaponFireMode, weaponUsesAmmo, WEAPON_GROUPS, WEAPONS } from "./gameData.js";
 import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, clampBotCount, safestSpawn, shouldBotPlaceWall } from "./botBrain.js";
 import { NeonRenderPipeline } from "./renderPipeline.js";
 import { combatMusicIntensity } from "./musicScore.js";
@@ -22,9 +22,6 @@ const WEAPON_CATEGORY_BY_ID = Object.fromEntries(WEAPON_GROUPS.flatMap((group) =
 const WEAPON_INDEX_BY_ID = Object.fromEntries(Object.keys(WEAPONS).map((id, index) => [id, index]));
 const WEAPON_CATEGORY_SLUG_BY_ID = Object.fromEntries(Object.values(WEAPONS).map((weapon) => [weapon.id, weapon.category.toLowerCase().replaceAll(" ", "-")]));
 const WEAPON_CSS_COLOR_BY_ID = Object.fromEntries(Object.values(WEAPONS).map((weapon) => [weapon.id, `#${weapon.color.toString(16).padStart(6, "0")}`]));
-const CAMERA_ALTERNATIVE_ANGLES = [-2.35, -1.57, -.78, .78, 1.57, 2.35, Math.PI];
-const CAMERA_ALTERNATIVE_HEIGHTS = [5.2, -3.2];
-const CAMERA_UP = new THREE.Vector3(0, 1, 0);
 
 function projectileNeedsLoop(shot) {
   return !shot.mine && !shot.stuck && (shot.weapon.type === "rocket" || shot.weapon.type === "grenade" || shot.weapon.returning || ["fireball", "drill"].includes(shot.weapon.presentationPayload));
@@ -163,8 +160,7 @@ class BlasterBattle {
     this.cameraPitch = -.08;
     this.cameraScratch = {
       forward: new THREE.Vector3(), flatForward: new THREE.Vector3(), right: new THREE.Vector3(),
-      pivot: new THREE.Vector3(), desired: new THREE.Vector3(), offset: new THREE.Vector3(),
-      candidateDesired: new THREE.Vector3(), candidate: new THREE.Vector3(), target: new THREE.Vector3(),
+      pivot: new THREE.Vector3(), desired: new THREE.Vector3(), target: new THREE.Vector3(),
       constrained: new THREE.Vector3(), focus: new THREE.Vector3(),
       menuPosition: new THREE.Vector3(0, 22, 29)
     };
@@ -457,7 +453,7 @@ class BlasterBattle {
           const slot = this.settings.loadout.indexOf(id);
           return `<button class="weapon-choice ${slot >= 0 ? "selected" : ""}" data-weapon-choice="${id}" data-weapon="${id}" data-category="${group.id}" data-shape="${weapon.type}" data-slot="${slot >= 0 ? slot + 1 : ""}" style="--weapon:#${weapon.color.toString(16).padStart(6, "0")};--category:${group.color};${weaponPreviewVariables(weapon, WEAPON_INDEX_BY_ID[id])}">
             <i></i><span class="weapon-preview" aria-hidden="true"></span>
-            <b>${weapon.name}</b><em>${group.name}</em><span class="weapon-capacity">MAG ${weapon.ammo} · ${weapon.reload.toFixed(1)}S RELOAD</span><small>${weapon.description}</small>
+            <b>${weapon.name}</b><em>${group.name}</em><small>${weapon.description}</small><span class="weapon-capacity">${weaponUsesAmmo(weapon) ? `MAG ${weapon.ammo} · ${weapon.reload.toFixed(1)}S RELOAD` : "NO RELOAD"}</span>
           </button>`;
         }).join("")}
       </div>
@@ -472,7 +468,7 @@ class BlasterBattle {
       const color = `#${weapon.color.toString(16).padStart(6, "0")}`;
       const category = WEAPON_CATEGORY_BY_ID[id];
       return `<div class="loadout-slot" draggable="true" data-loadout-drag="${index}" style="--weapon:${color};--category:${category.color}">
-        <span>${index + 1}</span><b>${escapeHtml(weapon.name)}</b><small>${category.name} · MAG ${weapon.ammo}</small>
+        <span>${index + 1}</span><b>${escapeHtml(weapon.name)}</b><small>${category.name} · ${weaponUsesAmmo(weapon) ? `MAG ${weapon.ammo}` : "NO RELOAD"}</small>
         <div>
           <button data-loadout-move="${index}" data-direction="-1" aria-label="Move ${escapeHtml(weapon.name)} left" ${index === 0 ? "disabled" : ""}>‹</button>
           <button data-loadout-move="${index}" data-direction="1" aria-label="Move ${escapeHtml(weapon.name)} right" ${index === this.settings.loadout.length - 1 ? "disabled" : ""}>›</button>
@@ -600,8 +596,14 @@ class BlasterBattle {
     ui.onchange = (event) => {
       if (event.target.dataset.presetName) this.renamePreset(Number(event.target.dataset.presetName), event.target.value);
       if (event.target.closest?.(".setup-form")) this.captureSetupPreferences();
+      if (event.target.closest?.(".settings-grid")) this.captureSettingsPreferences();
     };
     ui.oninput = (event) => {
+      if (event.target.id === "display-name") {
+        this.settings.displayName = event.target.value.trim().slice(0, 18) || "Rookie";
+        saveSettings(this.settings);
+        return;
+      }
       if (!["volume", "musicVolume", "effectsVolume", "ambienceVolume"].includes(event.target.dataset.setting)) return;
       event.target.closest("label")?.querySelector("output")?.replaceChildren(`${event.target.value}%`);
       this.settings[event.target.dataset.setting] = Number(event.target.value);
@@ -609,6 +611,7 @@ class BlasterBattle {
       else this.sound.setMix({
         music: this.settings.musicVolume, effects: this.settings.effectsVolume, ambience: this.settings.ambienceVolume
       });
+      saveSettings(this.settings);
     };
     ui.onpointerover = (event) => {
       const button = event.target.closest?.("button");
@@ -638,6 +641,7 @@ class BlasterBattle {
     else if (current.length < 5) current.push(id);
     else return this.announceLoadout("All five weapon slots are full.");
     this.settings.loadout = current;
+    saveSettings(this.settings);
     this.updateLoadoutUi();
     this.announceLoadout(index >= 0 ? `${WEAPONS[id].name} removed.` : `${WEAPONS[id].name} added to slot ${current.length}.`);
   }
@@ -647,6 +651,7 @@ class BlasterBattle {
     if (!this.settings.loadout[index] || next < 0 || next >= this.settings.loadout.length) return;
     const name = WEAPONS[this.settings.loadout[index]].name;
     [this.settings.loadout[index], this.settings.loadout[next]] = [this.settings.loadout[next], this.settings.loadout[index]];
+    saveSettings(this.settings);
     const focusDirection = next + direction >= 0 && next + direction < this.settings.loadout.length ? direction : -direction;
     this.updateLoadoutUi(`[data-loadout-move="${next}"][data-direction="${focusDirection}"]`);
     this.announceLoadout(`${name} moved to slot ${next + 1}.`);
@@ -656,6 +661,7 @@ class BlasterBattle {
     if (from === to || !this.settings.loadout[from] || !this.settings.loadout[to]) return;
     const [weapon] = this.settings.loadout.splice(from, 1);
     this.settings.loadout.splice(to, 0, weapon);
+    saveSettings(this.settings);
     this.updateLoadoutUi();
     this.announceLoadout(`${WEAPONS[weapon].name} moved to slot ${to + 1}.`);
   }
@@ -663,6 +669,7 @@ class BlasterBattle {
   removeLoadout(index) {
     if (index < 0 || index >= this.settings.loadout.length) return;
     const [weapon] = this.settings.loadout.splice(index, 1);
+    saveSettings(this.settings);
     this.updateLoadoutUi(`[data-weapon-choice="${weapon}"]`);
     this.announceLoadout(`${WEAPONS[weapon].name} removed.`);
   }
@@ -671,6 +678,7 @@ class BlasterBattle {
     const preset = this.settings.loadoutPresets[index];
     if (!preset) return;
     this.settings.loadout = [...preset.weaponIds];
+    saveSettings(this.settings);
     this.updateLoadoutUi(`[data-preset-load="${index}"]`);
     this.announceLoadout(`${preset.name} loaded in slots 1 through 5.`);
   }
@@ -774,7 +782,7 @@ class BlasterBattle {
     saveSettings(this.settings);
   }
 
-  saveSettingsForm() {
+  captureSettingsPreferences() {
     this.settings.graphics = ui.querySelector('[data-setting="graphics"]').value;
     this.settings.blood = ui.querySelector('[data-setting="blood"]').value;
     this.settings.shake = Number(ui.querySelector('[data-setting="shake"]').value);
@@ -783,14 +791,18 @@ class BlasterBattle {
     this.settings.effectsVolume = Number(ui.querySelector('[data-setting="effectsVolume"]').value);
     this.settings.ambienceVolume = Number(ui.querySelector('[data-setting="ambienceVolume"]').value);
     this.settings.dynamicRange = ui.querySelector('[data-setting="dynamicRange"]').value;
+    this.settings.reducedMotion = ui.querySelector('[data-setting="reducedMotion"]').checked;
+    saveSettings(this.settings);
+  }
+
+  saveSettingsForm() {
+    this.captureSettingsPreferences();
     this.sound.setVolume(this.settings.volume);
     this.sound.setMix({ music: this.settings.musicVolume, effects: this.settings.effectsVolume, ambience: this.settings.ambienceVolume });
     this.sound.setDynamicRange(this.settings.dynamicRange);
-    this.settings.reducedMotion = ui.querySelector('[data-setting="reducedMotion"]').checked;
     document.documentElement.classList.toggle("reduce-motion", this.settings.reducedMotion);
     this.renderPipeline.setReducedMotion(this.settings.reducedMotion);
     this.applyGraphicsSettings();
-    saveSettings(this.settings);
     this.renderMain();
   }
 
@@ -1454,7 +1466,7 @@ class BlasterBattle {
       this.cancelCharge(player);
       if (fireHeld) this.tryFire(player, fireTapped);
     }
-    if (fireHeld && player.ammo[player.weapon.id] <= 0 && !player.pendingBurst) this.beginReload(player);
+    if (weaponUsesAmmo(player.weapon) && fireHeld && player.ammo[player.weapon.id] <= 0 && !player.pendingBurst) this.beginReload(player);
     this.sound.updateWeaponLoop(player.id, player.weapon, fireHeld && player.weapon.maintained && player.ammo[player.weapon.id] > 0, this.audioSpatial(player.position, true, 1, player.id));
     this.touch.fireTap = false;
   }
@@ -1693,6 +1705,7 @@ class BlasterBattle {
   tryFire(player, triggerTap = false, replicate = true) {
     const weapon = player.weapon;
     const fireMode = weaponFireMode(weapon);
+    const usesAmmo = weaponUsesAmmo(weapon);
     if (!player.alive || player.attackTimer > 0 || player.reloadTimer > 0) return;
     if (weapon.type === "remote") {
       const charges = this.projectiles
@@ -1709,14 +1722,14 @@ class BlasterBattle {
         return;
       }
     }
-    if (player.ammo[weapon.id] <= 0) {
+    if (usesAmmo && player.ammo[weapon.id] <= 0) {
       this.sound.play("empty", weapon, this.audioSpatial(player.position, player === this.players[0], 1, player.id));
       this.beginReload(player);
       return;
     }
     if (fireMode === "burst") return this.beginBurst(player, weapon, replicate);
     player.attackTimer = weapon.cooldown;
-    player.ammo[weapon.id] -= 1;
+    if (usesAmmo) player.ammo[weapon.id] -= 1;
     if (replicate && this.controlsNetworkPlayer(player)) this.multiplayer.fire(player, weapon, player.aim, triggerTap);
     this.combatMusicPulse = Math.max(this.combatMusicPulse, player === this.players[0] ? .52 : player.position.distanceToSquared(this.players[0].position) < 42 ** 2 ? .32 : this.combatMusicPulse);
     player.recoil();
@@ -2647,7 +2660,7 @@ class BlasterBattle {
         ? `CHARGE ${Math.round(100 * Math.min(1, player.chargeTimer / weapon.chargeTime))}%`
         : null;
       const armed = weapon.type === "remote" ? this.armedCounts.get(weapon.id) || 0 : 0;
-      setText(node, isReloading ? "RELOAD" : charge || `${player.ammo[weapon.id]}/${weapon.ammo}${armed ? ` · ${armed} ARMED` : ""}`);
+      setText(node, isReloading ? "RELOAD" : !weaponUsesAmmo(weapon) ? "READY" : charge || `${player.ammo[weapon.id]}/${weapon.ammo}${armed ? ` · ${armed} ARMED` : ""}`);
     });
     this.hud.scoreboard.classList.toggle("visible", this.input.down("Tab"));
     const motion = this.settings.reducedMotion ? 0 : clamp((player.velocity.length() - 14) / 30, 0, 1);
@@ -2744,40 +2757,11 @@ class BlasterBattle {
     this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, cameraBlend);
     this.camera.updateProjectionMatrix();
     const cameraTarget = this.world.constrainCamera(pivot, desired, .45, scratch.target);
-    let bestDistanceSq = cameraTarget.distanceToSquared(pivot);
-    if (bestDistanceSq < 5.5 ** 2) {
-      const offset = scratch.offset.copy(desired).sub(pivot);
-      for (const angle of CAMERA_ALTERNATIVE_ANGLES) {
-        const alternative = scratch.candidateDesired.copy(offset).applyAxisAngle(CAMERA_UP, angle).add(pivot);
-        const candidate = this.world.constrainCamera(pivot, alternative, .45, scratch.candidate);
-        const distanceSq = candidate.distanceToSquared(pivot);
-        if (distanceSq > bestDistanceSq) {
-          cameraTarget.copy(candidate);
-          bestDistanceSq = distanceSq;
-        }
-      }
-      for (const height of CAMERA_ALTERNATIVE_HEIGHTS) {
-        const alternative = scratch.candidateDesired.copy(desired);
-        alternative.y += height;
-        const candidate = this.world.constrainCamera(pivot, alternative, .45, scratch.candidate);
-        const distanceSq = candidate.distanceToSquared(pivot);
-        if (distanceSq > bestDistanceSq) {
-          cameraTarget.copy(candidate);
-          bestDistanceSq = distanceSq;
-        }
-      }
-    }
     this.camera.position.lerp(cameraTarget, cameraBlend);
     this.world.constrainCamera(pivot, this.camera.position, .45, scratch.constrained);
     this.camera.position.copy(scratch.constrained);
-    let actualDistance = this.camera.position.distanceTo(pivot);
-    const targetDistance = Math.sqrt(bestDistanceSq);
-    if (actualDistance < 3.2 && targetDistance > 4) {
-      this.camera.position.copy(cameraTarget);
-      actualDistance = targetDistance;
-    }
-    this.cameraClearance.actual = actualDistance;
-    this.cameraClearance.target = targetDistance;
+    this.cameraClearance.actual = this.camera.position.distanceTo(pivot);
+    this.cameraClearance.target = cameraTarget.distanceTo(pivot);
     const focus = scratch.focus.copy(this.camera.position).addScaledVector(forward, 28);
     this.camera.lookAt(focus);
     if (!this.settings.reducedMotion) this.camera.rotateZ(clamp(-player.velocity.dot(right) * .0024, -.035, .035));

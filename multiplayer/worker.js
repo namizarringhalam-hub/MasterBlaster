@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { DEFAULT_LOADOUT, WEAPONS, weaponFireMode } from "../src/gameData.js";
+import { DEFAULT_LOADOUT, WEAPONS, weaponFireMode, weaponUsesAmmo } from "../src/gameData.js";
 import {
   MATCH_DURATION_MS,
   MATCH_TARGET_SCORE,
@@ -246,6 +246,11 @@ export class MatchRoom extends DurableObject {
   }
 
   applyLazyReload(player, weaponId, now) {
+    if (!weaponUsesAmmo(WEAPONS[weaponId])) {
+      player.ammo[weaponId] = WEAPONS[weaponId].ammo;
+      delete player.reloadEndsAt[weaponId];
+      return;
+    }
     const completeAt = player.reloadEndsAt[weaponId] || 0;
     if (completeAt && completeAt <= now) {
       player.ammo[weaponId] = WEAPONS[weaponId].ammo;
@@ -309,14 +314,15 @@ export class MatchRoom extends DurableObject {
     const minimumDelay = Math.max(24, weapon.cooldown * 1000 * .72);
     if (now - (player.lastFireAt[weapon.id] || 0) < minimumDelay) return;
     const detonation = weapon.type === "remote" && message.action === "detonate";
-    if (!detonation && (player.ammo[weapon.id] || 0) <= 0) {
+    const usesAmmo = weaponUsesAmmo(weapon);
+    if (usesAmmo && !detonation && (player.ammo[weapon.id] || 0) <= 0) {
       player.reloadEndsAt[weapon.id] ||= now + weapon.reload * 1000;
       this.broadcast({ type: "reload", playerId: player.id, weaponId: weapon.id, completeAt: player.reloadEndsAt[weapon.id] });
       return;
     }
     player.lastFireAt[weapon.id] = now;
-    if (!detonation) player.ammo[weapon.id] -= weaponFireMode(weapon) === "burst" ? Math.min(weapon.burstCount || 1, player.ammo[weapon.id]) : 1;
-    if (player.ammo[weapon.id] === 0) player.reloadEndsAt[weapon.id] = now + weapon.reload * 1000;
+    if (usesAmmo && !detonation) player.ammo[weapon.id] -= weaponFireMode(weapon) === "burst" ? Math.min(weapon.burstCount || 1, player.ammo[weapon.id]) : 1;
+    if (usesAmmo && player.ammo[weapon.id] === 0) player.reloadEndsAt[weapon.id] = now + weapon.reload * 1000;
     const shot = {
       id: crypto.randomUUID(), playerId: player.id, weaponId: weapon.id, firedAt: now,
       origin: { ...player.position }, hits: Object.create(null)
@@ -336,7 +342,7 @@ export class MatchRoom extends DurableObject {
   async handleReload(socket, message) {
     const entry = this.authorizedActor(socket, message.playerId);
     const weapon = WEAPONS[message.weaponId];
-    if (!entry || !weapon || !entry.player.loadout.includes(weapon.id)) return;
+    if (!entry || !weapon || !weaponUsesAmmo(weapon) || !entry.player.loadout.includes(weapon.id)) return;
     const player = entry.player;
     if (player.ammo[weapon.id] >= weapon.ammo || player.reloadEndsAt[weapon.id]) return;
     player.reloadEndsAt[weapon.id] = Date.now() + weapon.reload * 1000;
