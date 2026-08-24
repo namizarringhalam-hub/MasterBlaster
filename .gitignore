@@ -1,5 +1,7 @@
 node_modules/
 dist/
+.wrangler/
+.wrangler-dry-run/
 .codex-remote-attachments/
 .codex-spec-render/
 .codex-vite*.log

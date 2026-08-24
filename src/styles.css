@@ -374,7 +374,9 @@ input, select {
 .weapon-choice b, .weapon-choice em, .weapon-choice small { display: block; }
 .weapon-choice b { font: 800 17px/1 "Barlow Condensed", sans-serif; text-transform: uppercase; }
 .weapon-choice em { margin-top: 5px; color: var(--category); font-size: 8px; font-style: normal; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.weapon-choice .weapon-capacity { display: inline-block; margin-top: 7px; padding: 3px 6px; border: 1px solid color-mix(in srgb, var(--weapon) 48%, #314d60); border-radius: 2px; color: #dff8ff; background: rgba(4,14,24,.68); font: 800 9px/1 "Barlow Condensed", sans-serif; letter-spacing: .08em; }
 .weapon-choice small { margin-top: 8px; color: #849bab; font-size: 10px; line-height: 1.35; letter-spacing: 0; }
+.network-error { padding: 10px 12px; border: 1px solid #ff607d; color: #ffdce4; background: rgba(92,13,37,.48); font-size: 11px; letter-spacing: .04em; }
 .weapon-choice.selected { border-color: var(--category, #4fe9ff); background: linear-gradient(145deg, color-mix(in srgb, var(--category) 16%, #172d42), #0b1b2b); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--weapon) 68%, #fff), inset 0 -28px 60px color-mix(in srgb, var(--category) 10%, transparent), 0 8px 24px rgba(0,0,0,.2); }
 .weapon-choice.selected::after { content: attr(data-slot); position: absolute; right: 9px; top: 7px; display: grid; place-items: center; width: 21px; height: 21px; color: #07111d; background: var(--category, #4fe9ff); border-radius: 50%; box-shadow: 0 0 8px color-mix(in srgb, var(--category, #4fe9ff) 45%, transparent); font: 900 12px/1 "Barlow Condensed", sans-serif; }
 .launch { width: 100%; margin-top: 22px; min-height: 58px; }

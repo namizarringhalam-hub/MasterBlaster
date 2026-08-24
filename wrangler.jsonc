@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "master-blaster-multiplayer",
+  "main": "multiplayer/worker.js",
+  "compatibility_date": "2026-08-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      { "name": "MATCH_ROOMS", "class_name": "MatchRoom" },
+      { "name": "MATCHMAKER", "class_name": "Matchmaker" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["MatchRoom", "Matchmaker"]
+    }
+  ],
+  "routes": [
+    { "pattern": "masterblaster.se/api/*", "zone_name": "masterblaster.se" },
+    { "pattern": "www.masterblaster.se/api/*", "zone_name": "masterblaster.se" }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+}

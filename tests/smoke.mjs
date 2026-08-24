@@ -199,6 +199,9 @@ assert.ok(WEAPON_GROUPS.every((group) => group.ids.every((id) => WEAPONS[id].cat
 assert.ok(WEAPON_GROUPS.every((group) => /^#[0-9a-f]{6}$/i.test(group.color)), "every weapon category has a stable menu color");
 assert.ok(WEAPON_GROUPS.every((group) => group.ids.map((id) => WEAPONS[id].name).every((name, index, names) => !index || names[index - 1].localeCompare(name) <= 0)), "weapons are alphabetized inside every category");
 assert.match(mainSource, /weapon-categories[\s\S]*?weaponCategoriesMarkup\(\)[\s\S]*?WEAPON_GROUPS\.map/, "Quick Play, Private Room, and Training share the categorized weapon selector");
+assert.match(mainSource, /class="weapon-capacity">MAG \$\{weapon\.ammo\}/, "every weapon selection card exposes its magazine capacity");
+assert.match(mainSource, /fireHeld && player\.ammo\[player\.weapon\.id\] <= 0 && !player\.pendingBurst\) this\.beginReload\(player\)/, "holding fire automatically begins a reload when the magazine empties");
+assert.match(mainSource, /new MultiplayerClient\(\)[\s\S]*?mode: this\.mode[\s\S]*?roomCode: this\.seed/, "online match modes connect through the multiplayer room client");
 assert.ok(Object.values(WEAPONS).every((weapon) => weapon.name && weapon.description && weapon.category), "every weapon has complete menu metadata");
 const presentationSignatures = new Set();
 const modelScene = new THREE.Scene();

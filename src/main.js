@@ -11,6 +11,7 @@ import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsP
 import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, clampBotCount, safestSpawn, shouldBotPlaceWall } from "./botBrain.js";
 import { NeonRenderPipeline } from "./renderPipeline.js";
 import { combatMusicIntensity } from "./musicScore.js";
+import { MultiplayerClient } from "./multiplayer.js";
 
 const canvas = document.querySelector("#game-canvas");
 const ui = document.querySelector("#ui-root");
@@ -212,6 +213,11 @@ class BlasterBattle {
     this.freshSessionReady = false;
     this.arenaWarmup = null;
     this.botTargets = new Map();
+    this.multiplayer = null;
+    this.onlineWelcome = null;
+    this.networkTargets = new Map();
+    this.networkEndsAt = 0;
+    this.networkRespawnRequests = new Set();
     this.botPlanTimer = 0;
     this.botPlanPending = false;
     this.botPlanner = null;
@@ -320,7 +326,7 @@ class BlasterBattle {
     });
   }
 
-  clearMatch() {
+  clearMatch(preserveNetwork = false) {
     this.input.releasePointer();
     clearTouchActions(this.touch);
     this.combatVisuals?.dispose();
@@ -346,6 +352,14 @@ class BlasterBattle {
     this.effects = [];
     this.botTargets.clear();
     this.botPlanPending = false;
+    this.networkTargets.clear();
+    this.networkRespawnRequests.clear();
+    if (!preserveNetwork) {
+      this.multiplayer?.close();
+      this.multiplayer = null;
+      this.onlineWelcome = null;
+      this.networkEndsAt = 0;
+    }
     this.sound.stopAll();
   }
 
@@ -367,7 +381,7 @@ class BlasterBattle {
           <h1>Swing fast.<br><em>Blast smart.</em></h1>
           <p class="lead">Physical projectiles, explosive routes, and a grappling hook that never leaves your side.</p>
           <div class="primary-actions">
-            <button class="primary" data-mode="quick"><span>QUICK PLAY</span><small>Regional practice queue</small></button>
+            <button class="primary" data-mode="quick"><span>QUICK PLAY</span><small>Online regional matchmaking</small></button>
             <button data-mode="private"><span>PRIVATE ROOM</span><small>Create or join by code</small></button>
             <button data-mode="training"><span>TRAINING</span><small>Fight up to 15 adaptive bots</small></button>
           </div>
@@ -397,9 +411,9 @@ class BlasterBattle {
     this.seed = remembered.seed || (mode === "private" ? this.roomCode() : "BLAST-01");
     const title = mode === "quick" ? "Quick Play" : mode === "private" ? "Private Room" : "Training";
     const detail = mode === "quick"
-      ? "Enter the regional practice queue with up to fifteen AI combatants."
+      ? "Join an online regional room, filled with AI combatants until more players arrive."
       : mode === "private"
-        ? "Use a short room code as the deterministic arena seed."
+        ? "Create or join an online room by sharing its short room code."
         : "Choose up to fifteen bots and master movement, trajectories, recoil, and grappling.";
     ui.innerHTML = `
       <main class="screen">
@@ -427,7 +441,7 @@ class BlasterBattle {
             <p class="loadout-status" data-loadout-status aria-live="polite"></p>
             <div class="weapon-categories">${this.weaponCategoriesMarkup()}</div>
           </section>
-          <p class="prototype-note">Playable MVP slice · Guest session · Internet match fleet is represented locally in this build</p>
+          <p class="prototype-note">Guest session · Quick Play and Private Room use the live multiplayer fleet · Training remains offline</p>
         </section>
       </main>`;
     this.bindUi();
@@ -442,7 +456,7 @@ class BlasterBattle {
           const slot = this.settings.loadout.indexOf(id);
           return `<button class="weapon-choice ${slot >= 0 ? "selected" : ""}" data-weapon-choice="${id}" data-weapon="${id}" data-category="${group.id}" data-shape="${weapon.type}" data-slot="${slot >= 0 ? slot + 1 : ""}" style="--weapon:#${weapon.color.toString(16).padStart(6, "0")};--category:${group.color};${weaponPreviewVariables(weapon, WEAPON_INDEX_BY_ID[id])}">
             <i></i><span class="weapon-preview" aria-hidden="true"></span>
-            <b>${weapon.name}</b><em>${group.name}</em><small>${weapon.description}</small>
+            <b>${weapon.name}</b><em>${group.name}</em><span class="weapon-capacity">MAG ${weapon.ammo} · ${weapon.reload.toFixed(1)}S RELOAD</span><small>${weapon.description}</small>
           </button>`;
         }).join("")}
       </div>
@@ -457,7 +471,7 @@ class BlasterBattle {
       const color = `#${weapon.color.toString(16).padStart(6, "0")}`;
       const category = WEAPON_CATEGORY_BY_ID[id];
       return `<div class="loadout-slot" draggable="true" data-loadout-drag="${index}" style="--weapon:${color};--category:${category.color}">
-        <span>${index + 1}</span><b>${escapeHtml(weapon.name)}</b><small>${category.name}</small>
+        <span>${index + 1}</span><b>${escapeHtml(weapon.name)}</b><small>${category.name} · MAG ${weapon.ammo}</small>
         <div>
           <button data-loadout-move="${index}" data-direction="-1" aria-label="Move ${escapeHtml(weapon.name)} left" ${index === 0 ? "disabled" : ""}>‹</button>
           <button data-loadout-move="${index}" data-direction="1" aria-label="Move ${escapeHtml(weapon.name)} right" ${index === this.settings.loadout.length - 1 ? "disabled" : ""}>›</button>
@@ -848,20 +862,94 @@ class BlasterBattle {
     return true;
   }
 
-  startMatch() {
+  isOnlineMatch() {
+    return this.mode !== "training" && Boolean(this.multiplayer);
+  }
+
+  controlsNetworkPlayer(player) {
+    if (!this.isOnlineMatch() || !player) return false;
+    return player.id === this.multiplayer.playerId || (player.isBot && this.multiplayer.controlsBots);
+  }
+
+  async connectOnlineMatch() {
+    const client = new MultiplayerClient();
+    this.multiplayer = client;
+    client.addEventListener("message", ({ detail }) => this.handleNetworkMessage(detail));
+    client.addEventListener("disconnect", ({ detail }) => {
+      if (!detail.expected && this.state === "play") this.showNetworkDisconnect(detail.reason);
+    });
+    const welcome = await client.connect({
+      mode: this.mode,
+      roomCode: this.seed,
+      name: this.settings.displayName,
+      loadout: this.settings.loadout,
+      botCount: this.settings.botCount,
+      difficulty: this.botDifficulty
+    });
+    this.onlineWelcome = welcome;
+    this.seed = welcome.seed;
+    this.targetScore = welcome.targetScore || 10;
+    this.networkEndsAt = welcome.endsAt;
+    return welcome;
+  }
+
+  showNetworkDisconnect(reason = "") {
+    if (ui.querySelector("[data-network-disconnect]")) return;
+    this.paused = true;
+    this.input.releasePointer();
+    ui.insertAdjacentHTML("beforeend", `<div class="overlay" data-network-disconnect><section class="dialog"><p>CONNECTION LOST</p><h1>The arena link dropped.</h1><p class="dialog-lead">${escapeHtml(reason || "Return to the menu and reconnect to continue online.")}</p><button class="primary" data-screen="main">RETURN TO MENU</button></section></div>`);
+    this.bindUi();
+  }
+
+  createOnlineFighter(data, position) {
+    const fighter = new Fighter(this.scene, {
+      id: data.id,
+      name: data.name,
+      color: data.color,
+      accent: data.accent
+    }, data.loadout, position, Boolean(data.bot));
+    const alive = data.alive !== false;
+    fighter.health = alive ? data.health ?? 100 : 100;
+    fighter.slotIndex = data.slotIndex || 0;
+    fighter.ammo = { ...fighter.ammo, ...data.ammo };
+    fighter.networkRemote = !this.controlsNetworkPlayer(fighter);
+    if (data.aim) fighter.aim.set(data.aim.x, data.aim.y, data.aim.z).normalize();
+    if (data.velocity) fighter.velocity.set(data.velocity.x, data.velocity.y, data.velocity.z);
+    if (!alive) {
+      fighter.takeHit(100);
+      fighter.health = data.health ?? 0;
+    }
+    return fighter;
+  }
+
+  async startMatch() {
     if (!this.freshSessionReady) return this.queueMatchStart(false);
     this.freshSessionReady = false;
     this.clearMatch();
+    let welcome = null;
+    if (this.mode !== "training") {
+      this.setMatchLoading(true, this.seed, false);
+      try {
+        welcome = await this.connectOnlineMatch();
+      } catch (error) {
+        this.multiplayer?.close();
+        this.multiplayer = null;
+        this.setMatchLoading(false);
+        this.renderSetup(this.mode);
+        ui.querySelector(".setup-dialog")?.insertAdjacentHTML("afterbegin", `<p class="network-error" role="alert">ONLINE SERVICE: ${escapeHtml(error.message)} Training remains available offline.</p>`);
+        return;
+      }
+    }
     this.state = "play";
     this.paused = false;
     this.matchTime = 180;
-    this.matchStartDelay = 60 / 132 * 8;
+    this.matchStartDelay = welcome ? Math.max(0, (welcome.startsAt - Date.now()) / 1000) : 60 / 132 * 8;
     this.countdownBeat = 8;
     this.audioCountdown = false;
     this.awaitingAudioGesture = !this.sound.context;
     this.performanceSample = this.freshPerformanceSample();
     this.combatMusicPulse = 0;
-    const fighterCount = 1 + clampBotCount(this.settings.botCount);
+    const fighterCount = welcome?.players.length || 1 + clampBotCount(this.settings.botCount);
     // The full post stack is ideal for normal matches. Sixteen-fighter sessions use
     // the lighter WebGPU bloom profile to preserve effects under maximum material load.
     this.renderPipeline.setHighLoadMode(fighterCount >= 13);
@@ -873,15 +961,28 @@ class BlasterBattle {
     const spawns = this.world.spawnPoints();
     const playerLoadout = this.settings.loadout.length === 5 ? this.settings.loadout : DEFAULT_LOADOUT;
     const weaponIds = Object.keys(WEAPONS);
-    this.players = [new Fighter(this.scene, { id: "p1", name: this.settings.displayName, ...PLAYER_COLORS[0] }, playerLoadout, spawns[0])];
-    this.players[0].aim.set(-spawns[0].x, -3.5, -spawns[0].z).normalize();
-    for (let index = 0; index < clampBotCount(this.settings.botCount); index++) {
-      const number = String(index + 1).padStart(2, "0");
-      const name = this.mode === "quick" ? `Region Bot ${number}` : `Atlas Bot ${number}`;
-      const botLoadout = Array.from({ length: 5 }, (_, slot) => weaponIds[(8 + index * 5 + slot) % weaponIds.length]);
-      this.players.push(new Fighter(this.scene, { id: `p${index + 2}`, name, ...PLAYER_COLORS[(index + 1) % PLAYER_COLORS.length] }, botLoadout, spawns[index + 1], true));
+    if (welcome) {
+      const roster = [...welcome.players].sort((left, right) => Number(right.id === welcome.playerId) - Number(left.id === welcome.playerId));
+      this.players = roster.map((data, index) => {
+        const spawn = data.position
+          ? new THREE.Vector3(data.position.x, data.position.y, data.position.z)
+          : spawns[index % spawns.length];
+        const fighter = this.createOnlineFighter(data, spawn);
+        if (fighter.networkRemote) this.networkTargets.set(fighter.id, data);
+        return fighter;
+      });
+      this.scores = roster.map((player) => player.score || 0);
+    } else {
+      this.players = [new Fighter(this.scene, { id: "p1", name: this.settings.displayName, ...PLAYER_COLORS[0] }, playerLoadout, spawns[0])];
+      for (let index = 0; index < clampBotCount(this.settings.botCount); index++) {
+        const number = String(index + 1).padStart(2, "0");
+        const name = this.mode === "quick" ? `Region Bot ${number}` : `Atlas Bot ${number}`;
+        const botLoadout = Array.from({ length: 5 }, (_, slot) => weaponIds[(8 + index * 5 + slot) % weaponIds.length]);
+        this.players.push(new Fighter(this.scene, { id: `p${index + 2}`, name, ...PLAYER_COLORS[(index + 1) % PLAYER_COLORS.length] }, botLoadout, spawns[index + 1], true));
+      }
+      this.scores = this.players.map(() => 0);
     }
-    this.scores = this.players.map(() => 0);
+    this.players[0].aim.set(-this.players[0].position.x, -3.5, -this.players[0].position.z).normalize();
     this.respawnTimers = this.players.map(() => 0);
     this.cameraYaw = Math.atan2(this.players[0].aim.x, this.players[0].aim.z);
     this.cameraPitch = this.players[0].position.y > 50 ? -.38 : -.08;
@@ -911,6 +1012,146 @@ class BlasterBattle {
       this.countdownBeat = countdown.beatsRemaining;
     } else this.sound.play("countdown");
     this.sound.setPaused(false);
+  }
+
+  applyNetworkScores(scores) {
+    if (!scores) return;
+    this.players.forEach((player, index) => {
+      if (Number.isFinite(scores[player.id])) this.scores[index] = scores[player.id];
+    });
+  }
+
+  syncOnlineRoster(message) {
+    if (!this.world || !this.multiplayer) {
+      this.onlineWelcome = { ...(this.onlineWelcome || {}), ...message };
+      return;
+    }
+    this.networkEndsAt = message.endsAt || this.networkEndsAt;
+    const prior = new Map(this.players.map((player, index) => [player.id, { player, score: this.scores[index] || 0 }]));
+    const ordered = [...message.players].sort((left, right) => Number(right.id === this.multiplayer.playerId) - Number(left.id === this.multiplayer.playerId));
+    const desiredIds = new Set(ordered.map((player) => player.id));
+    for (const [id, current] of prior) {
+      if (desiredIds.has(id)) continue;
+      this.sound.stopOwner(id);
+      this.releaseGrapple(current.player, false, true);
+      current.player.dispose();
+      this.networkTargets.delete(id);
+    }
+    const spawns = this.world.spawnPoints();
+    let rosterChanged = ordered.length !== this.players.length;
+    this.players = ordered.map((data, index) => {
+      let fighter = prior.get(data.id)?.player;
+      if (!fighter) {
+        const spawn = data.position
+          ? new THREE.Vector3(data.position.x, data.position.y, data.position.z)
+          : spawns[index % spawns.length];
+        fighter = this.createOnlineFighter(data, spawn);
+        rosterChanged = true;
+      }
+      fighter.isBot = Boolean(data.bot);
+      fighter.networkRemote = !this.controlsNetworkPlayer(fighter);
+      if (data.alive === false && fighter.alive) fighter.takeHit(100);
+      fighter.health = data.health ?? fighter.health;
+      fighter.ammo = { ...fighter.ammo, ...data.ammo };
+      if (fighter.networkRemote) this.networkTargets.set(fighter.id, data);
+      else this.networkTargets.delete(fighter.id);
+      return fighter;
+    });
+    this.scores = ordered.map((data) => data.score ?? prior.get(data.id)?.score ?? 0);
+    this.respawnTimers = ordered.map((data) => data.respawnAt ? Math.max(0, (data.respawnAt - Date.now()) / 1000) : 0);
+    if (rosterChanged && this.state === "play") this.renderHud();
+  }
+
+  handleNetworkMessage(message) {
+    if (!message || message.type === "welcome") return;
+    if (message.botHostId && this.multiplayer) this.multiplayer.botHostId = message.botHostId;
+    if (message.endsAt) this.networkEndsAt = message.endsAt;
+    if (message.type === "roster") return this.syncOnlineRoster(message);
+    if (!this.world || this.state !== "play") return;
+    if (message.type === "state") {
+      for (const data of message.players || []) {
+        const player = this.players.find((candidate) => candidate.id === data.id);
+        if (!player || this.controlsNetworkPlayer(player)) continue;
+        this.networkTargets.set(player.id, data);
+        if (data.ammo) player.ammo = { ...player.ammo, ...data.ammo };
+      }
+      this.applyNetworkScores(message.scores);
+      return;
+    }
+    if (message.type === "fire") return this.replayNetworkFire(message);
+    if (message.type === "reload") {
+      const player = this.players.find((candidate) => candidate.id === message.playerId);
+      const weapon = WEAPONS[message.weaponId];
+      if (!player || !weapon) return;
+      player.reloadWeaponId = weapon.id;
+      player.reloadTimer = Math.max(0, (message.completeAt - Date.now()) / 1000);
+      return;
+    }
+    if (message.type === "damage") return this.applyNetworkDamage(message);
+    if (message.type === "respawn") return this.applyNetworkRespawn(message);
+    if (message.type === "match_end") {
+      this.applyNetworkScores(message.scores);
+      this.finishMatch();
+    }
+  }
+
+  replayNetworkFire(message) {
+    const player = this.players.find((candidate) => candidate.id === message.playerId);
+    const weapon = WEAPONS[message.weaponId];
+    if (!player || !weapon) return;
+    const slot = player.loadout.indexOf(weapon.id);
+    if (slot < 0) return;
+    if (message.direction) player.aim.set(message.direction.x, message.direction.y, message.direction.z).normalize();
+    if (player.slotIndex !== slot) player.switchSlot(slot);
+    if (this.controlsNetworkPlayer(player)) {
+      player.ammo[weapon.id] = message.ammo;
+    } else {
+      player.attackTimer = 0;
+      player.reloadTimer = 0;
+      player.ammo[weapon.id] = Math.max(message.ammo + (weaponFireMode(weapon) === "burst" ? Math.min(weapon.burstCount || 1, weapon.ammo) : 1), 1);
+      this.tryFire(player, Boolean(message.triggerTap), false);
+      player.ammo[weapon.id] = message.ammo;
+    }
+    if (message.reloadCompleteAt) {
+      player.reloadWeaponId = weapon.id;
+      player.reloadTimer = Math.max(0, (message.reloadCompleteAt - Date.now()) / 1000);
+    }
+  }
+
+  applyNetworkDamage(message) {
+    const targetIndex = this.players.findIndex((player) => player.id === message.targetId);
+    const attacker = this.players.find((player) => player.id === message.attackerId);
+    const target = this.players[targetIndex];
+    const weapon = WEAPONS[message.weaponId];
+    if (!target || !weapon) return;
+    const push = new THREE.Vector3(message.push?.x || 0, message.push?.y || 0, message.push?.z || 0);
+    const killed = target.takeHit(message.damage, push);
+    target.health = message.health;
+    applyWeaponStatus(target, weapon);
+    this.combatMusicPulse = Math.max(this.combatMusicPulse, target === this.players[0] || attacker === this.players[0] ? .8 : .45);
+    this.spawnImpact(target.position, target, weapon, attacker);
+    this.showCombatFeedback(target, attacker, weapon, message.killed || killed);
+    this.applyNetworkScores(message.scores);
+    if (message.killed || killed) {
+      this.releaseGrapple(target);
+      this.respawnTimers[targetIndex] = Math.max(0, (message.respawnAt - Date.now()) / 1000);
+    }
+  }
+
+  applyNetworkRespawn(message) {
+    const index = this.players.findIndex((player) => player.id === message.playerId);
+    const player = this.players[index];
+    if (!player) return;
+    this.releaseGrapple(player, false, true);
+    const spawns = this.world.spawnPoints();
+    player.respawn(spawns[message.spawnIndex % spawns.length]);
+    player.ammo = { ...player.ammo, ...message.ammo };
+    this.respawnTimers[index] = 0;
+    this.networkRespawnRequests.delete(player.id);
+    if (index === 0) {
+      this.cameraFocus.set(0, 0, 0);
+      this.updateCamera(1);
+    }
   }
 
   renderHud() {
@@ -1145,13 +1386,20 @@ class BlasterBattle {
       }
       return;
     }
-    this.matchTime = Math.max(0, this.matchTime - dt);
+    this.matchTime = this.isOnlineMatch()
+      ? Math.max(0, (this.networkEndsAt - Date.now()) / 1000)
+      : Math.max(0, this.matchTime - dt);
     this.world.update(dt, this.players);
     this.handleWeaponSwitch();
     this.updateHuman(dt);
-    this.updateBotPlanner(dt);
-    for (let index = 1; index < this.players.length; index++) this.updateBot(this.players[index], dt);
+    if (!this.isOnlineMatch() || this.multiplayer.controlsBots) this.updateBotPlanner(dt);
+    for (let index = 1; index < this.players.length; index++) {
+      const player = this.players[index];
+      if (this.isOnlineMatch() && !this.controlsNetworkPlayer(player)) this.updateRemoteFighter(player, dt);
+      else if (player.isBot) this.updateBot(player, dt);
+    }
     for (const player of this.players) this.updateBurst(player, dt);
+    if (this.isOnlineMatch()) this.multiplayer.sendState(this.players.filter((player) => this.controlsNetworkPlayer(player)));
     this.updateProjectiles(dt);
     this.updateHazards(dt);
     this.updateDecoys(dt);
@@ -1160,7 +1408,7 @@ class BlasterBattle {
     this.updateRespawns(dt);
     this.updateAudio(dt);
     this.updateHud();
-    if (this.matchTime <= 0 || Math.max(...this.scores) >= this.targetScore) this.finishMatch();
+    if (!this.isOnlineMatch() && (this.matchTime <= 0 || Math.max(...this.scores) >= this.targetScore)) this.finishMatch();
   }
 
   handleWeaponSwitch() {
@@ -1199,7 +1447,7 @@ class BlasterBattle {
     if (this.input.tapped("KeyE") || this.input.tapped("MouseRight") || this.touch.grappleTap) this.toggleGrapple(player);
     this.touch.grappleTap = false;
     this.updateGrapple(player, dt);
-    if (this.input.tapped("KeyR") && !player.reload()) this.sound.play("uiInvalid");
+    if (this.input.tapped("KeyR") && !this.beginReload(player)) this.sound.play("uiInvalid");
     const fireHeld = this.input.mouse.left || this.touch.fire;
     const fireTapped = this.input.tapped("MouseLeft") || this.touch.fireTap;
     if (player.weapon.chargeTime) this.updateCharge(player, fireHeld, dt);
@@ -1207,8 +1455,36 @@ class BlasterBattle {
       this.cancelCharge(player);
       if (fireHeld) this.tryFire(player, fireTapped);
     }
+    if (fireHeld && player.ammo[player.weapon.id] <= 0 && !player.pendingBurst) this.beginReload(player);
     this.sound.updateWeaponLoop(player.id, player.weapon, fireHeld && player.weapon.maintained && player.ammo[player.weapon.id] > 0, this.audioSpatial(player.position, true, 1, player.id));
     this.touch.fireTap = false;
+  }
+
+  beginReload(player) {
+    const started = player.reload();
+    if (started && this.controlsNetworkPlayer(player)) this.multiplayer.reload(player);
+    return started;
+  }
+
+  updateRemoteFighter(player, dt) {
+    const target = this.networkTargets.get(player.id);
+    if (!target || !player.alive) return;
+    player.networkPosition ||= new THREE.Vector3();
+    player.networkVelocity ||= new THREE.Vector3();
+    player.networkAim ||= new THREE.Vector3(0, 0, 1);
+    player.networkMove ||= new THREE.Vector3();
+    if (target.position) player.networkPosition.set(target.position.x, target.position.y, target.position.z);
+    if (target.velocity) player.networkVelocity.set(target.velocity.x, target.velocity.y, target.velocity.z);
+    if (target.aim) player.networkAim.set(target.aim.x, target.aim.y, target.aim.z).normalize();
+    player.networkMove.copy(player.networkVelocity).setY(0);
+    if (player.networkMove.lengthSq() > .01) player.networkMove.normalize();
+    if (Number.isInteger(target.slotIndex) && target.slotIndex !== player.slotIndex) player.switchSlot(target.slotIndex);
+    player.update(dt, player.networkMove, player.networkAim, {}, this.world);
+    const blend = 1 - Math.exp(-14 * dt);
+    player.position.lerp(player.networkPosition, blend);
+    player.velocity.lerp(player.networkVelocity, blend);
+    player.grounded = Boolean(target.grounded);
+    player.health = target.health ?? player.health;
   }
 
   updateBotPlanner(dt) {
@@ -1415,7 +1691,7 @@ class BlasterBattle {
     if (!silent) this.sound.play("grappleRelease", null, this.audioSpatial(position, local, local ? 1 : .3, player.id));
   }
 
-  tryFire(player, triggerTap = false) {
+  tryFire(player, triggerTap = false, replicate = true) {
     const weapon = player.weapon;
     const fireMode = weaponFireMode(weapon);
     if (!player.alive || player.attackTimer > 0 || player.reloadTimer > 0) return;
@@ -1425,6 +1701,7 @@ class BlasterBattle {
         .filter(({ shot }) => shot.owner === player && shot.weapon.id === weapon.id && shot.stuck);
       if (triggerTap && charges.length) {
         player.attackTimer = weapon.cooldown;
+        if (replicate && this.controlsNetworkPlayer(player)) this.multiplayer.fire(player, weapon, player.aim, true, "detonate");
         this.combatMusicPulse = Math.max(this.combatMusicPulse, player === this.players[0] ? .72 : .4);
         for (const { shot, index } of charges.reverse()) {
           this.explode(shot);
@@ -1435,12 +1712,13 @@ class BlasterBattle {
     }
     if (player.ammo[weapon.id] <= 0) {
       this.sound.play("empty", weapon, this.audioSpatial(player.position, player === this.players[0], 1, player.id));
-      player.reload();
+      this.beginReload(player);
       return;
     }
-    if (fireMode === "burst") return this.beginBurst(player, weapon);
+    if (fireMode === "burst") return this.beginBurst(player, weapon, replicate);
     player.attackTimer = weapon.cooldown;
     player.ammo[weapon.id] -= 1;
+    if (replicate && this.controlsNetworkPlayer(player)) this.multiplayer.fire(player, weapon, player.aim, triggerTap);
     this.combatMusicPulse = Math.max(this.combatMusicPulse, player === this.players[0] ? .52 : player.position.distanceToSquared(this.players[0].position) < 42 ** 2 ? .32 : this.combatMusicPulse);
     player.recoil();
     const listener = this.players[0];
@@ -1460,11 +1738,12 @@ class BlasterBattle {
     this.spawnProjectile(player, weapon, aimWithSpread(player.aim, weapon.spread));
   }
 
-  beginBurst(player, weapon) {
+  beginBurst(player, weapon, replicate = true) {
     const rounds = Math.min(weapon.burstCount, player.ammo[weapon.id]);
-    if (!rounds) return player.reload();
+    if (!rounds) return this.beginReload(player);
     player.attackTimer = weapon.cooldown;
     player.ammo[weapon.id] -= rounds;
+    if (replicate && this.controlsNetworkPlayer(player)) this.multiplayer.fire(player, weapon, player.aim, true);
     this.combatMusicPulse = Math.max(this.combatMusicPulse, player === this.players[0] ? .56 : player.position.distanceToSquared(this.players[0].position) < 42 ** 2 ? .34 : this.combatMusicPulse);
     this.fireBurstRound(player, weapon);
     player.pendingBurst = rounds > 1 ? { weaponId: weapon.id, remaining: rounds - 1, timer: weapon.burstInterval } : null;
@@ -1497,7 +1776,7 @@ class BlasterBattle {
     if (!weapon.chargeTime || !player.alive) return this.cancelCharge(player);
     if (!wantsFire) return this.releaseCharge(player);
     if (player.attackTimer > 0 || player.reloadTimer > 0) return;
-    if (player.ammo[weapon.id] <= 0) return player.reload();
+    if (player.ammo[weapon.id] <= 0) return this.beginReload(player);
     if (player.chargingWeaponId !== weapon.id) {
       player.chargingWeaponId = weapon.id;
       player.chargeTimer = 0;
@@ -1518,6 +1797,7 @@ class BlasterBattle {
     if (ratio < weapon.minCharge || !player.alive || player.weapon.id !== weapon.id || player.attackTimer > 0 || player.reloadTimer > 0) return;
     player.attackTimer = weapon.cooldown;
     player.ammo[weapon.id] -= 1;
+    if (this.controlsNetworkPlayer(player)) this.multiplayer.fire(player, weapon, player.aim, true);
     const chargedWeapon = { ...weapon, damage: weapon.damage * (.35 + ratio * .65), recoil: weapon.recoil * (.45 + ratio * .55) };
     player.recoil(chargedWeapon.recoil);
     this.sound.playWeapon(chargedWeapon, this.audioSpatial(player.position, player === this.players[0], player === this.players[0] ? 1 : .4, player.id));
@@ -1944,6 +2224,7 @@ class BlasterBattle {
       return;
     }
     this.damagePlayer(target, damage, push, attacker, weapon);
+    if (this.isOnlineMatch()) return;
     applyWeaponStatus(target, weapon);
     if (weapon.effect === "steal" && target.alive) this.stealWeapon(attacker, target, weapon, context.sourceSlot);
   }
@@ -2193,6 +2474,10 @@ class BlasterBattle {
   }
 
   damagePlayer(target, damage, push, attacker, weapon = null) {
+    if (this.isOnlineMatch()) {
+      if (attacker && weapon && this.controlsNetworkPlayer(attacker)) this.multiplayer.reportHit(attacker, target, weapon, damage, push);
+      return false;
+    }
     const killed = target.takeHit(damage, push);
     if (target === this.players[0] || attacker === this.players[0] || target.position.distanceToSquared(this.players[0].position) < 34 ** 2) {
       this.combatMusicPulse = Math.max(this.combatMusicPulse, killed ? 1 : .76);
@@ -2290,6 +2575,15 @@ class BlasterBattle {
       const player = this.players[index];
       if (player.alive) continue;
       player.updateDeath(dt);
+      if (this.isOnlineMatch()) {
+        this.respawnTimers[index] = Math.max(0, (this.respawnTimers[index] || 0) - dt);
+        if (this.respawnTimers[index] === 0 && this.controlsNetworkPlayer(player) && !this.networkRespawnRequests.has(player.id)) {
+          this.networkRespawnRequests.add(player.id);
+          this.multiplayer.requestRespawn(player.id);
+          setTimeout(() => this.networkRespawnRequests.delete(player.id), 1000);
+        }
+        continue;
+      }
       if (this.respawnTimers[index] <= 0) continue;
       this.respawnTimers[index] -= dt;
       if (this.respawnTimers[index] <= 0) {

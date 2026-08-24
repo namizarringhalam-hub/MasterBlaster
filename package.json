@@ -6,11 +6,18 @@
   "scripts": {
     "build": "vite build && node scripts/prepare-sites.mjs && node tests/hosting.mjs",
     "dev": "vite --host 127.0.0.1",
+    "dev:multiplayer": "wrangler dev --port 8787",
+    "deploy:multiplayer": "wrangler deploy",
+    "check:multiplayer": "node tests/multiplayerProtocol.test.mjs && wrangler deploy --dry-run --outdir .wrangler-dry-run",
+    "test:multiplayer-live": "node tests/multiplayerLive.mjs",
     "start": "npm run build && node server.mjs",
-    "test": "node tests/smoke.mjs && node tests/botBrain.test.mjs && node tests/performance.test.mjs && node tests/audioLifecycle.test.mjs && node tests/audioAssets.test.mjs && node tests/audioQuality.test.mjs && node tests/musicScore.test.mjs && node tests/weaponStress.mjs"
+    "test": "node tests/smoke.mjs && node tests/botBrain.test.mjs && node tests/performance.test.mjs && node tests/audioLifecycle.test.mjs && node tests/audioAssets.test.mjs && node tests/audioQuality.test.mjs && node tests/musicScore.test.mjs && node tests/weaponStress.mjs && node tests/multiplayerProtocol.test.mjs"
   },
   "dependencies": {
     "three": "0.185.1",
     "vite": "^8.0.16"
+  },
+  "devDependencies": {
+    "wrangler": "4.125.0"
   }
 }
