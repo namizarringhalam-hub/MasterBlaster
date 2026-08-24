@@ -210,6 +210,7 @@ class BlasterBattle {
     this.audioMixTimer = 0;
     this.combatMusicPulse = 0;
     this.freshSessionReady = false;
+    this.hideMatchLoadingAfterFrame = false;
     this.arenaWarmup = null;
     this.botTargets = new Map();
     this.multiplayer = null;
@@ -835,7 +836,6 @@ class BlasterBattle {
       this.settings.botCount = clampBotCount(saved.botCount, this.mode === "private" ? 0 : 1);
       this.freshSessionReady = true;
       this.startMatch();
-      this.hideMatchLoadingAfterFrame = true;
       return true;
     } catch {
       this.setMatchLoading(false);
@@ -1011,6 +1011,7 @@ class BlasterBattle {
       this.countdownBeat = countdown.beatsRemaining;
     } else this.sound.play("countdown");
     this.sound.setPaused(false);
+    this.hideMatchLoadingAfterFrame = true;
   }
 
   applyNetworkScores(scores) {
