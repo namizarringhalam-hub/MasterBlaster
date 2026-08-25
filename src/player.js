@@ -1055,6 +1055,11 @@ export function reticleAim(player, cameraOrigin, cameraDirection, world, targets
   return (aim.lengthSq() > .001 ? aim : direction).normalize();
 }
 
+export function damageIndicatorAngle(cameraYaw, toAttacker) {
+  const delta = Math.atan2(toAttacker.x, toAttacker.z) - cameraYaw;
+  return THREE.MathUtils.radToDeg(Math.atan2(Math.sin(delta), Math.cos(delta)));
+}
+
 export function projectileTouchesPlayer(player, position, radius = .22) {
   if (!player.alive) return false;
   const body = new THREE.Vector3(

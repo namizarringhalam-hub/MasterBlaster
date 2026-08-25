@@ -5,7 +5,7 @@ import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { SoundBoard } from "./audio.js";
 import { CombatVisuals } from "./combatVisuals.js";
 import { ArenaWorld } from "./world.js";
-import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reticleAim } from "./player.js";
+import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, damageIndicatorAngle, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reticleAim } from "./player.js";
 import { InputManager, clearTouchActions, updateOrbit } from "./input.js";
 import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, topScoreIndices, weaponFireMode, weaponUsesAmmo, WEAPON_GROUPS, WEAPONS } from "./gameData.js";
 import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, clampBotCount, safestSpawn, shouldBotPlaceWall } from "./botBrain.js";
@@ -167,6 +167,7 @@ class BlasterBattle {
     this.cameraClearance = { actual: 0, target: 0 };
     this.listenerDirection = new THREE.Vector3();
     this.aimDirection = new THREE.Vector3();
+    this.damageDirection = new THREE.Vector3();
     this.aimTargets = [];
     this.nearestAudioDistances = new Float64Array(6);
     this.nearestAudioIds = Array(6);
@@ -207,6 +208,8 @@ class BlasterBattle {
     this.combatMusicPulse = 0;
     this.freshSessionReady = false;
     this.hideMatchLoadingAfterFrame = false;
+    this.targetHealthTimer = 0;
+    this.damageDirectionTimer = 0;
     this.arenaWarmup = null;
     this.botTargets = new Map();
     this.multiplayer = null;
@@ -325,6 +328,9 @@ class BlasterBattle {
   clearMatch(preserveNetwork = false) {
     this.input.releasePointer();
     clearTouchActions(this.touch);
+    clearTimeout(this.damageVignetteTimer);
+    clearTimeout(this.targetHealthTimer);
+    clearTimeout(this.damageDirectionTimer);
     this.combatVisuals?.dispose();
     this.combatVisuals = null;
     this.world?.dispose();
@@ -1185,7 +1191,12 @@ class BlasterBattle {
         </section>
         <div class="damage-vignette" data-damage-vignette></div>
         <div class="motion-vignette" data-motion-vignette></div>
+        <div class="incoming-direction" data-incoming-direction aria-hidden="true"><i></i></div>
         <div class="reticle" data-reticle aria-hidden="true"><i></i></div>
+        <div class="target-health" data-target-health aria-live="polite">
+          <span><b data-target-name>ENEMY</b><strong data-target-value>100</strong></span>
+          <i><b data-target-fill></b></i>
+        </div>
         <div class="combat-log" data-combat-log aria-live="polite"></div>
         <div class="weapon-strip">
           ${this.players[0].loadout.map((id, index) => `
@@ -1223,6 +1234,11 @@ class BlasterBattle {
       performance: ui.querySelector("[data-perf]"),
       scoreboard: ui.querySelector("[data-scoreboard]"),
       reticle: ui.querySelector("[data-reticle]"),
+      incomingDirection: ui.querySelector("[data-incoming-direction]"),
+      targetHealth: ui.querySelector("[data-target-health]"),
+      targetName: ui.querySelector("[data-target-name]"),
+      targetValue: ui.querySelector("[data-target-value]"),
+      targetFill: ui.querySelector("[data-target-fill]"),
       damageVignette: ui.querySelector("[data-damage-vignette]"),
       motionVignette: ui.querySelector("[data-motion-vignette]"),
       combatLog: ui.querySelector("[data-combat-log]"),
@@ -2511,10 +2527,20 @@ class BlasterBattle {
       void this.hud.reticle.offsetWidth;
       this.hud.reticle.classList.add(killed ? "elimination" : "hit");
       this.sound.play(killed ? "elimination" : "hitConfirm");
+      if (target !== attacker) {
+        const health = Math.round(clamp(target.health, 0, 100));
+        setText(this.hud.targetName, target.name);
+        setText(this.hud.targetValue, health);
+        setStyle(this.hud.targetFill, "width", `${health}%`);
+        this.hud.targetHealth.classList.add("visible");
+        clearTimeout(this.targetHealthTimer);
+        this.targetHealthTimer = setTimeout(() => this.hud?.targetHealth?.classList.remove("visible"), 1450);
+      }
     }
     if (target === this.players[0] && attacker) {
       if (!killed) this.sound.play("damage", weapon, { local: true });
-      this.hud.damageVignette.style.setProperty("--damage-color", `#${new THREE.Color(attacker.accent).getHexString()}`);
+      const damageColor = `#${new THREE.Color(attacker.accent).getHexString()}`;
+      this.hud.damageVignette.style.setProperty("--damage-color", damageColor);
       this.hud.damageVignette.classList.remove("visible");
       void this.hud.damageVignette.offsetWidth;
       this.hud.damageVignette.classList.add("visible");
@@ -2523,6 +2549,14 @@ class BlasterBattle {
         () => this.hud?.damageVignette?.classList.remove("visible"),
         this.settings.reducedMotion ? 120 : 520
       );
+      if (attacker !== target) {
+        const angle = damageIndicatorAngle(this.cameraYaw, this.damageDirection.copy(attacker.position).sub(target.position));
+        setStyle(this.hud.incomingDirection, "--incoming-angle", `${angle.toFixed(1)}deg`);
+        setStyle(this.hud.incomingDirection, "--damage-color", damageColor);
+        this.hud.incomingDirection.classList.add("visible");
+        clearTimeout(this.damageDirectionTimer);
+        this.damageDirectionTimer = setTimeout(() => this.hud?.incomingDirection?.classList.remove("visible"), this.settings.reducedMotion ? 300 : 720);
+      }
     }
     if (!killed || !attacker || attacker === target) return;
     const line = document.createElement("p");

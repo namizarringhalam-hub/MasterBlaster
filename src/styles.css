@@ -454,6 +454,22 @@ input, select {
 .hud[data-player-state="grapple"] .reticle { border-color: #67f2ff; filter: drop-shadow(0 0 12px rgba(74,232,255,.92)); }
 .hud[data-player-state="hit"] .combatant.left { box-shadow: 0 14px 42px rgba(255,49,95,.23), inset 0 1px 0 rgba(255,255,255,.07); }
 
+.incoming-direction { position: absolute; left: 50%; top: 50%; width: 250px; height: 250px; opacity: 0; transform: translate(-50%, -50%) rotate(var(--incoming-angle, 0deg)); transition: opacity .14s ease-out, transform .08s linear; }
+.incoming-direction i { position: absolute; top: 0; left: 50%; width: 76px; height: 22px; transform: translateX(-50%); border-top: 5px solid var(--damage-color, #ff4668); border-radius: 50%; filter: drop-shadow(0 0 5px var(--damage-color, #ff4668)); }
+.incoming-direction i::before, .incoming-direction i::after { content: ""; position: absolute; top: -7px; width: 18px; height: 3px; background: var(--damage-color, #ff4668); }
+.incoming-direction i::before { left: -2px; transform: rotate(28deg); }
+.incoming-direction i::after { right: -2px; transform: rotate(-28deg); }
+.incoming-direction.visible { opacity: .95; }
+.incoming-direction.visible i { animation: incoming-direction-pulse .38s ease-in-out infinite alternate; }
+
+.target-health { position: absolute; left: 50%; top: calc(50% + 40px); width: min(220px, 48vw); padding: 7px 9px 8px; opacity: 0; transform: translate(-50%, 6px); color: #f3f8fc; background: linear-gradient(90deg, rgba(5,14,24,.9), rgba(12,24,36,.82)); border: 1px solid rgba(255,255,255,.18); border-top-color: #ff5572; box-shadow: 0 8px 24px rgba(0,0,0,.34); clip-path: polygon(0 0, 100% 0, 96% 100%, 4% 100%); transition: opacity .16s ease-out, transform .16s ease-out; }
+.target-health > span { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 5px; }
+.target-health > span b, .target-health > span strong { overflow: hidden; font: 800 10px/1 "Barlow Condensed", sans-serif; letter-spacing: .1em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.target-health > span strong { color: #ff7b91; }
+.target-health > i { display: block; height: 5px; overflow: hidden; background: rgba(255,255,255,.12); }
+.target-health > i b { display: block; width: 100%; height: 100%; background: linear-gradient(90deg, #ff315f, #ff718a); box-shadow: 0 0 8px rgba(255,49,95,.7); transition: width .12s ease-out; }
+.target-health.visible { opacity: 1; transform: translate(-50%, 0); }
+
 .damage-vignette { position: absolute; inset: 0; opacity: 0; background: radial-gradient(circle at center, transparent 48%, color-mix(in srgb, var(--damage-color, #ff365d) 50%, transparent) 74%, color-mix(in srgb, var(--damage-color, #ff365d) 84%, transparent)), repeating-conic-gradient(from 12deg at 50% 50%, transparent 0 8deg, color-mix(in srgb, var(--damage-color, #ff365d) 18%, transparent) 8.2deg 8.7deg); mix-blend-mode: screen; }
 .damage-vignette.visible { animation: damage-flash .5s ease-out; }
 .motion-vignette {
@@ -494,6 +510,7 @@ input, select {
 @keyframes hit-confirm { 50% { transform: translate(-50%, -50%) scale(.68); filter: drop-shadow(0 0 10px #fff); } }
 @keyframes eliminate-confirm { 45% { transform: translate(-50%, -50%) rotate(45deg) scale(1.45); } }
 @keyframes damage-flash { 0% { opacity: .78; } 100% { opacity: 0; } }
+@keyframes incoming-direction-pulse { to { filter: brightness(1.4); transform: translateX(-50%) scale(1.05); } }
 @keyframes combat-log-in { from { opacity: 0; transform: translateX(18px); } }
 @keyframes menu-atmosphere { from { background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0; } to { background-position: 0 0, 18px -12px, -22px 16px, 0 0, 8px 0, 0 8px; } }
 @keyframes motion-tunnel { to { transform: rotate(.42deg) scale(1.024); } }
@@ -630,6 +647,8 @@ input, select {
   .combat-log { top: 146px; right: 8px; width: 66vw; }
   .grapple-readout { bottom: 80px; max-width: 210px; text-align: center; }
   .perf-readout { display: none; }
+  .incoming-direction { width: 190px; height: 190px; }
+  .target-health { top: calc(50% + 32px); width: min(190px, 56vw); }
 }
 
 @media (max-height: 500px) and (orientation: landscape) {
@@ -682,3 +701,5 @@ input, select {
 .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation: none !important; transition-duration: .01ms !important; }
 .reduce-motion .motion-vignette { display: none; }
 .reduce-motion .damage-vignette.visible { opacity: .16; }
+.reduce-motion .incoming-direction.visible { opacity: .82; }
+.reduce-motion .target-health.visible { opacity: 1; }

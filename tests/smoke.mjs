@@ -5,7 +5,7 @@ import { chooseBotSlot, botFireChance, botWeaponPolicy, clampBotCount, nearestTa
 import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
 import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, LOADOUT_SLOTS, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, seededRandom, seedFromText, swapStolenWeapon, topScoreIndices, weaponFireMode, weaponUsesAmmo, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
 import { InputManager, TOUCH_LOOK_GAIN, clearTouchActions, shouldCaptureGameKey, touchLookDelta, touchMoveDelta, updateOrbit } from "../src/input.js";
-import { aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, directionFromKeys, directionFromTouch, Fighter, flameConeFactor, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
+import { aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, damageIndicatorAngle, directionFromKeys, directionFromTouch, Fighter, flameConeFactor, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
 import { NeonRenderPipeline } from "../src/renderPipeline.js";
 import { ArenaWorld } from "../src/world.js";
 import { weaponPresentation } from "../src/weaponPresentation.js";
@@ -110,6 +110,13 @@ assert.match(mainSource, /data-setting="graphics"[\s\S]*?"low", "medium", "high"
 assert.match(mainSource, /renderPipeline\?\.setQuality\(this\.graphics\.level\)/, "graphics changes immediately retune the active render pipeline");
 assert.match(renderPipelineSource, /this\.reducedMotion = Boolean\(reducedMotion\)[\s\S]*?highLoadBloom = bloom\(sceneColor, this\.reducedMotion \? \.16 : \.3/, "a newly-created sixteen-player bloom profile inherits Reduced Motion");
 assert.match(mainSource, /damageVignetteTimer = setTimeout\([\s\S]*?classList\.remove\("visible"\)[\s\S]*?reducedMotion \? 120 : 520/, "the damage vignette clears explicitly even when CSS animations are disabled");
+assert.equal(damageIndicatorAngle(0, new THREE.Vector3(0, 0, 1)), 0, "incoming fire from ahead points to the top of the HUD");
+assert.equal(damageIndicatorAngle(0, new THREE.Vector3(1, 0, 0)), 90, "incoming fire from the right points right");
+assert.equal(damageIndicatorAngle(Math.PI, new THREE.Vector3(1, 0, 0)), -90, "the incoming-fire indicator remains camera-relative after turning around");
+assert.match(mainSource, /data-incoming-direction[\s\S]*?data-target-health[\s\S]*?data-target-fill/, "the combat HUD includes directional damage and enemy-health feedback");
+assert.match(mainSource, /attacker === this\.players\[0\][\s\S]*?targetValue[\s\S]*?targetFill[\s\S]*?targetHealth/, "confirmed hits reveal the struck enemy's remaining health");
+assert.match(mainSource, /damageIndicatorAngle\(this\.cameraYaw[\s\S]*?incomingDirection/, "damage feedback rotates from the current camera heading toward the attacker");
+assert.match(stylesSource, /\.incoming-direction\.visible[\s\S]*?\.target-health\.visible[\s\S]*?@keyframes incoming-direction-pulse/, "combat feedback has distinct readable motion and health-bar treatments");
 assert.doesNotMatch(mainSource, /grapple\.line\.geometry\.setFromPoints/, "grapple rope updates reuse fixed GPU buffers");
 assert.doesNotMatch(worldSource, /new THREE\.ShaderMaterial/, "the arena has no legacy GLSL-only material");
 assert.match(worldSource, /MeshBasicNodeMaterial[\s\S]*?colorNode[\s\S]*?opacityNode/, "the animated route floor uses an MRT-compatible TSL node material");
