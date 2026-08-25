@@ -5,7 +5,7 @@ import { chooseBotSlot, botFireChance, botWeaponPolicy, clampBotCount, nearestTa
 import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
 import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, LOADOUT_SLOTS, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, seededRandom, seedFromText, swapStolenWeapon, topScoreIndices, weaponFireMode, weaponUsesAmmo, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
 import { InputManager, TOUCH_LOOK_GAIN, clearTouchActions, shouldCaptureGameKey, touchLookDelta, touchMoveDelta, updateOrbit } from "../src/input.js";
-import { aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, damageIndicatorAngle, directionFromKeys, directionFromTouch, Fighter, flameConeFactor, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
+import { aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraCollisionFirstPerson, cameraRelative, damageIndicatorAngle, directionFromKeys, directionFromTouch, Fighter, flameConeFactor, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
 import { NeonRenderPipeline } from "../src/renderPipeline.js";
 import { ArenaWorld } from "../src/world.js";
 import { weaponPresentation } from "../src/weaponPresentation.js";
@@ -98,6 +98,10 @@ assert.doesNotMatch(mainSource, /this\.startMatch\(\);\s*this\.hideMatchLoadingA
 assert.match(mainSource, /frame\(time\)[\s\S]*?this\.renderScene\(\);[\s\S]*?hideMatchLoadingAfterFrame[\s\S]*?setMatchLoading\(false\)/, "the loading screen clears only after the first restored arena frame");
 assert.match(mainSource, /const cameraTarget = this\.world\.constrainCamera\(pivot, desired[\s\S]*?this\.camera\.position\.lerp\(cameraTarget[\s\S]*?this\.world\.constrainCamera\(pivot, this\.camera\.position/, "camera collision retracts the existing view boom smoothly without changing the player's aim angle");
 assert.doesNotMatch(mainSource, /CAMERA_ALTERNATIVE_ANGLES|candidateDesired|actualDistance < 3\.2/, "camera collision cannot alternate escape sides or teleport across rounded obstacles");
+assert.equal(cameraCollisionFirstPerson(2.5, false), true, "a body-width camera gap switches to the unobstructed eye-line view");
+assert.equal(cameraCollisionFirstPerson(3, true), true, "camera mode hysteresis prevents flicker beside curved pillars");
+assert.equal(cameraCollisionFirstPerson(3.5, true), false, "the normal third-person boom returns when enough clearance is restored");
+assert.match(mainSource, /cameraCollisionFirstPerson\(availableDistance[\s\S]*?cameraTarget\.copy\(pivot\)[\s\S]*?actualDistance >= 3\.2/, "a collapsed camera boom follows the player's eye line and keeps the local body hidden throughout the transition");
 assert.match(stylesSource, /\.rematch-loading\[hidden\] \{ display: none; \}[\s\S]*?@keyframes rematch-track/, "the loading screen has a deterministic hidden state and animated progress treatment");
 assert.match(mainSource, /game\.init\(\)\.then[\s\S]*?sessionStorage\.removeItem\(MATCH_SESSION_KEY\)[\s\S]*?matchLoading\.hidden = true[\s\S]*?RENDERER ERROR/, "renderer startup errors cannot remain trapped behind a persistent match loader");
 assert.doesNotMatch(mainSource, /startMatch\(\)\s*\{\s*this\.clearMatch\(\);\s*this\.rebuildRenderPipeline\(\)/, "no rematch can rebuild post-processing on a live graphics device");

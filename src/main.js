@@ -5,7 +5,7 @@ import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { SoundBoard } from "./audio.js";
 import { CombatVisuals } from "./combatVisuals.js";
 import { ArenaWorld } from "./world.js";
-import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraRelative, damageIndicatorAngle, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reticleAim } from "./player.js";
+import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraCollisionFirstPerson, cameraRelative, damageIndicatorAngle, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reticleAim } from "./player.js";
 import { InputManager, clearTouchActions, updateOrbit } from "./input.js";
 import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, topScoreIndices, weaponFireMode, weaponUsesAmmo, WEAPON_GROUPS, WEAPONS } from "./gameData.js";
 import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, clampBotCount, safestSpawn, shouldBotPlaceWall } from "./botBrain.js";
@@ -165,6 +165,7 @@ class BlasterBattle {
       menuPosition: new THREE.Vector3(0, 22, 29)
     };
     this.cameraClearance = { actual: 0, target: 0 };
+    this.cameraFirstPerson = false;
     this.listenerDirection = new THREE.Vector3();
     this.aimDirection = new THREE.Vector3();
     this.damageDirection = new THREE.Vector3();
@@ -356,6 +357,7 @@ class BlasterBattle {
     this.botPlanPending = false;
     this.networkTargets.clear();
     this.networkRespawnRequests.clear();
+    this.cameraFirstPerson = false;
     if (!preserveNetwork) {
       this.multiplayer?.close();
       this.multiplayer = null;
@@ -2791,11 +2793,16 @@ class BlasterBattle {
     this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, cameraBlend);
     this.camera.updateProjectionMatrix();
     const cameraTarget = this.world.constrainCamera(pivot, desired, .45, scratch.target);
+    const availableDistance = cameraTarget.distanceTo(pivot);
+    this.cameraFirstPerson = cameraCollisionFirstPerson(availableDistance, this.cameraFirstPerson);
+    if (this.cameraFirstPerson) cameraTarget.copy(pivot).addScaledVector(forward, .38).setY(pivot.y + .24);
     this.camera.position.lerp(cameraTarget, cameraBlend);
     this.world.constrainCamera(pivot, this.camera.position, .45, scratch.constrained);
     this.camera.position.copy(scratch.constrained);
-    this.cameraClearance.actual = this.camera.position.distanceTo(pivot);
-    this.cameraClearance.target = cameraTarget.distanceTo(pivot);
+    const actualDistance = this.camera.position.distanceTo(pivot);
+    player.rig.visible = !this.cameraFirstPerson && actualDistance >= 3.2;
+    this.cameraClearance.actual = actualDistance;
+    this.cameraClearance.target = availableDistance;
     const focus = scratch.focus.copy(this.camera.position).addScaledVector(forward, 28);
     this.camera.lookAt(focus);
     if (!this.settings.reducedMotion) this.camera.rotateZ(clamp(-player.velocity.dot(right) * .0024, -.035, .035));

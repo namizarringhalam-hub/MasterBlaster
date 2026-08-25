@@ -1060,6 +1060,10 @@ export function damageIndicatorAngle(cameraYaw, toAttacker) {
   return THREE.MathUtils.radToDeg(Math.atan2(Math.sin(delta), Math.cos(delta)));
 }
 
+export function cameraCollisionFirstPerson(clearance, active = false) {
+  return clearance < (active ? 3.4 : 2.6);
+}
+
 export function projectileTouchesPlayer(player, position, radius = .22) {
   if (!player.alive) return false;
   const body = new THREE.Vector3(
