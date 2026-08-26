@@ -493,14 +493,21 @@ worldA.dispose();
 const worldB = new ArenaWorld(new THREE.Scene(), "SAME-SEED");
 const obstacleLayoutB = worldB.obstacles.map(({ x, z, w, d }) => [x, z, w, d]);
 assert.deepEqual(obstacleLayoutA, obstacleLayoutB, "seeded arenas generate the same collision layout");
-assert.equal(worldB.structures.length, 10, "the arena adds ten seeded multi-level structural routes");
+assert.equal(worldB.structures.length, 16, "the arena makes six major towers and ten seeded routes structural");
+assert.equal(worldB.structures.slice(0, 6).filter((structure) => structure.major).length, 6, "all six outer tower floors and stands use the major destruction model");
+assert.deepEqual(worldB.structures.slice(0, 6).map(({ x, z }) => [x, z]), [[42, -22], [-42, 30], [-52, -48], [53, 49], [54, 33], [-53, -27]], "the structural major towers cover every non-central tower floor");
+assert.ok(worldB.structures.slice(0, 6).every((structure) => structure.platform.maxHealth === 18 && structure.segments.every((segment) => segment.maxHealth === 10)), "large tower decks and stands have mass-scaled structural health");
+assert.ok(worldB.platforms.filter((platform) => !platform.structuralKind && platform.x === 0 && platform.z === 0).some((platform) => platform.top === 15), "the middle lower tower floor remains indestructible");
+assert.ok(worldB.platforms.filter((platform) => !platform.structuralKind && platform.x === 0 && platform.z === 0).some((platform) => platform.top === 66), "the middle upper tower floor remains indestructible");
 assert.ok(new Set(worldB.structures.map((structure) => structure.platform.top)).size >= 4, "structural platforms create varied combat elevations");
-assert.ok(worldB.structures.every((structure) => structure.segments.length >= 3 && structure.segments.length <= 8), "every destructible pillar is composed of bounded four-metre sections");
-assert.equal(worldB.debrisMesh.count, 72, "all collapsing structures share one bounded debris instance pool");
+assert.ok(worldB.structures.every((structure) => structure.segments.length >= 3 && structure.segments.length <= 8), "every destructible pillar is composed of a bounded number of sections");
+assert.equal(worldB.debrisMesh.count, 128, "all collapsing structures share one bounded mixed-scale debris instance pool");
 assert.equal(worldB.debrisMesh.castShadow, false, "temporary structural scrap cannot multiply shadow rendering cost");
+assert.equal(worldB.dustMesh.count, 72, "soft structural dust shares one bounded instanced volume pool");
+assert.equal(worldB.dustMesh.castShadow, false, "temporary collapse dust never adds shadow passes");
 
 const collapseWorld = new ArenaWorld(new THREE.Scene(), "COLLAPSE-QA");
-const collapseStructure = collapseWorld.structures[0];
+const collapseStructure = collapseWorld.structures.find((structure) => !structure.major);
 const originalDeckTop = collapseStructure.platform.top;
 const failedBase = collapseStructure.segments[0];
 const failedBaseCenter = collapseWorld.structuralCenter(failedBase).clone();
@@ -516,18 +523,79 @@ const deckRider = {
 collapseWorld.update(.53, [deckRider]);
 assert.deepEqual(collapseWorld.drainStructuralEvents().map((event) => event.type), ["break"], "the warned pillar section breaks before the deck descends");
 collapseWorld.update(.74, [deckRider]);
-assert.equal(collapseStructure.platform.top, originalDeckTop - 4, "destroying a pillar section lowers every supported section and platform by exactly one module");
+assert.equal(collapseStructure.platform.top, originalDeckTop - failedBase.h, "destroying a pillar section lowers every supported section and platform by its exact module height");
 assert.equal(deckRider.position.y, collapseStructure.platform.top, "grounded riders descend with a collapsing platform instead of being abandoned in mid-air");
 assert.deepEqual(collapseWorld.drainStructuralEvents().map((event) => event.type), ["land"], "a completed descent emits one landing event");
+collapseWorld.update(.04, [deckRider]);
+assert.ok(collapseStructure.platform.visualOffset.y < 0, "landing mass first compresses the structural visuals into the contact");
+collapseWorld.update(.12, [deckRider]);
+assert.ok(collapseStructure.platform.visualOffset.y > 0, "the compressed deck follows with a smaller damped recoil");
 
 let crushHit = 0;
-const directDeckStructure = collapseWorld.structures[1];
+const directDeckStructure = collapseWorld.structures.find((structure) => structure.major && structure.x === 42 && structure.z === -22);
 const directDeck = directDeckStructure.platform;
 const directDeckCenter = collapseWorld.structuralCenter(directDeck).clone();
 while (!directDeck.failureQueued) collapseWorld.destroy(directDeckCenter, 6, { eventId: `deck-hit-${++crushHit}`, attackerId: "attacker" });
+collapseWorld.drainStructuralEvents();
+collapseWorld.update(.53, []);
+assert.ok(directDeckStructure.platform === directDeck && !collapseWorld.structuralParts.includes(directDeck), "a fractured deck immediately releases collision while its breakup choreography completes");
+assert.ok(collapseWorld.debrisParticles.filter((particle) => particle.active).filter((particle) => particle.scale.x > 5 && particle.scale.z > 5).length >= 8, "a major deck visibly separates into at least eight independently simulated slab sections");
+assert.ok(collapseWorld.dustParticles.some((particle) => particle.active && particle.maxLife >= 1.25), "structural fracture emits long-lived pooled dust rather than short spark stand-ins");
 collapseWorld.settleStructuralChanges();
 assert.equal(directDeckStructure.platform, null, "direct platform destruction removes the deck after its warning window");
 assert.equal(directDeckStructure.anchor, null, "destroying a platform also removes its invalid floating grapple anchor");
+collapseWorld.updateStructuralDebris(2);
+const debrisProbe = new THREE.Object3D();
+for (const particle of collapseWorld.debrisParticles.filter((entry) => entry.active && (entry.scale.x > 5 || entry.scale.y > 2))) {
+  debrisProbe.rotation.set(particle.rotation.x, particle.rotation.y, particle.rotation.z);
+  debrisProbe.scale.copy(particle.scale);
+  debrisProbe.updateMatrix();
+  const matrix = debrisProbe.matrix.elements;
+  const halfExtent = .5 * (Math.abs(matrix[1]) + Math.abs(matrix[5]) + Math.abs(matrix[9]));
+  const floor = collapseWorld.surfaceHeightAt(particle.position, particle.position.y + .2);
+  assert.ok(particle.position.y >= floor + halfExtent - .001, "large deck and stand shards rest above terrain using their rotated box extent");
+}
+
+const majorStructure = collapseWorld.structures.find((structure) => structure.major && structure.x === -52 && structure.z === -48);
+const majorSpawnBefore = collapseWorld.spawnPoints().find((point) => Math.abs(point.x + 60) < .01 && Math.abs(point.z + 48) < .01);
+assert.equal(majorSpawnBefore.y, 15, "the major tower spawn initially resolves onto its deck");
+const majorDeck = majorStructure.platform;
+while (!majorDeck.failureQueued) collapseWorld.destroy(collapseWorld.structuralCenter(majorDeck).clone(), 6, { eventId: `major-deck-${++crushHit}`, attackerId: "attacker" });
+collapseWorld.settleStructuralChanges();
+const majorSpawnAfter = collapseWorld.spawnPoints().find((point) => Math.abs(point.x + 60) < .01 && Math.abs(point.z + 48) < .01);
+assert.equal(majorSpawnAfter.y, 0, "destroyed elevated tower floors cannot leave future respawns suspended in mid-air");
+
+function simulateStructuralRider(step) {
+  const world = new ArenaWorld(new THREE.Scene(), "FRAME-INVARIANCE");
+  const structure = world.structures.find((candidate) => !candidate.major);
+  const failed = structure.segments[0];
+  const rider = { id: "rider", alive: true, grounded: true, radius: .55, position: new THREE.Vector3(structure.x + 2, structure.platform.top, structure.z), velocity: new THREE.Vector3() };
+  world.destroy(world.structuralCenter(failed).clone(), 5.2, { eventId: `frame-${step}-1`, attackerId: "attacker" });
+  world.destroy(world.structuralCenter(failed).clone(), 5.2, { eventId: `frame-${step}-2`, attackerId: "attacker" });
+  world.drainStructuralEvents();
+  let guard = 0;
+  while (world.structuralChanges.length && guard++ < 100) world.update(step, [rider]);
+  const result = { riderY: rider.position.y, platformY: structure.platform.top, crushes: world.drainStructuralEvents().filter((event) => event.type === "crush").length };
+  world.dispose();
+  return result;
+}
+const fineRider = simulateStructuralRider(.04), coarseRider = simulateStructuralRider(.2);
+assert.ok(Math.abs(fineRider.platformY - coarseRider.platformY) < 1e-8 && Math.abs(fineRider.riderY - coarseRider.riderY) < 1e-8, "rider carry and exact final collision are invariant across fine and coarse frame steps");
+assert.equal(fineRider.crushes + coarseRider.crushes, 0, "legitimate deck riders never become false crush kills at either frame rate");
+
+const demolitionWorld = new ArenaWorld(new THREE.Scene(), "ALL-TOWERS-QA");
+let demolitionEvent = 0;
+for (const structure of demolitionWorld.structures.filter((candidate) => candidate.major)) {
+  for (const part of [...structure.segments, structure.platform]) {
+    while (!part.failureQueued) demolitionWorld.destroy(demolitionWorld.structuralCenter(part).clone(), 6, {
+      eventId: `all-towers-${++demolitionEvent}`, attackerId: "attacker", partId: part.structuralId
+    });
+    demolitionWorld.settleStructuralChanges();
+  }
+}
+assert.ok(demolitionWorld.structures.filter((structure) => structure.major).every((structure) => !structure.platform && structure.segments.length === 0), "every outer tower floor and every stand module can be completely demolished");
+assert.ok(demolitionWorld.platforms.some((platform) => !platform.structuralKind && platform.x === 0 && platform.z === 0 && platform.top === 15), "complete outer demolition cannot damage the protected middle tower");
+demolitionWorld.dispose();
 
 const crushStructure = collapseWorld.structures.find((structure) => structure.platform && structure.segments.length === 3) || collapseWorld.structures.find((structure) => structure.platform && structure !== collapseStructure);
 while (crushStructure.segments.length > 1) {

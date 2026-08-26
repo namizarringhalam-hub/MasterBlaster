@@ -8,6 +8,7 @@ const duplicate = createProceduralAudioAssets(48000);
 const expected = [
   "kick", "snare", "clap", "hatClosed", "hatOpen", "impact", "explosion", "ballistic", "energy", "mechanical",
   "heavyUi", "whoosh", "iceCrack", "cableSnap", "flame", "footstep", "transition",
+  "structuralWarning", "structuralBreak", "structuralFall", "structuralLand",
   "chargeLoop", "weaponLoop", "grappleLoop", "hazardLoop", "projectileLoop", "ambienceFoundry", "ambienceIon", "ambienceSolar"
 ];
 assert.deepEqual(Object.keys(assets), expected, "the produced transient bank exposes every music and gameplay family");
@@ -44,6 +45,8 @@ const periodicity = (data) => {
 for (const name of ["energy", "mechanical", "heavyUi", "chargeLoop", "weaponLoop", "grappleLoop", "hazardLoop", "projectileLoop"]) {
   assert.ok(periodicity(assets[name]) < .72, `${name} is textured foley rather than a sustained periodic beep`);
 }
+assert.ok(assets.structuralLand.length > assets.structuralBreak.length && assets.structuralBreak.length > assets.structuralWarning.length, "tower destruction escalates from stressed warning through fracture to a long debris landing tail");
+assert.ok(analyzeAudioAsset(assets.structuralLand).rms > .1 && periodicity(assets.structuralWarning) < .72, "structural cues have physical low-frequency weight without tonal warning beeps");
 
 const weaponAssets = createWeaponAudioAssets(16000, Object.values(WEAPONS), WEAPON_AUDIO_IDENTITIES);
 const weaponAssetsAgain = createWeaponAudioAssets(16000, Object.values(WEAPONS), WEAPON_AUDIO_IDENTITIES);

@@ -429,13 +429,14 @@ export class MatchRoom extends DurableObject {
     if (Math.abs(position.x) > 120 || Math.abs(position.z) > 120 || position.y < -2 || position.y > 100) return;
     const now = Date.now();
     if (!this.recentValidTerrainShot(attackerEntry.player, weapon, position, now)) return;
-    const structureId = /^structure-(?:[1-9]|10)$/.test(String(message.structureId || "")) ? String(message.structureId) : "";
+    const structureId = /^structure-(?:[1-9]|1[0-6])$/.test(String(message.structureId || "")) ? String(message.structureId) : "";
     const requestedPartId = String(message.partId || "");
     const partId = structureId && new RegExp(`^${structureId}-(?:platform|pillar-[1-8])$`).test(requestedPartId) ? requestedPartId : "";
     let structuralHealth = null;
     let collapsed = false;
     if (partId) {
-      const maximumHealth = partId.endsWith("-platform") ? 10 : 6;
+      const majorTower = /^structure-[1-6]-/.test(partId);
+      const maximumHealth = partId.endsWith("-platform") ? (majorTower ? 18 : 10) : (majorTower ? 10 : 6);
       const currentHealth = this.structuralHealth.get(partId) ?? maximumHealth;
       structuralHealth = Math.max(0, currentHealth - weapon.terrainRadius);
       collapsed = currentHealth > 0 && structuralHealth === 0;

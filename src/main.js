@@ -2676,15 +2676,29 @@ class BlasterBattle {
         continue;
       }
       const owner = attacker || this.players[0];
+      const scale = event.major ? 1.5 : 1;
+      const visualPoints = [event.position];
+      if (event.major && event.bounds) {
+        for (const xSide of [-1, 1]) for (const zSide of [-1, 1]) visualPoints.push(new THREE.Vector3(
+          event.bounds.x + xSide * event.bounds.w * .42,
+          event.position.y,
+          event.bounds.z + zSide * event.bounds.d * .42
+        ));
+      }
       if (event.type === "warning") {
-        this.combatVisuals?.burst(event.position, event.color, 8, { family: "energy", force: 2.6 });
-        this.sound.play("arm", STRUCTURAL_COLLAPSE, this.audioSpatial(event.position, false, .72, event.attackerId || "world"));
+        for (const point of visualPoints) this.combatVisuals?.burst(point, event.color, event.major ? 7 : 8, { family: "energy", force: 2.2 });
+        this.sound.playStructural("warning", this.audioSpatial(event.position, false, .8, event.attackerId || "world"), scale);
       } else if (event.type === "break") {
-        this.combatVisuals?.impact(event.position, STRUCTURAL_COLLAPSE, owner, { size: 1.8, explosive: true });
-        this.sound.playImpact(STRUCTURAL_COLLAPSE, this.audioSpatial(event.position, false, .9, event.attackerId || "world"), 0, "wall");
+        this.combatVisuals?.impact(event.position, STRUCTURAL_COLLAPSE, owner, { size: event.major ? 3.3 : 1.8, explosive: true });
+        for (const point of visualPoints.slice(1)) {
+          this.combatVisuals?.burst(point, event.color, 9, { family: "energy", force: 7.5 });
+          this.combatVisuals?.burst(point, 0x85939d, 7, { family: "dust", force: 4.2 });
+        }
+        this.sound.playStructural("break", this.audioSpatial(event.position, false, 1, event.attackerId || "world"), scale);
       } else if (event.type === "land") {
-        this.combatVisuals?.impact(event.position, STRUCTURAL_COLLAPSE, owner, { size: 2.25, explosive: true });
-        this.sound.playImpact(STRUCTURAL_COLLAPSE, this.audioSpatial(event.position, false, 1, event.attackerId || "world"), 0, "explosive");
+        this.combatVisuals?.impact(event.position, STRUCTURAL_COLLAPSE, owner, { size: event.major ? 3.8 : 2.25, explosive: true });
+        for (const point of visualPoints) this.combatVisuals?.burst(point, 0x7e8d97, event.major ? 12 : 7, { family: "dust", force: event.major ? 8 : 5 });
+        this.sound.playStructural("land", this.audioSpatial(event.position, false, 1, event.attackerId || "world"), scale);
       }
     }
   }

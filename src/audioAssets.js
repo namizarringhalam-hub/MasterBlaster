@@ -148,6 +148,49 @@ function cableSnap(sampleRate) {
   }, .82);
 }
 
+function structuralWarning(sampleRate) {
+  return render(sampleRate, .82, 0xc5f1, (t, random, state) => {
+    const white = random(); state.low += (white - state.low) * .012;
+    const strain = state.low * 4.2 * Math.sin(Math.PI * Math.min(1, t / .82)) ** 1.25;
+    const scrape = (white - state.low) * (.18 + Math.max(0, Math.sin(t * 53)) * .34) * Math.sin(Math.PI * Math.min(1, t / .82));
+    const pulse = [0, .19, .38, .57].reduce((sum, offset) => sum + (t >= offset ? state.low * 3.8 * Math.exp(-(t - offset) * 26) : 0), 0);
+    return strain * .64 + scrape * .28 + pulse * .38;
+  }, .84);
+}
+
+function structuralBreak(sampleRate) {
+  return render(sampleRate, 1.1, 0xc6a2, (t, random, state) => {
+    const white = random(); state.low += (white - state.low) * .026;
+    const fracture = (white - state.low) * curve(t, .0005, 5.8);
+    const body = state.low * 5.4 * curve(t, .001, 3.7);
+    const tearing = random() * (Math.sin(t * 79 + Math.sin(t * 17)) > .34 ? 1 : .14) * Math.exp(-t * 4.6);
+    const secondary = t > .16 ? (white - state.low) * Math.exp(-(t - .16) * 9) : 0;
+    return body * .7 + fracture * .58 + tearing * .24 + secondary * .36;
+  }, .92);
+}
+
+function structuralFall(sampleRate) {
+  return render(sampleRate, 1.05, 0xc7b3, (t, random, state) => {
+    const white = random(); state.low += (white - state.low) * (.009 + t * .016);
+    const acceleration = Math.min(1, t / .72) ** 1.5;
+    const mass = state.low * 5.2 * acceleration * Math.exp(-Math.max(0, t - .78) * 8);
+    const air = (white - state.low) * (.12 + acceleration * .42) * Math.exp(-Math.max(0, t - .84) * 9);
+    const joints = random() * (Math.sin(t * 91) > .67 ? 1 : .08) * acceleration * .24;
+    return mass * .68 + air * .36 + joints;
+  }, .82);
+}
+
+function structuralLand(sampleRate) {
+  return render(sampleRate, 1.7, 0xc8d4, (t, random, state) => {
+    const white = random(); state.low += (white - state.low) * .018;
+    const body = state.low * 6.8 * curve(t, .001, 2.65);
+    const crack = (white - state.low) * curve(t, .0005, 4.8);
+    const debris = [0, .055, .13, .24, .38].reduce((sum, offset, index) => sum + (t >= offset ? (white - state.low) * Math.exp(-(t - offset) * (8 + index * 1.4)) : 0), 0);
+    const sub = Math.sin(Math.PI * 2 * 34 * t) * curve(t, .002, 3.3);
+    return body * .66 + sub * .72 + crack * .48 + debris * .16;
+  }, .94);
+}
+
 function loopSafe(data, sampleRate, fadeSeconds = .035) {
   const fade = Math.min(Math.floor(data.length / 4), Math.max(8, Math.floor(sampleRate * fadeSeconds)));
   for (let index = 0; index < fade; index++) {
@@ -384,6 +427,7 @@ export function createProceduralAudioAssets(sampleRate = 48000) {
     impact: impact(rate), explosion: impact(rate, true), ballistic: ballistic(rate), energy: energy(rate),
     mechanical: mechanical(rate), heavyUi: heavyUi(rate), whoosh: whoosh(rate), iceCrack: iceCrack(rate), cableSnap: cableSnap(rate),
     flame: flame(rate), footstep: footstep(rate), transition: transition(rate),
+    structuralWarning: structuralWarning(rate), structuralBreak: structuralBreak(rate), structuralFall: structuralFall(rate), structuralLand: structuralLand(rate),
     chargeLoop: texture(rate, 1.6, 0xd101, .018, .42), weaponLoop: texture(rate, 1.7, 0xd202, .045, .58),
     grappleLoop: texture(rate, 1.5, 0xd303, .08, .7), hazardLoop: texture(rate, 1.8, 0xd404, .014, .46),
     projectileLoop: texture(rate, 1.45, 0xd505, .065, .66), ambienceFoundry: texture(rate, 2.2, 0xd606, .009, .32, .64),

@@ -44,7 +44,7 @@ const sound = new SoundBoard();
 sound.context = context;
 sound.master = audioNode();
 const renderedBuffer = { duration: .8 };
-for (const name of ["impact", "explosion", "ballistic", "energy", "mechanical", "heavyUi", "whoosh", "iceCrack", "cableSnap", "flame", "footstep", "transition", "chargeLoop", "weaponLoop", "grappleLoop", "hazardLoop", "projectileLoop", "ambienceFoundry", "ambienceIon", "ambienceSolar"]) sound.sampleBank[name] = renderedBuffer;
+for (const name of ["impact", "explosion", "ballistic", "energy", "mechanical", "heavyUi", "whoosh", "iceCrack", "cableSnap", "flame", "footstep", "transition", "structuralWarning", "structuralBreak", "structuralFall", "structuralLand", "chargeLoop", "weaponLoop", "grappleLoop", "hazardLoop", "projectileLoop", "ambienceFoundry", "ambienceIon", "ambienceSolar"]) sound.sampleBank[name] = renderedBuffer;
 for (const weapon of Object.values(WEAPONS)) {
   const profile = weaponAudioProfile(weapon);
   for (const key of [profile.fireSample, profile.impactSample, profile.operationSample, profile.loopSample, profile.chargeSample, profile.flightSample, profile.hazardSample]) sound.sampleBank[key] = renderedBuffer;
@@ -71,6 +71,12 @@ for (const [index, weapon] of Object.values(WEAPONS).entries()) {
   assert.doesNotThrow(() => sound.playWeapon(weapon, { local: index === 0, ownerId: `fighter-${index}`, volume: 1 }));
   assert.doesNotThrow(() => sound.playImpact(weapon, { position: { x: index, y: 0, z: 8 }, volume: 1 }, 0, "player"));
   assert.ok(bufferSourceCount >= before + 2, `${weapon.id} fire and impact both use rendered buffers`);
+}
+for (const cue of ["warning", "break", "land"]) {
+  sound.activeVoices.clear(); sound.eventTimes.clear();
+  const before = bufferSourceCount;
+  assert.equal(sound.playStructural(cue, { position: { x: 4, y: 18, z: 8 }, volume: 1 }, 1.5), true);
+  assert.ok(bufferSourceCount > before, `tower ${cue} uses its dedicated layered structural sample`);
 }
 assert.ok(sound.activeVoices.size <= 48, "a 47-weapon fire-and-impact storm respects the global 48-voice budget");
 sound.activeVoices.clear(); // The mock has no real `ended` events; model the completed transient storm before sustained-load testing.
@@ -292,6 +298,7 @@ for (const event of ["uiHover", "weaponSelect", "jump", "empty", "grappleMiss", 
 assert.match(mainSource, /setListener\(this\.camera\.position/, "the audio listener follows the camera");
 assert.match(mainSource, /updateFighter\(player\.id,[\s\S]*?reloading: player\.reloadTimer > 0/, "fighter state transitions drive reload, landing, death, and respawn cues");
 assert.match(mainSource, /playImpact\(shot\.weapon, this\.audioSpatial\(position/, "explosions use listener-relative position and distance");
+assert.match(mainSource, /playStructural\("warning"[\s\S]*?playStructural\("break"[\s\S]*?playStructural\("land"/, "tower failures use distinct spatial warning, fracture/fall, and landing cues");
 assert.ok((mainSource.match(/playImpact\([^\n]+"wall"\)/g) || []).length >= 4, "hitscan and projectile wall collisions request the authored wall-impact treatment");
 assert.match(mainSource, /combatMusicIntensity\(\{[\s\S]*?nearbyEnemies[\s\S]*?nearbyProjectiles[\s\S]*?nearbyHazards/, "real nearby combat telemetry drives adaptive music intensity");
 assert.match(mainSource, /startCountdown\(this\.seed, \.42\)/, "gameplay and the score share one authoritative audio-clock countdown");

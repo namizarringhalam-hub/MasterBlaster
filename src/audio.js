@@ -633,6 +633,28 @@ export class SoundBoard {
     });
   }
 
+  playStructural(type, spatial = 1, scale = 1) {
+    const mix = this._mix(spatial);
+    if (!this.context || !this.enabled || mix.gain <= 0 || !["warning", "break", "land"].includes(type)) return false;
+    const now = this.context.currentTime;
+    const weight = clamp(Number(scale) || 1, .7, 1.8);
+    const base = { bus: "impact", pan: mix.pan, priority: type === "land" ? 96 : 90, wet: .11 + mix.distanceRatio * .17, filter: mix.occluded ? 1050 : 7200 - mix.distanceRatio * 2800 };
+    if (type === "warning") {
+      this.sample("structuralWarning", .072 * mix.gain * weight, { ...base, rate: .9 / Math.sqrt(weight), filter: mix.occluded ? 900 : 3900 });
+      return true;
+    }
+    if (type === "break") {
+      this.sample("structuralBreak", .105 * mix.gain * weight, { ...base, rate: .94 / Math.sqrt(weight), filter: mix.occluded ? 900 : 6500 });
+      this.sample("structuralFall", .07 * mix.gain * weight, { ...base, at: now + .08, priority: 84, rate: .92 / Math.sqrt(weight), filter: mix.occluded ? 820 : 4100, wet: .16 });
+      this.duckMusic(.2 * weight, .16);
+      return true;
+    }
+    this.sample("structuralLand", .12 * mix.gain * weight, { ...base, rate: .9 / Math.sqrt(weight), filter: mix.occluded ? 820 : 5200, wet: .2 });
+    this.sample("structuralBreak", .045 * mix.gain * weight, { ...base, at: now + .055, priority: 82, rate: .68, filter: mix.occluded ? 850 : 3600, wet: .17 });
+    this.duckMusic(.34 * weight, .3);
+    return true;
+  }
+
   updateChargeLoop(id, weapon, progress = 0, spatial = 1) {
     if (!id || !weapon?.chargeTime || !this.context || !this.enabled) return this.stopChargeLoop(id);
     const mix = this._mix(spatial);

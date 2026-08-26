@@ -5,6 +5,9 @@ import { MAP_THEMES, seededRandom, seedFromText } from "./gameData.js";
 const TAU = Math.PI * 2;
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const HIDDEN_INSTANCE = new THREE.Matrix4().makeScale(0, 0, 0);
+const ZERO_VECTOR = new THREE.Vector3();
+const ONE_VECTOR = new THREE.Vector3(1, 1, 1);
+const ZERO_EULER = new THREE.Euler();
 const DISTRICT_PALETTES = {
   foundry: [0x28e7ff, 0xff4f87, 0xffc247, 0x9d7bff],
   solar: [0xffc34f, 0xff526f, 0x43ddff, 0xa7ff66],
@@ -236,6 +239,7 @@ export class ArenaWorld {
     this.collapseSerial = 0;
     this.structuralBatchMeshes = [];
     this.structuralMarker = new THREE.Object3D();
+    this.structuralVisualOffset = new THREE.Vector3();
     this.rotors = [];
     this.pulsers = [];
     this.obstacleCellSize = 16;
@@ -312,14 +316,18 @@ export class ArenaWorld {
 
     // Four real combat elevations plus a 70-metre central grapple spire.
     this.addPlatform(0, 15, 0, 42, 42, 1.5, 0x203d55);
-    this.addPlatform(42, 31, -22, 34, 26, 1.5, 0x263f58);
-    this.addPlatform(-42, 47, 30, 32, 28, 1.5, 0x263f58);
     this.addPlatform(0, 66, 0, 28, 28, 1.7, 0x294b65);
 
-    this.addPlatform(-52, 15, -48, 34, 26, 1.4, 0x203d55);
-    this.addPlatform(53, 15, 49, 34, 26, 1.4, 0x203d55);
-    this.addPlatform(54, 31, 33, 30, 22, 1.4, 0x203d55);
-    this.addPlatform(-53, 47, -27, 30, 22, 1.4, 0x203d55);
+    // Every outer tower deck and its segmented stand is structural. The two
+    // central floors and their spire stay immutable, preserving one reliable
+    // vertical route after the battlefield has been demolished.
+    for (const [x, top, z, w, d, thickness] of [
+      [42, 31, -22, 34, 26, 1.5], [-42, 47, 30, 32, 28, 1.5],
+      [-52, 15, -48, 34, 26, 1.4], [53, 15, 49, 34, 26, 1.4],
+      [54, 31, 33, 30, 22, 1.4], [-53, 47, -27, 30, 22, 1.4]
+    ]) this.addStructuralTower(x, z, Math.ceil(top / 6), w, d, {
+      top, platformThickness: thickness, pillarWidth: 8.4, major: true
+    });
 
     // Long aerial bridges turn the map into a navigable volume, not stacked islands.
     this.addPlatform(-26, 15, -24, 50, 5, 1, 0x35566d);
@@ -329,8 +337,7 @@ export class ArenaWorld {
     this.addPlatform(0, 66, 28, 5, 30, 1, 0x35566d);
 
     const towers = [
-      [0, 0, 70], [-72, -66, 40], [72, 66, 54], [70, -62, 72], [-68, 66, 62],
-      [42, -22, 45], [-42, 30, 59]
+      [0, 0, 70], [-72, -66, 40], [72, 66, 54], [70, -62, 72], [-68, 66, 62]
     ].map(([x, z, h]) => this.addBox(x, z, 7, 7, h, 0x1d344b, false, true));
     towers.forEach((tower, index) => this.addLandmark(tower, index));
 
@@ -1441,7 +1448,7 @@ export class ArenaWorld {
   }
 
   createDebrisPool() {
-    const count = 72;
+    const count = 128;
     const geometry = new THREE.BoxGeometry(1, 1, 1);
     const debrisMaterial = material(0x253646, this.theme.danger, .55, { roughness: .7, metalness: .45, emissiveIntensity: .08 });
     const mesh = new THREE.InstancedMesh(geometry, debrisMaterial, count);
@@ -1464,22 +1471,81 @@ export class ArenaWorld {
       life: 0
     }));
     this.group.add(mesh);
+
+    const dustCount = 72;
+    const dustMaterial = new THREE.MeshBasicMaterial({
+      color: 0x8d9ba4, transparent: true, opacity: .13, depthWrite: false,
+      blending: THREE.NormalBlending, toneMapped: false
+    });
+    this.dustMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 6), dustMaterial, dustCount);
+    this.dustMesh.name = "Pooled structural dust volumes";
+    this.dustMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.dustMesh.castShadow = false;
+    this.dustMesh.receiveShadow = false;
+    for (let index = 0; index < dustCount; index++) this.dustMesh.setMatrixAt(index, HIDDEN_INSTANCE);
+    this.dustMesh.instanceMatrix.needsUpdate = true;
+    this.dustDummy = new THREE.Object3D();
+    this.dustCursor = 0;
+    this.dustParticles = Array.from({ length: dustCount }, () => ({
+      active: false, position: new THREE.Vector3(), velocity: new THREE.Vector3(),
+      scale: new THREE.Vector3(), life: 0, maxLife: 0
+    }));
+    this.group.add(this.dustMesh);
   }
 
-  spawnStructuralDebris(position, colorValue, count = 14) {
+  spawnStructuralDebris(position, colorValue, count = 14, bounds = null, eventSeed = "debris") {
+    const random = seededRandom(seedFromText(`${this.seed}:${eventSeed}`));
+    const spreadX = bounds?.w || 2.4;
+    const spreadY = bounds?.h || 1.3;
+    const spreadZ = bounds?.d || 2.4;
+    const slab = bounds?.structuralKind === "platform";
     for (let piece = 0; piece < count; piece++) {
       const index = this.debrisCursor++ % this.debrisParticles.length;
       const particle = this.debrisParticles[index];
       particle.active = true;
-      particle.position.copy(position).add(new THREE.Vector3((Math.random() - .5) * 2.4, (Math.random() - .5) * 1.3, (Math.random() - .5) * 2.4));
-      particle.velocity.set((Math.random() - .5) * 10, 3 + Math.random() * 9, (Math.random() - .5) * 10);
-      particle.rotation.set(Math.random() * TAU, Math.random() * TAU, Math.random() * TAU);
-      particle.spin.set((Math.random() - .5) * 8, (Math.random() - .5) * 8, (Math.random() - .5) * 8);
-      particle.scale.set(.18 + Math.random() * .48, .12 + Math.random() * .32, .2 + Math.random() * .58);
-      particle.life = 2.2 + Math.random() * 1.8;
-      this.debrisMesh.setColorAt(index, new THREE.Color(colorValue).lerp(new THREE.Color(0x263746), Math.random() * .6));
+      particle.position.copy(position).add(new THREE.Vector3((random() - .5) * spreadX * .86, (random() - .5) * spreadY, (random() - .5) * spreadZ * .86));
+      particle.velocity.set((random() - .5) * (slab ? 14 : 10), 3 + random() * (slab ? 10 : 8), (random() - .5) * (slab ? 14 : 10));
+      particle.rotation.set(random() * TAU, random() * TAU, random() * TAU);
+      particle.spin.set((random() - .5) * 9, (random() - .5) * 9, (random() - .5) * 9);
+      if (slab && piece < Math.min(8, count)) {
+        const column = piece % 4, row = Math.floor(piece / 4);
+        particle.position.set(
+          position.x + (column - 1.5) * spreadX * .235,
+          position.y + (random() - .5) * spreadY * .3,
+          position.z + (row - .5) * spreadZ * .47
+        );
+        particle.velocity.set((column - 1.5) * 1.5, 1.6 + random() * 3.2, (row - .5) * 3.4);
+        particle.scale.set(spreadX * .215, Math.max(.22, spreadY * .34), spreadZ * .43);
+      } else if (!slab && piece < Math.min(4, count)) {
+        particle.position.set(position.x + (piece & 1 ? 1 : -1) * spreadX * .22, position.y, position.z + (piece & 2 ? 1 : -1) * spreadZ * .22);
+        particle.velocity.set((piece & 1 ? 1 : -1) * (2 + random() * 2), 2 + random() * 4, (piece & 2 ? 1 : -1) * (2 + random() * 2));
+        particle.scale.set(spreadX * .42, spreadY * .58, spreadZ * .42);
+      } else if (slab && piece < Math.ceil(count * .42)) particle.scale.set(.7 + random() * 1.7, .12 + random() * .22, .55 + random() * 1.45);
+      else particle.scale.set(.16 + random() * .55, .1 + random() * .38, .18 + random() * .72);
+      particle.life = 2.5 + random() * 2.2;
+      this.debrisMesh.setColorAt(index, new THREE.Color(colorValue).lerp(new THREE.Color(0x263746), random() * .6));
     }
     if (this.debrisMesh.instanceColor) this.debrisMesh.instanceColor.needsUpdate = true;
+  }
+
+  spawnStructuralDust(position, colorValue, count, bounds, eventSeed, landing = false) {
+    const random = seededRandom(seedFromText(`${this.seed}:${eventSeed}:dust`));
+    for (let piece = 0; piece < count; piece++) {
+      const index = this.dustCursor++ % this.dustParticles.length;
+      const particle = this.dustParticles[index];
+      particle.active = true;
+      particle.position.set(
+        position.x + (random() - .5) * (bounds?.w || 3) * (landing ? .9 : .72),
+        landing ? position.y + .18 + random() * .35 : position.y + (random() - .5) * (bounds?.h || 2) * .45,
+        position.z + (random() - .5) * (bounds?.d || 3) * (landing ? .9 : .72)
+      );
+      particle.velocity.set((random() - .5) * (landing ? 3.8 : 2.4), .35 + random() * (landing ? 1.7 : 2.4), (random() - .5) * (landing ? 3.8 : 2.4));
+      const base = (landing ? .8 : .55) + random() * (landing ? 1.4 : 1);
+      particle.scale.set(base * (1.15 + random()), base * (.45 + random() * .45), base * (1.15 + random()));
+      particle.life = particle.maxLife = 1.25 + random() * .9;
+      this.dustMesh.setColorAt(index, new THREE.Color(0x87949c).lerp(new THREE.Color(colorValue), .16 + random() * .12));
+    }
+    if (this.dustMesh.instanceColor) this.dustMesh.instanceColor.needsUpdate = true;
   }
 
   updateStructuralDebris(dt) {
@@ -1493,9 +1559,15 @@ export class ArenaWorld {
       particle.velocity.y -= 22 * dt;
       particle.position.addScaledVector(particle.velocity, dt);
       particle.rotation.addScaledVector(particle.spin, dt);
+      dummy.position.copy(particle.position);
+      dummy.rotation.set(particle.rotation.x, particle.rotation.y, particle.rotation.z);
+      dummy.scale.copy(particle.scale);
+      dummy.updateMatrix();
+      const matrix = dummy.matrix.elements;
+      const verticalHalfExtent = .5 * (Math.abs(matrix[1]) + Math.abs(matrix[5]) + Math.abs(matrix[9]));
       const floor = this.surfaceHeightAt(particle.position, particle.position.y + .2);
-      if (particle.position.y < floor + .08 && particle.velocity.y < 0) {
-        particle.position.y = floor + .08;
+      if (particle.position.y < floor + verticalHalfExtent && particle.velocity.y < 0) {
+        particle.position.y = floor + verticalHalfExtent;
         particle.velocity.y *= -.28;
         particle.velocity.x *= .72;
         particle.velocity.z *= .72;
@@ -1507,12 +1579,33 @@ export class ArenaWorld {
         continue;
       }
       dummy.position.copy(particle.position);
-      dummy.rotation.set(particle.rotation.x, particle.rotation.y, particle.rotation.z);
-      dummy.scale.copy(particle.scale);
       dummy.updateMatrix();
       this.debrisMesh.setMatrixAt(index, dummy.matrix);
     }
     if (changed) this.debrisMesh.instanceMatrix.needsUpdate = true;
+
+    let dustChanged = false;
+    for (let index = 0; index < this.dustParticles.length; index++) {
+      const particle = this.dustParticles[index];
+      if (!particle.active) continue;
+      dustChanged = true;
+      particle.life -= dt;
+      if (particle.life <= 0) {
+        particle.active = false;
+        this.dustMesh.setMatrixAt(index, HIDDEN_INSTANCE);
+        continue;
+      }
+      particle.velocity.multiplyScalar(Math.max(0, 1 - dt * .72));
+      particle.position.addScaledVector(particle.velocity, dt);
+      const progress = 1 - particle.life / particle.maxLife;
+      const envelope = Math.sin(Math.PI * Math.min(1, progress)) ** .35;
+      this.dustDummy.position.copy(particle.position);
+      this.dustDummy.rotation.set(0, progress * 1.4, 0);
+      this.dustDummy.scale.copy(particle.scale).multiplyScalar((.65 + progress * 2.1) * envelope);
+      this.dustDummy.updateMatrix();
+      this.dustMesh.setMatrixAt(index, this.dustDummy.matrix);
+    }
+    if (dustChanged) this.dustMesh.instanceMatrix.needsUpdate = true;
   }
 
   structuralPartAt(position, radius = 0) {
@@ -1524,7 +1617,7 @@ export class ArenaWorld {
       const dy = Math.max(part.baseY - position.y, 0, position.y - part.top);
       const dz = Math.max(Math.abs(position.z - part.z) - part.d / 2, 0);
       const distance = Math.hypot(dx, dy, dz);
-      if (distance > radius || distance >= nearestDistance) continue;
+      if (distance > radius || distance > nearestDistance || (Math.abs(distance - nearestDistance) < .001 && nearest?.structuralKind === "platform")) continue;
       nearest = part;
       nearestDistance = distance;
     }
@@ -1556,8 +1649,11 @@ export class ArenaWorld {
       elapsed: 0,
       warningDuration: .52,
       fallDuration: .74,
+      settleDuration: .26,
       movingParts: [],
-      crushedPlayers: new Set()
+      crushedPlayers: new Set(),
+      dropDistance: part.h,
+      major: structure.major
     };
     structure.activeChange = change;
     this.structuralChanges.push(change);
@@ -1565,8 +1661,12 @@ export class ArenaWorld {
       type: "warning",
       id: change.id,
       structureId: structure.id,
+      attackerId: change.attackerId,
       position: this.structuralCenter(part).clone(),
-      color: structure.color
+      color: structure.color,
+      major: structure.major,
+      mass: part.w * part.d * part.h,
+      bounds: { x: part.x, z: part.z, w: part.w, d: part.d, h: part.h }
     });
   }
 
@@ -1593,6 +1693,16 @@ export class ArenaWorld {
     if (structuralIndex >= 0) this.structuralParts.splice(structuralIndex, 1);
   }
 
+  detachStructuralCollision(part) {
+    part.dynamic = false;
+    this.dynamicObstacles.delete(part);
+    for (const collection of [this.obstacles, this.platforms, this.structuralParts]) {
+      const index = collection.indexOf(part);
+      if (index >= 0) collection.splice(index, 1);
+    }
+    this.buildObstacleIndex();
+  }
+
   removeStructuralAnchor(structure) {
     const anchor = structure.anchor;
     if (!anchor) return;
@@ -1608,20 +1718,35 @@ export class ArenaWorld {
   beginStructuralFall(change) {
     const { structure, part } = change;
     const breakPosition = this.structuralCenter(part).clone();
-    this.spawnStructuralDebris(breakPosition, structure.color, part.structuralKind === "platform" ? 24 : 16);
+    part.visualOffset = null;
+    part.visualRotation = null;
+    this.updateStructuralVisual(part);
+    const debrisCount = part.structuralKind === "platform" ? (structure.major ? 48 : 32) : (structure.major ? 30 : 18);
+    this.spawnStructuralDebris(breakPosition, structure.color, debrisCount, part, change.id);
+    this.spawnStructuralDust(breakPosition, structure.color, structure.major ? 20 : 10, part, change.id);
     this.frameStructureEvents.push({
       type: "break",
       id: change.id,
       structureId: structure.id,
+      attackerId: change.attackerId,
       position: breakPosition,
-      color: structure.color
+      color: structure.color,
+      major: structure.major,
+      mass: part.w * part.d * part.h,
+      dropDistance: change.dropDistance,
+      bounds: { x: part.x, z: part.z, w: part.w, d: part.d, h: part.h }
     });
 
     if (part.structuralKind === "platform") {
-      this.removeStructuralPart(part);
-      structure.platform = null;
+      // Collision and the intact slab end together; eight independently
+      // simulated deck sections now carry the visible breakup.
+      this.detachStructuralCollision(part);
       this.removeStructuralAnchor(structure);
-      this.finishStructuralChange(change);
+      this.hideStructuralVisual(part);
+      change.phase = "fragmenting";
+      change.elapsed = 0;
+      change.fallDuration = structure.major ? .46 : .36;
+      change.movingParts.push({ part, startBaseY: part.baseY, startTop: part.top });
       return;
     }
 
@@ -1641,6 +1766,7 @@ export class ArenaWorld {
     }
     change.phase = "falling";
     change.elapsed = 0;
+    change.fallDuration = THREE.MathUtils.clamp(Math.sqrt(2 * change.dropDistance / 18), .55, .86);
     if (!change.movingParts.length) this.finishStructuralChange(change);
   }
 
@@ -1683,24 +1809,39 @@ export class ArenaWorld {
 
   finishStructuralChange(change) {
     const { structure } = change;
-    for (const entry of change.movingParts) entry.part.dynamic = false;
+    for (const entry of change.movingParts) {
+      entry.part.dynamic = false;
+      this.dynamicObstacles.delete(entry.part);
+      entry.part.visualOffset = null;
+      entry.part.visualRotation = null;
+      entry.part.visualScale = null;
+      if (!entry.part.removed) this.updateStructuralVisual(entry.part);
+    }
     const index = this.structuralChanges.indexOf(change);
     if (index >= 0) this.structuralChanges.splice(index, 1);
     structure.activeChange = null;
     this.buildObstacleIndex();
-    if (change.movingParts.length) {
-      const platform = structure.platform;
-      this.frameStructureEvents.push({
-        type: "land",
-        id: change.id,
-        structureId: structure.id,
-        position: platform && !platform.removed
-          ? this.structuralCenter(platform).clone()
-          : new THREE.Vector3(structure.x, 0, structure.z),
-        color: structure.color
-      });
-    }
     this.startNextStructuralFailure(structure);
+  }
+
+  landStructuralChange(change) {
+    const platform = change.structure.platform;
+    const position = platform && !platform.removed
+      ? this.structuralCenter(platform).clone()
+      : new THREE.Vector3(change.structure.x, 0, change.structure.z);
+    if (platform) this.spawnStructuralDust(position, change.structure.color, change.structure.major ? 34 : 16, platform, `${change.id}:land`, true);
+    this.frameStructureEvents.push({
+      type: "land",
+      id: change.id,
+      structureId: change.structure.id,
+      attackerId: change.attackerId,
+      position,
+      color: change.structure.color,
+      major: change.structure.major,
+      mass: change.movingParts.reduce((sum, entry) => sum + entry.part.w * entry.part.d * entry.part.h, 0),
+      dropDistance: change.dropDistance,
+      bounds: platform ? { x: platform.x, z: platform.z, w: platform.w, d: platform.d, h: platform.h } : null
+    });
   }
 
   updateStructuralChanges(dt, players) {
@@ -1708,24 +1849,66 @@ export class ArenaWorld {
       const { part } = change;
       change.elapsed += dt;
       if (change.phase === "warning") {
-        const pulse = .2 + Math.abs(Math.sin(this.time * 24)) * 1.8;
-        this.setStructuralColor(part, new THREE.Color(part.visualColor).lerp(new THREE.Color(this.theme.danger), Math.min(1, pulse * .45)));
+        const progress = Math.min(1, change.elapsed / change.warningDuration);
+        const pulse = .5 + Math.sin(this.time * 17 + seedFromText(part.structuralId) * .01) * .5;
+        this.setStructuralWarningColor(part, progress, pulse);
+        const shudder = (change.major ? .072 : .045) * Math.sin(this.time * 19 + seedFromText(part.structuralId)) * (.35 + progress * .65);
+        part.visualOffset = new THREE.Vector3(shudder, -progress * progress * (change.major ? .075 : .04), -shudder * .52);
+        part.visualRotation = new THREE.Euler(shudder * .004, 0, -shudder * .006 - progress * (change.major ? .003 : .0015));
+        this.updateStructuralVisual(part);
         if (change.elapsed >= change.warningDuration) this.beginStructuralFall(change);
         continue;
       }
 
+      if (change.phase === "fragmenting") {
+        const progress = Math.min(1, change.elapsed / change.fallDuration);
+        if (progress < 1) continue;
+        part.removed = true;
+        change.structure.platform = null;
+        this.finishStructuralChange(change);
+        continue;
+      }
+
+      if (change.phase === "settling") {
+        const progress = Math.min(1, change.elapsed / change.settleDuration);
+        const amplitude = change.impactAmplitude || .06;
+        const reboundProgress = Math.max(0, (progress - .3) / .7);
+        const bounce = progress < .3
+          ? -amplitude * Math.sin(progress / .3 * Math.PI)
+          : amplitude * .52 * Math.sin(reboundProgress * Math.PI) * (1 - reboundProgress);
+        for (const entry of change.movingParts) {
+          entry.part.visualOffset = new THREE.Vector3(0, bounce, 0);
+          entry.part.visualRotation = new THREE.Euler(bounce * .012, 0, -bounce * .018);
+          this.updateStructuralVisual(entry.part);
+        }
+        if (progress >= 1) this.finishStructuralChange(change);
+        continue;
+      }
+
       const progress = Math.min(1, change.elapsed / change.fallDuration);
-      const eased = progress * progress * (3 - 2 * progress);
+      const eased = progress * progress;
       const platformEntry = change.movingParts.find((entry) => entry.part.structuralKind === "platform");
       const previousPlatformTop = platformEntry?.part.top;
-      for (const entry of change.movingParts) this.moveStructuralPart(entry.part, entry.startBaseY - 4 * eased);
+      for (const entry of change.movingParts) {
+        this.moveStructuralPart(entry.part, entry.startBaseY - change.dropDistance * eased);
+        const lean = Math.sin(progress * Math.PI) * (change.major ? .012 : .007);
+        entry.part.visualRotation = new THREE.Euler(lean * .7, 0, -lean);
+        this.updateStructuralVisual(entry.part);
+      }
       if (change.structure.anchor && change.structure.platform && !change.structure.platform.removed) {
         change.structure.anchor.point.y = change.structure.platform.top + .6;
         this.updateStructuralAnchor(change.structure.anchor);
       }
       this.updateStructuralCrush(change, players, previousPlatformTop, platformEntry?.part);
       if (progress < 1) continue;
-      this.finishStructuralChange(change);
+      change.impactAmplitude = THREE.MathUtils.clamp(
+        .025 + Math.sqrt(Math.max(1, change.movingParts.reduce((sum, entry) => sum + entry.part.w * entry.part.d * entry.part.h, 0))) * change.dropDistance * .00072,
+        .045,
+        .2
+      );
+      this.landStructuralChange(change);
+      change.phase = "settling";
+      change.elapsed = 0;
     }
   }
 
@@ -1746,13 +1929,17 @@ export class ArenaWorld {
     return platform;
   }
 
-  addStructuralTower(x, z, segmentCount, platformWidth, platformDepth) {
-    const segmentHeight = 4;
-    const pillarWidth = 4.2 + (segmentCount % 2) * .7;
+  addStructuralTower(x, z, segmentCount, platformWidth, platformDepth, options = {}) {
+    const top = options.top || segmentCount * 4;
+    const segmentHeight = top / segmentCount;
+    const pillarWidth = options.pillarWidth || 4.2 + (segmentCount % 2) * .7;
+    const platformThickness = options.platformThickness || 1.15;
+    const pillarHealth = options.major ? 10 : 6;
+    const platformHealth = options.major ? 18 : 10;
     const colorValue = this.districtColorAt(x, z);
     const structure = {
       id: `structure-${this.structures.length + 1}`,
-      x, z, color: colorValue,
+      x, z, color: colorValue, major: Boolean(options.major),
       segments: [], platform: null, anchor: null,
       activeChange: null, pendingFailures: []
     };
@@ -1761,18 +1948,17 @@ export class ArenaWorld {
       const segment = this.addBox(x, z, pillarWidth, pillarWidth, segmentHeight, 0x172b3c, false, false, index * segmentHeight);
       Object.assign(segment, {
         structure, structuralId: `${structure.id}-pillar-${index + 1}`,
-        structuralKind: "pillar", health: 6, maxHealth: 6
+        structuralKind: "pillar", health: pillarHealth, maxHealth: pillarHealth
       });
       segment.mesh.name = `${structure.id} pillar segment ${index + 1}`;
       structure.segments.push(segment);
       this.structuralParts.push(segment);
     }
-    const top = segmentCount * segmentHeight;
-    const platform = this.addBox(x, z, platformWidth, platformDepth, 1.15, 0x203d55, false, false, top - 1.15);
+    const platform = this.addBox(x, z, platformWidth, platformDepth, platformThickness, 0x203d55, false, false, top - platformThickness);
     this.platforms.push(platform);
     Object.assign(platform, {
       structure, structuralId: `${structure.id}-platform`,
-      structuralKind: "platform", health: 10, maxHealth: 10
+      structuralKind: "platform", health: platformHealth, maxHealth: platformHealth
     });
     platform.mesh.name = `${structure.id} destructible platform`;
     structure.platform = platform;
@@ -1801,11 +1987,12 @@ export class ArenaWorld {
     return mesh;
   }
 
-  setStructuralInstance(visual, x, y, z) {
+  setStructuralInstance(visual, x, y, z, state = null) {
     const marker = this.structuralMarker;
-    marker.position.set(x, y + visual.yOffset, z);
-    marker.rotation.set(0, 0, 0);
-    marker.scale.copy(visual.scale);
+    marker.rotation.copy(state?.visualRotation || ZERO_EULER);
+    this.structuralVisualOffset.copy(visual.offset || ZERO_VECTOR).applyEuler(marker.rotation);
+    marker.position.set(x, y + visual.yOffset, z).add(this.structuralVisualOffset).add(state?.visualOffset || ZERO_VECTOR);
+    marker.scale.copy(visual.scale).multiply(state?.visualScale || ONE_VECTOR);
     marker.updateMatrix();
     visual.mesh.setMatrixAt(visual.index, marker.matrix);
     visual.mesh.instanceMatrix.needsUpdate = true;
@@ -1820,8 +2007,18 @@ export class ArenaWorld {
     }
   }
 
+  setStructuralWarningColor(part, progress, pulse) {
+    const base = new THREE.Color(part.visualColor);
+    const danger = new THREE.Color(this.theme.danger);
+    for (const visual of part.instanceVisuals || []) {
+      const mix = visual.stress ? .55 + pulse * .45 : .18 + progress * .34;
+      visual.mesh.setColorAt(visual.index, base.clone().lerp(danger, Math.min(1, mix)));
+      if (visual.mesh.instanceColor) visual.mesh.instanceColor.needsUpdate = true;
+    }
+  }
+
   updateStructuralVisual(part) {
-    for (const visual of part.instanceVisuals || []) this.setStructuralInstance(visual, part.x, part.baseY + part.h / 2, part.z);
+    for (const visual of part.instanceVisuals || []) this.setStructuralInstance(visual, part.x, part.baseY + part.h / 2, part.z, part);
   }
 
   hideStructuralVisual(part) {
@@ -1848,6 +2045,13 @@ export class ArenaWorld {
     segmentSeamBatch.receiveShadow = false;
     this.group.add(segmentSeamBatch);
     this.structuralBatchMeshes.push(segmentSeamBatch);
+    const segmentRailBatch = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), seamMaterial.clone(), segments.length * 4);
+    segmentRailBatch.name = "Instanced pillar load rails";
+    segmentRailBatch.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    segmentRailBatch.castShadow = false;
+    segmentRailBatch.receiveShadow = false;
+    this.group.add(segmentRailBatch);
+    this.structuralBatchMeshes.push(segmentRailBatch);
     const platformBatch = this.createStructuralBatch(new THREE.BoxGeometry(1, 1, 1), platforms[0].mesh.material, platforms.length, "Instanced destructible platform decks");
     const topMaterial = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -1865,6 +2069,13 @@ export class ArenaWorld {
     platformTopBatch.receiveShadow = false;
     this.group.add(platformTopBatch);
     this.structuralBatchMeshes.push(platformTopBatch);
+    const platformFrameBatch = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), topMaterial.clone(), platforms.length * 4);
+    platformFrameBatch.name = "Instanced destructible deck perimeter stress rails";
+    platformFrameBatch.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    platformFrameBatch.castShadow = false;
+    platformFrameBatch.receiveShadow = false;
+    this.group.add(platformFrameBatch);
+    this.structuralBatchMeshes.push(platformFrameBatch);
 
     const anchorMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, toneMapped: false });
     const anchorBatch = new THREE.InstancedMesh(new THREE.SphereGeometry(.55, 14, 10), anchorMaterial, anchors.length);
@@ -1885,8 +2096,16 @@ export class ArenaWorld {
       part.visualColor = part.mesh.material.color.getHex();
       part.instanceVisuals = [
         { mesh: segmentBatch, index, scale: new THREE.Vector3(part.w, part.h, part.d), yOffset: 0 },
-        { mesh: segmentSeamBatch, index, scale: new THREE.Vector3(part.w + .14, .07, part.d + .14), yOffset: part.h / 2 - .045 }
+        { mesh: segmentSeamBatch, index, scale: new THREE.Vector3(part.w + .14, .07, part.d + .14), yOffset: part.h / 2 - .045, stress: true }
       ];
+      for (let corner = 0; corner < 4; corner++) part.instanceVisuals.push({
+        mesh: segmentRailBatch,
+        index: index * 4 + corner,
+        scale: new THREE.Vector3(.13, part.h * .84, .13),
+        yOffset: 0,
+        offset: new THREE.Vector3(corner & 1 ? part.w * .42 : -part.w * .42, 0, corner & 2 ? part.d * .42 : -part.d * .42),
+        stress: true
+      });
       this.group.remove(part.mesh);
       part.mesh.geometry.dispose();
       part.mesh.material.dispose();
@@ -1894,14 +2113,26 @@ export class ArenaWorld {
       this.updateStructuralVisual(part);
       segmentBatch.setColorAt(index, new THREE.Color(part.visualColor));
       segmentSeamBatch.setColorAt(index, new THREE.Color(part.structure.color));
+      for (let corner = 0; corner < 4; corner++) segmentRailBatch.setColorAt(index * 4 + corner, new THREE.Color(part.structure.color));
     });
     platforms.forEach((part, index) => {
       part.visualColor = part.mesh.material.color.getHex();
       part.instanceVisuals = [
         { mesh: platformBatch, index, scale: new THREE.Vector3(part.w, part.h, part.d), yOffset: 0 },
-        { mesh: platformTopBatch, index, scale: new THREE.Vector3(part.w * .78, .045, part.d * .78), yOffset: part.h / 2 + .035 },
-        { mesh: platformTopBatch, index: platforms.length + index, scale: new THREE.Vector3(part.w * .66, .08, part.d * .66), yOffset: -part.h / 2 - .045 }
+        { mesh: platformTopBatch, index, scale: new THREE.Vector3(part.w * .78, .045, part.d * .78), yOffset: part.h / 2 + .035, stress: true },
+        { mesh: platformTopBatch, index: platforms.length + index, scale: new THREE.Vector3(part.w * .66, .08, part.d * .66), yOffset: -part.h / 2 - .045, stress: true }
       ];
+      for (let edge = 0; edge < 4; edge++) {
+        const alongX = edge < 2;
+        part.instanceVisuals.push({
+          mesh: platformFrameBatch,
+          index: index * 4 + edge,
+          scale: new THREE.Vector3(alongX ? part.w - .5 : .28, .18, alongX ? .28 : part.d - .5),
+          yOffset: -part.h / 2 - .16,
+          offset: new THREE.Vector3(alongX ? 0 : (edge === 2 ? -part.w : part.w) * .485, 0, alongX ? (edge ? part.d : -part.d) * .485 : 0),
+          stress: true
+        });
+      }
       this.group.remove(part.mesh);
       part.mesh.geometry.dispose();
       part.mesh.material.dispose();
@@ -1910,6 +2141,7 @@ export class ArenaWorld {
       platformBatch.setColorAt(index, new THREE.Color(part.visualColor));
       platformTopBatch.setColorAt(index, new THREE.Color(this.structures[index].color));
       platformTopBatch.setColorAt(platforms.length + index, new THREE.Color(this.structures[index].color));
+      for (let edge = 0; edge < 4; edge++) platformFrameBatch.setColorAt(index * 4 + edge, new THREE.Color(this.structures[index].color));
     });
     anchors.forEach((anchor, index) => {
       const structure = this.structures[index];
@@ -2225,7 +2457,7 @@ export class ArenaWorld {
   }
 
   spawnPoints() {
-    return [
+    const points = [
       // Opening fighters occupy separate major platforms instead of stacking on the spire.
       new THREE.Vector3(10, 66, 0),
       new THREE.Vector3(-60, 15, -48),
@@ -2244,6 +2476,8 @@ export class ArenaWorld {
       new THREE.Vector3(0, 0, 88),
       new THREE.Vector3(0, 0, -88)
     ];
+    for (const point of points) point.y = this.surfaceHeightAt(point, point.y + .6);
+    return points;
   }
 
   surfaceHeightAt(position, ceiling = position.y + .5) {
