@@ -84,6 +84,41 @@ const damage = await second.next((message) => message.type === "damage" && messa
 assert.equal(damage.health, 82);
 assert.equal(damage.damage, 18);
 
+first.socket.send(JSON.stringify({ type: "fire", playerId: firstId, weaponId: "rocket_launcher", slotIndex: 2, direction: { x: 1, y: 0, z: 0 } }));
+await second.next((message) => message.type === "fire" && message.playerId === firstId && message.weaponId === "rocket_launcher");
+first.socket.send(JSON.stringify({
+  type: "terrain_hit",
+  attackerId: firstId,
+  weaponId: "rocket_launcher",
+  position: { x: 10, y: 2, z: 0 },
+  radius: 99,
+  structureId: "structure-1",
+  partId: "structure-1-pillar-1"
+}));
+const firstTerrainDamage = await second.next((message) => message.type === "terrain_damage" && message.structureId === "structure-1");
+assert.equal(firstTerrainDamage.radius, 5.2, "the room uses the weapon's canonical terrain radius");
+assert.equal(firstTerrainDamage.collapsed, false);
+await new Promise((resolve) => setTimeout(resolve, 850));
+first.socket.send(JSON.stringify({ type: "fire", playerId: firstId, weaponId: "rocket_launcher", slotIndex: 2, direction: { x: 1, y: 0, z: 0 } }));
+await second.next((message) => message.type === "fire" && message.playerId === firstId && message.weaponId === "rocket_launcher" && message.serverTime > firstTerrainDamage.serverTime);
+first.socket.send(JSON.stringify({
+  type: "terrain_hit",
+  attackerId: firstId,
+  weaponId: "rocket_launcher",
+  position: { x: 10, y: 2, z: 0 },
+  structureId: "structure-1",
+  partId: "structure-1-pillar-1"
+}));
+const terrainDamage = await second.next((message) => message.type === "terrain_damage" && message.partId === "structure-1-pillar-1" && message.collapsed);
+second.socket.send(JSON.stringify({ type: "crush", playerId: secondId, structureId: "structure-1" }));
+const crush = await first.next((message) => message.type === "crush" && message.targetId === secondId);
+assert.equal(crush.health, 0);
+assert.equal(crush.attackerId, firstId);
+
+const lateJoin = await connect(firstAssignment.roomCode, "Charlie");
+assert.ok(lateJoin.welcome.terrainEvents.some((event) => event.id === terrainDamage.id), "late joiners receive authoritative terrain history");
+lateJoin.socket.close(1000, "test complete");
+
 first.socket.close(1000, "test complete");
 second.socket.close(1000, "test complete");
 

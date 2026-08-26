@@ -130,6 +130,21 @@ export class MultiplayerClient extends EventTarget {
     });
   }
 
+  reportTerrainHit(attacker, weapon, position, radius, structureId = "", partId = "") {
+    return this.send("terrain_hit", {
+      attackerId: attacker.id,
+      weaponId: weapon.id,
+      position,
+      radius,
+      structureId,
+      partId
+    });
+  }
+
+  reportCrush(player, structureId) {
+    return this.send("crush", { playerId: player.id, structureId });
+  }
+
   reload(player) {
     return this.send("reload", { playerId: player.id, weaponId: player.weapon.id });
   }

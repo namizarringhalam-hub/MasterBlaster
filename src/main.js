@@ -22,6 +22,15 @@ const WEAPON_CATEGORY_BY_ID = Object.fromEntries(WEAPON_GROUPS.flatMap((group) =
 const WEAPON_INDEX_BY_ID = Object.fromEntries(Object.keys(WEAPONS).map((id, index) => [id, index]));
 const WEAPON_CATEGORY_SLUG_BY_ID = Object.fromEntries(Object.values(WEAPONS).map((weapon) => [weapon.id, weapon.category.toLowerCase().replaceAll(" ", "-")]));
 const WEAPON_CSS_COLOR_BY_ID = Object.fromEntries(Object.values(WEAPONS).map((weapon) => [weapon.id, `#${weapon.color.toString(16).padStart(6, "0")}`]));
+const STRUCTURAL_COLLAPSE = Object.freeze({
+  id: "structural_collapse",
+  name: "COLLAPSING PLATFORM",
+  type: "explosive",
+  color: 0xff9b4d,
+  damage: 100,
+  recoil: 0,
+  radius: 3
+});
 
 function projectileNeedsLoop(shot) {
   return !shot.mine && !shot.stuck && (shot.weapon.type === "rocket" || shot.weapon.type === "grenade" || shot.weapon.returning || ["fireball", "drill"].includes(shot.weapon.presentationPayload));
@@ -974,6 +983,14 @@ class BlasterBattle {
     // the lighter WebGPU bloom profile to preserve effects under maximum material load.
     this.renderPipeline.setHighLoadMode(fighterCount >= 13);
     this.world = new ArenaWorld(this.scene, this.seed);
+    for (const event of welcome?.terrainEvents || []) {
+      this.world.destroy(
+        new THREE.Vector3(event.position.x, event.position.y, event.position.z),
+        event.radius,
+        { eventId: event.id, attackerId: event.attackerId, partId: event.partId }
+      );
+    }
+    if (welcome?.terrainEvents?.length) this.world.settleStructuralChanges();
     this.combatVisuals = new CombatVisuals(this.scene, {
       reducedMotion: this.settings.reducedMotion,
       quality: this.graphics.combatQuality
@@ -1099,6 +1116,7 @@ class BlasterBattle {
       return;
     }
     if (message.type === "fire") return this.replayNetworkFire(message);
+    if (message.type === "terrain_damage") return this.applyNetworkTerrainDamage(message);
     if (message.type === "reload") {
       const player = this.players.find((candidate) => candidate.id === message.playerId);
       const weapon = WEAPONS[message.weaponId];
@@ -1108,6 +1126,7 @@ class BlasterBattle {
       return;
     }
     if (message.type === "damage") return this.applyNetworkDamage(message);
+    if (message.type === "crush") return this.applyNetworkCrush(message);
     if (message.type === "respawn") return this.applyNetworkRespawn(message);
     if (message.type === "match_end") {
       this.applyNetworkScores(message.scores);
@@ -1151,6 +1170,32 @@ class BlasterBattle {
     this.combatMusicPulse = Math.max(this.combatMusicPulse, target === this.players[0] || attacker === this.players[0] ? .8 : .45);
     this.spawnImpact(target.position, target, weapon, attacker);
     this.showCombatFeedback(target, attacker, weapon, message.killed || killed);
+    this.applyNetworkScores(message.scores);
+    if (message.killed || killed) {
+      this.releaseGrapple(target);
+      this.respawnTimers[targetIndex] = Math.max(0, (message.respawnAt - Date.now()) / 1000);
+    }
+  }
+
+  applyNetworkTerrainDamage(message) {
+    if (!message.position || !Number.isFinite(message.radius)) return;
+    this.world.destroy(
+      new THREE.Vector3(message.position.x, message.position.y, message.position.z),
+      message.radius,
+      { eventId: message.id, attackerId: message.attackerId, partId: message.partId }
+    );
+  }
+
+  applyNetworkCrush(message) {
+    const targetIndex = this.players.findIndex((player) => player.id === message.targetId);
+    const target = this.players[targetIndex];
+    const attacker = this.players.find((player) => player.id === message.attackerId) || null;
+    if (!target || !target.alive) return;
+    const killed = target.takeHit(100);
+    target.health = message.health ?? 0;
+    this.combatMusicPulse = 1;
+    this.spawnImpact(target.position, target, STRUCTURAL_COLLAPSE, attacker);
+    this.showCombatFeedback(target, attacker, STRUCTURAL_COLLAPSE, message.killed || killed);
     this.applyNetworkScores(message.scores);
     if (message.killed || killed) {
       this.releaseGrapple(target);
@@ -1432,6 +1477,7 @@ class BlasterBattle {
     this.updateProjectiles(dt);
     this.updateHazards(dt);
     this.updateDecoys(dt);
+    this.processStructuralEvents();
     this.updateEffects(dt);
     this.combatVisuals?.update(dt);
     this.updateRespawns(dt);
@@ -1931,6 +1977,26 @@ class BlasterBattle {
     }
   }
 
+  damageTerrain(position, weapon, owner) {
+    const radius = weapon?.terrainRadius || 0;
+    if (!radius) return 0;
+    if (this.isOnlineMatch()) {
+      if (owner && this.controlsNetworkPlayer(owner)) {
+        const structuralPart = this.world.structuralPartAt(position, radius);
+        this.multiplayer.reportTerrainHit(
+          owner,
+          weapon,
+          position,
+          radius,
+          structuralPart?.structure?.id || "",
+          structuralPart?.structuralId || ""
+        );
+      }
+      return 0;
+    }
+    return this.world.destroy(position, radius, { attackerId: owner?.id || "" });
+  }
+
   fireBeam(player, weapon) {
     const start = player.forwardPoint(1.05);
     const direction = aimWithSpread(player.aim, weapon.spread).normalize();
@@ -1938,7 +2004,7 @@ class BlasterBattle {
     let wall = this.world.grapplePoint(cursor, direction);
     let end = wall || start.clone().addScaledVector(direction, 1000);
     let terrainPasses = weapon.terrainRadius ? weapon.penetration || 0 : 0;
-    while (wall && terrainPasses > 0 && this.world.destroy(wall, weapon.terrainRadius) > 0) {
+    while (wall && terrainPasses > 0 && this.damageTerrain(wall, weapon, player) > 0) {
       this.sound.playImpact(weapon, this.audioSpatial(wall, false, .64, player.id), 0, "wall");
       cursor = wall.clone().addScaledVector(direction, Math.max(.8, weapon.terrainRadius * .35));
       wall = this.world.grapplePoint(cursor, direction);
@@ -1953,7 +2019,7 @@ class BlasterBattle {
         : direction.clone().multiplyScalar(weapon.recoil * 1.7);
       this.damageTarget(target, weapon.damage, push, player, weapon);
     }
-    if (weapon.terrainRadius && wall && !weapon.penetration) this.world.destroy(wall, weapon.terrainRadius);
+    if (weapon.terrainRadius && wall && !weapon.penetration) this.damageTerrain(wall, weapon, player);
     this.spawnTracer(start, end, weapon, player, .13);
     if (wall && !targets.length) this.sound.playImpact(weapon, this.audioSpatial(wall, false, .72, player.id), 0, "wall");
   }
@@ -2133,7 +2199,7 @@ class BlasterBattle {
               this.sound.play("teleport", shot.weapon, this.audioSpatial(previous, false, .9, shot.owner.id));
               this.removeProjectile(index);
               removed = true;
-            } else if (shot.remainingTerrainPenetration > 0 && this.world.destroy(shot.mesh.position, shot.weapon.terrainRadius || 2)) {
+            } else if (shot.remainingTerrainPenetration > 0 && this.damageTerrain(shot.mesh.position, shot.weapon, shot.owner)) {
               shot.remainingTerrainPenetration -= 1;
               shot.mesh.position.copy(previous).addScaledVector(shot.velocity.clone().normalize(), shot.radius * 3);
             } else if (shot.weapon.sticky || shot.remote) {
@@ -2239,7 +2305,7 @@ class BlasterBattle {
       this.damageTarget(target, Math.ceil(shot.weapon.damage * factor * selfScale), push, shot.owner, shot.weapon);
       if (shot.weapon.grappleDisrupt && target.grapple) this.releaseGrapple(target);
     }
-    if (shot.weapon.terrainRadius > 0) this.world.destroy(position, shot.weapon.terrainRadius);
+    if (shot.weapon.terrainRadius > 0) this.damageTerrain(position, shot.weapon, shot.owner);
     if (shot.weapon.hazard) this.spawnHazard(position, shot.owner, shot.weapon, shot.velocity);
     this.combatVisuals?.impact(position, shot.weapon, shot.owner, { size: Math.min(2.6, Math.max(1.35, shot.weapon.radius * .42)), explosive: true });
     this.sound.playImpact(shot.weapon, this.audioSpatial(position, false, 1, shot.owner.id), 0, "explosive");
@@ -2594,6 +2660,33 @@ class BlasterBattle {
 
   spawnBurst(position, color, count) {
     this.combatVisuals?.burst(position.clone().add(new THREE.Vector3(0, 1.05, 0)), color, count, { family: "energy", force: 7 });
+  }
+
+  processStructuralEvents() {
+    for (const event of this.world.drainStructuralEvents()) {
+      const attacker = this.players.find((player) => player.id === event.attackerId) || null;
+      if (event.type === "crush") {
+        const target = event.player;
+        if (!target?.alive) continue;
+        if (this.isOnlineMatch()) {
+          if (this.controlsNetworkPlayer(target)) this.multiplayer.reportCrush(target, event.structureId);
+        } else {
+          this.damagePlayer(target, 100, new THREE.Vector3(), attacker, STRUCTURAL_COLLAPSE);
+        }
+        continue;
+      }
+      const owner = attacker || this.players[0];
+      if (event.type === "warning") {
+        this.combatVisuals?.burst(event.position, event.color, 8, { family: "energy", force: 2.6 });
+        this.sound.play("arm", STRUCTURAL_COLLAPSE, this.audioSpatial(event.position, false, .72, event.attackerId || "world"));
+      } else if (event.type === "break") {
+        this.combatVisuals?.impact(event.position, STRUCTURAL_COLLAPSE, owner, { size: 1.8, explosive: true });
+        this.sound.playImpact(STRUCTURAL_COLLAPSE, this.audioSpatial(event.position, false, .9, event.attackerId || "world"), 0, "wall");
+      } else if (event.type === "land") {
+        this.combatVisuals?.impact(event.position, STRUCTURAL_COLLAPSE, owner, { size: 2.25, explosive: true });
+        this.sound.playImpact(STRUCTURAL_COLLAPSE, this.audioSpatial(event.position, false, 1, event.attackerId || "world"), 0, "explosive");
+      }
+    }
   }
 
   updateEffects(dt) {

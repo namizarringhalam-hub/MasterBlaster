@@ -228,6 +228,14 @@ export class ArenaWorld {
     this.portals = [];
     this.sweepers = [];
     this.temporaryWalls = [];
+    this.structures = [];
+    this.structuralParts = [];
+    this.structuralChanges = [];
+    this.frameStructureEvents = [];
+    this.appliedTerrainEvents = new Set();
+    this.collapseSerial = 0;
+    this.structuralBatchMeshes = [];
+    this.structuralMarker = new THREE.Object3D();
     this.rotors = [];
     this.pulsers = [];
     this.obstacleCellSize = 16;
@@ -271,6 +279,7 @@ export class ArenaWorld {
     }));
     this.time = 0;
     scene.add(this.group);
+    this.createDebrisPool();
     this.build();
   }
 
@@ -325,6 +334,18 @@ export class ArenaWorld {
     ].map(([x, z, h]) => this.addBox(x, z, 7, 7, h, 0x1d344b, false, true));
     towers.forEach((tower, index) => this.addLandmark(tower, index));
 
+    // Seeded structural towers fill the mid-field with destructible vertical routes.
+    const structuralSites = [
+      [-84, -34], [84, 34], [-34, -82], [34, 82], [-84, 72],
+      [84, -72], [-18, 62], [18, -62], [-67, -6], [67, 6]
+    ];
+    structuralSites.forEach(([x, z], index) => {
+      const segmentCount = 3 + Math.floor(random() * 6);
+      const wideX = index % 2 === 0;
+      this.addStructuralTower(x, z, segmentCount, wideX ? 14 : 11, wideX ? 11 : 14);
+    });
+    this.batchStructuralGeometry();
+
     // Alternate ascent routes for players who miss a grapple.
     for (const pad of [
       [-18, 0, -18, 24], [18, 0, 18, 24], [-66, 0, 22, 29], [66, 0, -22, 29],
@@ -367,7 +388,10 @@ export class ArenaWorld {
 
   buildObstacleIndex() {
     this.obstacleGrid.clear();
-    this.dynamicObstacles = new Set(this.movers.map((mover) => mover.obstacle));
+    this.dynamicObstacles = new Set([
+      ...this.movers.map((mover) => mover.obstacle),
+      ...this.obstacles.filter((item) => item.dynamic)
+    ]);
     for (const item of this.obstacles) {
       item.removed = false;
       if (this.dynamicObstacles.has(item)) continue;
@@ -1416,11 +1440,492 @@ export class ArenaWorld {
     }
   }
 
+  createDebrisPool() {
+    const count = 72;
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const debrisMaterial = material(0x253646, this.theme.danger, .55, { roughness: .7, metalness: .45, emissiveIntensity: .08 });
+    const mesh = new THREE.InstancedMesh(geometry, debrisMaterial, count);
+    mesh.name = "Pooled structural scrap";
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    for (let index = 0; index < count; index++) mesh.setMatrixAt(index, HIDDEN_INSTANCE);
+    mesh.instanceMatrix.needsUpdate = true;
+    this.debrisMesh = mesh;
+    this.debrisDummy = new THREE.Object3D();
+    this.debrisCursor = 0;
+    this.debrisParticles = Array.from({ length: count }, () => ({
+      active: false,
+      position: new THREE.Vector3(),
+      velocity: new THREE.Vector3(),
+      rotation: new THREE.Vector3(),
+      spin: new THREE.Vector3(),
+      scale: new THREE.Vector3(),
+      life: 0
+    }));
+    this.group.add(mesh);
+  }
+
+  spawnStructuralDebris(position, colorValue, count = 14) {
+    for (let piece = 0; piece < count; piece++) {
+      const index = this.debrisCursor++ % this.debrisParticles.length;
+      const particle = this.debrisParticles[index];
+      particle.active = true;
+      particle.position.copy(position).add(new THREE.Vector3((Math.random() - .5) * 2.4, (Math.random() - .5) * 1.3, (Math.random() - .5) * 2.4));
+      particle.velocity.set((Math.random() - .5) * 10, 3 + Math.random() * 9, (Math.random() - .5) * 10);
+      particle.rotation.set(Math.random() * TAU, Math.random() * TAU, Math.random() * TAU);
+      particle.spin.set((Math.random() - .5) * 8, (Math.random() - .5) * 8, (Math.random() - .5) * 8);
+      particle.scale.set(.18 + Math.random() * .48, .12 + Math.random() * .32, .2 + Math.random() * .58);
+      particle.life = 2.2 + Math.random() * 1.8;
+      this.debrisMesh.setColorAt(index, new THREE.Color(colorValue).lerp(new THREE.Color(0x263746), Math.random() * .6));
+    }
+    if (this.debrisMesh.instanceColor) this.debrisMesh.instanceColor.needsUpdate = true;
+  }
+
+  updateStructuralDebris(dt) {
+    const dummy = this.debrisDummy;
+    let changed = false;
+    for (let index = 0; index < this.debrisParticles.length; index++) {
+      const particle = this.debrisParticles[index];
+      if (!particle.active) continue;
+      changed = true;
+      particle.life -= dt;
+      particle.velocity.y -= 22 * dt;
+      particle.position.addScaledVector(particle.velocity, dt);
+      particle.rotation.addScaledVector(particle.spin, dt);
+      const floor = this.surfaceHeightAt(particle.position, particle.position.y + .2);
+      if (particle.position.y < floor + .08 && particle.velocity.y < 0) {
+        particle.position.y = floor + .08;
+        particle.velocity.y *= -.28;
+        particle.velocity.x *= .72;
+        particle.velocity.z *= .72;
+        particle.spin.multiplyScalar(.76);
+      }
+      if (particle.life <= 0) {
+        particle.active = false;
+        this.debrisMesh.setMatrixAt(index, HIDDEN_INSTANCE);
+        continue;
+      }
+      dummy.position.copy(particle.position);
+      dummy.rotation.set(particle.rotation.x, particle.rotation.y, particle.rotation.z);
+      dummy.scale.copy(particle.scale);
+      dummy.updateMatrix();
+      this.debrisMesh.setMatrixAt(index, dummy.matrix);
+    }
+    if (changed) this.debrisMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  structuralPartAt(position, radius = 0) {
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const part of this.structuralParts) {
+      if (part.removed || part.failureQueued) continue;
+      const dx = Math.max(Math.abs(position.x - part.x) - part.w / 2, 0);
+      const dy = Math.max(part.baseY - position.y, 0, position.y - part.top);
+      const dz = Math.max(Math.abs(position.z - part.z) - part.d / 2, 0);
+      const distance = Math.hypot(dx, dy, dz);
+      if (distance > radius || distance >= nearestDistance) continue;
+      nearest = part;
+      nearestDistance = distance;
+    }
+    return nearest;
+  }
+
+  structuralPartById(partId) {
+    if (!partId) return null;
+    return this.structuralParts.find((part) => part.structuralId === partId && !part.removed && !part.failureQueued) || null;
+  }
+
+  structuralCenter(part, target = new THREE.Vector3()) {
+    return target.set(part.x, part.baseY + part.h / 2, part.z);
+  }
+
+  startNextStructuralFailure(structure) {
+    if (structure.activeChange) return;
+    const part = structure.pendingFailures.shift();
+    if (!part || part.removed) {
+      if (structure.pendingFailures.length) this.startNextStructuralFailure(structure);
+      return;
+    }
+    const change = {
+      id: `collapse-${++this.collapseSerial}`,
+      structure,
+      part,
+      attackerId: part.failureAttackerId || "",
+      phase: "warning",
+      elapsed: 0,
+      warningDuration: .52,
+      fallDuration: .74,
+      movingParts: [],
+      crushedPlayers: new Set()
+    };
+    structure.activeChange = change;
+    this.structuralChanges.push(change);
+    this.frameStructureEvents.push({
+      type: "warning",
+      id: change.id,
+      structureId: structure.id,
+      position: this.structuralCenter(part).clone(),
+      color: structure.color
+    });
+  }
+
+  queueStructuralFailure(part, attackerId = "") {
+    if (!part || part.removed || part.failureQueued) return false;
+    part.failureQueued = true;
+    part.failureAttackerId = attackerId;
+    part.structure.pendingFailures.push(part);
+    this.startNextStructuralFailure(part.structure);
+    return true;
+  }
+
+  removeStructuralPart(part) {
+    if (!part || part.removed) return;
+    part.removed = true;
+    part.dynamic = false;
+    this.dynamicObstacles.delete(part);
+    this.hideStructuralVisual(part);
+    const obstacleIndex = this.obstacles.indexOf(part);
+    if (obstacleIndex >= 0) this.obstacles.splice(obstacleIndex, 1);
+    const platformIndex = this.platforms.indexOf(part);
+    if (platformIndex >= 0) this.platforms.splice(platformIndex, 1);
+    const structuralIndex = this.structuralParts.indexOf(part);
+    if (structuralIndex >= 0) this.structuralParts.splice(structuralIndex, 1);
+  }
+
+  removeStructuralAnchor(structure) {
+    const anchor = structure.anchor;
+    if (!anchor) return;
+    const index = this.anchors.indexOf(anchor);
+    if (index >= 0) this.anchors.splice(index, 1);
+    for (const visual of anchor.instanceVisuals || []) {
+      visual.mesh.setMatrixAt(visual.index, HIDDEN_INSTANCE);
+      visual.mesh.instanceMatrix.needsUpdate = true;
+    }
+    structure.anchor = null;
+  }
+
+  beginStructuralFall(change) {
+    const { structure, part } = change;
+    const breakPosition = this.structuralCenter(part).clone();
+    this.spawnStructuralDebris(breakPosition, structure.color, part.structuralKind === "platform" ? 24 : 16);
+    this.frameStructureEvents.push({
+      type: "break",
+      id: change.id,
+      structureId: structure.id,
+      position: breakPosition,
+      color: structure.color
+    });
+
+    if (part.structuralKind === "platform") {
+      this.removeStructuralPart(part);
+      structure.platform = null;
+      this.removeStructuralAnchor(structure);
+      this.finishStructuralChange(change);
+      return;
+    }
+
+    const failedIndex = structure.segments.indexOf(part);
+    const moving = failedIndex < 0 ? [] : structure.segments.slice(failedIndex + 1);
+    if (structure.platform && !structure.platform.removed) moving.push(structure.platform);
+    this.removeStructuralPart(part);
+    if (failedIndex >= 0) structure.segments.splice(failedIndex, 1);
+    for (const movingPart of moving) {
+      movingPart.dynamic = true;
+      this.dynamicObstacles.add(movingPart);
+      change.movingParts.push({
+        part: movingPart,
+        startBaseY: movingPart.baseY,
+        startTop: movingPart.top
+      });
+    }
+    change.phase = "falling";
+    change.elapsed = 0;
+    if (!change.movingParts.length) this.finishStructuralChange(change);
+  }
+
+  moveStructuralPart(part, baseY) {
+    part.baseY = baseY;
+    part.top = baseY + part.h;
+    this.updateStructuralVisual(part);
+  }
+
+  updateStructuralCrush(change, players, previousPlatformTop, platform) {
+    if (!platform) return;
+    for (const player of players) {
+      if (!player.alive || change.crushedPlayers.has(player.id)) continue;
+      const playerRadius = player.radius || .55;
+      const inside = Math.abs(player.position.x - platform.x) <= platform.w / 2 - playerRadius * .25 &&
+        Math.abs(player.position.z - platform.z) <= platform.d / 2 - playerRadius * .25;
+      if (!inside) continue;
+
+      // Riders stay attached to the deck. Everyone trapped beneath it must have a
+      // full-height escape gap; otherwise the descending slab is lethal.
+      if (player.grounded && Math.abs(player.position.y - previousPlatformTop) <= .48) {
+        player.position.y = platform.top;
+        continue;
+      }
+      const floor = this.surfaceHeightAt(player.position, platform.baseY - .08);
+      const trapped = player.position.y + 2.25 > platform.baseY - .04 && platform.baseY - floor < 2.35;
+      if (!trapped) continue;
+      change.crushedPlayers.add(player.id);
+      this.frameStructureEvents.push({
+        type: "crush",
+        id: `${change.id}-${player.id}`,
+        structureId: change.structure.id,
+        attackerId: change.attackerId,
+        player,
+        position: player.position.clone(),
+        color: change.structure.color
+      });
+    }
+  }
+
+  finishStructuralChange(change) {
+    const { structure } = change;
+    for (const entry of change.movingParts) entry.part.dynamic = false;
+    const index = this.structuralChanges.indexOf(change);
+    if (index >= 0) this.structuralChanges.splice(index, 1);
+    structure.activeChange = null;
+    this.buildObstacleIndex();
+    if (change.movingParts.length) {
+      const platform = structure.platform;
+      this.frameStructureEvents.push({
+        type: "land",
+        id: change.id,
+        structureId: structure.id,
+        position: platform && !platform.removed
+          ? this.structuralCenter(platform).clone()
+          : new THREE.Vector3(structure.x, 0, structure.z),
+        color: structure.color
+      });
+    }
+    this.startNextStructuralFailure(structure);
+  }
+
+  updateStructuralChanges(dt, players) {
+    for (const change of [...this.structuralChanges]) {
+      const { part } = change;
+      change.elapsed += dt;
+      if (change.phase === "warning") {
+        const pulse = .2 + Math.abs(Math.sin(this.time * 24)) * 1.8;
+        this.setStructuralColor(part, new THREE.Color(part.visualColor).lerp(new THREE.Color(this.theme.danger), Math.min(1, pulse * .45)));
+        if (change.elapsed >= change.warningDuration) this.beginStructuralFall(change);
+        continue;
+      }
+
+      const progress = Math.min(1, change.elapsed / change.fallDuration);
+      const eased = progress * progress * (3 - 2 * progress);
+      const platformEntry = change.movingParts.find((entry) => entry.part.structuralKind === "platform");
+      const previousPlatformTop = platformEntry?.part.top;
+      for (const entry of change.movingParts) this.moveStructuralPart(entry.part, entry.startBaseY - 4 * eased);
+      if (change.structure.anchor && change.structure.platform && !change.structure.platform.removed) {
+        change.structure.anchor.point.y = change.structure.platform.top + .6;
+        this.updateStructuralAnchor(change.structure.anchor);
+      }
+      this.updateStructuralCrush(change, players, previousPlatformTop, platformEntry?.part);
+      if (progress < 1) continue;
+      this.finishStructuralChange(change);
+    }
+  }
+
+  drainStructuralEvents() {
+    return this.frameStructureEvents.splice(0);
+  }
+
+  settleStructuralChanges(players = []) {
+    let guard = 0;
+    while (this.structuralChanges.length && guard++ < 128) this.updateStructuralChanges(2, players);
+    this.drainStructuralEvents();
+  }
+
   addPlatform(x, top, z, w, d, thickness, color) {
     const platform = this.addBox(x, z, w, d, thickness, color, false, false, top - thickness);
     this.platforms.push(platform);
     this.decoratePlatform(platform);
     return platform;
+  }
+
+  addStructuralTower(x, z, segmentCount, platformWidth, platformDepth) {
+    const segmentHeight = 4;
+    const pillarWidth = 4.2 + (segmentCount % 2) * .7;
+    const colorValue = this.districtColorAt(x, z);
+    const structure = {
+      id: `structure-${this.structures.length + 1}`,
+      x, z, color: colorValue,
+      segments: [], platform: null, anchor: null,
+      activeChange: null, pendingFailures: []
+    };
+    this.structures.push(structure);
+    for (let index = 0; index < segmentCount; index++) {
+      const segment = this.addBox(x, z, pillarWidth, pillarWidth, segmentHeight, 0x172b3c, false, false, index * segmentHeight);
+      Object.assign(segment, {
+        structure, structuralId: `${structure.id}-pillar-${index + 1}`,
+        structuralKind: "pillar", health: 6, maxHealth: 6
+      });
+      segment.mesh.name = `${structure.id} pillar segment ${index + 1}`;
+      structure.segments.push(segment);
+      this.structuralParts.push(segment);
+    }
+    const top = segmentCount * segmentHeight;
+    const platform = this.addBox(x, z, platformWidth, platformDepth, 1.15, 0x203d55, false, false, top - 1.15);
+    this.platforms.push(platform);
+    Object.assign(platform, {
+      structure, structuralId: `${structure.id}-platform`,
+      structuralKind: "platform", health: 10, maxHealth: 10
+    });
+    platform.mesh.name = `${structure.id} destructible platform`;
+    structure.platform = platform;
+    this.structuralParts.push(platform);
+    structure.anchor = this.addStructuralAnchor(x, top + .6, z);
+    return structure;
+  }
+
+  addStructuralAnchor(x, y, z) {
+    const anchor = { point: new THREE.Vector3(x, y, z), mesh: null, instanceVisuals: [] };
+    this.anchors.push(anchor);
+    return anchor;
+  }
+
+  createStructuralBatch(geometry, sourceMaterial, count, name) {
+    const batchMaterial = sourceMaterial.clone();
+    batchMaterial.color.setHex(0xffffff);
+    batchMaterial.vertexColors = true;
+    const mesh = new THREE.InstancedMesh(geometry, batchMaterial, count);
+    mesh.name = name;
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    this.group.add(mesh);
+    this.structuralBatchMeshes.push(mesh);
+    return mesh;
+  }
+
+  setStructuralInstance(visual, x, y, z) {
+    const marker = this.structuralMarker;
+    marker.position.set(x, y + visual.yOffset, z);
+    marker.rotation.set(0, 0, 0);
+    marker.scale.copy(visual.scale);
+    marker.updateMatrix();
+    visual.mesh.setMatrixAt(visual.index, marker.matrix);
+    visual.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  setStructuralColor(part, colorValue = part.visualColor) {
+    if (!part.instanceVisuals?.length) return;
+    const instanceColor = colorValue?.isColor ? colorValue : new THREE.Color(colorValue);
+    for (const visual of part.instanceVisuals) {
+      visual.mesh.setColorAt(visual.index, instanceColor);
+      if (visual.mesh.instanceColor) visual.mesh.instanceColor.needsUpdate = true;
+    }
+  }
+
+  updateStructuralVisual(part) {
+    for (const visual of part.instanceVisuals || []) this.setStructuralInstance(visual, part.x, part.baseY + part.h / 2, part.z);
+  }
+
+  hideStructuralVisual(part) {
+    for (const visual of part.instanceVisuals || []) {
+      visual.mesh.setMatrixAt(visual.index, HIDDEN_INSTANCE);
+      visual.mesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  updateStructuralAnchor(anchor) {
+    for (const visual of anchor.instanceVisuals || []) this.setStructuralInstance(visual, anchor.point.x, anchor.point.y, anchor.point.z);
+  }
+
+  batchStructuralGeometry() {
+    const segments = this.structures.flatMap((structure) => structure.segments);
+    const platforms = this.structures.map((structure) => structure.platform);
+    const anchors = this.structures.map((structure) => structure.anchor);
+    const segmentBatch = this.createStructuralBatch(new THREE.BoxGeometry(1, 1, 1), segments[0].mesh.material, segments.length, "Instanced destructible pillar modules");
+    const seamMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, transparent: true, opacity: .58, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    const segmentSeamBatch = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), seamMaterial, segments.length);
+    segmentSeamBatch.name = "Instanced pillar section seams";
+    segmentSeamBatch.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    segmentSeamBatch.castShadow = false;
+    segmentSeamBatch.receiveShadow = false;
+    this.group.add(segmentSeamBatch);
+    this.structuralBatchMeshes.push(segmentSeamBatch);
+    const platformBatch = this.createStructuralBatch(new THREE.BoxGeometry(1, 1, 1), platforms[0].mesh.material, platforms.length, "Instanced destructible platform decks");
+    const topMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      vertexColors: true,
+      transparent: true,
+      opacity: .38,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false
+    });
+    const platformTopBatch = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), topMaterial, platforms.length * 2);
+    platformTopBatch.name = "Instanced structural route illumination";
+    platformTopBatch.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    platformTopBatch.castShadow = false;
+    platformTopBatch.receiveShadow = false;
+    this.group.add(platformTopBatch);
+    this.structuralBatchMeshes.push(platformTopBatch);
+
+    const anchorMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, toneMapped: false });
+    const anchorBatch = new THREE.InstancedMesh(new THREE.SphereGeometry(.55, 14, 10), anchorMaterial, anchors.length);
+    anchorBatch.name = "Instanced structural grapple cores";
+    anchorBatch.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    anchorBatch.castShadow = false;
+    this.group.add(anchorBatch);
+    this.structuralBatchMeshes.push(anchorBatch);
+    const cageMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, wireframe: true, transparent: true, opacity: .5, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    const cageBatch = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.92, 1), cageMaterial, anchors.length);
+    cageBatch.name = "Instanced structural grapple cages";
+    cageBatch.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    cageBatch.castShadow = false;
+    this.group.add(cageBatch);
+    this.structuralBatchMeshes.push(cageBatch);
+
+    segments.forEach((part, index) => {
+      part.visualColor = part.mesh.material.color.getHex();
+      part.instanceVisuals = [
+        { mesh: segmentBatch, index, scale: new THREE.Vector3(part.w, part.h, part.d), yOffset: 0 },
+        { mesh: segmentSeamBatch, index, scale: new THREE.Vector3(part.w + .14, .07, part.d + .14), yOffset: part.h / 2 - .045 }
+      ];
+      this.group.remove(part.mesh);
+      part.mesh.geometry.dispose();
+      part.mesh.material.dispose();
+      part.mesh = segmentBatch;
+      this.updateStructuralVisual(part);
+      segmentBatch.setColorAt(index, new THREE.Color(part.visualColor));
+      segmentSeamBatch.setColorAt(index, new THREE.Color(part.structure.color));
+    });
+    platforms.forEach((part, index) => {
+      part.visualColor = part.mesh.material.color.getHex();
+      part.instanceVisuals = [
+        { mesh: platformBatch, index, scale: new THREE.Vector3(part.w, part.h, part.d), yOffset: 0 },
+        { mesh: platformTopBatch, index, scale: new THREE.Vector3(part.w * .78, .045, part.d * .78), yOffset: part.h / 2 + .035 },
+        { mesh: platformTopBatch, index: platforms.length + index, scale: new THREE.Vector3(part.w * .66, .08, part.d * .66), yOffset: -part.h / 2 - .045 }
+      ];
+      this.group.remove(part.mesh);
+      part.mesh.geometry.dispose();
+      part.mesh.material.dispose();
+      part.mesh = platformBatch;
+      this.updateStructuralVisual(part);
+      platformBatch.setColorAt(index, new THREE.Color(part.visualColor));
+      platformTopBatch.setColorAt(index, new THREE.Color(this.structures[index].color));
+      platformTopBatch.setColorAt(platforms.length + index, new THREE.Color(this.structures[index].color));
+    });
+    anchors.forEach((anchor, index) => {
+      const structure = this.structures[index];
+      anchor.instanceVisuals = [
+        { mesh: anchorBatch, index, scale: new THREE.Vector3(1, 1, 1), yOffset: 0 },
+        { mesh: cageBatch, index, scale: new THREE.Vector3(1, 1, 1), yOffset: 0 }
+      ];
+      anchor.mesh = anchorBatch;
+      this.updateStructuralAnchor(anchor);
+      for (const visual of anchor.instanceVisuals) visual.mesh.setColorAt(index, new THREE.Color(structure.color));
+    });
+    for (const mesh of this.structuralBatchMeshes) {
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      mesh.computeBoundingSphere();
+    }
   }
 
   addAnchor(x, y, z) {
@@ -1446,9 +1951,11 @@ export class ArenaWorld {
     const halo = this.glowSprite(color, 3.6, .23);
     orb.add(cage, halo);
     this.group.add(orb);
-    this.anchors.push({ point, mesh: orb });
+    const anchor = { point, mesh: orb };
+    this.anchors.push(anchor);
     this.rotors.push({ object: cage, x: .42, y: .68, z: .25 });
     this.pulsers.push({ object: halo, base: 3.6, amplitude: .12, speed: 3.1, phase: x * .03 + z * .02 });
+    return anchor;
   }
 
   addBoostPad(x, y, z, strength) {
@@ -1633,6 +2140,8 @@ export class ArenaWorld {
 
   update(dt, players) {
     this.time += dt;
+    this.updateStructuralChanges(dt, players);
+    this.updateStructuralDebris(dt);
     for (const rotor of this.rotors) {
       rotor.object.rotation.x += dt * rotor.x;
       rotor.object.rotation.y += dt * rotor.y;
@@ -1848,7 +2357,12 @@ export class ArenaWorld {
     return target.copy(origin).addScaledVector(direction, safeDistance);
   }
 
-  destroy(position, radius) {
+  destroy(position, radius, context = {}) {
+    if (context.eventId) {
+      if (this.appliedTerrainEvents.has(context.eventId)) return 0;
+      this.appliedTerrainEvents.add(context.eventId);
+      if (this.appliedTerrainEvents.size > 512) this.appliedTerrainEvents.delete(this.appliedTerrainEvents.values().next().value);
+    }
     let removed = 0;
     for (const item of [...this.destructibles]) {
       const center = new THREE.Vector3(item.x, item.baseY + item.h / 2, item.z);
@@ -1863,18 +2377,28 @@ export class ArenaWorld {
       item.removed = true;
       removed += 1;
     }
+    const structuralPart = context.partId
+      ? this.structuralPartById(context.partId)
+      : this.structuralPartAt(position, radius);
+    if (structuralPart) {
+      structuralPart.health = Math.max(0, structuralPart.health - Math.max(1, radius));
+      const damageMix = .14 + (1 - structuralPart.health / structuralPart.maxHealth) * .46;
+      this.setStructuralColor(structuralPart, new THREE.Color(structuralPart.visualColor).lerp(new THREE.Color(this.theme.danger), damageMix));
+      if (structuralPart.health === 0) this.queueStructuralFailure(structuralPart, context.attackerId);
+      removed += 1;
+    }
     return removed;
   }
 
   grapplePoint(origin, direction) {
     if (!direction.lengthSq()) return null;
     this.group.updateMatrixWorld(true);
-    const surfaces = [
+    const surfaces = [...new Set([
       this.ground,
       ...this.obstacles.map((item) => item.mesh),
       ...this.anchors.map((anchor) => anchor.mesh),
       ...this.boostPads.map((pad) => pad.mesh)
-    ];
+    ].filter(Boolean))];
     const ray = new THREE.Raycaster(origin, direction.clone().normalize(), .05);
     return ray.intersectObjects(surfaces, false)[0]?.point.clone() ?? null;
   }

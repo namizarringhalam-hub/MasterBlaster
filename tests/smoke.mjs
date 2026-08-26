@@ -10,14 +10,15 @@ import { NeonRenderPipeline } from "../src/renderPipeline.js";
 import { ArenaWorld } from "../src/world.js";
 import { weaponPresentation } from "../src/weaponPresentation.js";
 
-const [mainSource, bootSource, renderPipelineSource, worldSource, serviceWorkerSource, stylesSource, indexSource] = await Promise.all([
+const [mainSource, bootSource, renderPipelineSource, worldSource, serviceWorkerSource, stylesSource, indexSource, multiplayerWorkerSource] = await Promise.all([
   readFile(new URL("../src/main.js", import.meta.url), "utf8"),
   readFile(new URL("../src/boot.js", import.meta.url), "utf8"),
   readFile(new URL("../src/renderPipeline.js", import.meta.url), "utf8"),
   readFile(new URL("../src/world.js", import.meta.url), "utf8"),
   readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
   readFile(new URL("../src/styles.css", import.meta.url), "utf8"),
-  readFile(new URL("../index.html", import.meta.url), "utf8")
+  readFile(new URL("../index.html", import.meta.url), "utf8"),
+  readFile(new URL("../multiplayer/worker.js", import.meta.url), "utf8")
 ]);
 assert.doesNotMatch(mainSource, /serviceWorker\.register/, "the renderer does not own service-worker startup");
 assert.match(bootSource, /serviceWorker\.register\("\/sw\.js"/, "the lightweight shell starts immutable caching without waiting for the engine");
@@ -492,6 +493,66 @@ worldA.dispose();
 const worldB = new ArenaWorld(new THREE.Scene(), "SAME-SEED");
 const obstacleLayoutB = worldB.obstacles.map(({ x, z, w, d }) => [x, z, w, d]);
 assert.deepEqual(obstacleLayoutA, obstacleLayoutB, "seeded arenas generate the same collision layout");
+assert.equal(worldB.structures.length, 10, "the arena adds ten seeded multi-level structural routes");
+assert.ok(new Set(worldB.structures.map((structure) => structure.platform.top)).size >= 4, "structural platforms create varied combat elevations");
+assert.ok(worldB.structures.every((structure) => structure.segments.length >= 3 && structure.segments.length <= 8), "every destructible pillar is composed of bounded four-metre sections");
+assert.equal(worldB.debrisMesh.count, 72, "all collapsing structures share one bounded debris instance pool");
+assert.equal(worldB.debrisMesh.castShadow, false, "temporary structural scrap cannot multiply shadow rendering cost");
+
+const collapseWorld = new ArenaWorld(new THREE.Scene(), "COLLAPSE-QA");
+const collapseStructure = collapseWorld.structures[0];
+const originalDeckTop = collapseStructure.platform.top;
+const failedBase = collapseStructure.segments[0];
+const failedBaseCenter = collapseWorld.structuralCenter(failedBase).clone();
+collapseWorld.destroy(failedBaseCenter, 5.2, { eventId: "collapse-hit-1", attackerId: "attacker" });
+assert.equal(collapseWorld.destroy(failedBaseCenter, 5.2, { eventId: "collapse-hit-1", attackerId: "attacker" }), 0, "replayed network terrain events are idempotent");
+collapseWorld.destroy(failedBaseCenter, 5.2, { eventId: "collapse-hit-2", attackerId: "attacker" });
+assert.deepEqual(collapseWorld.drainStructuralEvents().map((event) => event.type), ["warning"], "a lethal structural hit produces a readable warning before movement");
+const deckRider = {
+  id: "rider", alive: true, grounded: true, radius: .55,
+  position: new THREE.Vector3(collapseStructure.x + 3, originalDeckTop, collapseStructure.z),
+  velocity: new THREE.Vector3()
+};
+collapseWorld.update(.53, [deckRider]);
+assert.deepEqual(collapseWorld.drainStructuralEvents().map((event) => event.type), ["break"], "the warned pillar section breaks before the deck descends");
+collapseWorld.update(.74, [deckRider]);
+assert.equal(collapseStructure.platform.top, originalDeckTop - 4, "destroying a pillar section lowers every supported section and platform by exactly one module");
+assert.equal(deckRider.position.y, collapseStructure.platform.top, "grounded riders descend with a collapsing platform instead of being abandoned in mid-air");
+assert.deepEqual(collapseWorld.drainStructuralEvents().map((event) => event.type), ["land"], "a completed descent emits one landing event");
+
+let crushHit = 0;
+const directDeckStructure = collapseWorld.structures[1];
+const directDeck = directDeckStructure.platform;
+const directDeckCenter = collapseWorld.structuralCenter(directDeck).clone();
+while (!directDeck.failureQueued) collapseWorld.destroy(directDeckCenter, 6, { eventId: `deck-hit-${++crushHit}`, attackerId: "attacker" });
+collapseWorld.settleStructuralChanges();
+assert.equal(directDeckStructure.platform, null, "direct platform destruction removes the deck after its warning window");
+assert.equal(directDeckStructure.anchor, null, "destroying a platform also removes its invalid floating grapple anchor");
+
+const crushStructure = collapseWorld.structures.find((structure) => structure.platform && structure.segments.length === 3) || collapseWorld.structures.find((structure) => structure.platform && structure !== collapseStructure);
+while (crushStructure.segments.length > 1) {
+  const base = crushStructure.segments[0];
+  const center = collapseWorld.structuralCenter(base).clone();
+  while (!base.failureQueued) collapseWorld.destroy(center, 5.2, { eventId: `crush-prep-${++crushHit}`, attackerId: "attacker" });
+  collapseWorld.settleStructuralChanges();
+}
+const finalBase = crushStructure.segments[0];
+const victim = {
+  id: "victim", alive: true, grounded: true, radius: .55,
+  position: new THREE.Vector3(crushStructure.x + Math.min(4.5, crushStructure.platform.w / 2 - 1), 0, crushStructure.z),
+  velocity: new THREE.Vector3()
+};
+const finalCenter = collapseWorld.structuralCenter(finalBase).clone();
+while (!finalBase.failureQueued) collapseWorld.destroy(finalCenter, 5.2, { eventId: `crush-final-${++crushHit}`, attackerId: "attacker" });
+collapseWorld.drainStructuralEvents();
+for (let frame = 0; frame < 14; frame++) collapseWorld.update(.1, [victim]);
+assert.ok(collapseWorld.drainStructuralEvents().some((event) => event.type === "crush" && event.player === victim), "a descending deck reports a fighter with no full-height escape gap as crushed");
+collapseWorld.dispose();
+
+assert.match(mainSource, /reportTerrainHit\([\s\S]*?owner,[\s\S]*?weapon,/, "terrain hits are reported to the online room authority");
+assert.match(mainSource, /applyNetworkTerrainDamage\(message\)[\s\S]*?eventId: message\.id/, "clients mutate online structures only from idempotent room broadcasts");
+assert.match(multiplayerWorkerSource, /terrainEvents[\s\S]*?handleTerrainHit[\s\S]*?recentValidTerrainShot/, "the room authority stores and validates deterministic terrain history");
+assert.match(multiplayerWorkerSource, /handleCrush[\s\S]*?lastCrushEventId[\s\S]*?type: "crush"/, "the room authority deduplicates collapse kills and broadcasts their result");
 assert.equal(worldB.spawnPoints().length, 16, "the arena provides one spawn candidate for every possible combatant");
 const openingSpawns = worldB.spawnPoints().slice(0, 8);
 assert.equal(openingSpawns.filter((point) => point.y >= 60 && Math.hypot(point.x, point.z) < 20).length, 1, "only one opening fighter spawns on the central tower");
