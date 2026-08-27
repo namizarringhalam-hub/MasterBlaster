@@ -43,6 +43,12 @@ export function clearTouchActions(touch) {
   return touch;
 }
 
+export function deliberateTouchTap(start, end, bounds, slop = 24) {
+  if (!start || !end || !bounds) return false;
+  const inside = end.x >= bounds.left && end.x <= bounds.right && end.y >= bounds.top && end.y <= bounds.bottom;
+  return inside && Math.hypot(end.x - start.x, end.y - start.y) <= slop;
+}
+
 export class InputManager {
   constructor(canvas, shouldCapture = () => true, onPointerUnlock = () => {}) {
     this.shouldCapture = shouldCapture;

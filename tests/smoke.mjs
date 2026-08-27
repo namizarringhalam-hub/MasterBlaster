@@ -3,8 +3,8 @@ import { readFile } from "node:fs/promises";
 import * as THREE from "three/webgpu";
 import { chooseBotSlot, botFireChance, botWeaponPolicy, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
 import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
-import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, LOADOUT_SLOTS, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, seededRandom, seedFromText, swapStolenWeapon, topScoreIndices, weaponFireMode, weaponUsesAmmo, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
-import { InputManager, TOUCH_LOOK_GAIN, clearTouchActions, shouldCaptureGameKey, touchLookDelta, touchMoveDelta, updateOrbit } from "../src/input.js";
+import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, LOADOUT_SLOTS, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, seededRandom, seedFromText, structuralPartBounds, swapStolenWeapon, topScoreIndices, weaponFireMode, weaponUsesAmmo, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
+import { InputManager, TOUCH_LOOK_GAIN, clearTouchActions, deliberateTouchTap, shouldCaptureGameKey, touchLookDelta, touchMoveDelta, updateOrbit } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraCollisionFirstPerson, cameraRelative, damageIndicatorAngle, directionFromKeys, directionFromTouch, Fighter, flameConeFactor, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
 import { NeonRenderPipeline } from "../src/renderPipeline.js";
 import { ArenaWorld } from "../src/world.js";
@@ -126,6 +126,15 @@ assert.doesNotMatch(mainSource, /grapple\.line\.geometry\.setFromPoints/, "grapp
 assert.doesNotMatch(worldSource, /new THREE\.ShaderMaterial/, "the arena has no legacy GLSL-only material");
 assert.match(worldSource, /MeshBasicNodeMaterial[\s\S]*?colorNode[\s\S]*?opacityNode/, "the animated route floor uses an MRT-compatible TSL node material");
 assert.doesNotMatch(mainSource, /data-touch="(?:up|down|left|right)"/, "mobile movement has no directional-button overlay");
+assert.match(mainSource, /active-weapon-readout[\s\S]*?data-active-weapon-name[\s\S]*?data-active-weapon-ammo/, "mobile HUD exposes the selected weapon name and its current magazine state");
+assert.match(mainSource, /if \(button\.dataset\.touch\) return;/, "gameplay touch actions cannot leak generic menu confirmation sounds or clicks");
+assert.match(mainSource, /touchPointers\?\.clear\(\)/, "blur, visibility, and pause clear pending action-pointer ownership");
+assert.match(mainSource, /lostpointercapture", cancel/, "lost touch capture cannot leave fire or another action held indefinitely");
+assert.match(stylesSource, /\.weapon-strip \{[\s\S]*?pointer-events: none[\s\S]*?\.weapon-strip button \{[\s\S]*?pointer-events: auto/, "gaps around compact weapon slots remain usable as movement and look surface");
+assert.match(stylesSource, /grid-template: "swap hook" 58px "jump fire" 86px \/ 58px 86px;[\s\S]*?gap: 14px 18px/, "mobile action controls isolate the large fire target from swap, hook, and jump");
+assert.match(stylesSource, /max-height: 500px[\s\S]*?\.pause \{[^}]*min-width: 44px; min-height: 44px;[\s\S]*?grid-template-columns: repeat\(5, 48px\); gap: 6px;[\s\S]*?\.weapon-strip button \{ min-height: 48px/, "compact-landscape pause and weapon slots retain separated 44px-plus touch targets");
+assert.match(stylesSource, /safe-area-inset-right[\s\S]*?safe-area-inset-bottom/, "mobile combat controls respect notches and home-indicator safe areas");
+assert.match(indexSource, /viewport-fit=cover/, "the viewport exposes device safe areas to the mobile HUD");
 assert.match(mainSource, /document\.addEventListener\("visibilitychange"/, "page visibility resets are attached to the document that dispatches them");
 assert.match(mainSource, /if \(this\.paused\) \{[\s\S]*?clearTouchActions\(this\.touch\)/, "pausing clears held and queued touch actions");
 assert.match(mainSource, /pointercancel", cancel/, "cancelled action touches cannot replay queued actions");
@@ -405,6 +414,10 @@ assert.deepEqual(touchMoveDelta(20, 30, 24, 34), { x: 0, y: 0 }, "small left-sid
 assert.deepEqual(touchMoveDelta(20, 30, 92, 30), { x: 1, y: 0 }, "a full left-side drag reaches full walking input");
 const heldTouchActions = { fire: true, fireTap: true, jumpTap: true, grappleTap: true, weaponTap: true };
 assert.deepEqual(clearTouchActions(heldTouchActions), { fire: false, fireTap: false, jumpTap: false, grappleTap: false, weaponTap: false }, "blur and pause can clear every held or queued touch action");
+const touchButtonBounds = { left: 80, right: 140, top: 80, bottom: 140 };
+assert.equal(deliberateTouchTap({ x: 100, y: 100 }, { x: 111, y: 108 }, touchButtonBounds), true, "a deliberate release inside the same action target registers once");
+assert.equal(deliberateTouchTap({ x: 100, y: 100 }, { x: 145, y: 110 }, touchButtonBounds), false, "sliding from swap toward fire cannot trigger the accidentally touched action");
+assert.equal(deliberateTouchTap({ x: 100, y: 100 }, { x: 130, y: 130 }, touchButtonBounds), false, "a large aim correction over a button is not mistaken for an action tap");
 assert.ok(cameraRelative(directionFromTouch({ x: 0, y: -1 }), 0).distanceTo(new THREE.Vector3(0, 0, 1)) < .001, "left-side drag up moves forward with the camera");
 assert.ok(cameraRelative(directionFromTouch({ x: 0, y: 1 }), 0).distanceTo(new THREE.Vector3(0, 0, -1)) < .001, "left-side drag down moves backward from the camera");
 assert.ok(cameraRelative(directionFromTouch({ x: -1, y: 0 }), 0).distanceTo(new THREE.Vector3(1, 0, 0)) < .001, "left-side drag left follows screen-left relative to the camera");
@@ -496,10 +509,23 @@ assert.deepEqual(obstacleLayoutA, obstacleLayoutB, "seeded arenas generate the s
 assert.equal(worldB.structures.length, 16, "the arena makes six major towers and ten seeded routes structural");
 assert.equal(worldB.structures.slice(0, 6).filter((structure) => structure.major).length, 6, "all six outer tower floors and stands use the major destruction model");
 assert.deepEqual(worldB.structures.slice(0, 6).map(({ x, z }) => [x, z]), [[42, -22], [-42, 30], [-52, -48], [53, 49], [54, 33], [-53, -27]], "the structural major towers cover every non-central tower floor");
-assert.ok(worldB.structures.slice(0, 6).every((structure) => structure.platform.maxHealth === 18 && structure.segments.every((segment) => segment.maxHealth === 10)), "large tower decks and stands have mass-scaled structural health");
+assert.ok(worldB.structures.slice(0, 6).every((structure) => structure.platformChunks.length >= 12 && structure.platformChunks.every((chunk) => chunk.maxHealth === 8) && structure.segments.every((segment) => segment.maxHealth === 8)), "large tower decks use sturdy but one-rocket structural chunks and segmented stands");
 assert.ok(worldB.platforms.filter((platform) => !platform.structuralKind && platform.x === 0 && platform.z === 0).some((platform) => platform.top === 15), "the middle lower tower floor remains indestructible");
 assert.ok(worldB.platforms.filter((platform) => !platform.structuralKind && platform.x === 0 && platform.z === 0).some((platform) => platform.top === 66), "the middle upper tower floor remains indestructible");
-assert.ok(new Set(worldB.structures.map((structure) => structure.platform.top)).size >= 4, "structural platforms create varied combat elevations");
+assert.ok(new Set(worldB.structures.map((structure) => structure.platformChunks[0].top)).size >= 4, "structural platforms create varied combat elevations");
+assert.ok(WEAPONS.rocket_launcher.structureDamage >= 8, "one canonical rocket destroys any outer deck or stand section");
+assert.ok(Object.values(WEAPONS).filter((weapon) => weapon.structureDamage > 0).length >= 35, "most combat weapons can damage tower structures");
+assert.equal(WEAPONS.temporary_wall.structureDamage, 0, "pure utility projectiles cannot damage towers");
+const firstChunk = worldB.structures[0].platformChunks[0];
+const authoritativeChunk = structuralPartBounds("SAME-SEED", firstChunk.structuralId);
+assert.deepEqual(
+  [authoritativeChunk.x, authoritativeChunk.z, authoritativeChunk.baseY, authoritativeChunk.top, authoritativeChunk.w, authoritativeChunk.d],
+  [firstChunk.x, firstChunk.z, firstChunk.baseY, firstChunk.top, firstChunk.w, firstChunk.d],
+  "the browser and multiplayer authority share exact deterministic chunk bounds"
+);
+const seamNeighbor = worldB.structures[0].platformChunks.find((chunk) => chunk.deckRow === firstChunk.deckRow && chunk.deckColumn === firstChunk.deckColumn + 1);
+const seamPoint = new THREE.Vector3(firstChunk.x + firstChunk.w / 2, firstChunk.top, firstChunk.z);
+assert.equal(worldB.structuralPartAt(seamPoint, .01).structuralId, [firstChunk.structuralId, seamNeighbor.structuralId].sort()[0], "deck seams use a stable part-id tie break on every client");
 assert.ok(worldB.structures.every((structure) => structure.segments.length >= 3 && structure.segments.length <= 8), "every destructible pillar is composed of a bounded number of sections");
 assert.equal(worldB.debrisMesh.count, 128, "all collapsing structures share one bounded mixed-scale debris instance pool");
 assert.equal(worldB.debrisMesh.castShadow, false, "temporary structural scrap cannot multiply shadow rendering cost");
@@ -508,42 +534,56 @@ assert.equal(worldB.dustMesh.castShadow, false, "temporary collapse dust never a
 
 const collapseWorld = new ArenaWorld(new THREE.Scene(), "COLLAPSE-QA");
 const collapseStructure = collapseWorld.structures.find((structure) => !structure.major);
-const originalDeckTop = collapseStructure.platform.top;
+const originalDeckTop = collapseStructure.platformChunks[0].top;
 const failedBase = collapseStructure.segments[0];
 const failedBaseCenter = collapseWorld.structuralCenter(failedBase).clone();
-collapseWorld.destroy(failedBaseCenter, 5.2, { eventId: "collapse-hit-1", attackerId: "attacker" });
+collapseWorld.destroy(failedBaseCenter, 5.2, { eventId: "collapse-hit-1", attackerId: "attacker", structuralDamage: WEAPONS.rocket_launcher.structureDamage, structuralRadius: .35 });
 assert.equal(collapseWorld.destroy(failedBaseCenter, 5.2, { eventId: "collapse-hit-1", attackerId: "attacker" }), 0, "replayed network terrain events are idempotent");
-collapseWorld.destroy(failedBaseCenter, 5.2, { eventId: "collapse-hit-2", attackerId: "attacker" });
 assert.deepEqual(collapseWorld.drainStructuralEvents().map((event) => event.type), ["warning"], "a lethal structural hit produces a readable warning before movement");
+const riderChunk = collapseStructure.platformChunks[0];
 const deckRider = {
   id: "rider", alive: true, grounded: true, radius: .55,
-  position: new THREE.Vector3(collapseStructure.x + 3, originalDeckTop, collapseStructure.z),
+  position: new THREE.Vector3(riderChunk.x, originalDeckTop, riderChunk.z),
   velocity: new THREE.Vector3()
 };
 collapseWorld.update(.53, [deckRider]);
 assert.deepEqual(collapseWorld.drainStructuralEvents().map((event) => event.type), ["break"], "the warned pillar section breaks before the deck descends");
 collapseWorld.update(.74, [deckRider]);
-assert.equal(collapseStructure.platform.top, originalDeckTop - failedBase.h, "destroying a pillar section lowers every supported section and platform by its exact module height");
-assert.equal(deckRider.position.y, collapseStructure.platform.top, "grounded riders descend with a collapsing platform instead of being abandoned in mid-air");
+assert.ok(collapseStructure.platformChunks.every((chunk) => chunk.top === originalDeckTop - failedBase.h), "destroying a pillar section lowers every surviving deck chunk by its exact module height");
+assert.equal(deckRider.position.y, riderChunk.top, "grounded riders descend with their supporting deck chunk instead of being abandoned in mid-air");
 assert.deepEqual(collapseWorld.drainStructuralEvents().map((event) => event.type), ["land"], "a completed descent emits one landing event");
 collapseWorld.update(.04, [deckRider]);
-assert.ok(collapseStructure.platform.visualOffset.y < 0, "landing mass first compresses the structural visuals into the contact");
+assert.ok(riderChunk.visualOffset.y < 0, "landing mass first compresses every surviving deck chunk into the contact");
 collapseWorld.update(.12, [deckRider]);
-assert.ok(collapseStructure.platform.visualOffset.y > 0, "the compressed deck follows with a smaller damped recoil");
+assert.ok(riderChunk.visualOffset.y > 0, "the compressed deck chunks follow with a smaller damped recoil");
 
 let crushHit = 0;
 const directDeckStructure = collapseWorld.structures.find((structure) => structure.major && structure.x === 42 && structure.z === -22);
-const directDeck = directDeckStructure.platform;
-const directDeckCenter = collapseWorld.structuralCenter(directDeck).clone();
-while (!directDeck.failureQueued) collapseWorld.destroy(directDeckCenter, 6, { eventId: `deck-hit-${++crushHit}`, attackerId: "attacker" });
+const directDeck = directDeckStructure.platformChunks[0];
+const directDeckNeighbor = directDeckStructure.platformChunks[1];
+const directDeckCount = directDeckStructure.platformChunks.length;
+const directDeckCenter = collapseWorld.structuralCenter(directDeck).add(new THREE.Vector3(directDeck.w * .22, directDeck.h / 2, directDeck.d * .18));
+collapseWorld.destroy(directDeckCenter, 5.2, {
+  eventId: `deck-hit-${++crushHit}`, attackerId: "attacker",
+  structuralDamage: WEAPONS.rocket_launcher.structureDamage, structuralRadius: .35
+});
+assert.equal(directDeck.health, 0, "one rocket is lethal to the impacted major deck chunk");
 collapseWorld.drainStructuralEvents();
 collapseWorld.update(.53, []);
-assert.ok(directDeckStructure.platform === directDeck && !collapseWorld.structuralParts.includes(directDeck), "a fractured deck immediately releases collision while its breakup choreography completes");
-assert.ok(collapseWorld.debrisParticles.filter((particle) => particle.active).filter((particle) => particle.scale.x > 5 && particle.scale.z > 5).length >= 8, "a major deck visibly separates into at least eight independently simulated slab sections");
+assert.ok(!collapseWorld.structuralParts.includes(directDeck) && collapseWorld.structuralParts.includes(directDeckNeighbor), "the struck chunk immediately becomes a real hole while its neighbor retains collision");
+assert.ok(collapseWorld.debrisParticles.filter((particle) => particle.active).filter((particle) => particle.scale.x > 1 && particle.scale.z > 2).length >= 8, "a deck chunk visibly separates into independently simulated local slab pieces");
 assert.ok(collapseWorld.dustParticles.some((particle) => particle.active && particle.maxLife >= 1.25), "structural fracture emits long-lived pooled dust rather than short spark stand-ins");
-collapseWorld.settleStructuralChanges();
-assert.equal(directDeckStructure.platform, null, "direct platform destruction removes the deck after its warning window");
-assert.equal(directDeckStructure.anchor, null, "destroying a platform also removes its invalid floating grapple anchor");
+assert.deepEqual(collapseWorld.drainStructuralEvents().map((event) => event.type), ["break"], "the localized fracture emits one break event");
+collapseWorld.update(.46, []);
+assert.equal(collapseWorld.drainStructuralEvents().filter((event) => event.type === "land").length, 0, "a local deck fracture cannot fake a landing cue while its slabs remain airborne");
+let localDeckLanding = null;
+for (let frame = 0; frame < 60 && !localDeckLanding; frame++) {
+  collapseWorld.update(.1, []);
+  localDeckLanding = collapseWorld.drainStructuralEvents().find((event) => event.type === "land") || null;
+}
+assert.ok(localDeckLanding && localDeckLanding.position.y < directDeckCenter.y - 2, "a local deck fracture emits its contact cue at the debris' real landing height");
+assert.equal(directDeckStructure.platformChunks.length, directDeckCount - 1, "direct platform destruction removes only the impacted chunk");
+assert.ok(directDeckStructure.anchor, "an edge-chunk fracture keeps a still-supported grapple anchor");
 collapseWorld.updateStructuralDebris(2);
 const debrisProbe = new THREE.Object3D();
 for (const particle of collapseWorld.debrisParticles.filter((entry) => entry.active && (entry.scale.x > 5 || entry.scale.y > 2))) {
@@ -559,23 +599,26 @@ for (const particle of collapseWorld.debrisParticles.filter((entry) => entry.act
 const majorStructure = collapseWorld.structures.find((structure) => structure.major && structure.x === -52 && structure.z === -48);
 const majorSpawnBefore = collapseWorld.spawnPoints().find((point) => Math.abs(point.x + 60) < .01 && Math.abs(point.z + 48) < .01);
 assert.equal(majorSpawnBefore.y, 15, "the major tower spawn initially resolves onto its deck");
-const majorDeck = majorStructure.platform;
-while (!majorDeck.failureQueued) collapseWorld.destroy(collapseWorld.structuralCenter(majorDeck).clone(), 6, { eventId: `major-deck-${++crushHit}`, attackerId: "attacker" });
+const majorDeck = collapseWorld.structuralPartAt(majorSpawnBefore.clone().add(new THREE.Vector3(0, -.05, 0)), .35);
+assert.equal(majorDeck?.structuralKind, "platform", "the spawn probe resolves to one deterministic deck chunk");
+collapseWorld.destroy(majorSpawnBefore.clone(), 5.2, {
+  eventId: `major-deck-${++crushHit}`, attackerId: "attacker", partId: majorDeck.structuralId,
+  structuralDamage: WEAPONS.rocket_launcher.structureDamage, structuralRadius: .35
+});
 collapseWorld.settleStructuralChanges();
-const majorSpawnAfter = collapseWorld.spawnPoints().find((point) => Math.abs(point.x + 60) < .01 && Math.abs(point.z + 48) < .01);
-assert.equal(majorSpawnAfter.y, 0, "destroyed elevated tower floors cannot leave future respawns suspended in mid-air");
+assert.equal(collapseWorld.surfaceHeightAt(new THREE.Vector3(majorDeck.x, majorDeck.top + 2, majorDeck.z), majorDeck.top + 2), 0, "the removed deck chunk leaves a physical hole instead of invisible support");
 
 function simulateStructuralRider(step) {
   const world = new ArenaWorld(new THREE.Scene(), "FRAME-INVARIANCE");
   const structure = world.structures.find((candidate) => !candidate.major);
   const failed = structure.segments[0];
-  const rider = { id: "rider", alive: true, grounded: true, radius: .55, position: new THREE.Vector3(structure.x + 2, structure.platform.top, structure.z), velocity: new THREE.Vector3() };
-  world.destroy(world.structuralCenter(failed).clone(), 5.2, { eventId: `frame-${step}-1`, attackerId: "attacker" });
-  world.destroy(world.structuralCenter(failed).clone(), 5.2, { eventId: `frame-${step}-2`, attackerId: "attacker" });
+  const platform = structure.platformChunks[0];
+  const rider = { id: "rider", alive: true, grounded: true, radius: .55, position: new THREE.Vector3(platform.x, platform.top, platform.z), velocity: new THREE.Vector3() };
+  world.destroy(world.structuralCenter(failed).clone(), 5.2, { eventId: `frame-${step}-1`, attackerId: "attacker", structuralDamage: 20, structuralRadius: .35 });
   world.drainStructuralEvents();
   let guard = 0;
   while (world.structuralChanges.length && guard++ < 100) world.update(step, [rider]);
-  const result = { riderY: rider.position.y, platformY: structure.platform.top, crushes: world.drainStructuralEvents().filter((event) => event.type === "crush").length };
+  const result = { riderY: rider.position.y, platformY: platform.top, crushes: world.drainStructuralEvents().filter((event) => event.type === "crush").length };
   world.dispose();
   return result;
 }
@@ -583,43 +626,93 @@ const fineRider = simulateStructuralRider(.04), coarseRider = simulateStructural
 assert.ok(Math.abs(fineRider.platformY - coarseRider.platformY) < 1e-8 && Math.abs(fineRider.riderY - coarseRider.riderY) < 1e-8, "rider carry and exact final collision are invariant across fine and coarse frame steps");
 assert.equal(fineRider.crushes + coarseRider.crushes, 0, "legitimate deck riders never become false crush kills at either frame rate");
 
+const seamRiderWorld = new ArenaWorld(new THREE.Scene(), "SEAM-RIDER-QA");
+const seamRiderStructure = seamRiderWorld.structures.find((structure) => !structure.major);
+const seamLeft = seamRiderStructure.platformChunks[0];
+const seamRight = seamRiderStructure.platformChunks.find((chunk) => chunk.deckRow === seamLeft.deckRow && chunk.deckColumn === seamLeft.deckColumn + 1);
+const seamRider = { id: "seam-rider", alive: true, grounded: true, radius: .55, position: new THREE.Vector3(seamLeft.x + seamLeft.w / 2, seamLeft.top, seamLeft.z), velocity: new THREE.Vector3() };
+const seamBase = seamRiderStructure.segments[0];
+seamRiderWorld.destroy(seamRiderWorld.structuralCenter(seamBase).clone(), 5.2, { eventId: "seam-rider-collapse", attackerId: "attacker", structuralDamage: 20, structuralRadius: .35 });
+seamRiderWorld.drainStructuralEvents();
+seamRiderWorld.update(.53, [seamRider]);
+seamRiderWorld.drainStructuralEvents();
+seamRiderWorld.update(.74, [seamRider]);
+assert.ok(seamRight && Math.abs(seamRider.position.y - seamLeft.top) < 1e-8, "a grounded capsule centered on a chunk seam is carried exactly once with the descending deck");
+seamRiderWorld.dispose();
+
+const padWorld = new ArenaWorld(new THREE.Scene(), "BOOST-SUPPORT-QA");
+const towerPad = padWorld.boostPads.find((pad) => pad.support);
+assert.ok(towerPad?.support, "elevated tower boost pads bind to their exact supporting deck chunk");
+const padStartY = towerPad.position.y;
+const padBase = towerPad.support.structure.segments[0];
+padWorld.destroy(padWorld.structuralCenter(padBase).clone(), 5.2, { eventId: "pad-support-fall", attackerId: "attacker", structuralDamage: 20, structuralRadius: .35 });
+padWorld.drainStructuralEvents();
+padWorld.update(.53, []);
+padWorld.drainStructuralEvents();
+padWorld.update(.86, []);
+assert.equal(towerPad.position.y, padStartY - padBase.h, "an attached boost pad moves with its descending support chunk");
+assert.equal(towerPad.mesh.position.y, towerPad.position.y + .12, "the boost-pad mesh and gameplay trigger remain vertically aligned");
+padWorld.destroy(padWorld.structuralCenter(towerPad.support).clone(), 5.2, { eventId: "pad-support-hole", attackerId: "attacker", partId: towerPad.support.structuralId, structuralDamage: 20, structuralRadius: .35 });
+padWorld.settleStructuralChanges();
+assert.ok(!towerPad.active && !towerPad.mesh.visible && !padWorld.boostAt(towerPad.position), "destroying a pad's host chunk hides and deactivates the pad");
+padWorld.dispose();
+
 const demolitionWorld = new ArenaWorld(new THREE.Scene(), "ALL-TOWERS-QA");
 let demolitionEvent = 0;
 for (const structure of demolitionWorld.structures.filter((candidate) => candidate.major)) {
-  for (const part of [...structure.segments, structure.platform]) {
-    while (!part.failureQueued) demolitionWorld.destroy(demolitionWorld.structuralCenter(part).clone(), 6, {
-      eventId: `all-towers-${++demolitionEvent}`, attackerId: "attacker", partId: part.structuralId
+  for (const part of [...structure.segments, ...structure.platformChunks]) {
+    demolitionWorld.destroy(demolitionWorld.structuralCenter(part).clone(), 5.2, {
+      eventId: `all-towers-${++demolitionEvent}`, attackerId: "attacker", partId: part.structuralId,
+      structuralDamage: WEAPONS.rocket_launcher.structureDamage, structuralRadius: .35
     });
     demolitionWorld.settleStructuralChanges();
   }
 }
-assert.ok(demolitionWorld.structures.filter((structure) => structure.major).every((structure) => !structure.platform && structure.segments.length === 0), "every outer tower floor and every stand module can be completely demolished");
+assert.ok(demolitionWorld.structures.filter((structure) => structure.major).every((structure) => structure.platformChunks.length === 0 && structure.segments.length === 0), "every outer tower floor chunk and every stand module can be completely demolished");
 assert.ok(demolitionWorld.platforms.some((platform) => !platform.structuralKind && platform.x === 0 && platform.z === 0 && platform.top === 15), "complete outer demolition cannot damage the protected middle tower");
 demolitionWorld.dispose();
 
-const crushStructure = collapseWorld.structures.find((structure) => structure.platform && structure.segments.length === 3) || collapseWorld.structures.find((structure) => structure.platform && structure !== collapseStructure);
+const snapshotWorld = new ArenaWorld(new THREE.Scene(), "SNAPSHOT-QA");
+const snapshotStructure = snapshotWorld.structures[0];
+const snapshotHole = snapshotStructure.platformChunks[0];
+const snapshotChip = snapshotStructure.platformChunks[1];
+snapshotWorld.applyStructuralState({ [snapshotHole.structuralId]: 0, [snapshotChip.structuralId]: 3.5 });
+snapshotWorld.settleStructuralChanges();
+assert.ok(!snapshotStructure.platformChunks.includes(snapshotHole) && snapshotStructure.platformChunks.includes(snapshotChip), "a compact late-join snapshot reconstructs one local hole without deleting the deck");
+assert.equal(snapshotChip.health, 3.5, "a compact late-join snapshot preserves partial damage exactly");
+assert.ok(!snapshotWorld.structuralChanges.length && !snapshotWorld.debrisParticles.some((particle) => particle.active) && !snapshotWorld.dustParticles.some((particle) => particle.active), "late-join structural snapshots settle silently without historical warnings, debris, or dust");
+snapshotWorld.dispose();
+
+const crushStructure = collapseWorld.structures.find((structure) => structure.platformChunks.length && structure.segments.length === 3) || collapseWorld.structures.find((structure) => structure.platformChunks.length && structure !== collapseStructure);
 while (crushStructure.segments.length > 1) {
   const base = crushStructure.segments[0];
   const center = collapseWorld.structuralCenter(base).clone();
-  while (!base.failureQueued) collapseWorld.destroy(center, 5.2, { eventId: `crush-prep-${++crushHit}`, attackerId: "attacker" });
+  collapseWorld.destroy(center, 5.2, { eventId: `crush-prep-${++crushHit}`, attackerId: "attacker", structuralDamage: 20, structuralRadius: .35 });
   collapseWorld.settleStructuralChanges();
 }
 const finalBase = crushStructure.segments[0];
+const victimChunk = crushStructure.platformChunks.at(-1);
 const victim = {
   id: "victim", alive: true, grounded: true, radius: .55,
-  position: new THREE.Vector3(crushStructure.x + Math.min(4.5, crushStructure.platform.w / 2 - 1), 0, crushStructure.z),
+  position: new THREE.Vector3(victimChunk.x, 0, victimChunk.z),
   velocity: new THREE.Vector3()
 };
 const finalCenter = collapseWorld.structuralCenter(finalBase).clone();
-while (!finalBase.failureQueued) collapseWorld.destroy(finalCenter, 5.2, { eventId: `crush-final-${++crushHit}`, attackerId: "attacker" });
+collapseWorld.destroy(finalCenter, 5.2, { eventId: `crush-final-${++crushHit}`, attackerId: "attacker", structuralDamage: 20, structuralRadius: .35 });
 collapseWorld.drainStructuralEvents();
 for (let frame = 0; frame < 14; frame++) collapseWorld.update(.1, [victim]);
 assert.ok(collapseWorld.drainStructuralEvents().some((event) => event.type === "crush" && event.player === victim), "a descending deck reports a fighter with no full-height escape gap as crushed");
 collapseWorld.dispose();
 
-assert.match(mainSource, /reportTerrainHit\([\s\S]*?owner,[\s\S]*?weapon,/, "terrain hits are reported to the online room authority");
+assert.match(mainSource, /authorityWeapon = WEAPONS\[weapon\.sourceWeaponId\] \|\| weapon[\s\S]*?reportTerrainHit\([\s\S]*?owner,[\s\S]*?authorityWeapon,/, "terrain hits and cluster children are reported under their authoritative source weapon");
+assert.match(mainSource, /fireHitscan\([\s\S]*?damageTerrain\(wall, weapon, player\)/, "hitscan and precision weapons route direct surface hits into structure damage");
+assert.match(mainSource, /fireFlame\([\s\S]*?damageTerrain\(surface, weapon, player\)/, "maintained flame routes surface contact into structure damage");
+assert.match(mainSource, /fireMelee\([\s\S]*?damageTerrain\(surface, weapon, player\)/, "melee weapons route direct surface contact into structure damage");
+assert.match(mainSource, /if \(worldHit\)[\s\S]*?terrainHit[\s\S]*?damageTerrain\(shot\.mesh\.position/, "physical projectiles route their exact impact point into structure damage");
 assert.match(mainSource, /applyNetworkTerrainDamage\(message\)[\s\S]*?eventId: message\.id/, "clients mutate online structures only from idempotent room broadcasts");
-assert.match(multiplayerWorkerSource, /terrainEvents[\s\S]*?handleTerrainHit[\s\S]*?recentValidTerrainShot/, "the room authority stores and validates deterministic terrain history");
+assert.match(multiplayerWorkerSource, /structuralState: Object\.fromEntries\(this\.structuralHealth\)[\s\S]*?handleTerrainHit[\s\S]*?structuralPartBounds/, "the room authority stores compact structural state and validates reported chunk bounds");
+assert.match(multiplayerWorkerSource, /structureDamageScale[\s\S]*?terrainShot\.structureDamageScale/, "partial charged shots retain the same structural damage scale at the room authority");
+assert.match(multiplayerWorkerSource, /fallingDrop[\s\S]*?1_650[\s\S]*?bounds\.baseY - settledDrop - fallingDrop/, "the room authority accepts the swept visible bounds of a support during its collapse window");
 assert.match(multiplayerWorkerSource, /handleCrush[\s\S]*?lastCrushEventId[\s\S]*?type: "crush"/, "the room authority deduplicates collapse kills and broadcasts their result");
 assert.equal(worldB.spawnPoints().length, 16, "the arena provides one spawn candidate for every possible combatant");
 const openingSpawns = worldB.spawnPoints().slice(0, 8);

@@ -622,7 +622,7 @@ export class SoundBoard {
     if (!weapon) return false;
     const authored = weaponAudioProfile(weapon);
     const mix = this._mix(spatial, fallbackPan);
-    if (mix.gain <= 0 || !this._allow(`impact:${weapon.id}:${surface}`, weapon.radius ? .055 : .018)) return false;
+    if (mix.gain <= 0 || !this._allow(`impact:${weapon.id}:${surface}`, weapon.radius ? .055 : surface === "wall" ? .085 : .018)) return false;
     const volume = Math.min(.12, Math.max(.005, .09 * mix.gain));
     const opts = { bus: "impact", pan: mix.pan, priority: weapon.radius ? 82 : surface === "player" ? 74 : 58, wet: .055 + mix.distanceRatio * .2, filter: mix.occluded ? 1050 : 11000 - mix.distanceRatio * 5600 };
     const surfaceRate = surface === "player" ? .96 : surface === "metal" ? 1.035 : surface === "wall" ? 1.015 : 1;
@@ -636,6 +636,7 @@ export class SoundBoard {
   playStructural(type, spatial = 1, scale = 1) {
     const mix = this._mix(spatial);
     if (!this.context || !this.enabled || mix.gain <= 0 || !["warning", "break", "land"].includes(type)) return false;
+    if (!this._allow(`structural:${type}`, type === "warning" ? .08 : .12)) return false;
     const now = this.context.currentTime;
     const weight = clamp(Number(scale) || 1, .7, 1.8);
     const base = { bus: "impact", pan: mix.pan, priority: type === "land" ? 96 : 90, wet: .11 + mix.distanceRatio * .17, filter: mix.occluded ? 1050 : 7200 - mix.distanceRatio * 2800 };

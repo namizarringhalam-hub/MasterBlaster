@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu";
 import { abs, color, fract, length, max, min, mix, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
-import { MAP_THEMES, seededRandom, seedFromText } from "./gameData.js";
+import { MAP_THEMES, seededRandom, seedFromText, structuralTowerBlueprints } from "./gameData.js";
 
 const TAU = Math.PI * 2;
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -289,6 +289,7 @@ export class ArenaWorld {
 
   build() {
     const random = seededRandom(seedFromText(this.seed));
+    const structuralBlueprints = structuralTowerBlueprints(this.seed, random);
     this.ground = box(this.size * 2, .5, this.size * 2, this.theme.ground, 0, -.28, 0);
     this.ground.name = "Arena floor";
     this.ground.material.map = this.groundTexture;
@@ -321,13 +322,10 @@ export class ArenaWorld {
     // Every outer tower deck and its segmented stand is structural. The two
     // central floors and their spire stay immutable, preserving one reliable
     // vertical route after the battlefield has been demolished.
-    for (const [x, top, z, w, d, thickness] of [
-      [42, 31, -22, 34, 26, 1.5], [-42, 47, 30, 32, 28, 1.5],
-      [-52, 15, -48, 34, 26, 1.4], [53, 15, 49, 34, 26, 1.4],
-      [54, 31, 33, 30, 22, 1.4], [-53, 47, -27, 30, 22, 1.4]
-    ]) this.addStructuralTower(x, z, Math.ceil(top / 6), w, d, {
-      top, platformThickness: thickness, pillarWidth: 8.4, major: true
-    });
+    for (const tower of structuralBlueprints.slice(0, 6)) this.addStructuralTower(
+      tower.x, tower.z, tower.segmentCount, tower.w, tower.d,
+      { top: tower.top, platformThickness: tower.thickness, pillarWidth: tower.pillarWidth, major: true }
+    );
 
     // Long aerial bridges turn the map into a navigable volume, not stacked islands.
     this.addPlatform(-26, 15, -24, 50, 5, 1, 0x35566d);
@@ -342,15 +340,10 @@ export class ArenaWorld {
     towers.forEach((tower, index) => this.addLandmark(tower, index));
 
     // Seeded structural towers fill the mid-field with destructible vertical routes.
-    const structuralSites = [
-      [-84, -34], [84, 34], [-34, -82], [34, 82], [-84, 72],
-      [84, -72], [-18, 62], [18, -62], [-67, -6], [67, 6]
-    ];
-    structuralSites.forEach(([x, z], index) => {
-      const segmentCount = 3 + Math.floor(random() * 6);
-      const wideX = index % 2 === 0;
-      this.addStructuralTower(x, z, segmentCount, wideX ? 14 : 11, wideX ? 11 : 14);
-    });
+    for (const tower of structuralBlueprints.slice(6)) this.addStructuralTower(
+      tower.x, tower.z, tower.segmentCount, tower.w, tower.d,
+      { top: tower.top, platformThickness: tower.thickness, pillarWidth: tower.pillarWidth }
+    );
     this.batchStructuralGeometry();
 
     // Alternate ascent routes for players who miss a grapple.
@@ -1463,6 +1456,10 @@ export class ArenaWorld {
     this.debrisCursor = 0;
     this.debrisParticles = Array.from({ length: count }, () => ({
       active: false,
+      eventId: "",
+      majorFragment: false,
+      contacted: false,
+      contactPosition: new THREE.Vector3(),
       position: new THREE.Vector3(),
       velocity: new THREE.Vector3(),
       rotation: new THREE.Vector3(),
@@ -1499,10 +1496,14 @@ export class ArenaWorld {
     const spreadY = bounds?.h || 1.3;
     const spreadZ = bounds?.d || 2.4;
     const slab = bounds?.structuralKind === "platform";
+    const spawned = [];
     for (let piece = 0; piece < count; piece++) {
       const index = this.debrisCursor++ % this.debrisParticles.length;
       const particle = this.debrisParticles[index];
       particle.active = true;
+      particle.eventId = eventSeed;
+      particle.majorFragment = slab && piece < Math.min(8, count);
+      particle.contacted = false;
       particle.position.copy(position).add(new THREE.Vector3((random() - .5) * spreadX * .86, (random() - .5) * spreadY, (random() - .5) * spreadZ * .86));
       particle.velocity.set((random() - .5) * (slab ? 14 : 10), 3 + random() * (slab ? 10 : 8), (random() - .5) * (slab ? 14 : 10));
       particle.rotation.set(random() * TAU, random() * TAU, random() * TAU);
@@ -1524,8 +1525,10 @@ export class ArenaWorld {
       else particle.scale.set(.16 + random() * .55, .1 + random() * .38, .18 + random() * .72);
       particle.life = 2.5 + random() * 2.2;
       this.debrisMesh.setColorAt(index, new THREE.Color(colorValue).lerp(new THREE.Color(0x263746), random() * .6));
+      spawned.push(particle);
     }
     if (this.debrisMesh.instanceColor) this.debrisMesh.instanceColor.needsUpdate = true;
+    return spawned;
   }
 
   spawnStructuralDust(position, colorValue, count, bounds, eventSeed, landing = false) {
@@ -1568,6 +1571,10 @@ export class ArenaWorld {
       const floor = this.surfaceHeightAt(particle.position, particle.position.y + .2);
       if (particle.position.y < floor + verticalHalfExtent && particle.velocity.y < 0) {
         particle.position.y = floor + verticalHalfExtent;
+        if (!particle.contacted) {
+          particle.contacted = true;
+          particle.contactPosition.set(particle.position.x, floor, particle.position.z);
+        }
         particle.velocity.y *= -.28;
         particle.velocity.x *= .72;
         particle.velocity.z *= .72;
@@ -1617,7 +1624,13 @@ export class ArenaWorld {
       const dy = Math.max(part.baseY - position.y, 0, position.y - part.top);
       const dz = Math.max(Math.abs(position.z - part.z) - part.d / 2, 0);
       const distance = Math.hypot(dx, dy, dz);
-      if (distance > radius || distance > nearestDistance || (Math.abs(distance - nearestDistance) < .001 && nearest?.structuralKind === "platform")) continue;
+      if (distance > radius) continue;
+      const tied = Math.abs(distance - nearestDistance) < .001;
+      const betterTie = tied && (!nearest ||
+        (part.structuralKind === "platform" && nearest.structuralKind !== "platform") ||
+        (part.structuralKind === nearest.structuralKind && (part.baseY > nearest.baseY + .001 ||
+          (Math.abs(part.baseY - nearest.baseY) < .001 && part.structuralId < nearest.structuralId))));
+      if (distance >= nearestDistance - .001 && !betterTie) continue;
       nearest = part;
       nearestDistance = distance;
     }
@@ -1653,7 +1666,8 @@ export class ArenaWorld {
       movingParts: [],
       crushedPlayers: new Set(),
       dropDistance: part.h,
-      major: structure.major
+      major: structure.major && part.structuralKind !== "platform",
+      impactPosition: part.failurePosition?.clone() || this.structuralCenter(part).clone()
     };
     structure.activeChange = change;
     this.structuralChanges.push(change);
@@ -1662,18 +1676,20 @@ export class ArenaWorld {
       id: change.id,
       structureId: structure.id,
       attackerId: change.attackerId,
-      position: this.structuralCenter(part).clone(),
+      position: change.impactPosition.clone(),
       color: structure.color,
-      major: structure.major,
+      major: change.major,
       mass: part.w * part.d * part.h,
+      dropDistance: change.dropDistance,
       bounds: { x: part.x, z: part.z, w: part.w, d: part.d, h: part.h }
     });
   }
 
-  queueStructuralFailure(part, attackerId = "") {
+  queueStructuralFailure(part, attackerId = "", impactPosition = null) {
     if (!part || part.removed || part.failureQueued) return false;
     part.failureQueued = true;
     part.failureAttackerId = attackerId;
+    part.failurePosition = impactPosition?.clone() || null;
     part.structure.pendingFailures.push(part);
     this.startNextStructuralFailure(part.structure);
     return true;
@@ -1691,6 +1707,7 @@ export class ArenaWorld {
     if (platformIndex >= 0) this.platforms.splice(platformIndex, 1);
     const structuralIndex = this.structuralParts.indexOf(part);
     if (structuralIndex >= 0) this.structuralParts.splice(structuralIndex, 1);
+    this.syncBoostPadsForPart(part);
   }
 
   detachStructuralCollision(part) {
@@ -1717,13 +1734,13 @@ export class ArenaWorld {
 
   beginStructuralFall(change) {
     const { structure, part } = change;
-    const breakPosition = this.structuralCenter(part).clone();
+    const breakPosition = change.impactPosition.clone();
     part.visualOffset = null;
     part.visualRotation = null;
     this.updateStructuralVisual(part);
-    const debrisCount = part.structuralKind === "platform" ? (structure.major ? 48 : 32) : (structure.major ? 30 : 18);
-    this.spawnStructuralDebris(breakPosition, structure.color, debrisCount, part, change.id);
-    this.spawnStructuralDust(breakPosition, structure.color, structure.major ? 20 : 10, part, change.id);
+    const debrisCount = part.structuralKind === "platform" ? 18 : (structure.major ? 30 : 18);
+    change.fragmentDebris = this.spawnStructuralDebris(breakPosition, structure.color, debrisCount, part, change.id);
+    this.spawnStructuralDust(breakPosition, structure.color, change.major ? 20 : 10, part, change.id);
     this.frameStructureEvents.push({
       type: "break",
       id: change.id,
@@ -1731,28 +1748,27 @@ export class ArenaWorld {
       attackerId: change.attackerId,
       position: breakPosition,
       color: structure.color,
-      major: structure.major,
+      major: change.major,
       mass: part.w * part.d * part.h,
       dropDistance: change.dropDistance,
       bounds: { x: part.x, z: part.z, w: part.w, d: part.d, h: part.h }
     });
 
     if (part.structuralKind === "platform") {
-      // Collision and the intact slab end together; eight independently
-      // simulated deck sections now carry the visible breakup.
+      // Only the struck deck chunk detaches; neighboring chunks keep their
+      // collision and become the readable edge of a real gameplay hole.
       this.detachStructuralCollision(part);
-      this.removeStructuralAnchor(structure);
       this.hideStructuralVisual(part);
+      this.syncBoostPadsForPart(part);
       change.phase = "fragmenting";
       change.elapsed = 0;
-      change.fallDuration = structure.major ? .46 : .36;
       change.movingParts.push({ part, startBaseY: part.baseY, startTop: part.top });
       return;
     }
 
     const failedIndex = structure.segments.indexOf(part);
     const moving = failedIndex < 0 ? [] : structure.segments.slice(failedIndex + 1);
-    if (structure.platform && !structure.platform.removed) moving.push(structure.platform);
+    moving.push(...structure.platformChunks.filter((platform) => !platform.removed));
     this.removeStructuralPart(part);
     if (failedIndex >= 0) structure.segments.splice(failedIndex, 1);
     for (const movingPart of moving) {
@@ -1774,23 +1790,29 @@ export class ArenaWorld {
     part.baseY = baseY;
     part.top = baseY + part.h;
     this.updateStructuralVisual(part);
+    this.syncBoostPadsForPart(part);
   }
 
-  updateStructuralCrush(change, players, previousPlatformTop, platform) {
+  updateStructuralCrush(change, players, previousPlatformTop, platform, carriedPlayers) {
     if (!platform) return;
     for (const player of players) {
       if (!player.alive || change.crushedPlayers.has(player.id)) continue;
       const playerRadius = player.radius || .55;
-      const inside = Math.abs(player.position.x - platform.x) <= platform.w / 2 - playerRadius * .25 &&
-        Math.abs(player.position.z - platform.z) <= platform.d / 2 - playerRadius * .25;
-      if (!inside) continue;
+      const overlapX = Math.max(Math.abs(player.position.x - platform.x) - platform.w / 2, 0);
+      const overlapZ = Math.max(Math.abs(player.position.z - platform.z) - platform.d / 2, 0);
+      const overlapsDeck = overlapX * overlapX + overlapZ * overlapZ <= playerRadius * playerRadius;
 
       // Riders stay attached to the deck. Everyone trapped beneath it must have a
       // full-height escape gap; otherwise the descending slab is lethal.
-      if (player.grounded && Math.abs(player.position.y - previousPlatformTop) <= .48) {
+      if (overlapsDeck && !carriedPlayers.has(player.id) && player.grounded && Math.abs(player.position.y - previousPlatformTop) <= .48) {
         player.position.y = platform.top;
+        carriedPlayers.add(player.id);
         continue;
       }
+      if (carriedPlayers.has(player.id)) continue;
+      const inside = Math.abs(player.position.x - platform.x) <= platform.w / 2 - playerRadius * .25 &&
+        Math.abs(player.position.z - platform.z) <= platform.d / 2 - playerRadius * .25;
+      if (!inside) continue;
       const floor = this.surfaceHeightAt(player.position, platform.baseY - .08);
       const trapped = player.position.y + 2.25 > platform.baseY - .04 && platform.baseY - floor < 2.35;
       if (!trapped) continue;
@@ -1825,11 +1847,11 @@ export class ArenaWorld {
   }
 
   landStructuralChange(change) {
-    const platform = change.structure.platform;
-    const position = platform && !platform.removed
-      ? this.structuralCenter(platform).clone()
-      : new THREE.Vector3(change.structure.x, 0, change.structure.z);
-    if (platform) this.spawnStructuralDust(position, change.structure.color, change.structure.major ? 34 : 16, platform, `${change.id}:land`, true);
+    const platforms = change.movingParts.filter((entry) => entry.part.structuralKind === "platform").map((entry) => entry.part);
+    const platformTop = platforms.length ? Math.max(...platforms.map((platform) => platform.top)) : 0;
+    const position = new THREE.Vector3(change.structure.x, platformTop, change.structure.z);
+    const bounds = platforms.length ? change.structure.deckBounds : null;
+    if (bounds) this.spawnStructuralDust(position, change.structure.color, change.structure.major ? 34 : 16, bounds, `${change.id}:land`, true);
     this.frameStructureEvents.push({
       type: "land",
       id: change.id,
@@ -1840,7 +1862,7 @@ export class ArenaWorld {
       major: change.structure.major,
       mass: change.movingParts.reduce((sum, entry) => sum + entry.part.w * entry.part.d * entry.part.h, 0),
       dropDistance: change.dropDistance,
-      bounds: platform ? { x: platform.x, z: platform.z, w: platform.w, d: platform.d, h: platform.h } : null
+      bounds
     });
   }
 
@@ -1861,10 +1883,29 @@ export class ArenaWorld {
       }
 
       if (change.phase === "fragmenting") {
-        const progress = Math.min(1, change.elapsed / change.fallDuration);
-        if (progress < 1) continue;
+        const majorFragments = (change.fragmentDebris || []).filter((particle) =>
+          particle.eventId === change.id && particle.majorFragment
+        );
+        const landed = majorFragments.filter((particle) =>
+          particle.eventId === change.id && particle.majorFragment && particle.contacted
+        );
+        if (!majorFragments.length || landed.length < Math.min(4, majorFragments.length)) continue;
         part.removed = true;
-        change.structure.platform = null;
+        const platformIndex = change.structure.platformChunks.indexOf(part);
+        if (platformIndex >= 0) change.structure.platformChunks.splice(platformIndex, 1);
+        const anchorSupported = change.structure.platformChunks.some((platform) =>
+          Math.abs(change.structure.x - platform.x) <= platform.w / 2 &&
+          Math.abs(change.structure.z - platform.z) <= platform.d / 2
+        );
+        if (!anchorSupported) this.removeStructuralAnchor(change.structure);
+        const contactPosition = landed.reduce((position, particle) => position.add(particle.contactPosition), new THREE.Vector3()).multiplyScalar(1 / landed.length);
+        this.spawnStructuralDust(contactPosition, change.structure.color, 14, part, `${change.id}:land`, true);
+        this.frameStructureEvents.push({
+          type: "land", id: `${change.id}:land`, structureId: change.structure.id,
+          attackerId: change.attackerId, position: contactPosition, color: change.structure.color,
+          major: false, mass: part.w * part.d * part.h, dropDistance: Math.max(part.h, change.impactPosition.y - contactPosition.y),
+          bounds: { x: part.x, z: part.z, w: part.w, d: part.d, h: part.h }
+        });
         this.finishStructuralChange(change);
         continue;
       }
@@ -1887,19 +1928,20 @@ export class ArenaWorld {
 
       const progress = Math.min(1, change.elapsed / change.fallDuration);
       const eased = progress * progress;
-      const platformEntry = change.movingParts.find((entry) => entry.part.structuralKind === "platform");
-      const previousPlatformTop = platformEntry?.part.top;
+      const platformEntries = change.movingParts.filter((entry) => entry.part.structuralKind === "platform");
+      const previousPlatformTops = platformEntries.map((entry) => entry.part.top);
+      const carriedPlayers = new Set();
       for (const entry of change.movingParts) {
         this.moveStructuralPart(entry.part, entry.startBaseY - change.dropDistance * eased);
         const lean = Math.sin(progress * Math.PI) * (change.major ? .012 : .007);
         entry.part.visualRotation = new THREE.Euler(lean * .7, 0, -lean);
         this.updateStructuralVisual(entry.part);
       }
-      if (change.structure.anchor && change.structure.platform && !change.structure.platform.removed) {
-        change.structure.anchor.point.y = change.structure.platform.top + .6;
+      if (change.structure.anchor && change.structure.platformChunks.length) {
+        change.structure.anchor.point.y = Math.max(...change.structure.platformChunks.map((platform) => platform.top)) + .6;
         this.updateStructuralAnchor(change.structure.anchor);
       }
-      this.updateStructuralCrush(change, players, previousPlatformTop, platformEntry?.part);
+      platformEntries.forEach((entry, index) => this.updateStructuralCrush(change, players, previousPlatformTops[index], entry.part, carriedPlayers));
       if (progress < 1) continue;
       change.impactAmplitude = THREE.MathUtils.clamp(
         .025 + Math.sqrt(Math.max(1, change.movingParts.reduce((sum, entry) => sum + entry.part.w * entry.part.d * entry.part.h, 0))) * change.dropDistance * .00072,
@@ -1918,8 +1960,73 @@ export class ArenaWorld {
 
   settleStructuralChanges(players = []) {
     let guard = 0;
-    while (this.structuralChanges.length && guard++ < 128) this.updateStructuralChanges(2, players);
+    while (this.structuralChanges.length && guard++ < 128) {
+      this.updateStructuralChanges(2, players);
+      this.updateStructuralDebris(2);
+    }
     this.drainStructuralEvents();
+  }
+
+  applyStructuralState(state = {}) {
+    const failedIds = new Set();
+    for (const [partId, health] of Object.entries(state)) {
+      const part = this.structuralPartById(partId);
+      if (!part || !Number.isFinite(health)) continue;
+      part.health = THREE.MathUtils.clamp(health, 0, part.maxHealth);
+      const damageMix = .14 + (1 - part.health / part.maxHealth) * .46;
+      this.setStructuralColor(part, new THREE.Color(part.visualColor).lerp(new THREE.Color(this.theme.danger), damageMix));
+      if (part.health === 0) failedIds.add(partId);
+    }
+
+    // A room snapshot is history, not a new explosion. Rebuild its settled
+    // geometry directly so late joiners never see old warnings, debris or dust.
+    for (const structure of this.structures) {
+      const failedPillars = structure.segments
+        .filter((part) => failedIds.has(part.structuralId))
+        .sort((left, right) => Number(left.structuralId.match(/pillar-(\d+)$/)?.[1]) - Number(right.structuralId.match(/pillar-(\d+)$/)?.[1]));
+      for (const part of failedPillars) {
+        const failedIndex = structure.segments.indexOf(part);
+        if (failedIndex < 0) continue;
+        const moving = [...structure.segments.slice(failedIndex + 1), ...structure.platformChunks];
+        this.removeStructuralPart(part);
+        structure.segments.splice(failedIndex, 1);
+        for (const movingPart of moving) this.moveStructuralPart(movingPart, movingPart.baseY - part.h);
+      }
+
+      for (const part of [...structure.platformChunks]) {
+        if (!failedIds.has(part.structuralId)) continue;
+        this.removeStructuralPart(part);
+        const index = structure.platformChunks.indexOf(part);
+        if (index >= 0) structure.platformChunks.splice(index, 1);
+      }
+      const anchorSupported = structure.platformChunks.some((platform) =>
+        Math.abs(structure.x - platform.x) <= platform.w / 2 &&
+        Math.abs(structure.z - platform.z) <= platform.d / 2
+      );
+      if (!anchorSupported) this.removeStructuralAnchor(structure);
+    }
+    this.clearStructuralTransients();
+    this.buildObstacleIndex();
+  }
+
+  clearStructuralTransients() {
+    this.structuralChanges.length = 0;
+    this.frameStructureEvents.length = 0;
+    for (const structure of this.structures) {
+      structure.activeChange = null;
+      structure.pendingFailures.length = 0;
+    }
+    this.debrisParticles.forEach((particle, index) => {
+      particle.active = false;
+      particle.eventId = "";
+      this.debrisMesh.setMatrixAt(index, HIDDEN_INSTANCE);
+    });
+    this.dustParticles.forEach((particle, index) => {
+      particle.active = false;
+      this.dustMesh.setMatrixAt(index, HIDDEN_INSTANCE);
+    });
+    this.debrisMesh.instanceMatrix.needsUpdate = true;
+    this.dustMesh.instanceMatrix.needsUpdate = true;
   }
 
   addPlatform(x, top, z, w, d, thickness, color) {
@@ -1934,13 +2041,14 @@ export class ArenaWorld {
     const segmentHeight = top / segmentCount;
     const pillarWidth = options.pillarWidth || 4.2 + (segmentCount % 2) * .7;
     const platformThickness = options.platformThickness || 1.15;
-    const pillarHealth = options.major ? 10 : 6;
-    const platformHealth = options.major ? 18 : 10;
+    const pillarHealth = options.major ? 8 : 6;
+    const platformHealth = options.major ? 8 : 6;
     const colorValue = this.districtColorAt(x, z);
     const structure = {
       id: `structure-${this.structures.length + 1}`,
       x, z, color: colorValue, major: Boolean(options.major),
-      segments: [], platform: null, anchor: null,
+      segments: [], platformChunks: [], anchor: null,
+      deckBounds: { x, z, w: platformWidth, d: platformDepth, h: platformThickness },
       activeChange: null, pendingFailures: []
     };
     this.structures.push(structure);
@@ -1954,15 +2062,24 @@ export class ArenaWorld {
       structure.segments.push(segment);
       this.structuralParts.push(segment);
     }
-    const platform = this.addBox(x, z, platformWidth, platformDepth, platformThickness, 0x203d55, false, false, top - platformThickness);
-    this.platforms.push(platform);
-    Object.assign(platform, {
-      structure, structuralId: `${structure.id}-platform`,
-      structuralKind: "platform", health: platformHealth, maxHealth: platformHealth
-    });
-    platform.mesh.name = `${structure.id} destructible platform`;
-    structure.platform = platform;
-    this.structuralParts.push(platform);
+    const columns = THREE.MathUtils.clamp(Math.round(platformWidth / 7), 3, 5);
+    const rows = THREE.MathUtils.clamp(Math.round(platformDepth / 7), 3, 5);
+    const chunkWidth = platformWidth / columns;
+    const chunkDepth = platformDepth / rows;
+    for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
+      const chunkX = x - platformWidth / 2 + chunkWidth * (column + .5);
+      const chunkZ = z - platformDepth / 2 + chunkDepth * (row + .5);
+      const platform = this.addBox(chunkX, chunkZ, chunkWidth, chunkDepth, platformThickness, 0x203d55, false, false, top - platformThickness);
+      this.platforms.push(platform);
+      Object.assign(platform, {
+        structure, structuralId: `${structure.id}-platform-${row * columns + column + 1}`,
+        structuralKind: "platform", health: platformHealth, maxHealth: platformHealth,
+        deckColumn: column, deckRow: row
+      });
+      platform.mesh.name = `${structure.id} destructible platform chunk ${row * columns + column + 1}`;
+      structure.platformChunks.push(platform);
+      this.structuralParts.push(platform);
+    }
     structure.anchor = this.addStructuralAnchor(x, top + .6, z);
     return structure;
   }
@@ -2034,7 +2151,7 @@ export class ArenaWorld {
 
   batchStructuralGeometry() {
     const segments = this.structures.flatMap((structure) => structure.segments);
-    const platforms = this.structures.map((structure) => structure.platform);
+    const platforms = this.structures.flatMap((structure) => structure.platformChunks);
     const anchors = this.structures.map((structure) => structure.anchor);
     const segmentBatch = this.createStructuralBatch(new THREE.BoxGeometry(1, 1, 1), segments[0].mesh.material, segments.length, "Instanced destructible pillar modules");
     const seamMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, transparent: true, opacity: .58, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
@@ -2139,9 +2256,9 @@ export class ArenaWorld {
       part.mesh = platformBatch;
       this.updateStructuralVisual(part);
       platformBatch.setColorAt(index, new THREE.Color(part.visualColor));
-      platformTopBatch.setColorAt(index, new THREE.Color(this.structures[index].color));
-      platformTopBatch.setColorAt(platforms.length + index, new THREE.Color(this.structures[index].color));
-      for (let edge = 0; edge < 4; edge++) platformFrameBatch.setColorAt(index * 4 + edge, new THREE.Color(this.structures[index].color));
+      platformTopBatch.setColorAt(index, new THREE.Color(part.structure.color));
+      platformTopBatch.setColorAt(platforms.length + index, new THREE.Color(part.structure.color));
+      for (let edge = 0; edge < 4; edge++) platformFrameBatch.setColorAt(index * 4 + edge, new THREE.Color(part.structure.color));
     });
     anchors.forEach((anchor, index) => {
       const structure = this.structures[index];
@@ -2220,8 +2337,23 @@ export class ArenaWorld {
     liftColumn.position.y = 1.55;
     mesh.add(ring, arrows, liftColumn);
     this.group.add(mesh);
-    this.boostPads.push({ position: new THREE.Vector3(x, y, z), radius: 2.5, strength, mesh });
+    const support = this.structures.flatMap((structure) => structure.platformChunks).find((platform) =>
+      Math.abs(platform.top - y) < .35 &&
+      Math.abs(x - platform.x) <= platform.w / 2 &&
+      Math.abs(z - platform.z) <= platform.d / 2
+    ) || null;
+    this.boostPads.push({ position: new THREE.Vector3(x, y, z), radius: 2.5, strength, mesh, support, active: true });
     this.pulsers.push({ object: ring, base: 1, amplitude: .055, speed: 3.8, phase: x + z });
+  }
+
+  syncBoostPadsForPart(part) {
+    for (const pad of this.boostPads) {
+      if (pad.support !== part) continue;
+      pad.active = !part.removed && this.structuralParts.includes(part);
+      pad.position.y = part.top;
+      pad.mesh.position.y = part.top + .12;
+      pad.mesh.visible = pad.active;
+    }
   }
 
   addMovingPlatform(x, top, z, w, d, axis, travel, speed, phase) {
@@ -2542,6 +2674,7 @@ export class ArenaWorld {
 
   boostAt(position) {
     return this.boostPads.find((pad) =>
+      pad.active &&
       Math.abs(position.y - pad.position.y) < .35 &&
       Math.hypot(position.x - pad.position.x, position.z - pad.position.z) < pad.radius
     );
@@ -2598,7 +2731,7 @@ export class ArenaWorld {
       if (this.appliedTerrainEvents.size > 512) this.appliedTerrainEvents.delete(this.appliedTerrainEvents.values().next().value);
     }
     let removed = 0;
-    for (const item of [...this.destructibles]) {
+    if (radius > 0) for (const item of [...this.destructibles]) {
       const center = new THREE.Vector3(item.x, item.baseY + item.h / 2, item.z);
       if (center.distanceTo(position) > radius + Math.max(item.w, item.d, item.h) / 2) continue;
       if (item.batch) {
@@ -2613,12 +2746,13 @@ export class ArenaWorld {
     }
     const structuralPart = context.partId
       ? this.structuralPartById(context.partId)
-      : this.structuralPartAt(position, radius);
+      : this.structuralPartAt(position, context.structuralRadius ?? Math.max(.35, Math.min(radius, 1)));
     if (structuralPart) {
-      structuralPart.health = Math.max(0, structuralPart.health - Math.max(1, radius));
+      const structuralDamage = Math.max(.01, context.structuralDamage ?? Math.max(1, radius));
+      structuralPart.health = Math.max(0, structuralPart.health - structuralDamage);
       const damageMix = .14 + (1 - structuralPart.health / structuralPart.maxHealth) * .46;
       this.setStructuralColor(structuralPart, new THREE.Color(structuralPart.visualColor).lerp(new THREE.Color(this.theme.danger), damageMix));
-      if (structuralPart.health === 0) this.queueStructuralFailure(structuralPart, context.attackerId);
+      if (structuralPart.health === 0) this.queueStructuralFailure(structuralPart, context.attackerId, position);
       removed += 1;
     }
     return removed;
@@ -2631,7 +2765,7 @@ export class ArenaWorld {
       this.ground,
       ...this.obstacles.map((item) => item.mesh),
       ...this.anchors.map((anchor) => anchor.mesh),
-      ...this.boostPads.map((pad) => pad.mesh)
+      ...this.boostPads.filter((pad) => pad.active).map((pad) => pad.mesh)
     ].filter(Boolean))];
     const ray = new THREE.Raycaster(origin, direction.clone().normalize(), .05);
     return ray.intersectObjects(surfaces, false)[0]?.point.clone() ?? null;

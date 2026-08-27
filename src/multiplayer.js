@@ -109,14 +109,15 @@ export class MultiplayerClient extends EventTarget {
     });
   }
 
-  fire(player, weapon, direction, triggerTap = false, action = "fire") {
+  fire(player, weapon, direction, triggerTap = false, action = "fire", chargeRatio = 1) {
     return this.send("fire", {
       playerId: player.id,
       weaponId: weapon.id,
       slotIndex: player.slotIndex,
       direction,
       triggerTap,
-      action
+      action,
+      chargeRatio
     });
   }
 

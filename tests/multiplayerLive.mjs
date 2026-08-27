@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { WEAPONS, structuralPartBounds } from "../src/gameData.js";
 
 const origin = process.env.MULTIPLAYER_TEST_ORIGIN || "http://127.0.0.1:8787";
-const loadout = ["blaster", "shotgun", "rocket_launcher", "grenade_launcher", "railgun"];
+const loadout = ["blaster", "charged_energy_rifle", "rocket_launcher", "cluster_grenade", "railgun"];
 const botCount = 15;
 
 async function assignment() {
@@ -84,32 +85,74 @@ const damage = await second.next((message) => message.type === "damage" && messa
 assert.equal(damage.health, 82);
 assert.equal(damage.damage, 18);
 
+await new Promise((resolve) => setTimeout(resolve, 320));
+first.socket.send(JSON.stringify({ type: "fire", playerId: firstId, weaponId: "blaster", slotIndex: 0, direction: { x: 1, y: 0, z: 0 } }));
+await second.next((message) => message.type === "fire" && message.playerId === firstId && message.weaponId === "blaster" && message.serverTime > damage.serverTime);
+first.socket.send(JSON.stringify({
+  type: "terrain_hit", attackerId: firstId, weaponId: "blaster",
+  position: { x: 28.4, y: 31, z: -31.75 }, structureId: "structure-1", partId: "structure-1-platform-1"
+}));
+const chipDamage = await second.next((message) => message.type === "terrain_damage" && message.partId === "structure-1-platform-1");
+assert.equal(chipDamage.structuralDamage, 1.8, "ordinary blaster fire applies canonical chip damage to a deck chunk");
+assert.equal(chipDamage.collapsed, false);
+
+first.socket.send(JSON.stringify({ type: "fire", playerId: firstId, weaponId: "charged_energy_rifle", slotIndex: 1, direction: { x: 1, y: 0, z: 0 }, chargeRatio: .5 }));
+await second.next((message) => message.type === "fire" && message.playerId === firstId && message.weaponId === "charged_energy_rifle");
+const chargedPartId = "structure-1-platform-3";
+const chargedBounds = structuralPartBounds(first.welcome.seed, chargedPartId);
+first.socket.send(JSON.stringify({
+  type: "terrain_hit", attackerId: firstId, weaponId: "charged_energy_rifle",
+  position: { x: chargedBounds.x, y: (chargedBounds.baseY + chargedBounds.top) / 2, z: chargedBounds.z },
+  structureId: "structure-1", partId: chargedPartId
+}));
+const chargedDamage = await second.next((message) => message.type === "terrain_damage" && message.partId === chargedPartId);
+assert.equal(chargedDamage.structuralDamage, WEAPONS.charged_energy_rifle.structureDamage * (.35 + .5 * .65), "partial charge uses the same structural damage scale on the client and room authority");
+
+first.socket.send(JSON.stringify({ type: "fire", playerId: firstId, weaponId: "cluster_grenade", slotIndex: 3, direction: { x: 1, y: 0, z: 0 } }));
+await second.next((message) => message.type === "fire" && message.playerId === firstId && message.weaponId === "cluster_grenade");
+const clusterPartId = "structure-1-platform-4";
+const clusterBounds = structuralPartBounds(first.welcome.seed, clusterPartId);
+first.socket.send(JSON.stringify({
+  type: "terrain_hit", attackerId: firstId, weaponId: "cluster_grenade",
+  position: { x: clusterBounds.x, y: (clusterBounds.baseY + clusterBounds.top) / 2, z: clusterBounds.z },
+  structureId: "structure-1", partId: clusterPartId
+}));
+const clusterDamage = await second.next((message) => message.type === "terrain_damage" && message.partId === clusterPartId);
+assert.equal(clusterDamage.structuralDamage, WEAPONS.cluster_grenade.structureDamage, "cluster bomblets are accepted under their authoritative parent weapon identity");
+
 first.socket.send(JSON.stringify({ type: "fire", playerId: firstId, weaponId: "rocket_launcher", slotIndex: 2, direction: { x: 1, y: 0, z: 0 } }));
 await second.next((message) => message.type === "fire" && message.playerId === firstId && message.weaponId === "rocket_launcher");
 first.socket.send(JSON.stringify({
   type: "terrain_hit",
   attackerId: firstId,
   weaponId: "rocket_launcher",
-  position: { x: 10, y: 2, z: 0 },
+  position: { x: 42, y: 2, z: -22 },
   radius: 99,
   structureId: "structure-1",
   partId: "structure-1-pillar-1"
 }));
-const firstTerrainDamage = await second.next((message) => message.type === "terrain_damage" && message.structureId === "structure-1");
+const firstTerrainDamage = await second.next((message) => message.type === "terrain_damage" && message.weaponId === "rocket_launcher" && message.partId === "structure-1-pillar-1");
 assert.equal(firstTerrainDamage.radius, 5.2, "the room uses the weapon's canonical terrain radius");
-assert.equal(firstTerrainDamage.collapsed, false);
-await new Promise((resolve) => setTimeout(resolve, 850));
-first.socket.send(JSON.stringify({ type: "fire", playerId: firstId, weaponId: "rocket_launcher", slotIndex: 2, direction: { x: 1, y: 0, z: 0 } }));
-await second.next((message) => message.type === "fire" && message.playerId === firstId && message.weaponId === "rocket_launcher" && message.serverTime > firstTerrainDamage.serverTime);
+assert.equal(firstTerrainDamage.structuralDamage, 20, "the room uses the rocket's canonical one-shot structural damage");
+assert.equal(firstTerrainDamage.collapsed, true, "one accepted rocket destroys a major stand section");
+const terrainDamage = firstTerrainDamage;
+await new Promise((resolve) => setTimeout(resolve, 320));
+first.socket.send(JSON.stringify({ type: "fire", playerId: firstId, weaponId: "blaster", slotIndex: 0, direction: { x: 1, y: 0, z: 0 } }));
+await second.next((message) => message.type === "fire" && message.playerId === firstId && message.weaponId === "blaster" && message.serverTime > firstTerrainDamage.serverTime);
+const fallingPartId = "structure-1-platform-2";
+const fallingBounds = structuralPartBounds(first.welcome.seed, fallingPartId);
 first.socket.send(JSON.stringify({
-  type: "terrain_hit",
-  attackerId: firstId,
-  weaponId: "rocket_launcher",
-  position: { x: 10, y: 2, z: 0 },
-  structureId: "structure-1",
-  partId: "structure-1-pillar-1"
+  type: "terrain_hit", attackerId: firstId, weaponId: "blaster",
+  position: { x: fallingBounds.x, y: (fallingBounds.baseY + fallingBounds.top) / 2, z: fallingBounds.z },
+  structureId: "structure-1", partId: fallingPartId
 }));
-const terrainDamage = await second.next((message) => message.type === "terrain_damage" && message.partId === "structure-1-pillar-1" && message.collapsed);
+const fallingDamage = await second.next((message) => message.type === "terrain_damage" && message.partId === fallingPartId);
+assert.equal(fallingDamage.structuralDamage, WEAPONS.blaster.structureDamage, "shots at a visibly falling deck remain valid throughout the collapse window");
+second.socket.send(JSON.stringify({
+  type: "state",
+  players: [{ id: secondId, position: { x: 42, y: 1, z: -22 }, velocity: { x: 0, y: 0, z: 0 }, aim: { x: -1, y: 0, z: 0 }, slotIndex: 0, grounded: true }]
+}));
+await first.next((message) => message.type === "state" && message.players.some((player) => player.id === secondId && player.position?.x === 42));
 second.socket.send(JSON.stringify({ type: "crush", playerId: secondId, structureId: "structure-1" }));
 const crush = await first.next((message) => message.type === "crush" && message.targetId === secondId);
 assert.equal(crush.health, 0);
@@ -117,6 +160,9 @@ assert.equal(crush.attackerId, firstId);
 
 const lateJoin = await connect(firstAssignment.roomCode, "Charlie");
 assert.ok(lateJoin.welcome.terrainEvents.some((event) => event.id === terrainDamage.id), "late joiners receive authoritative terrain history");
+assert.equal(lateJoin.welcome.structuralState["structure-1-pillar-1"], 0, "late joiners receive the compact destroyed-section snapshot");
+assert.equal(lateJoin.welcome.structuralState["structure-1-platform-1"], 6.2, "late joiners receive partial chunk health even when the hit log is trimmed");
+assert.equal(lateJoin.welcome.structuralState[fallingPartId], 6.2, "late joiners retain damage applied while a support was visibly collapsing");
 lateJoin.socket.close(1000, "test complete");
 
 first.socket.close(1000, "test complete");

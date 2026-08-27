@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { DEFAULT_LOADOUT, WEAPONS, weaponFireMode, weaponUsesAmmo } from "../src/gameData.js";
+import { DEFAULT_LOADOUT, WEAPONS, structuralPartBounds, weaponFireMode, weaponUsesAmmo } from "../src/gameData.js";
 import {
   MATCH_DURATION_MS,
   MATCH_TARGET_SCORE,
@@ -116,11 +116,17 @@ export class MatchRoom extends DurableObject {
     this.recentFires = new Map();
     this.terrainEvents = [];
     this.structuralHealth = new Map();
+    this.structuralFailures = new Map();
     this.ready = this.ctx.blockConcurrencyWhile(async () => {
       this.meta = await this.ctx.storage.get("meta") || null;
       for (const bot of await this.ctx.storage.get("bots") || []) this.bots.set(bot.id, bot);
       this.terrainEvents = await this.ctx.storage.get("terrainEvents") || [];
-      for (const event of this.terrainEvents) if (event.partId && Number.isFinite(event.structuralHealth)) this.structuralHealth.set(event.partId, event.structuralHealth);
+      const storedStructuralHealth = await this.ctx.storage.get("structuralHealth");
+      if (storedStructuralHealth) for (const [partId, health] of storedStructuralHealth) this.structuralHealth.set(partId, health);
+      else for (const event of this.terrainEvents) if (event.partId && Number.isFinite(event.structuralHealth)) this.structuralHealth.set(event.partId, event.structuralHealth);
+      const storedStructuralFailures = await this.ctx.storage.get("structuralFailures");
+      if (storedStructuralFailures) for (const [partId, failedAt] of storedStructuralFailures) this.structuralFailures.set(partId, failedAt);
+      else for (const event of this.terrainEvents) if (event.collapsed && event.partId) this.structuralFailures.set(event.partId, event.serverTime || 0);
     });
   }
 
@@ -171,6 +177,7 @@ export class MatchRoom extends DurableObject {
     this.recentFires.clear();
     this.terrainEvents = [];
     this.structuralHealth.clear();
+    this.structuralFailures.clear();
     await this.persistRoom();
   }
 
@@ -178,7 +185,9 @@ export class MatchRoom extends DurableObject {
     await Promise.all([
       this.ctx.storage.put("meta", this.meta),
       this.ctx.storage.put("bots", [...this.bots.values()]),
-      this.ctx.storage.put("terrainEvents", this.terrainEvents)
+      this.ctx.storage.put("terrainEvents", this.terrainEvents),
+      this.ctx.storage.put("structuralHealth", [...this.structuralHealth]),
+      this.ctx.storage.put("structuralFailures", [...this.structuralFailures])
     ]);
   }
 
@@ -209,7 +218,7 @@ export class MatchRoom extends DurableObject {
       targetScore: this.meta.targetScore,
       botHostId: this.botHostId(),
       players: this.allPlayers().map(publicPlayer),
-      ...(type === "welcome" ? { terrainEvents: this.terrainEvents } : {})
+      ...(type === "welcome" ? { terrainEvents: this.terrainEvents, structuralState: Object.fromEntries(this.structuralHealth) } : {})
     };
   }
 
@@ -333,7 +342,10 @@ export class MatchRoom extends DurableObject {
     if (usesAmmo && player.ammo[weapon.id] === 0) player.reloadEndsAt[weapon.id] = now + weapon.reload * 1000;
     const shot = {
       id: crypto.randomUUID(), playerId: player.id, weaponId: weapon.id, firedAt: now,
-      origin: { ...player.position }, hits: Object.create(null)
+      origin: { ...player.position }, hits: Object.create(null),
+      structureDamageScale: weapon.chargeTime
+        ? .35 + finiteNumber(message.chargeRatio, weapon.minCharge || 0, weapon.minCharge || 0, 1) * .65
+        : 1
     };
     const history = this.recentFires.get(player.id) || [];
     history.push(shot);
@@ -343,6 +355,7 @@ export class MatchRoom extends DurableObject {
     this.broadcast({
       type: "fire", shotId: shot.id, playerId: player.id, weaponId: weapon.id, slotIndex,
       direction: sanitizeVector(message.direction, 1), triggerTap: Boolean(message.triggerTap), action: detonation ? "detonate" : "fire",
+      chargeRatio: weapon.chargeTime ? finiteNumber(message.chargeRatio, weapon.minCharge || 0, weapon.minCharge || 0, 1) : 1,
       ammo: player.ammo[weapon.id], reloadCompleteAt: player.reloadEndsAt[weapon.id] || 0, serverTime: now
     });
   }
@@ -409,7 +422,7 @@ export class MatchRoom extends DurableObject {
     const history = this.recentFires.get(attacker.id) || [];
     const maximumAge = Math.min(12_000, 1_800 + 1000 * Math.max(0, weapon.fuse || weapon.hazardDuration || 0));
     const maximumRange = (weapon.maxUsefulRange || weapon.reach || 180) + (weapon.radius || 0) + 18;
-    const limit = Math.max(1, (weapon.terrainPenetration || weapon.penetration || 0) + 1);
+    const limit = Math.max(1, weapon.split || weapon.pellets || weapon.burstCount || (weapon.terrainPenetration || weapon.penetration || 0) + 1);
     for (let index = history.length - 1; index >= 0; index--) {
       const shot = history[index];
       if (shot.weaponId !== weapon.id || now - shot.firedAt > maximumAge) continue;
@@ -424,23 +437,48 @@ export class MatchRoom extends DurableObject {
   async handleTerrainHit(socket, message) {
     const attackerEntry = this.authorizedActor(socket, message.attackerId);
     const weapon = WEAPONS[message.weaponId];
-    if (!attackerEntry?.player.alive || !weapon?.terrainRadius || !attackerEntry.player.loadout.includes(weapon.id)) return;
+    const canonicalStructuralDamage = weapon?.structureDamage || weapon?.terrainRadius || 0;
+    if (!attackerEntry?.player.alive || (!weapon?.terrainRadius && !canonicalStructuralDamage) || !attackerEntry.player.loadout.includes(weapon.id)) return;
     const position = sanitizeVector(message.position);
     if (Math.abs(position.x) > 120 || Math.abs(position.z) > 120 || position.y < -2 || position.y > 100) return;
     const now = Date.now();
-    if (!this.recentValidTerrainShot(attackerEntry.player, weapon, position, now)) return;
+    const terrainShot = this.recentValidTerrainShot(attackerEntry.player, weapon, position, now);
+    if (!terrainShot) return;
+    const structuralDamage = canonicalStructuralDamage * (terrainShot.structureDamageScale || 1);
     const structureId = /^structure-(?:[1-9]|1[0-6])$/.test(String(message.structureId || "")) ? String(message.structureId) : "";
     const requestedPartId = String(message.partId || "");
-    const partId = structureId && new RegExp(`^${structureId}-(?:platform|pillar-[1-8])$`).test(requestedPartId) ? requestedPartId : "";
+    let partId = structureId && new RegExp(`^${structureId}-(?:platform-[1-9]\\d*|pillar-[1-8])$`).test(requestedPartId) ? requestedPartId : "";
+    const bounds = structuralPartBounds(this.meta.seed, partId);
+    if (bounds) {
+      const targetPillar = /-pillar-(\d+)$/.exec(partId);
+      let settledDrop = 0;
+      let fallingDrop = 0;
+      for (const [failedId, health] of this.structuralHealth) {
+        const failedPillar = new RegExp(`^${structureId}-pillar-(\\d+)$`).exec(failedId);
+        if (health > 0 || !failedPillar || targetPillar && Number(failedPillar[1]) >= Number(targetPillar[1])) continue;
+        const failedBounds = structuralPartBounds(this.meta.seed, failedId);
+        const height = failedBounds ? failedBounds.top - failedBounds.baseY : 0;
+        const failedAt = this.structuralFailures.get(failedId) || 0;
+        if (failedAt && now - failedAt < 1_650) fallingDrop += height;
+        else settledDrop += height;
+      }
+      const padding = .85;
+      const validPosition = Math.abs(position.x - bounds.x) <= bounds.w / 2 + padding &&
+        Math.abs(position.z - bounds.z) <= bounds.d / 2 + padding &&
+        position.y >= bounds.baseY - settledDrop - fallingDrop - padding &&
+        position.y <= bounds.top - settledDrop + padding;
+      if (!validPosition) partId = "";
+    } else partId = "";
     let structuralHealth = null;
     let collapsed = false;
     if (partId) {
       const majorTower = /^structure-[1-6]-/.test(partId);
-      const maximumHealth = partId.endsWith("-platform") ? (majorTower ? 18 : 10) : (majorTower ? 10 : 6);
+      const maximumHealth = majorTower ? 8 : 6;
       const currentHealth = this.structuralHealth.get(partId) ?? maximumHealth;
-      structuralHealth = Math.max(0, currentHealth - weapon.terrainRadius);
+      structuralHealth = Math.max(0, currentHealth - structuralDamage);
       collapsed = currentHealth > 0 && structuralHealth === 0;
       this.structuralHealth.set(partId, structuralHealth);
+      if (collapsed) this.structuralFailures.set(partId, now);
     }
     const event = {
       type: "terrain_damage",
@@ -448,7 +486,8 @@ export class MatchRoom extends DurableObject {
       attackerId: attackerEntry.player.id,
       weaponId: weapon.id,
       position,
-      radius: weapon.terrainRadius,
+      radius: weapon.terrainRadius || 0,
+      structuralDamage,
       structureId,
       partId,
       structuralHealth,

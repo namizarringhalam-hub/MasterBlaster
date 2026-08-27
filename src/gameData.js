@@ -53,6 +53,16 @@ function weapon(category, id, name, type, color, description, stats = {}) {
     ...rangePolicy,
     ...stats
   };
+  if (!("structureDamage" in stats)) {
+    const scale = {
+      projectile: .1, spread: .06, burst: .1, rocket: .36, grenade: .28,
+      mine: .28, remote: .3, rail: .16, plasma: .18, beam: .15,
+      chain: .12, flame: .18, melee: .22
+    }[type] || 0;
+    value.structureDamage = type === "wall" || type === "decoy" || stats.effect === "teleport" || value.damage <= 0
+      ? 0
+      : Math.max(type === "flame" ? .65 : .5, value.damage * scale);
+  }
   if (type === "melee") {
     value.reload = 0;
     value.preferredRange = value.reach * .8;
@@ -76,7 +86,7 @@ const weaponList = [
   weapon("Energy", "blaster", "Blaster", "projectile", 0x50e8ff, "Medium-speed visible bolt.", { damage: 18, projectileSpeed: 75, cooldown: .3, spread: .012, ammo: 12, reload: 1.05, recoil: 1.1 }),
   weapon("Close Quarters", "shotgun", "Shotgun", "spread", 0xffd166, "Fast close-range pellet burst.", { damage: 8, pellets: 7, projectileSpeed: 165, cooldown: .78, spread: .24, ammo: 5, recoil: 4.8 }),
   weapon("Rapid Fire", "machine_gun", "Machine Gun", "projectile", 0xa3ff8f, "Near-instant rapid physical rounds.", { damage: 7, projectileSpeed: 210, cooldown: .085, spread: .025, ammo: 32, reload: 1.45, recoil: .42, hitscan: true, preferredRange: 34, maxUsefulRange: 180 }),
-  weapon("Explosive", "rocket_launcher", "Rocket Launcher", "rocket", 0xff6b5f, "Slow, heavy terrain blast.", { damage: 56, projectileSpeed: 36, cooldown: 1.05, spread: .006, ammo: 3, reload: 1.6, recoil: 5.6, radius: 5.8, terrainRadius: 5.2 }),
+  weapon("Explosive", "rocket_launcher", "Rocket Launcher", "rocket", 0xff6b5f, "Slow, heavy terrain blast.", { damage: 56, projectileSpeed: 36, cooldown: 1.05, spread: .006, ammo: 3, reload: 1.6, recoil: 5.6, radius: 5.8, terrainRadius: 5.2, structureDamage: 20 }),
   weapon("Explosive", "grenade_launcher", "Grenade Launcher", "grenade", 0xc993ff, "Arcing, bouncing fuse.", { damage: 45, projectileSpeed: 13, cooldown: .88, spread: .02, ammo: 4, reload: 1.45, recoil: 2.2, radius: 5.1, terrainRadius: 4.4, fuse: 1.25, gravity: 17, bounces: 2, arcLift: 7.5 }),
   weapon("Explosive", "mine", "Mine", "mine", 0xff4fa0, "Persistent proximity trap.", { damage: 60, projectileSpeed: 0, cooldown: 1.05, spread: 0, ammo: 3, reload: 1.6, recoil: .5, radius: 4.7, terrainRadius: 3.8, fuse: 8 }),
   weapon("Precision", "railgun", "Railgun", "rail", 0xffffff, "Almost-instant precision line shot.", { damage: 58, projectileSpeed: 520, cooldown: 1.1, spread: .002, ammo: 4, reload: 1.65, recoil: 3, hitscan: true }),
@@ -225,6 +235,53 @@ export function seededRandom(seed) {
     state = Math.imul(state ^ (state >>> 15), 1 | state);
     state ^= state + Math.imul(state ^ (state >>> 7), 61 | state);
     return ((state ^ (state >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const MAJOR_STRUCTURAL_TOWERS = [
+  [42, 31, -22, 34, 26, 1.5], [-42, 47, 30, 32, 28, 1.5],
+  [-52, 15, -48, 34, 26, 1.4], [53, 15, 49, 34, 26, 1.4],
+  [54, 31, 33, 30, 22, 1.4], [-53, 47, -27, 30, 22, 1.4]
+];
+const SEEDED_STRUCTURAL_SITES = [
+  [-84, -34], [84, 34], [-34, -82], [34, 82], [-84, 72],
+  [84, -72], [-18, 62], [18, -62], [-67, -6], [67, 6]
+];
+
+export function structuralTowerBlueprints(seed, random = seededRandom(seedFromText(seed))) {
+  const towers = MAJOR_STRUCTURAL_TOWERS.map(([x, top, z, w, d, thickness]) => ({
+    x, z, top, w, d, thickness, segmentCount: Math.ceil(top / 6), pillarWidth: 8.4, major: true
+  }));
+  SEEDED_STRUCTURAL_SITES.forEach(([x, z], index) => {
+    const segmentCount = 3 + Math.floor(random() * 6);
+    const wideX = index % 2 === 0;
+    towers.push({
+      x, z, top: segmentCount * 4, w: wideX ? 14 : 11, d: wideX ? 11 : 14,
+      thickness: 1.15, segmentCount, pillarWidth: 4.2 + (segmentCount % 2) * .7, major: false
+    });
+  });
+  return towers;
+}
+
+export function structuralPartBounds(seed, partId) {
+  const match = /^structure-(\d+)-(pillar|platform)-(\d+)$/.exec(String(partId || ""));
+  if (!match) return null;
+  const tower = structuralTowerBlueprints(seed)[Number(match[1]) - 1];
+  if (!tower) return null;
+  const partIndex = Number(match[3]) - 1;
+  if (match[2] === "pillar") {
+    if (partIndex < 0 || partIndex >= tower.segmentCount) return null;
+    const h = tower.top / tower.segmentCount;
+    return { x: tower.x, z: tower.z, baseY: partIndex * h, top: (partIndex + 1) * h, w: tower.pillarWidth, d: tower.pillarWidth };
+  }
+  const columns = Math.max(3, Math.min(5, Math.round(tower.w / 7)));
+  const rows = Math.max(3, Math.min(5, Math.round(tower.d / 7)));
+  if (partIndex < 0 || partIndex >= columns * rows) return null;
+  const w = tower.w / columns, d = tower.d / rows;
+  const column = partIndex % columns, row = Math.floor(partIndex / columns);
+  return {
+    x: tower.x - tower.w / 2 + w * (column + .5), z: tower.z - tower.d / 2 + d * (row + .5),
+    baseY: tower.top - tower.thickness, top: tower.top, w, d
   };
 }
 
