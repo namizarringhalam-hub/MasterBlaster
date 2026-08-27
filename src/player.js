@@ -931,6 +931,8 @@ export class Fighter {
   }
 }
 
+export const GRAPPLE_SPEED_CAP = 48;
+
 export function applyGrapplePhysics(player, dt) {
   if (!player.grapple) return;
   const chest = player.position.clone().add(new THREE.Vector3(0, 1.4, 0));
@@ -969,7 +971,7 @@ export function applyGrapplePhysics(player, dt) {
     const inwardSpeed = player.velocity.dot(player.ledgeContact.inward);
     if (inwardSpeed < 7) player.velocity.addScaledVector(player.ledgeContact.inward, 7 - inwardSpeed);
   }
-  if (player.velocity.length() > 48) player.velocity.setLength(48);
+  if (player.velocity.length() > GRAPPLE_SPEED_CAP) player.velocity.setLength(GRAPPLE_SPEED_CAP);
 }
 
 export function boostGrappleRelease(player) {
