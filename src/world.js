@@ -237,6 +237,7 @@ export class ArenaWorld {
     this.frameStructureEvents = [];
     this.appliedTerrainEvents = new Set();
     this.collapseSerial = 0;
+    this.debrisBurstSerial = 0;
     this.structuralBatchMeshes = [];
     this.structuralMarker = new THREE.Object3D();
     this.structuralVisualOffset = new THREE.Vector3();
@@ -1469,7 +1470,7 @@ export class ArenaWorld {
     }));
     this.group.add(mesh);
 
-    const dustCount = 72;
+    const dustCount = 96;
     const dustMaterial = new THREE.MeshBasicMaterial({
       color: 0x8d9ba4, transparent: true, opacity: .13, depthWrite: false,
       blending: THREE.NormalBlending, toneMapped: false
@@ -1498,7 +1499,16 @@ export class ArenaWorld {
     const slab = bounds?.structuralKind === "platform";
     const spawned = [];
     for (let piece = 0; piece < count; piece++) {
-      const index = this.debrisCursor++ % this.debrisParticles.length;
+      let index = -1;
+      for (let attempt = 0; attempt < this.debrisParticles.length; attempt++) {
+        const candidateIndex = this.debrisCursor++ % this.debrisParticles.length;
+        const candidate = this.debrisParticles[candidateIndex];
+        if (!candidate.active || !candidate.majorFragment) {
+          index = candidateIndex;
+          break;
+        }
+      }
+      if (index < 0) break;
       const particle = this.debrisParticles[index];
       particle.active = true;
       particle.eventId = eventSeed;
@@ -1523,7 +1533,7 @@ export class ArenaWorld {
         particle.scale.set(spreadX * .42, spreadY * .58, spreadZ * .42);
       } else if (slab && piece < Math.ceil(count * .42)) particle.scale.set(.7 + random() * 1.7, .12 + random() * .22, .55 + random() * 1.45);
       else particle.scale.set(.16 + random() * .55, .1 + random() * .38, .18 + random() * .72);
-      particle.life = 2.5 + random() * 2.2;
+      particle.life = 3.2 + random() * 2.2;
       this.debrisMesh.setColorAt(index, new THREE.Color(colorValue).lerp(new THREE.Color(0x263746), random() * .6));
       spawned.push(particle);
     }
@@ -1545,7 +1555,7 @@ export class ArenaWorld {
       particle.velocity.set((random() - .5) * (landing ? 3.8 : 2.4), .35 + random() * (landing ? 1.7 : 2.4), (random() - .5) * (landing ? 3.8 : 2.4));
       const base = (landing ? .8 : .55) + random() * (landing ? 1.4 : 1);
       particle.scale.set(base * (1.15 + random()), base * (.45 + random() * .45), base * (1.15 + random()));
-      particle.life = particle.maxLife = 1.25 + random() * .9;
+      particle.life = particle.maxLife = (landing ? 3.4 : 3) + random() * 1.8;
       this.dustMesh.setColorAt(index, new THREE.Color(0x87949c).lerp(new THREE.Color(colorValue), .16 + random() * .12));
     }
     if (this.dustMesh.instanceColor) this.dustMesh.instanceColor.needsUpdate = true;
@@ -2734,6 +2744,12 @@ export class ArenaWorld {
     if (radius > 0) for (const item of [...this.destructibles]) {
       const center = new THREE.Vector3(item.x, item.baseY + item.h / 2, item.z);
       if (center.distanceTo(position) > radius + Math.max(item.w, item.d, item.h) / 2) continue;
+      const effectSeed = `${context.eventId || `local-destroy-${++this.debrisBurstSerial}`}:${item.x.toFixed(2)}:${item.z.toFixed(2)}`;
+      const effectColor = item.mesh.material.emissive?.getHex() || item.mesh.material.color.getHex();
+      const effectBounds = { w: item.w, h: item.h, d: item.d };
+      const scale = Math.cbrt(item.w * item.h * item.d);
+      this.spawnStructuralDebris(center, effectColor, THREE.MathUtils.clamp(Math.round(8 + scale * 1.8), 10, 22), effectBounds, effectSeed);
+      this.spawnStructuralDust(center, effectColor, THREE.MathUtils.clamp(Math.round(5 + scale * 1.2), 7, 14), effectBounds, effectSeed);
       if (item.batch) {
         item.batch.mesh.setMatrixAt(item.batch.index, HIDDEN_INSTANCE);
         item.batch.mesh.instanceMatrix.needsUpdate = true;
