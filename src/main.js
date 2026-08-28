@@ -405,32 +405,29 @@ class BlasterBattle {
     this.sound.setPaused(false);
     this.sound.setMusicScene("menu");
     this.sound.startMusic("menu", this.seed);
-    const checks = Object.entries(this.capabilities)
-      .map(([name, ok]) => `<span class="${ok ? "ok" : "bad"}">${ok ? "●" : "×"} ${name.toUpperCase()}</span>`)
-      .join("");
     ui.innerHTML = `
       <main class="menu-shell menu-scene" data-menu-scene="landing" data-menu-quality="${this.settings.graphics}" style="--menu-energy:.22;--menu-accent:#52e9ff">
         ${menuAtmosphereMarkup("landing")}
         <section class="hero-panel">
           <div class="brand-mark"><i></i><span>MASTER</span><b>BLASTER</b></div>
-          <p class="kicker">BROWSER-NATIVE ARENA COMBAT</p>
-          <h1>Swing fast.<br><em>Blast smart.</em></h1>
-          <p class="lead">Physical projectiles, explosive routes, and a grappling hook that never leaves your side.</p>
+          <p class="kicker">GRAPPLE. BLAST. BRING THE ARENA DOWN.</p>
+          <h1>Swing wild.<br><em>Break everything.</em></h1>
+          <p class="lead">Grapple anything. Shatter towers. Flatten your friends with 47 wildly different weapons. Every fight leaves the battlefield a little less intact.</p>
           <div class="primary-actions">
-            <button class="primary" data-mode="quick"><span>QUICK PLAY</span><small>Online regional matchmaking</small></button>
-            <button data-mode="private"><span>PRIVATE ROOM</span><small>Create or join by code</small></button>
-            <button data-mode="training"><span>TRAINING</span><small>Fight up to 15 adaptive bots</small></button>
+            <button class="primary" data-mode="quick"><span>QUICK PLAY</span><small>Eight-player chaos in seconds</small></button>
+            <button data-mode="private"><span>PRIVATE ROOM</span><small>Bring friends. Break everything.</small></button>
+            <button data-mode="training"><span>TRAINING</span><small>Test 47 weapons on up to 15 bots</small></button>
           </div>
           <div class="secondary-actions">
             <button data-screen="settings">Settings</button>
             <button data-screen="credits">Credits</button>
           </div>
-          <div class="capabilities" aria-label="Browser capability check">${checks}</div>
+          <div class="capabilities" aria-label="Game highlights">GRAPPLE ANY SURFACE · DESTRUCTIBLE TOWERS · UP TO 16 FIGHTERS · ZERO INSTALL</div>
         </section>
         <aside class="feature-rail">
-          <span>01</span><div><b>GRAPPLE</b><small>Momentum is your weapon</small></div>
-          <span>02</span><div><b>47 WEAPONS</b><small>Carry five into combat</small></div>
-          <span>03</span><div><b>DYNAMIC ARENAS</b><small>Moving routes, portals, and hazards</small></div>
+          <span>01</span><div><b>GRAPPLE ANYTHING</b><small>Walls. Floors. Towers. If you can hit it, hook it.</small></div>
+          <span>02</span><div><b>BREAK THE ARENA</b><small>Blast towers apart and drop floors on your rivals.</small></div>
+          <span>03</span><div><b>47 WEAPONS</b><small>Rockets. Fireballs. Black holes. Chainsaws. Choose five.</small></div>
         </aside>
       </main>`;
     this.bindUi();

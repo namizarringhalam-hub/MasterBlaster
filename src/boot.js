@@ -25,7 +25,7 @@ function loadEngine() {
 async function openEngine(button) {
   const mode = button.dataset.bootMode;
   const screen = button.dataset.bootScreen;
-  if (status) status.textContent = "ENGINE READYING · PLEASE HOLD";
+  if (status) status.textContent = "LOADING THE MAYHEM · PLEASE HOLD";
   try {
     const { gameReady } = await loadEngine();
     const game = await gameReady;
@@ -33,7 +33,7 @@ async function openEngine(button) {
     else if (screen === "settings") game.renderSettings();
     else if (screen === "credits") game.renderCredits();
   } catch {
-    if (status) status.textContent = "ENGINE START FAILED · RELOAD TO RETRY";
+    if (status) status.textContent = "ARENA LAUNCH FAILED · RELOAD TO RETRY";
   }
 }
 
@@ -43,7 +43,7 @@ ui.addEventListener("click", (event) => {
 });
 
 const warmEngine = () => loadEngine().catch(() => {
-  if (status) status.textContent = "ENGINE START FAILED · RELOAD TO RETRY";
+  if (status) status.textContent = "ARENA LAUNCH FAILED · RELOAD TO RETRY";
 });
 if (pendingMatch) warmEngine();
 else if ("requestIdleCallback" in window) requestIdleCallback(warmEngine, { timeout: 650 });

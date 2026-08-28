@@ -38,7 +38,7 @@ assert.match(deployedHtml, /<meta property="og:title" content="Master Blaster â€
 assert.match(deployedHtml, /<link rel="canonical" href="https:\/\/masterblaster\.se\/"/, "the public domain is canonical");
 assert.match(deployedHtml, /<meta property="og:url" content="https:\/\/masterblaster\.se\/"/, "shared links identify the public domain");
 assert.match(deployedHtml, /<meta property="og:image" content="https:\/\/masterblaster\.se\/og\.png"/, "social crawlers receive an absolute preview image URL");
-assert.match(deployedHtml, /47 weapons, private rooms, and adaptive bots/, "shared links include a useful game description");
+assert.match(deployedHtml, /Grapple anything, shatter towers, and flatten your friends with 47 wildly different weapons/, "shared links describe the game's destructive grapple-and-weapons fantasy");
 assert.match(deployedHtml, /<span>MASTER<\/span><b>BLASTER<\/b>/, "the server-rendered menu uses the Master Blaster brand");
 assert.doesNotMatch(deployedHtml, /Blaster Battle/i, "the deployed shell contains no retired title");
 assert.match(deployedHtml, /data-boot-mode="quick"/, "the interactive menu shell is server-rendered before the deferred game engine executes");
@@ -73,6 +73,7 @@ for (const file of Object.values(MUSIC_SAMPLE_MANIFEST).flatMap((role) => role.f
 const manifest = JSON.parse(await readFile("dist/client/manifest.webmanifest", "utf8"));
 assert.equal(manifest.name, "Master Blaster", "the installable app uses the Master Blaster name");
 assert.equal(manifest.short_name, "Master Blaster", "the installed app label uses the Master Blaster name");
+assert.match(manifest.description, /Grapple anything, shatter towers, and flatten your friends with 47 wildly different weapons/, "installed-game metadata keeps the same destructive, playful voice");
 assert.ok(manifest.icons.some((icon) => icon.src === "/favicon.svg"), "the installable app publishes its brand icon");
 
 const previewResponse = await worker.fetch(new Request("https://example.test/og.png"), { ASSETS: clientAssets });
