@@ -399,9 +399,12 @@ class BlasterBattle {
     this.state = "menu";
     this.paused = false;
     this.clearMatch();
+    this.sound.resume();
+    this.sound.setVolume(this.settings.volume);
+    this.sound.setMix({ music: this.settings.musicVolume, effects: this.settings.effectsVolume, ambience: this.settings.ambienceVolume });
     this.sound.setPaused(false);
     this.sound.setMusicScene("menu");
-    if (this.sound.context) this.sound.startMusic("menu", this.seed);
+    this.sound.startMusic("menu", this.seed);
     const checks = Object.entries(this.capabilities)
       .map(([name, ok]) => `<span class="${ok ? "ok" : "bad"}">${ok ? "●" : "×"} ${name.toUpperCase()}</span>`)
       .join("");
@@ -947,10 +950,13 @@ class BlasterBattle {
   }
 
   resumeAudioAfterReload() {
-    if (this.state !== "play") return false;
     if (!this.sound.resume()) return false;
     this.sound.setVolume(this.settings.volume);
     this.sound.setMix({ music: this.settings.musicVolume, effects: this.settings.effectsVolume, ambience: this.settings.ambienceVolume });
+    if (this.state !== "play") {
+      this.sound.startMusic("menu", this.seed);
+      return true;
+    }
     this.sound.startAmbience(this.world?.theme.id);
     this.sound.setMusicIntensity(.42);
     if (this.matchStartDelay > 0) {

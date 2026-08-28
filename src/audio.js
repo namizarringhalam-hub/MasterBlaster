@@ -144,7 +144,7 @@ export class SoundBoard {
       this.context = new AudioContext();
       this._buildMixer();
     }
-    this.context.resume?.();
+    this.context.resume?.()?.catch?.(() => {});
     if (this.musicTimer && this.musicNextTime < this.context.currentTime) this.musicNextTime = this.context.currentTime + .04;
     return true;
   }
@@ -285,12 +285,25 @@ export class SoundBoard {
       }
       throw lastError;
     };
-    this.musicSamplePromise = Promise.all(Object.entries(MUSIC_SAMPLE_MANIFEST).map(async ([name, asset]) => {
-      const decoded = (await Promise.allSettled(asset.files.map(decodeFile))).filter((entry) => entry.status === "fulfilled").map((entry) => entry.value);
-      if (decoded.length) this.musicSamples[name] = decoded;
-      else console.warn(`Recorded music role ${name} unavailable after three load attempts`);
-    })).then(() => {
+    const startupNames = new Set(["battleDrum", "celloTrem", "hornSustain"]);
+    const entries = Object.entries(MUSIC_SAMPLE_MANIFEST);
+    const startupEntries = entries.filter(([name]) => startupNames.has(name)).map(([name, asset]) => [name, asset.files.slice(0, 1)]);
+    const remainingEntries = entries.map(([name, asset]) => [name, startupNames.has(name) ? asset.files.slice(1) : asset.files]).filter(([, files]) => files.length);
+    const decodeRole = async ([name, files]) => {
+      const decoded = (await Promise.allSettled(files.map(decodeFile))).filter((entry) => entry.status === "fulfilled").map((entry) => entry.value);
+      if (decoded.length) this.musicSamples[name] = [...(this.musicSamples[name] || []), ...decoded];
+    };
+    const finishLoad = (terminal = false) => {
       if (this.context !== context) return this.musicSamples;
+      if (!terminal) {
+        this.musicSamplesReady = startupEntries.every(([name]) => this.musicSamples[name]?.length);
+        if (this.musicSamplesReady) {
+          this.musicLoadCycles = 0;
+          this._flushPendingMenuAccent();
+          this._resumePendingMusic();
+        }
+        return this.musicSamples;
+      }
       const recordedFallbacks = { fieldSnare: "battleDrum", cymbal: "fieldSnare", celloSpic: "celloTrem", celloTrem: "hornSustain", hornStaccato: "hornSustain", hornSustain: "celloTrem", tromboneBuzz: "hornSustain" };
       for (const name of Object.keys(MUSIC_SAMPLE_MANIFEST)) if (!this.musicSamples[name]?.length && this.musicSamples[recordedFallbacks[name]]?.length) this.musicSamples[name] = this.musicSamples[recordedFallbacks[name]];
       const decodedRoles = Object.values(this.musicSamples).filter((entries) => Array.isArray(entries) && entries.length).length;
@@ -311,7 +324,11 @@ export class SoundBoard {
         if (this.musicLoadCycles < 4) this.musicRetryTimer = setTimeout(() => this._loadMusicSamples(true), 700 * 2 ** this.musicLoadCycles);
       }
       return this.musicSamples;
-    });
+    };
+    this.musicSamplePromise = Promise.all(startupEntries.map(decodeRole))
+      .then(() => finishLoad(false))
+      .then(() => Promise.all(remainingEntries.map(decodeRole)))
+      .then(() => finishLoad(true));
     return this.musicSamplePromise;
   }
 

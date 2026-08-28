@@ -94,11 +94,15 @@ assert.match(indexSource, /id="match-loading"[\s\S]*?sessionStorage\.getItem\("b
 assert.match(indexSource, /data-boot-mode="quick"[\s\S]*?\/src\/boot\.js/, "the functional menu shell is present before the deferred Three.js engine downloads");
 assert.match(indexSource, /master-blaster-settings[\s\S]*?dataset\.menuQuality[\s\S]*?reducedMotion/, "the lightweight shell applies saved graphics and motion preferences before the engine downloads");
 assert.match(indexSource, /menu-atmosphere[\s\S]*?arena-grid[\s\S]*?arena-towers[\s\S]*?arena-rings[\s\S]*?grapple-arc[\s\S]*?arena-streaks/, "the lightweight shell paints the complete arena-energy atmosphere before the engine downloads");
+assert.match(indexSource, /preload" as="image" href="\/menu-arena-v2\.webp"[\s\S]*?battle-drum\.wav\?bank=orchestra-2[\s\S]*?cello-trem\.wav\?bank=orchestra-2[\s\S]*?horn-sustain\.wav\?bank=orchestra-2/, "the arena plate and core menu orchestra begin loading with the shell");
 assert.match(mainSource, /data-menu-quality="\$\{this\.settings\.graphics\}"/, "menu animation density follows the saved graphics quality");
 assert.match(mainSource, /pulseMenuEnergy[\s\S]*?setMusicIntensity/, "menu visuals and adaptive orchestral intensity share one bounded action signal");
 assert.match(mainSource, /accentMenuAction\(menuLevel[\s\S]*?dataset\.action === "start"/, "real menu clicks trigger an immediate recorded musical accent, including Start before navigation");
 assert.match(mainSource, /pulseMenuEnergy\(\.48, MENU_ACCENTS\[mode\], 2300\)/, "setup navigation preserves menu energy for at least one complete orchestral bar");
 assert.match(stylesSource, /\.menu-atmosphere[\s\S]*?transform[\s\S]*?opacity/, "the menu atmosphere is implemented with compositor-friendly transform and opacity motion");
+assert.match(stylesSource, /\.arena-towers[\s\S]*?url\("\/menu-arena-v2\.webp"\)[\s\S]*?arena-camera-drift[\s\S]*?infinite alternate/, "the menu uses a cinematic arena plate with reversible parallax instead of chart-like procedural columns");
+assert.doesNotMatch(stylesSource, /arena-grid-drift|repeating-linear-gradient\(117deg/, "no translating grid or repeating streak texture can expose a visible loop reset");
+assert.match(stylesSource, /@keyframes projectile-sweep[\s\S]*?0%, 12% \{ opacity: 0[\s\S]*?82%, 100% \{ opacity: 0/, "projectile sweeps reset only while fully invisible");
 assert.match(stylesSource, /@media \(pointer: coarse\)[\s\S]*?\.menu-scene \.grapple-arc[\s\S]*?arena-ring-mobile[\s\S]*?filter: none/, "every coarse-pointer quality tier keeps motion but removes sustained animated filters");
 assert.match(stylesSource, /weapon-categories[\s\S]*?scroll-snap-type: x mandatory[\s\S]*?scrollbar-width: none/, "mobile weapon categories use compact touch snapping without a desktop scrollbar");
 assert.match(indexSource, /Number\.isFinite\(queuedAt\)[\s\S]*?age >= 0 && age <= 30000[\s\S]*?sessionStorage\.removeItem\("blaster-pending-match"\)/, "only a fresh, valid match can reveal the bootstrap loader");
