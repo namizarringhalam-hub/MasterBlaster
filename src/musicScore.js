@@ -58,7 +58,7 @@ export const MUSIC_SAMPLE_MANIFEST = freeze({
 });
 
 const SCENES = freeze({
-  menu: freeze({ intensity: .2, percussion: false, melody: false }),
+  menu: freeze({ percussion: true, melody: true }),
   countdown: freeze({ intensity: .72, percussion: true, melody: false }),
   combat: freeze({ percussion: true, melody: true }),
   paused: freeze({ intensity: 0, percussion: false, melody: false }),
@@ -199,11 +199,15 @@ export function musicEventsForStep(input = {}) {
 
   if (scene === "menu") {
     if (step === 0) {
-      events.push(recorded("menu-low-strings", step, "celloTrem", 16, .04, { midi: root, wet: .2, attack: .14, release: .38, filterHz: 4200 }));
-      events.push(recorded("menu-low-brass", step, "tromboneBuzz", 12, .032, { midi: root, pan: -.08, wet: .16, attack: .06, release: .34, filterHz: 2600 }));
-      if (bar % 2 === 0) events.push(recorded("menu-horizon", step, "hornSustain", 14, .029, { midi: root + 7, pan: .12, wet: .22, attack: .14, release: .4, filterHz: 4800 }));
+      events.push(recorded("menu-low-strings", step, "celloTrem", 16, .034 + energy * .026, { midi: root, wet: .2, attack: .14, release: .38, filterHz: 3900 + energy * 1100 }));
+      events.push(recorded("menu-low-brass", step, "tromboneBuzz", 12, .026 + energy * .022, { midi: root, pan: -.08, wet: .16, attack: .06, release: .34, filterHz: 2400 + energy * 700 }));
+      if (bar % 2 === 0 || energy >= .55) events.push(recorded("menu-horizon", step, "hornSustain", 14, .024 + energy * .022, { midi: root + 7, pan: .12, wet: .22, attack: .14, release: .4, filterHz: 4400 + energy * 900 }));
     }
-    if (bar % 4 === 3 && step === 12) events.push(recorded("menu-drum", step, "battleDrum", 4, .036, { rate: .82, wet: .1 }));
+    if (energy >= .3 && [0, 8].includes(step)) events.push(recorded("menu-drum", step, "battleDrum", 3, .032 + energy * .04, { rate: .82 + energy * .12, wet: .08 }));
+    if (energy >= .44 && step % 4 === 0) events.push(recorded("menu-strings-pulse", step, "celloSpic", 4, .025 + energy * .025, { midi: root + (step === 8 ? 7 : 0), pan: step < 8 ? -.1 : .1, wet: .07, filterHz: 4100 + energy * 1600 }));
+    if (energy >= .54 && [4, 12].includes(step)) events.push(recorded("menu-snare", step, "fieldSnare", 2, .026 + energy * .027, { rate: .96 + step * .002, pan: step === 4 ? -.08 : .08, wet: .08 }));
+    if (energy >= .66 && [6, 14].includes(step)) events.push(recorded("menu-brass-accent", step, "hornStaccato", 3, .03 + energy * .025, { midi: root + (step === 6 ? 7 : 12), pan: step === 6 ? -.14 : .14, wet: .12 }));
+    if (energy >= .82 && step === 15) events.push(recorded("menu-rise", step, "cymbal", 4, .04 + energy * .02, { wet: .17 }));
     return freeze(events);
   }
 

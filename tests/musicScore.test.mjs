@@ -88,6 +88,12 @@ assert.ok(score.length > quiet.length * 2, "fighting density adds real orchestra
 
 assert.deepEqual(musicEventsForStep({ scene: "paused" }), []);
 assert.ok(musicEventsForBar({ scene: "menu" }).every((event) => event.kind === "recorded"));
+const quietMenu = musicEventsForBar({ scene: "menu", intensity: .2, bar: 5 });
+const activeMenu = musicEventsForBar({ scene: "menu", intensity: .95, bar: 5 });
+assert.ok(activeMenu.length > quietMenu.length * 2, "menu actions add recorded percussion, strings, and brass rather than only raising volume");
+for (const layer of ["menu-drum", "menu-strings-pulse", "menu-snare", "menu-brass-accent", "menu-rise"]) {
+  assert.ok(activeMenu.some((event) => event.layer === layer), `${layer} joins a peak menu action transition`);
+}
 assert.ok(musicEventsForBar({ scene: "countdown" }).some((event) => event.layer === "countdown-cymbal"));
 assert.ok(musicEventsForBar({ scene: "results-win" }).some((event) => event.layer === "result-brass-answer"));
 assert.ok(musicEventsForBar({ scene: "results-win" }).some((event) => event.layer === "result-low-brass"));

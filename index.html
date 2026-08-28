@@ -34,7 +34,11 @@
     <div id="app">
       <canvas id="game-canvas"></canvas>
       <div id="ui-root">
-        <main class="menu-shell">
+        <main class="menu-shell menu-scene" data-menu-scene="landing" data-menu-quality="high" style="--menu-energy:.22;--menu-accent:#52e9ff">
+          <div class="menu-atmosphere" data-atmosphere="landing" aria-hidden="true">
+            <span class="arena-grid"></span><span class="arena-towers"></span><span class="arena-rings"></span>
+            <span class="grapple-arc arc-one"></span><span class="grapple-arc arc-two"></span><span class="arena-streaks"></span>
+          </div>
           <section class="hero-panel">
             <div class="brand-mark"><i></i><span>MASTER</span><b>BLASTER</b></div>
             <p class="kicker">BROWSER-NATIVE ARENA COMBAT</p>
@@ -72,6 +76,10 @@
     </div>
     <script>
       try {
+        const savedSettings = JSON.parse(localStorage.getItem("master-blaster-settings") || localStorage.getItem("blaster-battle-settings-v1") || "{}");
+        const bootMenu = document.querySelector("[data-menu-quality]");
+        if (["low", "medium", "high"].includes(savedSettings.graphics)) bootMenu.dataset.menuQuality = savedSettings.graphics;
+        if (savedSettings.reducedMotion) document.documentElement.classList.add("reduce-motion");
         const pending = sessionStorage.getItem("blaster-pending-match");
         if (pending) {
           const saved = JSON.parse(pending);

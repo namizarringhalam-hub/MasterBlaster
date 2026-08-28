@@ -92,6 +92,15 @@ assert.match(mainSource, /queueMatchStart\(sameSeed = false\)[\s\S]*?sessionStor
 assert.match(mainSource, /resumePendingMatch\(\)[\s\S]*?sessionStorage\.removeItem\(MATCH_SESSION_KEY\)[\s\S]*?freshSessionReady = true;[\s\S]*?this\.startMatch\(\)/, "the reload consumes the match ticket exactly once and enters the guarded initializer");
 assert.match(indexSource, /id="match-loading"[\s\S]*?sessionStorage\.getItem\("blaster-pending-match"\)[\s\S]*?type="module"/, "the match loader appears before the new renderer module starts");
 assert.match(indexSource, /data-boot-mode="quick"[\s\S]*?\/src\/boot\.js/, "the functional menu shell is present before the deferred Three.js engine downloads");
+assert.match(indexSource, /master-blaster-settings[\s\S]*?dataset\.menuQuality[\s\S]*?reducedMotion/, "the lightweight shell applies saved graphics and motion preferences before the engine downloads");
+assert.match(indexSource, /menu-atmosphere[\s\S]*?arena-grid[\s\S]*?arena-towers[\s\S]*?arena-rings[\s\S]*?grapple-arc[\s\S]*?arena-streaks/, "the lightweight shell paints the complete arena-energy atmosphere before the engine downloads");
+assert.match(mainSource, /data-menu-quality="\$\{this\.settings\.graphics\}"/, "menu animation density follows the saved graphics quality");
+assert.match(mainSource, /pulseMenuEnergy[\s\S]*?setMusicIntensity/, "menu visuals and adaptive orchestral intensity share one bounded action signal");
+assert.match(mainSource, /accentMenuAction\(menuLevel[\s\S]*?dataset\.action === "start"/, "real menu clicks trigger an immediate recorded musical accent, including Start before navigation");
+assert.match(mainSource, /pulseMenuEnergy\(\.48, MENU_ACCENTS\[mode\], 2300\)/, "setup navigation preserves menu energy for at least one complete orchestral bar");
+assert.match(stylesSource, /\.menu-atmosphere[\s\S]*?transform[\s\S]*?opacity/, "the menu atmosphere is implemented with compositor-friendly transform and opacity motion");
+assert.match(stylesSource, /@media \(pointer: coarse\)[\s\S]*?\.menu-scene \.grapple-arc[\s\S]*?arena-ring-mobile[\s\S]*?filter: none/, "every coarse-pointer quality tier keeps motion but removes sustained animated filters");
+assert.match(stylesSource, /weapon-categories[\s\S]*?scroll-snap-type: x mandatory[\s\S]*?scrollbar-width: none/, "mobile weapon categories use compact touch snapping without a desktop scrollbar");
 assert.match(indexSource, /Number\.isFinite\(queuedAt\)[\s\S]*?age >= 0 && age <= 30000[\s\S]*?sessionStorage\.removeItem\("blaster-pending-match"\)/, "only a fresh, valid match can reveal the bootstrap loader");
 assert.match(mainSource, /queueMatchStart\(sameSeed = false\)[\s\S]*?setMatchLoading\(true[\s\S]*?requestAnimationFrame\(\(\) => requestAnimationFrame/, "the loading screen receives a paint before every match navigation");
 assert.match(mainSource, /startMatch\(\)[\s\S]*?this\.state = "play";[\s\S]*?this\.renderHud\(\);[\s\S]*?this\.sound\.setPaused\(false\);[\s\S]*?this\.hideMatchLoadingAfterFrame = true/, "the loader is armed for dismissal only after the arena and gameplay HUD are ready");

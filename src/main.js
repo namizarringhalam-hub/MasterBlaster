@@ -22,6 +22,7 @@ const WEAPON_CATEGORY_BY_ID = Object.fromEntries(WEAPON_GROUPS.flatMap((group) =
 const WEAPON_INDEX_BY_ID = Object.fromEntries(Object.keys(WEAPONS).map((id, index) => [id, index]));
 const WEAPON_CATEGORY_SLUG_BY_ID = Object.fromEntries(Object.values(WEAPONS).map((weapon) => [weapon.id, weapon.category.toLowerCase().replaceAll(" ", "-")]));
 const WEAPON_CSS_COLOR_BY_ID = Object.fromEntries(Object.values(WEAPONS).map((weapon) => [weapon.id, `#${weapon.color.toString(16).padStart(6, "0")}`]));
+const MENU_ACCENTS = Object.freeze({ quick: "#ef3f58", private: "#52e9ff", training: "#b86cff" });
 const STRUCTURAL_COLLAPSE = Object.freeze({
   id: "structural_collapse",
   name: "COLLAPSING PLATFORM",
@@ -122,6 +123,13 @@ const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
 }[char]));
 
+function menuAtmosphereMarkup(variant = "landing") {
+  return `<div class="menu-atmosphere" data-atmosphere="${variant}" aria-hidden="true">
+    <span class="arena-grid"></span><span class="arena-towers"></span><span class="arena-rings"></span>
+    <span class="grapple-arc arc-one"></span><span class="grapple-arc arc-two"></span><span class="arena-streaks"></span>
+  </div>`;
+}
+
 function capabilities() {
   return {
     webgpu: Boolean(navigator.gpu),
@@ -216,6 +224,8 @@ class BlasterBattle {
     this.performanceSample = this.freshPerformanceSample();
     this.audioMixTimer = 0;
     this.combatMusicPulse = 0;
+    this.menuEnergyTimer = 0;
+    this.menuLaunchTimer = 0;
     this.freshSessionReady = false;
     this.hideMatchLoadingAfterFrame = false;
     this.targetHealthTimer = 0;
@@ -284,6 +294,7 @@ class BlasterBattle {
     };
     addEventListener("pointerdown", this.resumeAudioGesture, { passive: true, capture: true });
     document.addEventListener("visibilitychange", () => {
+      document.documentElement.classList.toggle("page-hidden", document.hidden);
       if (document.hidden) {
         clearTouchActions(this.touch);
         this.touchPointers?.clear();
@@ -340,6 +351,8 @@ class BlasterBattle {
   }
 
   clearMatch(preserveNetwork = false) {
+    clearTimeout(this.menuEnergyTimer);
+    this.menuEnergyTimer = 0;
     this.input.releasePointer();
     clearTouchActions(this.touch);
     clearTimeout(this.damageVignetteTimer);
@@ -381,6 +394,8 @@ class BlasterBattle {
   }
 
   renderMain() {
+    clearTimeout(this.menuLaunchTimer);
+    this.menuLaunchTimer = 0;
     this.state = "menu";
     this.paused = false;
     this.clearMatch();
@@ -391,7 +406,8 @@ class BlasterBattle {
       .map(([name, ok]) => `<span class="${ok ? "ok" : "bad"}">${ok ? "●" : "×"} ${name.toUpperCase()}</span>`)
       .join("");
     ui.innerHTML = `
-      <main class="menu-shell">
+      <main class="menu-shell menu-scene" data-menu-scene="landing" data-menu-quality="${this.settings.graphics}" style="--menu-energy:.22;--menu-accent:#52e9ff">
+        ${menuAtmosphereMarkup("landing")}
         <section class="hero-panel">
           <div class="brand-mark"><i></i><span>MASTER</span><b>BLASTER</b></div>
           <p class="kicker">BROWSER-NATIVE ARENA COMBAT</p>
@@ -434,7 +450,8 @@ class BlasterBattle {
         ? "Create or join an online room by sharing its short room code."
         : "Choose up to fifteen bots and master movement, trajectories, recoil, and grappling.";
     ui.innerHTML = `
-      <main class="screen">
+      <main class="screen menu-scene setup-scene" data-menu-scene="${mode}" data-menu-quality="${this.settings.graphics}" style="--menu-energy:.28;--menu-accent:${MENU_ACCENTS[mode]}">
+        ${menuAtmosphereMarkup(mode)}
         <section class="dialog setup-dialog">
           <header><button class="back" data-screen="main">← Back</button><p>${mode.toUpperCase()}</p></header>
           <h1>${title}</h1>
@@ -452,7 +469,7 @@ class BlasterBattle {
           </div>
           <section class="loadout-builder">
             <div><h2>Choose five weapons</h2><span data-loadout-count>${this.settings.loadout.length}/5 selected</span></div>
-            <p class="loadout-help">Weapon order becomes slots 1â€“5. Drag on desktop or use the arrow controls on any device.</p>
+            <p class="loadout-help">Weapon order becomes slots 1–5. Drag on desktop or use the arrow controls on any device.</p>
             <div class="loadout-order" data-loadout-order>${this.loadoutOrderMarkup()}</div>
             <div class="preset-heading"><h3>Saved sets</h3><span>One default applies automatically to every game</span></div>
             <section class="loadout-presets" aria-label="Saved weapon sets" data-loadout-presets>${this.loadoutPresetsMarkup()}</section>
@@ -463,6 +480,7 @@ class BlasterBattle {
         </section>
       </main>`;
     this.bindUi();
+    queueMicrotask(() => this.pulseMenuEnergy(.48, MENU_ACCENTS[mode], 2300));
   }
 
   weaponCategoriesMarkup() {
@@ -586,6 +604,27 @@ class BlasterBattle {
     return Math.random().toString(36).slice(2, 8).toUpperCase();
   }
 
+  menuAccent(button) {
+    const weaponId = button?.dataset.weaponChoice;
+    if (weaponId) return WEAPON_CATEGORY_BY_ID[weaponId]?.color || WEAPON_CSS_COLOR_BY_ID[weaponId] || "#52e9ff";
+    if (button?.dataset.mode) return MENU_ACCENTS[button.dataset.mode] || "#52e9ff";
+    if (button?.dataset.action === "start" || button?.classList.contains("primary")) return "#ef3f58";
+    return button?.style.getPropertyValue("--category") || "#52e9ff";
+  }
+
+  pulseMenuEnergy(level = .36, accent = "#52e9ff", hold = 1650) {
+    const scene = ui.querySelector("[data-menu-scene]");
+    if (!scene || this.state === "play") return;
+    clearTimeout(this.menuEnergyTimer);
+    scene.style.setProperty("--menu-energy", String(clamp(level, .18, 1)));
+    scene.style.setProperty("--menu-accent", accent || "#52e9ff");
+    this.sound.setMusicIntensity(level);
+    this.menuEnergyTimer = setTimeout(() => {
+      scene.style.setProperty("--menu-energy", ".22");
+      this.sound.setMusicIntensity(.22);
+    }, hold);
+  }
+
   bindUi() {
     ui.onclick = (event) => {
       const button = event.target.closest("button");
@@ -598,7 +637,16 @@ class BlasterBattle {
         ? WEAPONS[button.dataset.weaponChoice]
         : button.dataset.weaponSlot != null ? WEAPONS[this.players[0]?.loadout[Number(button.dataset.weaponSlot)]] : null;
       this.sound.play(button.dataset.screen === "main" ? "uiBack" : button.dataset.weaponChoice || button.dataset.weaponSlot ? "weaponSelect" : "uiConfirm", menuWeapon);
-      if (button.dataset.screen === "main") return this.renderMain();
+      const menuLevel = button.dataset.action === "start" ? .9
+        : button.dataset.weaponChoice || button.dataset.loadoutMove || button.dataset.presetLoad || button.dataset.presetSave ? .58
+          : button.dataset.mode ? .48 : .38;
+      this.pulseMenuEnergy(menuLevel, this.menuAccent(button), button.dataset.action === "start" ? 2400 : 2300);
+      if (this.state !== "play") this.sound.accentMenuAction(menuLevel, button.dataset.action === "start");
+      if (button.dataset.screen === "main") {
+        this.renderMain();
+        queueMicrotask(() => this.pulseMenuEnergy(menuLevel, this.menuAccent(button), 2300));
+        return;
+      }
       if (button.dataset.screen === "settings") return this.renderSettings();
       if (button.dataset.screen === "credits") return this.renderCredits();
       if (button.dataset.mode) return this.renderSetup(button.dataset.mode);
@@ -618,6 +666,12 @@ class BlasterBattle {
     ui.onchange = (event) => {
       if (event.target.dataset.presetName) this.renamePreset(Number(event.target.dataset.presetName), event.target.value);
       if (event.target.closest?.(".setup-form")) this.captureSetupPreferences();
+      if (event.target.closest?.(".setup-form")) {
+        const difficulty = { rookie: .34, normal: .43, veteran: .56 }[this.botDifficulty] || .4;
+        const energy = Math.min(.68, difficulty + this.settings.botCount / 75);
+        this.pulseMenuEnergy(energy, MENU_ACCENTS[this.mode], 2300);
+        this.sound.accentMenuAction(energy);
+      }
       if (event.target.closest?.(".settings-grid")) this.captureSettingsPreferences();
     };
     ui.oninput = (event) => {
@@ -637,7 +691,14 @@ class BlasterBattle {
     };
     ui.onpointerover = (event) => {
       const button = event.target.closest?.("button");
-      if (button && !button.disabled && event.relatedTarget?.closest?.("button") !== button) this.sound.play("uiHover");
+      if (button && !button.disabled && event.relatedTarget?.closest?.("button") !== button) {
+        this.sound.play("uiHover");
+        this.pulseMenuEnergy(.32, this.menuAccent(button), 1100);
+      }
+    };
+    ui.onfocusin = (event) => {
+      const control = event.target.closest?.("button, input, select");
+      if (control) this.pulseMenuEnergy(.31, this.menuAccent(control), 1100);
     };
     ui.ondragstart = (event) => {
       const slot = event.target.closest?.("[data-loadout-drag]");
@@ -786,9 +847,17 @@ class BlasterBattle {
   }
 
   captureSetupAndStart() {
-    if (this.settings.loadout.length !== 5) return;
+    if (this.settings.loadout.length !== 5 || this.menuLaunchTimer) return;
     this.captureSetupPreferences();
-    this.startMatch();
+    const scene = ui.querySelector("[data-menu-scene]");
+    scene?.classList.add("menu-launching");
+    const launch = ui.querySelector('[data-action="start"]');
+    if (launch) launch.disabled = true;
+    this.pulseMenuEnergy(.94, MENU_ACCENTS[this.mode] || "#ef3f58", 2400);
+    this.menuLaunchTimer = setTimeout(() => {
+      this.menuLaunchTimer = 0;
+      this.startMatch();
+    }, this.settings.reducedMotion ? 20 : 260);
   }
 
   captureSetupPreferences() {

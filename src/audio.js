@@ -100,6 +100,7 @@ export class SoundBoard {
     this.musicRetryTimer = null;
     this.musicRoundRobin = new Map();
     this.pendingMusicStart = null;
+    this.pendingMenuAccent = null;
     this.enabled = true;
     this.volume = 70;
     this.buses = {};
@@ -297,6 +298,7 @@ export class SoundBoard {
       this.musicLoadFailed = decodedRoles === 0;
       if (this.musicSamplesReady) {
         this.musicLoadCycles = 0;
+        this._flushPendingMenuAccent();
         this._resumePendingMusic();
       } else {
         // Never label an empty orchestra as ready. Release a pending gameplay
@@ -945,6 +947,37 @@ export class SoundBoard {
   }
 
   setMusicIntensity(value) { this.musicTargetIntensity = clamp(Number(value) || 0); }
+
+  accentMenuAction(value = .5, launch = false) {
+    const energy = clamp(Number(value) || 0);
+    if (!this.context || this.musicScene !== "menu") return false;
+    if (!this.musicSamplesReady) {
+      const pending = this.pendingMenuAccent;
+      this.pendingMenuAccent = { energy: Math.max(energy, pending?.energy || 0), launch: launch || Boolean(pending?.launch) };
+      this._loadMusicSamples();
+      return true;
+    }
+    return this._playMenuActionAccent(energy, launch);
+  }
+
+  _flushPendingMenuAccent() {
+    if (!this.pendingMenuAccent || !this.musicSamplesReady) return false;
+    const pending = this.pendingMenuAccent;
+    this.pendingMenuAccent = null;
+    return this._playMenuActionAccent(pending.energy, pending.launch, true);
+  }
+
+  _playMenuActionAccent(energy, launch, queued = false) {
+    if (!this.context || (!queued && !this._allow("menu-action-accent", .14))) return false;
+    const at = this.context.currentTime + .018;
+    const bar = Math.floor(this.musicStep / MUSIC.stepsPerBar);
+    const root = MUSIC.tonicMidi + MUSIC.roots[bar % MUSIC.roots.length];
+    let played = this.musicSample("battleDrum", .03 + energy * .045, { priority: MUSIC_PRIORITY + 2, at, rate: .84 + energy * .1, wet: .07 });
+    if (energy >= .46) played = this.musicSample("celloSpic", .026 + energy * .025, { priority: MUSIC_PRIORITY + 2, at: at + .035, midi: root, wet: .07, filter: 5200 }) || played;
+    if (energy >= .64) played = this.musicSample("hornStaccato", .03 + energy * .024, { priority: MUSIC_PRIORITY + 3, at: at + .07, midi: root + 7, wet: .12, filter: 5600 }) || played;
+    if (launch) this.musicSample("cymbal", .052, { priority: MUSIC_PRIORITY + 4, at: at + .1, wet: .17 });
+    return played;
+  }
 
   _scheduleMusic() {
     if (!this.context || !this.enabled || this.musicPaused) return;

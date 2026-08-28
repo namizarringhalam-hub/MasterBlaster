@@ -161,34 +161,158 @@ button.primary:hover:not(:disabled) { background: #ff4862; border-color: #fff; }
   pointer-events: auto;
 }
 
-.menu-shell::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background:
-    linear-gradient(115deg, transparent 0 56%, rgba(76, 238, 255, .035) 56.2% 56.35%, transparent 56.5%),
-    radial-gradient(circle at 82% 20%, rgba(86, 37, 177, .34), transparent 30%),
-    radial-gradient(circle at 68% 80%, rgba(0, 220, 255, .22), transparent 35%),
-    linear-gradient(90deg, rgba(5, 12, 21, .98) 0%, rgba(5, 12, 21, .91) 48%, rgba(5, 12, 21, .42) 100%),
-    repeating-linear-gradient(90deg, transparent 0 79px, rgba(62, 222, 255, .055) 80px),
-    repeating-linear-gradient(0deg, transparent 0 79px, rgba(62, 222, 255, .028) 80px);
-  background-size: 100% 100%, 110% 110%, 115% 115%, 100% 100%, 80px 80px, 80px 80px;
-  animation: menu-atmosphere 14s ease-in-out infinite alternate;
+.menu-scene {
+  --menu-energy: .22;
+  --menu-accent: #52e9ff;
+  --menu-beat: .508s;
+  --menu-half-bar: 1.016s;
+  --menu-bar: 2.032s;
 }
 
-.menu-shell::after {
-  content: "";
+.menu-atmosphere {
   position: fixed;
   inset: 0;
-  z-index: -1;
+  z-index: 0;
   pointer-events: none;
-  opacity: .3;
+  overflow: hidden;
+  contain: strict;
   background:
-    radial-gradient(ellipse at 78% 50%, transparent 0 25%, rgba(88, 229, 255, .09) 25.3% 25.55%, transparent 25.9% 42%, rgba(239, 63, 88, .06) 42.2% 42.45%, transparent 42.8%),
-    repeating-linear-gradient(165deg, transparent 0 21px, rgba(255,255,255,.018) 22px);
-  mix-blend-mode: screen;
+    radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--menu-accent) 18%, transparent), transparent 28%),
+    radial-gradient(circle at 64% 82%, rgba(0, 214, 255, .19), transparent 34%),
+    linear-gradient(92deg, rgba(3, 9, 17, .99) 0%, rgba(4, 11, 20, .95) 46%, rgba(4, 9, 18, .7) 100%);
+  transition: background-color .7s ease;
 }
+
+.menu-shell > .hero-panel, .menu-shell > .feature-rail, .screen > .dialog { position: relative; z-index: 1; }
+.menu-atmosphere > span { position: absolute; display: block; pointer-events: none; will-change: transform; transition: opacity .65s ease, filter .65s ease; }
+
+.arena-grid {
+  inset: 43% -24% -55%;
+  opacity: clamp(.18, var(--menu-energy), .5);
+  background:
+    linear-gradient(color-mix(in srgb, var(--menu-accent) 24%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--menu-accent) 20%, transparent) 1px, transparent 1px);
+  background-size: 70px 70px;
+  transform: perspective(760px) rotateX(64deg) translate3d(0, 0, 0);
+  transform-origin: top;
+  mask-image: linear-gradient(to bottom, #000 0 36%, transparent 84%);
+  animation: arena-grid-drift 8.13s linear infinite;
+}
+
+.arena-towers {
+  right: -4%;
+  bottom: 6%;
+  width: min(72vw, 1050px);
+  height: 69%;
+  opacity: clamp(.32, var(--menu-energy), .78);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--menu-accent) 24%, #0a1730), #07101d) 3% 100% / 10% 36% no-repeat,
+    linear-gradient(180deg, #1d2457, #080f22) 15% 100% / 8% 59% no-repeat,
+    linear-gradient(180deg, color-mix(in srgb, var(--menu-accent) 34%, #141b41), #07101e) 27% 100% / 13% 45% no-repeat,
+    linear-gradient(180deg, #331a50, #090f21) 43% 100% / 10% 76% no-repeat,
+    linear-gradient(180deg, color-mix(in srgb, var(--menu-accent) 26%, #19275c), #070e1e) 56% 100% / 15% 57% no-repeat,
+    linear-gradient(180deg, #1d174c, #070d1b) 72% 100% / 9% 88% no-repeat,
+    linear-gradient(180deg, color-mix(in srgb, var(--menu-accent) 30%, #152347), #07101d) 84% 100% / 12% 49% no-repeat,
+    linear-gradient(180deg, #231744, #070c19) 98% 100% / 9% 68% no-repeat;
+  filter: drop-shadow(0 28px 50px rgba(0,0,0,.5)) saturate(1.12);
+  transform: translate3d(0, 0, 0) skewY(-1.5deg);
+  animation: arena-tower-drift 13.56s ease-in-out infinite alternate;
+}
+
+.arena-towers::after {
+  content: "";
+  position: absolute;
+  inset: 12% 0 0;
+  opacity: .28;
+  background: repeating-linear-gradient(0deg, transparent 0 16px, color-mix(in srgb, var(--menu-accent) 40%, transparent) 17px 18px, transparent 19px 31px);
+  mask-image: linear-gradient(90deg, transparent, #000 12% 92%, transparent);
+}
+
+.arena-rings {
+  left: 73%;
+  bottom: -30vmax;
+  width: 70vmax;
+  aspect-ratio: 1;
+  opacity: clamp(.18, var(--menu-energy), .72);
+  border: 2px solid color-mix(in srgb, var(--menu-accent) 68%, transparent);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 7vmax color-mix(in srgb, #52e9ff 11%, transparent),
+    0 0 0 15vmax color-mix(in srgb, var(--menu-accent) 8%, transparent),
+    0 0 42px color-mix(in srgb, var(--menu-accent) 36%, transparent);
+  transform: translate3d(-50%, 0, 0) rotateX(70deg) scale(.94);
+  animation: arena-ring-beat var(--menu-bar) cubic-bezier(.16,.7,.24,1) infinite;
+}
+
+.grapple-arc {
+  width: 72vw;
+  height: 48vh;
+  opacity: clamp(.18, var(--menu-energy), .7);
+  border: 2px solid transparent;
+  border-top-color: color-mix(in srgb, var(--menu-accent) 78%, transparent);
+  border-radius: 50%;
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--menu-accent) 58%, transparent));
+}
+
+.arc-one { right: -14vw; top: 8%; transform: rotate(-16deg) translate3d(0,0,0); animation: grapple-sweep-one 8.13s cubic-bezier(.4,0,.2,1) infinite; }
+.arc-two { left: 28%; bottom: -15%; width: 58vw; height: 38vh; border-top-color: rgba(239,63,88,.66); transform: rotate(23deg) translate3d(0,0,0); animation: grapple-sweep-two 11.18s cubic-bezier(.4,0,.2,1) infinite 1.2s; }
+
+.arena-streaks {
+  inset: -24%;
+  opacity: clamp(.12, var(--menu-energy), .62);
+  background: repeating-linear-gradient(117deg, transparent 0 12%, color-mix(in srgb, var(--menu-accent) 58%, transparent) 12.08% 12.16%, transparent 12.24% 23%);
+  filter: blur(.35px) drop-shadow(0 0 5px color-mix(in srgb, var(--menu-accent) 42%, transparent));
+  transform: translate3d(-7%, 5%, 0);
+  animation: arena-streak-run 5.08s linear infinite;
+  mask-image: radial-gradient(ellipse at 72% 54%, #000, transparent 66%);
+}
+
+.setup-scene .menu-atmosphere { background: radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--menu-accent) 16%, transparent), transparent 29%), linear-gradient(145deg, #030910, #071522 55%, #040812); }
+.setup-scene .arena-towers { right: 3%; bottom: 1%; width: 94vw; height: 58%; opacity: clamp(.2, var(--menu-energy), .48); }
+.setup-scene .arena-rings { left: 50%; bottom: -36vmax; width: 82vmax; }
+.setup-scene .arena-grid { inset: 48% -24% -58%; }
+.setup-scene .grapple-arc { opacity: clamp(.12, var(--menu-energy), .42); }
+
+.menu-launching .arena-rings { animation-duration: var(--menu-half-bar); filter: drop-shadow(0 0 18px var(--menu-accent)); }
+.menu-launching .arena-streaks { animation-duration: .42s; opacity: .9; }
+.menu-launching .grapple-arc { opacity: .85; filter: drop-shadow(0 0 15px var(--menu-accent)); }
+
+.menu-scene[data-menu-quality="medium"] .arc-two { display: none; }
+.menu-scene[data-menu-quality="medium"] .arena-towers { filter: none; }
+.menu-scene[data-menu-quality="low"] .grapple-arc, .menu-scene[data-menu-quality="low"] .arena-streaks { display: none; }
+.menu-scene[data-menu-quality="low"] .menu-atmosphere > span { animation: none; will-change: auto; }
+.menu-scene[data-menu-quality="low"] .arena-grid { opacity: .12; }
+.menu-scene[data-menu-quality="low"] .arena-towers { opacity: .24; filter: none; }
+.menu-scene[data-menu-quality="low"] .arena-rings { opacity: clamp(.12, var(--menu-energy), .42); transform: translate3d(-50%, 0, 0) rotateX(70deg) scale(.98); }
+
+.page-hidden .menu-atmosphere > span { animation-play-state: paused !important; }
+
+@keyframes arena-grid-drift {
+  from { transform: perspective(760px) rotateX(64deg) translate3d(0, 0, 0); }
+  to { transform: perspective(760px) rotateX(64deg) translate3d(0, 70px, 0); }
+}
+@keyframes arena-tower-drift { to { transform: translate3d(-1.5%, -1.2%, 0) skewY(-1deg); } }
+@keyframes arena-ring-beat {
+  0% { transform: translate3d(-50%, 0, 0) rotateX(70deg) scale(.93); opacity: clamp(.16, var(--menu-energy), .64); }
+  18% { transform: translate3d(-50%, 0, 0) rotateX(70deg) scale(1.01); opacity: clamp(.24, var(--menu-energy), .78); }
+  48%, 100% { transform: translate3d(-50%, 0, 0) rotateX(70deg) scale(.96); opacity: clamp(.18, var(--menu-energy), .68); }
+}
+@keyframes arena-ring-mobile {
+  0% { transform: translate3d(-50%, 0, 0) rotateX(70deg) scale(.93); }
+  18% { transform: translate3d(-50%, 0, 0) rotateX(70deg) scale(1.01); }
+  48%, 100% { transform: translate3d(-50%, 0, 0) rotateX(70deg) scale(.96); }
+}
+@keyframes grapple-sweep-one {
+  0%, 14% { transform: rotate(-19deg) translate3d(12%, -7%, 0); opacity: 0; }
+  28%, 70% { opacity: clamp(.18, var(--menu-energy), .7); }
+  86%, 100% { transform: rotate(-9deg) translate3d(-8%, 8%, 0); opacity: 0; }
+}
+@keyframes grapple-sweep-two {
+  0%, 18% { transform: rotate(28deg) translate3d(-11%, 8%, 0); opacity: 0; }
+  32%, 68% { opacity: clamp(.14, var(--menu-energy), .58); }
+  86%, 100% { transform: rotate(17deg) translate3d(10%, -8%, 0); opacity: 0; }
+}
+@keyframes arena-streak-run { to { transform: translate3d(11%, -8%, 0); } }
 
 .brand-mark {
   display: flex;
@@ -512,7 +636,6 @@ input, select {
 @keyframes damage-flash { 0% { opacity: .78; } 100% { opacity: 0; } }
 @keyframes incoming-direction-pulse { to { filter: brightness(1.4); transform: translateX(-50%) scale(1.05); } }
 @keyframes combat-log-in { from { opacity: 0; transform: translateX(18px); } }
-@keyframes menu-atmosphere { from { background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0; } to { background-position: 0 0, 18px -12px, -22px 16px, 0 0, 8px 0, 0 8px; } }
 @keyframes motion-tunnel { to { transform: rotate(.42deg) scale(1.024); } }
 @keyframes grapple-speed-pulse { 50% { opacity: calc(.62 + var(--motion, 0) * .34); filter: brightness(1.32); transform: scale(1.018); } }
 
@@ -605,11 +728,14 @@ input, select {
   .hero-panel h1 { font-size: clamp(54px, 18vw, 84px); }
   .primary-actions { grid-template-columns: 1fr; }
   .primary-actions button { min-height: 72px; }
+  .secondary-actions button { min-height: 44px; }
   .screen { padding: 12px; align-items: start; }
   .overlay { padding: 12px; place-items: start center; }
   .dialog { margin: 12px 0; padding: 22px; }
   .setup-form { grid-template-columns: 1fr; }
-  .loadout-order { grid-template-columns: repeat(5, minmax(160px, 1fr)); overflow-x: auto; padding-bottom: 5px; scroll-snap-type: x proximity; touch-action: pan-x; }
+  .loadout-help::after { content: " Swipe slots and weapon categories horizontally."; color: #9bb5c5; }
+  .loadout-order { grid-template-columns: repeat(5, minmax(160px, 1fr)); overflow-x: auto; padding-bottom: 5px; scroll-snap-type: x mandatory; scrollbar-width: none; touch-action: pan-x; }
+  .loadout-order::-webkit-scrollbar, .weapon-categories::-webkit-scrollbar { display: none; }
   .loadout-slot { scroll-snap-align: start; }
   .loadout-slot button, .loadout-preset header button, .loadout-preset footer button { min-height: 44px; }
   .loadout-preset input { height: 44px; }
@@ -618,6 +744,8 @@ input, select {
   .loadout-presets { grid-template-columns: 1fr; }
   .preset-summary { min-height: 0; }
   .loadout-builder, .loadout-order, .weapon-categories, .weapon-grid { min-width: 0; max-width: 100%; }
+  .weapon-categories { display: flex; align-items: flex-start; gap: 10px; overflow-x: auto; overflow-y: hidden; padding-bottom: 5px; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-inline: contain; }
+  .weapon-category { flex: 0 0 min(86vw, 560px); scroll-snap-align: start; }
   .weapon-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .combatant { width: 38vw; top: 10px; padding: 9px; }
   .combatant.left { left: 10px; }
@@ -635,6 +763,13 @@ input, select {
   .grapple-readout { bottom: 64px; }
   .combat-log { top: 112px; right: 10px; width: 52vw; }
   .combat-log p { font-size: 8px; }
+}
+
+@media (pointer: coarse) {
+  .menu-scene .arena-towers,
+  .menu-scene .grapple-arc,
+  .menu-scene .arena-streaks { filter: none; }
+  .menu-scene .arena-rings { animation-name: arena-ring-mobile; filter: none; }
 }
 
 @media (max-width: 600px) and (orientation: portrait) {
@@ -761,3 +896,8 @@ input, select {
 .reduce-motion .damage-vignette.visible { opacity: .16; }
 .reduce-motion .incoming-direction.visible { opacity: .82; }
 .reduce-motion .target-health.visible { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-atmosphere > span { animation: none !important; transition-duration: .01ms !important; will-change: auto; }
+  .grapple-arc, .arena-streaks { display: none; }
+}
