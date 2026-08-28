@@ -535,7 +535,7 @@ assert.equal(worldB.structuralPartAt(seamPoint, .01).structuralId, [firstChunk.s
 assert.ok(worldB.structures.every((structure) => structure.segments.length >= 3 && structure.segments.length <= 8), "every destructible pillar is composed of a bounded number of sections");
 assert.equal(worldB.debrisMesh.count, 128, "all collapsing structures share one bounded mixed-scale debris instance pool");
 assert.equal(worldB.debrisMesh.castShadow, false, "temporary structural scrap cannot multiply shadow rendering cost");
-assert.equal(worldB.dustMesh.count, 96, "soft structural smoke shares one bounded instanced volume pool");
+assert.equal(worldB.dustMesh.count, 128, "soft structural smoke shares one bounded instanced volume pool");
 assert.equal(worldB.dustMesh.castShadow, false, "temporary collapse dust never adds shadow passes");
 
 const collapseWorld = new ArenaWorld(new THREE.Scene(), "COLLAPSE-QA");
@@ -578,7 +578,7 @@ collapseWorld.drainStructuralEvents();
 collapseWorld.update(.53, []);
 assert.ok(!collapseWorld.structuralParts.includes(directDeck) && collapseWorld.structuralParts.includes(directDeckNeighbor), "the struck chunk immediately becomes a real hole while its neighbor retains collision");
 assert.ok(collapseWorld.debrisParticles.filter((particle) => particle.active).filter((particle) => particle.scale.x > 1 && particle.scale.z > 2).length >= 8, "a deck chunk visibly separates into independently simulated local slab pieces");
-assert.ok(collapseWorld.dustParticles.some((particle) => particle.active && particle.maxLife >= 3), "structural fracture emits persistent pooled smoke rather than short spark stand-ins");
+assert.ok(collapseWorld.dustParticles.some((particle) => particle.active && particle.maxLife >= 5 && particle.maxLife <= 10), "structural fracture emits persistent five-to-ten-second smoke rather than short spark stand-ins");
 const protectedDeckFragments = collapseWorld.debrisParticles.filter((particle) => particle.active && particle.majorFragment);
 for (let burst = 0; burst < 8; burst++) collapseWorld.spawnStructuralDebris(directDeckCenter, 0xff8050, 22, { w: 5, h: 3, d: 5 }, `chaos-${burst}`);
 assert.ok(protectedDeckFragments.every((particle) => particle.active && particle.majorFragment), "simultaneous container destruction cannot overwrite platform fragments that gate a live collapse");

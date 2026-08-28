@@ -1470,9 +1470,9 @@ export class ArenaWorld {
     }));
     this.group.add(mesh);
 
-    const dustCount = 96;
+    const dustCount = 128;
     const dustMaterial = new THREE.MeshBasicMaterial({
-      color: 0x8d9ba4, transparent: true, opacity: .13, depthWrite: false,
+      color: 0x66727a, transparent: true, opacity: .16, depthWrite: false,
       blending: THREE.NormalBlending, toneMapped: false
     });
     this.dustMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 6), dustMaterial, dustCount);
@@ -1553,10 +1553,10 @@ export class ArenaWorld {
         position.z + (random() - .5) * (bounds?.d || 3) * (landing ? .9 : .72)
       );
       particle.velocity.set((random() - .5) * (landing ? 3.8 : 2.4), .35 + random() * (landing ? 1.7 : 2.4), (random() - .5) * (landing ? 3.8 : 2.4));
-      const base = (landing ? .8 : .55) + random() * (landing ? 1.4 : 1);
+      const base = (landing ? .95 : .7) + random() * (landing ? 1.45 : 1.1);
       particle.scale.set(base * (1.15 + random()), base * (.45 + random() * .45), base * (1.15 + random()));
-      particle.life = particle.maxLife = (landing ? 3.4 : 3) + random() * 1.8;
-      this.dustMesh.setColorAt(index, new THREE.Color(0x87949c).lerp(new THREE.Color(colorValue), .16 + random() * .12));
+      particle.life = particle.maxLife = 5 + random() * 5;
+      this.dustMesh.setColorAt(index, new THREE.Color(0x66727a).lerp(new THREE.Color(colorValue), .12 + random() * .1));
     }
     if (this.dustMesh.instanceColor) this.dustMesh.instanceColor.needsUpdate = true;
   }
@@ -1615,10 +1615,10 @@ export class ArenaWorld {
       particle.velocity.multiplyScalar(Math.max(0, 1 - dt * .72));
       particle.position.addScaledVector(particle.velocity, dt);
       const progress = 1 - particle.life / particle.maxLife;
-      const envelope = Math.sin(Math.PI * Math.min(1, progress)) ** .35;
+      const envelope = Math.min(1, progress * 30) * Math.min(1, (1 - progress) / .32) ** .85;
       this.dustDummy.position.copy(particle.position);
       this.dustDummy.rotation.set(0, progress * 1.4, 0);
-      this.dustDummy.scale.copy(particle.scale).multiplyScalar((.65 + progress * 2.1) * envelope);
+      this.dustDummy.scale.copy(particle.scale).multiplyScalar((.85 + progress * 2.8) * envelope);
       this.dustDummy.updateMatrix();
       this.dustMesh.setMatrixAt(index, this.dustDummy.matrix);
     }
@@ -1750,7 +1750,7 @@ export class ArenaWorld {
     this.updateStructuralVisual(part);
     const debrisCount = part.structuralKind === "platform" ? 18 : (structure.major ? 30 : 18);
     change.fragmentDebris = this.spawnStructuralDebris(breakPosition, structure.color, debrisCount, part, change.id);
-    this.spawnStructuralDust(breakPosition, structure.color, change.major ? 20 : 10, part, change.id);
+    this.spawnStructuralDust(breakPosition, structure.color, change.major ? 24 : 14, part, change.id);
     this.frameStructureEvents.push({
       type: "break",
       id: change.id,
@@ -1909,7 +1909,7 @@ export class ArenaWorld {
         );
         if (!anchorSupported) this.removeStructuralAnchor(change.structure);
         const contactPosition = landed.reduce((position, particle) => position.add(particle.contactPosition), new THREE.Vector3()).multiplyScalar(1 / landed.length);
-        this.spawnStructuralDust(contactPosition, change.structure.color, 14, part, `${change.id}:land`, true);
+        this.spawnStructuralDust(contactPosition, change.structure.color, 18, part, `${change.id}:land`, true);
         this.frameStructureEvents.push({
           type: "land", id: `${change.id}:land`, structureId: change.structure.id,
           attackerId: change.attackerId, position: contactPosition, color: change.structure.color,
@@ -2749,7 +2749,7 @@ export class ArenaWorld {
       const effectBounds = { w: item.w, h: item.h, d: item.d };
       const scale = Math.cbrt(item.w * item.h * item.d);
       this.spawnStructuralDebris(center, effectColor, THREE.MathUtils.clamp(Math.round(8 + scale * 1.8), 10, 22), effectBounds, effectSeed);
-      this.spawnStructuralDust(center, effectColor, THREE.MathUtils.clamp(Math.round(5 + scale * 1.2), 7, 14), effectBounds, effectSeed);
+      this.spawnStructuralDust(center, effectColor, THREE.MathUtils.clamp(Math.round(7 + scale * 1.3), 10, 16), effectBounds, effectSeed);
       if (item.batch) {
         item.batch.mesh.setMatrixAt(item.batch.index, HIDDEN_INSTANCE);
         item.batch.mesh.instanceMatrix.needsUpdate = true;
