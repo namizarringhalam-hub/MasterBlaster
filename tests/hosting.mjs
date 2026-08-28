@@ -12,6 +12,7 @@ const types = {
   ".json": "application/json",
   ".png": "image/png",
   ".svg": "image/svg+xml",
+  ".webp": "image/webp",
   ".wav": "audio/wav"
 };
 
@@ -83,4 +84,9 @@ const faviconResponse = await worker.fetch(new Request("https://example.test/fav
 assert.equal(faviconResponse.status, 200, "the favicon is deployed");
 assert.equal(faviconResponse.headers.get("content-type"), "image/svg+xml", "the favicon has the SVG MIME type");
 assert.match(await faviconResponse.text(), /<svg/, "the favicon contains SVG markup");
+
+const arenaResponse = await worker.fetch(new Request("https://example.test/menu-arena-v2.webp"), { ASSETS: clientAssets });
+assert.equal(arenaResponse.status, 200, "the cinematic menu arena is deployed");
+assert.equal(arenaResponse.headers.get("content-type"), "image/webp", "the menu arena is served as WebP instead of the SPA fallback");
+assert.equal(Buffer.from(await arenaResponse.arrayBuffer()).subarray(8, 12).toString("ascii"), "WEBP", "the menu arena contains WebP bytes");
 console.log("Master Blaster hosting check passed.");
