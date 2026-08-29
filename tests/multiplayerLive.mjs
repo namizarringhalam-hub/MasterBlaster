@@ -10,22 +10,35 @@ function closeSocket(socket) {
   if (socket.readyState !== WebSocket.CLOSED) socket.close(1000, "test complete");
 }
 
-async function assignment(requestedMinutes = timeLimitMinutes) {
+function closeSocketAndWait(socket) {
+  if (socket.readyState === WebSocket.CLOSED) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timeout = setTimeout(resolve, 1_000);
+    socket.addEventListener("close", () => {
+      clearTimeout(timeout);
+      resolve();
+    }, { once: true });
+    closeSocket(socket);
+  });
+}
+
+async function assignment(requestedMinutes = timeLimitMinutes, excludeRoomCode = "") {
   const response = await fetch(`${origin}/api/quick`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ botCount, difficulty: "veteran", timeLimitMinutes: requestedMinutes })
+    body: JSON.stringify({ botCount, difficulty: "veteran", timeLimitMinutes: requestedMinutes, excludeRoomCode })
   });
   assert.equal(response.status, 200);
   return response.json();
 }
 
-async function connect(roomCode, name, roomBotCount = botCount, requestedMinutes = timeLimitMinutes) {
+async function connect(roomCode, name, roomBotCount = botCount, requestedMinutes = timeLimitMinutes, mode = "quick") {
   const url = new URL(`/api/rooms/${roomCode}/connect`, origin);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.searchParams.set("v", "1");
   url.searchParams.set("name", name);
   url.searchParams.set("loadout", loadout.join(","));
+  url.searchParams.set("mode", mode);
   url.searchParams.set("botCount", String(roomBotCount));
   url.searchParams.set("difficulty", "veteran");
   url.searchParams.set("timeLimitMinutes", String(requestedMinutes));
@@ -50,7 +63,8 @@ async function connect(roomCode, name, roomBotCount = botCount, requestedMinutes
       setTimeout(() => {
         const index = waiters.indexOf(waiter);
         if (index >= 0) waiters.splice(index, 1);
-        reject(new Error(`Timed out waiting for ${name} message`));
+        const recent = messages.slice(-8).map((message) => `${message.type}:${message.phase || "-"}:${message.hostId || "-"}`).join(", ");
+        reject(new Error(`Timed out waiting for ${name} message; recent: ${recent || "none"}`));
       }, timeout);
     });
   };
@@ -177,9 +191,75 @@ closeSocket(lateJoin.socket);
 closeSocket(first.socket);
 closeSocket(second.socket);
 
-const privateRoom = await connect(`P-${Date.now().toString(36).slice(-8)}`, "Solo", 0);
-assert.equal(privateRoom.welcome.players.length, 1);
-assert.equal(privateRoom.welcome.players.some((player) => player.bot), false);
-closeSocket(privateRoom.socket);
-console.log("Two-client lifecycle and zero-bot private room passed.");
+const privateCode = `P-${Date.now().toString(36).slice(-8)}`;
+const privateBotCount = 10;
+const privateHost = await connect(privateCode, "Host", privateBotCount, timeLimitMinutes, "private");
+assert.equal(privateHost.welcome.phase, "lobby");
+assert.equal(privateHost.welcome.hostId, privateHost.welcome.playerId);
+assert.equal(privateHost.welcome.players.length, 1);
+const privateGuest = await connect(privateCode, "Guest", privateBotCount, timeLimitMinutes, "private");
+assert.equal(privateGuest.welcome.phase, "lobby");
+assert.equal(privateGuest.welcome.players.length, 2);
+assert.equal(privateGuest.welcome.hostId, privateHost.welcome.playerId);
+privateGuest.socket.send(JSON.stringify({ type: "lobby_start" }));
+await assert.rejects(
+  privateGuest.next((message) => message.type === "match_start", 350),
+  /Timed out/,
+  "a guest cannot start the host's private match"
+);
+await closeSocketAndWait(privateHost.socket);
+const migratedRoster = await privateGuest.next((message) => message.type === "roster" && message.phase === "lobby" && message.hostId === privateGuest.welcome.playerId);
+assert.equal(migratedRoster.players.length, 1, "the next oldest player becomes host when the original host leaves");
+const privateReplacement = await connect(privateCode, "Replacement", privateBotCount, timeLimitMinutes, "private");
+assert.equal(privateReplacement.welcome.hostId, privateGuest.welcome.playerId, "the migrated host remains stable when another friend joins");
+privateGuest.socket.send(JSON.stringify({ type: "lobby_start" }));
+const [hostStart, guestStart] = await Promise.all([
+  privateGuest.next((message) => message.type === "match_start"),
+  privateReplacement.next((message) => message.type === "match_start")
+]);
+assert.equal(hostStart.phase, "playing");
+assert.equal(guestStart.phase, "playing");
+assert.equal(hostStart.configuredBotCount, privateBotCount);
+assert.equal(hostStart.players.filter((player) => player.bot).length, privateBotCount, "friends do not reduce the configured private-room bot count");
+assert.equal(hostStart.players.length, privateBotCount + 2);
+
+const privateHostId = privateGuest.welcome.playerId;
+const privateBots = hostStart.players.filter((player) => player.bot);
+const privatePartId = "structure-2-pillar-1";
+const privateBounds = structuralPartBounds(hostStart.seed, privatePartId);
+const privatePosition = { x: privateBounds.x, y: (privateBounds.baseY + privateBounds.top) / 2, z: privateBounds.z };
+privateGuest.socket.send(JSON.stringify({
+  type: "state",
+  players: [
+    { id: privateHostId, position: privatePosition, velocity: { x: 0, y: 0, z: 0 }, aim: { x: 1, y: 0, z: 0 }, slotIndex: 2, grounded: true },
+    ...privateBots.map((bot) => ({ id: bot.id, position: privatePosition, velocity: { x: 0, y: 0, z: 0 }, aim: { x: -1, y: 0, z: 0 }, slotIndex: 0, grounded: true }))
+  ]
+}));
+privateGuest.socket.send(JSON.stringify({ type: "fire", playerId: privateHostId, weaponId: "rocket_launcher", slotIndex: 2, direction: { x: 1, y: 0, z: 0 } }));
+await privateReplacement.next((message) => message.type === "fire" && message.playerId === privateHostId && message.weaponId === "rocket_launcher");
+privateGuest.socket.send(JSON.stringify({
+  type: "terrain_hit", attackerId: privateHostId, weaponId: "rocket_launcher", position: privatePosition,
+  structureId: "structure-2", partId: privatePartId
+}));
+const privateCollapse = await privateReplacement.next((message) => message.type === "terrain_damage" && message.partId === privatePartId);
+assert.equal(privateCollapse.collapsed, true);
+const hostLobbyReturn = privateGuest.next((message) => message.type === "lobby");
+const guestLobbyReturn = privateReplacement.next((message) => message.type === "lobby");
+for (const bot of privateBots) {
+  privateGuest.socket.send(JSON.stringify({ type: "crush", playerId: bot.id, structureId: "structure-2" }));
+  await privateReplacement.next((message) => message.type === "crush" && message.targetId === bot.id);
+}
+const [returnedHost, returnedGuest] = await Promise.all([hostLobbyReturn, guestLobbyReturn]);
+for (const returned of [returnedHost, returnedGuest]) {
+  assert.equal(returned.phase, "lobby");
+  assert.equal(returned.hostId, privateHostId);
+  assert.equal(returned.players.length, 2, "bots leave the room when the match returns to the lobby");
+  assert.equal(returned.lastResult.winnerId, privateHostId);
+}
+closeSocket(privateGuest.socket);
+closeSocket(privateReplacement.socket);
+const recoveryAssignment = await assignment(timeLimitMinutes, firstAssignment.roomCode);
+assert.notEqual(recoveryAssignment.roomCode, firstAssignment.roomCode, "a timed-out Quick Play room is replaced on the retry");
+assert.equal((await assignment()).roomCode, firstAssignment.roomCode, "a recovery room does not fragment the healthy canonical pool");
+console.log("Quick recovery plus persistent private-lobby lifecycle passed.");
 process.exit(0);

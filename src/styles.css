@@ -741,6 +741,24 @@ input, select {
 .results-ranking p { display: flex; justify-content: space-between; margin: 0; padding: 11px 13px; border-top: 1px solid #274159; }
 .results-ranking span { color: #4fe9ff; font-weight: 900; }
 
+.private-lobby-dialog { width: min(760px, 100%); }
+.lobby-result { padding: 10px 13px; color: #ffd166; border: 1px solid rgba(255, 209, 102, .28); background: rgba(255, 209, 102, .06); font: 800 12px/1 Inter, sans-serif; letter-spacing: .1em; text-transform: uppercase; }
+.lobby-code { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; margin: 24px 0; padding: 14px 16px; border: 1px solid rgba(82, 233, 255, .3); background: rgba(3, 14, 24, .78); }
+.lobby-code span, .lobby-heading span, .lobby-rules { color: #7893a7; font: 800 9px/1 Inter, sans-serif; letter-spacing: .14em; text-transform: uppercase; }
+.lobby-code strong { color: #52e9ff; font: 900 25px/1 "Barlow Condensed", sans-serif; letter-spacing: .16em; text-shadow: 0 0 18px rgba(82, 233, 255, .35); }
+.lobby-code button { min-height: 42px; padding: 8px 13px; }
+.lobby-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+.lobby-heading h2 { margin: 0; font: 900 24px/1 "Barlow Condensed", sans-serif; letter-spacing: .05em; text-transform: uppercase; }
+.lobby-roster { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; margin: 10px 0 18px; }
+.lobby-roster > div { display: grid; grid-template-columns: 12px 1fr auto; gap: 10px; align-items: center; min-height: 45px; padding: 9px 12px; border: 1px solid #244257; background: rgba(7, 19, 31, .86); }
+.lobby-roster i { width: 9px; height: 9px; background: var(--fighter); box-shadow: 0 0 10px var(--fighter); transform: rotate(45deg); }
+.lobby-roster b { overflow: hidden; color: #eaf7ff; font: 800 15px/1 "Barlow Condensed", sans-serif; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.lobby-roster span { color: #ef3f58; font: 900 8px/1 Inter, sans-serif; letter-spacing: .12em; }
+.lobby-rules { margin: 0 0 12px; }
+.lobby-wait { color: #aebfcb; font-size: 12px; line-height: 1.5; }
+.private-lobby-dialog > .launch { width: 100%; margin-top: 10px; }
+.private-lobby-dialog > .launch:disabled { color: #668093; border-color: #29465b; background: #091522; opacity: .8; }
+
 .touch-controls { display: none; }
 
 @media (max-width: 900px) {
@@ -763,6 +781,9 @@ input, select {
   .loadout-preset footer button, .preset-summary span, .preset-heading span { font-size: 10px; }
   .preset-heading { align-items: start; }
   .loadout-presets { grid-template-columns: 1fr; }
+  .lobby-code { grid-template-columns: 1fr auto; }
+  .lobby-code span { grid-column: 1 / -1; }
+  .lobby-roster { grid-template-columns: 1fr; }
   .preset-summary { min-height: 0; }
   .loadout-builder, .loadout-order, .weapon-categories, .weapon-grid { min-width: 0; max-width: 100%; }
   .weapon-categories { display: flex; align-items: flex-start; gap: 10px; overflow-x: auto; overflow-y: hidden; padding-bottom: 5px; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-inline: contain; }

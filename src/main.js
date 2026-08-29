@@ -236,6 +236,8 @@ class BlasterBattle {
     this.botTargets = new Map();
     this.multiplayer = null;
     this.onlineWelcome = null;
+    this.privateLobby = null;
+    this.privateStartTimer = 0;
     this.networkTargets = new Map();
     this.networkEndsAt = 0;
     this.networkRespawnRequests = new Set();
@@ -360,6 +362,8 @@ class BlasterBattle {
     clearTimeout(this.damageVignetteTimer);
     clearTimeout(this.targetHealthTimer);
     clearTimeout(this.damageDirectionTimer);
+    clearTimeout(this.privateStartTimer);
+    this.privateStartTimer = 0;
     this.combatVisuals?.dispose();
     this.combatVisuals = null;
     this.world?.dispose();
@@ -390,6 +394,7 @@ class BlasterBattle {
       this.multiplayer?.close();
       this.multiplayer = null;
       this.onlineWelcome = null;
+      this.privateLobby = null;
       this.networkEndsAt = 0;
     }
     this.sound.stopAll();
@@ -478,6 +483,62 @@ class BlasterBattle {
       </main>`;
     this.bindUi();
     queueMicrotask(() => this.pulseMenuEnergy(.48, MENU_ACCENTS[mode], 2300));
+  }
+
+  renderPrivateLobby(message) {
+    clearTimeout(this.privateStartTimer);
+    this.privateStartTimer = 0;
+    const returnedFromMatch = this.state === "play";
+    if (returnedFromMatch || this.world) this.clearMatch(true);
+    this.state = "lobby";
+    this.paused = false;
+    this.privateLobby = { ...(this.privateLobby || {}), ...message };
+    this.onlineWelcome = { ...(this.onlineWelcome || {}), ...message };
+    this.seed = this.privateLobby.roomCode || this.seed;
+    this.networkEndsAt = 0;
+    if (this.multiplayer && this.privateLobby.botHostId) this.multiplayer.botHostId = this.privateLobby.botHostId;
+    this.setMatchLoading(false);
+    this.sound.setPaused(false);
+    this.sound.setMusicScene("menu");
+    this.sound.startMusic("menu", this.seed);
+    const players = (this.privateLobby.players || []).filter((player) => !player.bot);
+    const hostId = this.privateLobby.hostId || this.privateLobby.botHostId;
+    const host = players.find((player) => player.id === hostId);
+    const isHost = hostId === this.multiplayer?.playerId;
+    const result = this.privateLobby.lastResult;
+    const resultLine = result
+      ? `<p class="lobby-result">${result.winnerName
+        ? formatText(TEXT.privateLobby.lastResult, { winner: escapeHtml(result.winnerName) })
+        : TEXT.privateLobby.lastDraw}</p>`
+      : "";
+    ui.innerHTML = `
+      <main class="screen menu-scene setup-scene" data-menu-scene="private" data-menu-quality="${this.settings.graphics}" style="--menu-energy:.34;--menu-accent:${MENU_ACCENTS.private}">
+        ${menuAtmosphereMarkup("private")}
+        <section class="dialog private-lobby-dialog">
+          <header><button class="back" data-screen="main">${TEXT.privateLobby.leave}</button><p>${TEXT.privateLobby.section}</p></header>
+          <h1>${TEXT.privateLobby.title}</h1>
+          <p class="dialog-lead">${TEXT.privateLobby.description}</p>
+          ${resultLine}
+          <div class="lobby-code"><span>${TEXT.privateLobby.roomCode}</span><strong>${escapeHtml(this.seed)}</strong><button data-action="copy-room">${TEXT.privateLobby.copyCode}</button></div>
+          <div class="lobby-heading"><h2>${TEXT.privateLobby.roster}</h2><span>${formatText(TEXT.privateLobby.playerCount, { count: players.length })}</span></div>
+          <div class="lobby-roster">
+            ${players.map((player) => `<div><i style="--fighter:#${Number(player.accent || player.color || 0x52e9ff).toString(16).padStart(6, "0")}"></i><b>${escapeHtml(player.name)}</b>${player.id === hostId ? `<span>${TEXT.privateLobby.hostBadge}</span>` : ""}</div>`).join("")}
+          </div>
+          <p class="lobby-rules">${formatText(TEXT.privateLobby.matchRules, {
+            minutes: this.privateLobby.timeLimitMinutes,
+            bots: this.privateLobby.configuredBotCount,
+            difficulty: escapeHtml(this.privateLobby.difficulty || TEXT.setup.difficulties.normal)
+          })}</p>
+          <p class="lobby-wait">${isHost
+            ? TEXT.privateLobby.hostReady
+            : formatText(TEXT.privateLobby.guestWaiting, { host: escapeHtml(host?.name || TEXT.privateLobby.hostBadge) })}</p>
+          <button class="launch primary" data-action="lobby-start" ${isHost ? "" : "disabled"}>${isHost ? TEXT.privateLobby.start : TEXT.privateLobby.waiting}</button>
+          <p class="loadout-status" data-lobby-status aria-live="polite"></p>
+        </section>
+      </main>`;
+    if (returnedFromMatch && result) this.sound.play(result.winnerId === this.multiplayer?.playerId ? "win" : "loss");
+    this.bindUi();
+    queueMicrotask(() => this.pulseMenuEnergy(.5, MENU_ACCENTS.private, 2300));
   }
 
   weaponCategoriesMarkup() {
@@ -655,6 +716,32 @@ class BlasterBattle {
       if (button.dataset.presetDefault) return this.toggleDefaultPreset(Number(button.dataset.presetDefault));
       if (button.dataset.presetClear) return this.clearPreset(Number(button.dataset.presetClear));
       if (button.dataset.weaponSlot) return this.players[0]?.switchSlot(Number(button.dataset.weaponSlot));
+      if (button.dataset.action === "copy-room") {
+        navigator.clipboard?.writeText(this.seed);
+        const status = ui.querySelector("[data-lobby-status]");
+        if (status) status.textContent = TEXT.privateLobby.copied;
+        return;
+      }
+      if (button.dataset.action === "lobby-start") {
+        button.disabled = true;
+        this.setMatchLoading(true, this.seed, true);
+        if (!this.multiplayer?.startPrivateMatch()) {
+          this.setMatchLoading(false);
+          button.disabled = false;
+          const status = ui.querySelector("[data-lobby-status]");
+          if (status) status.textContent = TEXT.errors.connectionDescription;
+          return;
+        }
+        clearTimeout(this.privateStartTimer);
+        this.privateStartTimer = setTimeout(() => {
+          if (this.state !== "lobby") return;
+          this.setMatchLoading(false);
+          button.disabled = false;
+          const status = ui.querySelector("[data-lobby-status]");
+          if (status) status.textContent = TEXT.errors.matchStartTimeout;
+        }, 10_000);
+        return;
+      }
       if (button.dataset.action === "start") return this.captureSetupAndStart();
       if (button.dataset.action === "pause") return this.togglePause();
       if (button.dataset.action === "rematch") return this.queueRematch();
@@ -984,7 +1071,16 @@ class BlasterBattle {
     this.multiplayer = client;
     client.addEventListener("message", ({ detail }) => this.handleNetworkMessage(detail));
     client.addEventListener("disconnect", ({ detail }) => {
-      if (!detail.expected && this.state === "play") this.showNetworkDisconnect(detail.reason);
+      if (detail.expected) return;
+      if (this.state === "play") this.showNetworkDisconnect(detail.reason);
+      else if (this.state === "lobby") {
+        clearTimeout(this.privateStartTimer);
+        this.privateStartTimer = 0;
+        this.setMatchLoading(false);
+        this.multiplayer = null;
+        this.renderSetup("private");
+        ui.querySelector(".setup-dialog")?.insertAdjacentHTML("afterbegin", `<p class="network-error" role="alert">${formatText(TEXT.errors.onlineService, { message: escapeHtml(detail.reason) })}</p>`);
+      }
     });
     const welcome = await client.connect({
       mode: this.mode,
@@ -1031,12 +1127,12 @@ class BlasterBattle {
     return fighter;
   }
 
-  async startMatch() {
-    if (!this.freshSessionReady) return this.queueMatchStart(false);
-    this.freshSessionReady = false;
-    this.clearMatch();
-    let welcome = null;
-    if (this.mode !== "training") {
+  async startMatch(welcomeOverride = null) {
+    if (!welcomeOverride && !this.freshSessionReady) return this.queueMatchStart(false);
+    if (!welcomeOverride) this.freshSessionReady = false;
+    this.clearMatch(Boolean(welcomeOverride));
+    let welcome = welcomeOverride;
+    if (this.mode !== "training" && !welcome) {
       this.setMatchLoading(true, this.seed, false);
       try {
         welcome = await this.connectOnlineMatch();
@@ -1049,6 +1145,7 @@ class BlasterBattle {
         return;
       }
     }
+    if (welcome?.phase === "lobby") return this.renderPrivateLobby(welcome);
     this.state = "play";
     this.paused = false;
     this.matchTime = welcome
@@ -1189,6 +1286,15 @@ class BlasterBattle {
     if (!message || message.type === "welcome") return;
     if (message.botHostId && this.multiplayer) this.multiplayer.botHostId = message.botHostId;
     if (message.endsAt) this.networkEndsAt = message.endsAt;
+    if (message.type === "lobby" || (message.type === "roster" && message.phase === "lobby" && this.state === "lobby")) {
+      return this.renderPrivateLobby(message);
+    }
+    if (message.type === "match_start") {
+      clearTimeout(this.privateStartTimer);
+      this.privateStartTimer = 0;
+      this.setMatchLoading(true, message.seed || this.seed, true);
+      return this.startMatch({ ...message, playerId: this.multiplayer?.playerId });
+    }
     if (message.type === "roster") return this.syncOnlineRoster(message);
     if (!this.world || this.state !== "play") return;
     if (message.type === "state") {

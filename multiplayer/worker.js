@@ -82,6 +82,25 @@ function roomPlayer(id, name, loadout, colorIndex, bot = false) {
   };
 }
 
+function resetRoomPlayer(player) {
+  player.health = 100;
+  player.alive = true;
+  player.score = 0;
+  player.deaths = 0;
+  player.position = { x: 0, y: 0, z: 0 };
+  player.velocity = { x: 0, y: 0, z: 0 };
+  player.aim = { x: 0, y: 0, z: 1 };
+  player.slotIndex = 0;
+  player.grounded = true;
+  player.ammo = playerAmmo(player.loadout);
+  player.reloadEndsAt = {};
+  player.lastFireAt = {};
+  player.lastStateAt = 0;
+  player.hasState = false;
+  player.respawnAt = 0;
+  return player;
+}
+
 function safeBody(request) {
   return request.json().catch(() => ({}));
 }
@@ -93,8 +112,11 @@ export class Matchmaker extends DurableObject {
     const targetSize = Math.min(MAX_MATCH_PLAYERS, Math.max(2, Math.trunc(finiteNumber(input.botCount, 7, 1, 15)) + 1));
     const difficulty = DIFFICULTIES.has(input.difficulty) ? input.difficulty : "normal";
     const timeLimitMinutes = clampMatchMinutes(input.timeLimitMinutes);
+    const excludeRoomCode = normalizeRoomCode(input.excludeRoomCode);
     const key = `open:${targetSize}:${difficulty}:${timeLimitMinutes}`;
     let roomCode = await this.ctx.storage.get(key);
+    const oneOffFallback = roomCode && roomCode === excludeRoomCode;
+    if (oneOffFallback) roomCode = null;
     if (roomCode) {
       const room = this.env.MATCH_ROOMS.getByName(roomCode);
       const status = await room.fetch("https://room.internal/status").then((response) => response.json()).catch(() => null);
@@ -105,7 +127,7 @@ export class Matchmaker extends DurableObject {
     }
     if (!roomCode) {
       roomCode = normalizeRoomCode(`Q-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 4)}`);
-      await this.ctx.storage.put(key, roomCode);
+      if (!oneOffFallback) await this.ctx.storage.put(key, roomCode);
     }
     const room = this.env.MATCH_ROOMS.getByName(roomCode);
     const reserved = await room.fetch(`https://room.internal/rooms/${roomCode}/reserve`, {
@@ -132,6 +154,10 @@ export class MatchRoom extends DurableObject {
     this.structuralFailures = new Map();
     this.ready = this.ctx.blockConcurrencyWhile(async () => {
       this.meta = await this.ctx.storage.get("meta") || null;
+      if (this.meta && !this.meta.mode) this.meta.mode = this.meta.roomCode?.startsWith("Q-") ? "quick" : "private";
+      if (this.meta && !this.meta.phase) this.meta.phase = this.meta.mode === "private" && this.meta.ended ? "lobby" : "playing";
+      if (this.meta?.mode === "private" && this.meta.phase === "lobby") this.meta.ended = false;
+      if (this.meta && !Number.isFinite(this.meta.configuredBotCount)) this.meta.configuredBotCount = Math.max(0, (this.meta.targetSize || 1) - 1);
       this.reservation = await this.ctx.storage.get("reservation") || null;
       for (const bot of await this.ctx.storage.get("bots") || []) this.bots.set(bot.id, bot);
       this.terrainEvents = await this.ctx.storage.get("terrainEvents") || [];
@@ -144,9 +170,10 @@ export class MatchRoom extends DurableObject {
     });
   }
 
-  humanEntries() {
+  humanEntries(excludedSocket = null) {
     const entries = [];
     for (const socket of this.ctx.getWebSockets()) {
+      if (socket === excludedSocket) continue;
       try {
         const player = socket.deserializeAttachment();
         if (player?.id) entries.push([socket, player]);
@@ -157,8 +184,8 @@ export class MatchRoom extends DurableObject {
     return entries;
   }
 
-  allPlayers() {
-    return [...this.humanEntries().map(([, player]) => player), ...this.bots.values()];
+  allPlayers(excludedSocket = null) {
+    return [...this.humanEntries(excludedSocket).map(([, player]) => player), ...this.bots.values()];
   }
 
   playerById(id) {
@@ -167,28 +194,33 @@ export class MatchRoom extends DurableObject {
     return player ? { socket: null, player } : null;
   }
 
-  botHostId() {
-    return this.humanEntries()
+  botHostId(excludedSocket = null) {
+    return this.humanEntries(excludedSocket)
       .map(([, player]) => player)
       .sort((left, right) => left.joinedAt - right.joinedAt)[0]?.id || "";
   }
 
   async initialize(url) {
-    if (this.meta && !this.meta.ended && matchTimeRemaining(this.meta.endsAt) > 0) return;
+    if (this.meta && (this.meta.phase === "lobby" || (!this.meta.ended && matchTimeRemaining(this.meta.endsAt) > 0))) return;
     const now = Date.now();
+    const mode = this.reservation ? "quick" : url.searchParams.get("mode") === "private" ? "private" : "quick";
     const targetSize = this.reservation?.targetSize ?? Math.min(MAX_MATCH_PLAYERS, Math.max(1, Math.trunc(finiteNumber(url.searchParams.get("botCount"), 7, 0, 15)) + 1));
     const timeLimitMinutes = this.reservation?.timeLimitMinutes ?? clampMatchMinutes(url.searchParams.get("timeLimitMinutes"));
     const difficulty = this.reservation?.difficulty ?? (DIFFICULTIES.has(url.searchParams.get("difficulty")) ? url.searchParams.get("difficulty") : "normal");
     this.meta = {
       roomCode: normalizeRoomCode(url.pathname.split("/").filter(Boolean).at(-2), "ROOM"),
       seed: normalizeRoomCode(url.searchParams.get("seed"), normalizeRoomCode(url.pathname.split("/").filter(Boolean).at(-2), TEXT.loading.defaultSeed)),
+      mode,
+      phase: mode === "private" ? "lobby" : "playing",
       difficulty,
       targetSize,
-      startedAt: now + 4_000,
-      endsAt: now + 4_000 + timeLimitMinutes * 60_000,
+      configuredBotCount: Math.max(0, targetSize - 1),
+      startedAt: mode === "private" ? 0 : now + 4_000,
+      endsAt: mode === "private" ? 0 : now + 4_000 + timeLimitMinutes * 60_000,
       timeLimitMinutes,
       targetScore: MATCH_TARGET_SCORE,
-      ended: false
+      ended: false,
+      lastResult: null
     };
     this.bots.clear();
     this.recentFires.clear();
@@ -210,9 +242,14 @@ export class MatchRoom extends DurableObject {
     ]);
   }
 
-  async reconcileBots() {
-    const humans = this.humanEntries().length;
-    const desired = Math.max(0, Math.min(MAX_MATCH_PLAYERS - humans, this.meta.targetSize - humans));
+  async reconcileBots(excludedSocket = null) {
+    const humans = this.humanEntries(excludedSocket).length;
+    const requested = this.meta.mode === "private"
+      ? this.meta.configuredBotCount
+      : this.meta.targetSize - humans;
+    const desired = this.meta.phase === "playing"
+      ? Math.max(0, Math.min(MAX_MATCH_PLAYERS - humans, requested))
+      : 0;
     for (let index = 0; index < desired; index++) {
       const id = `bot-${index + 1}`;
       if (this.bots.has(id)) continue;
@@ -226,7 +263,7 @@ export class MatchRoom extends DurableObject {
     await this.persistRoom();
   }
 
-  rosterMessage(type = "roster") {
+  rosterMessage(type = "roster", excludedSocket = null) {
     return {
       type,
       roomCode: this.meta.roomCode,
@@ -235,9 +272,16 @@ export class MatchRoom extends DurableObject {
       startsAt: this.meta.startedAt,
       endsAt: this.meta.endsAt,
       targetScore: this.meta.targetScore,
-      botHostId: this.botHostId(),
-      players: this.allPlayers().map(publicPlayer),
-      ...(type === "welcome" ? { terrainEvents: this.terrainEvents, structuralState: Object.fromEntries(this.structuralHealth) } : {})
+      botHostId: this.botHostId(excludedSocket),
+      hostId: this.botHostId(excludedSocket),
+      mode: this.meta.mode,
+      phase: this.meta.phase,
+      difficulty: this.meta.difficulty,
+      configuredBotCount: this.meta.configuredBotCount,
+      timeLimitMinutes: this.meta.timeLimitMinutes,
+      lastResult: this.meta.lastResult,
+      players: this.allPlayers(excludedSocket).map(publicPlayer),
+      ...(["welcome", "match_start"].includes(type) ? { terrainEvents: this.terrainEvents, structuralState: Object.fromEntries(this.structuralHealth) } : {})
     };
   }
 
@@ -271,12 +315,13 @@ export class MatchRoom extends DurableObject {
         targetSize: settings?.targetSize || 0,
         difficulty: settings?.difficulty || "normal",
         timeLimitMinutes: settings?.timeLimitMinutes || clampMatchMinutes(),
-        ended: !settings || Boolean(this.meta?.ended) || Boolean(this.meta && matchTimeRemaining(this.meta.endsAt) === 0)
+        ended: !settings || Boolean(this.meta?.ended) || Boolean(this.meta?.phase === "playing" && matchTimeRemaining(this.meta.endsAt) === 0)
       });
     }
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: TEXT.errors.websocketRequired }, 426);
     if (Number(url.searchParams.get("v")) !== MULTIPLAYER_PROTOCOL_VERSION) return json({ error: TEXT.errors.unsupportedProtocol }, 426);
     await this.initialize(url);
+    if (this.meta.mode === "private" && this.meta.phase === "playing") return json({ error: TEXT.errors.matchInProgress }, 409);
     if (this.humanEntries().length >= MAX_MATCH_PLAYERS || this.meta.ended) return json({ error: TEXT.errors.roomFull }, 409);
 
     const pair = new WebSocketPair();
@@ -589,23 +634,63 @@ export class MatchRoom extends DurableObject {
     this.broadcast({ type: "respawn", playerId: player.id, spawnIndex: (player.deaths * 5 + this.allPlayers().indexOf(player)) % MAX_MATCH_PLAYERS, ammo: player.ammo, serverTime: Date.now() });
   }
 
+  async handleLobbyStart(socket) {
+    const session = socket.deserializeAttachment();
+    if (this.meta.mode !== "private" || this.meta.phase !== "lobby" || session?.id !== this.botHostId()) return;
+    const now = Date.now();
+    this.meta.phase = "playing";
+    this.meta.ended = false;
+    this.meta.startedAt = now + 4_000;
+    this.meta.endsAt = this.meta.startedAt + this.meta.timeLimitMinutes * 60_000;
+    this.meta.lastResult = null;
+    this.bots.clear();
+    this.recentFires.clear();
+    this.terrainEvents = [];
+    this.structuralHealth.clear();
+    this.structuralFailures.clear();
+    for (const [playerSocket, player] of this.humanEntries()) playerSocket.serializeAttachment(resetRoomPlayer(player));
+    await this.reconcileBots();
+    this.broadcast(this.rosterMessage("match_start"));
+  }
+
   async checkMatchEnd(now = Date.now()) {
-    if (this.meta.ended) return;
+    if (this.meta.ended || this.meta.phase !== "playing") return;
     const players = this.allPlayers();
     const winner = players.reduce((best, player) => !best || player.score > best.score ? player : best, null);
     if (now < this.meta.endsAt && (winner?.score || 0) < this.meta.targetScore) return;
+    const scores = Object.fromEntries(players.map((player) => [player.id, player.score]));
+    if (this.meta.mode === "private") {
+      const winners = players.filter((player) => player.score === (winner?.score || 0));
+      this.meta.phase = "lobby";
+      this.meta.startedAt = 0;
+      this.meta.endsAt = 0;
+      this.meta.lastResult = {
+        winnerId: winners.length === 1 ? winners[0].id : "",
+        winnerName: winners.length === 1 ? winners[0].name : "",
+        scores,
+        completedAt: now
+      };
+      this.bots.clear();
+      for (const [playerSocket, player] of this.humanEntries()) playerSocket.serializeAttachment(resetRoomPlayer(player));
+      await this.reconcileBots();
+      this.broadcast(this.rosterMessage("lobby"));
+      return;
+    }
     this.meta.ended = true;
     await this.persistRoom();
     this.broadcast({
       type: "match_end", winnerId: winner?.id || "",
-      scores: Object.fromEntries(players.map((player) => [player.id, player.score])), serverTime: now
+      scores, serverTime: now
     });
   }
 
   async webSocketMessage(socket, value) {
     await this.ready;
     const message = parseClientMessage(value);
-    if (!message || this.meta?.ended) return;
+    if (!message) return;
+    if (message.type === "ping") return socket.send(JSON.stringify({ type: "pong", serverTime: Date.now() }));
+    if (message.type === "lobby_start") return this.handleLobbyStart(socket);
+    if (this.meta?.ended || this.meta?.phase !== "playing") return;
     if (message.type === "state") await this.handleState(socket, message);
     else if (message.type === "fire") await this.handleFire(socket, message);
     else if (message.type === "hit") await this.handleHit(socket, message);
@@ -613,19 +698,18 @@ export class MatchRoom extends DurableObject {
     else if (message.type === "crush") await this.handleCrush(socket, message);
     else if (message.type === "reload") await this.handleReload(socket, message);
     else if (message.type === "respawn") await this.handleRespawn(socket, message);
-    else if (message.type === "ping") socket.send(JSON.stringify({ type: "pong", serverTime: Date.now() }));
   }
 
-  async webSocketClose() {
+  async webSocketClose(socket) {
     await this.ready;
-    await this.reconcileBots();
-    this.broadcast(this.rosterMessage());
+    await this.reconcileBots(socket);
+    this.broadcast(this.rosterMessage("roster", socket));
   }
 
-  async webSocketError() {
+  async webSocketError(socket) {
     await this.ready;
-    await this.reconcileBots();
-    this.broadcast(this.rosterMessage());
+    await this.reconcileBots(socket);
+    this.broadcast(this.rosterMessage("roster", socket));
   }
 }
 

@@ -8,15 +8,17 @@ import {
 import TEXT, { formatText } from "./playerText.js";
 
 function apiOrigin() {
-  const configured = import.meta.env.VITE_MULTIPLAYER_ORIGIN;
+  const configured = import.meta.env?.VITE_MULTIPLAYER_ORIGIN;
   if (configured) return new URL(configured, location.href).origin;
   if (location.hostname === "127.0.0.1" || location.hostname === "localhost") return "http://127.0.0.1:8787";
   return location.origin;
 }
 
 export class MultiplayerClient extends EventTarget {
-  constructor() {
+  constructor(roomTimeout = 10_000, retryDelay = 350) {
     super();
+    this.roomTimeout = roomTimeout;
+    this.retryDelay = retryDelay;
     this.socket = null;
     this.roomCode = "";
     this.playerId = "";
@@ -34,7 +36,18 @@ export class MultiplayerClient extends EventTarget {
     return Boolean(this.playerId && this.playerId === this.botHostId);
   }
 
-  async connect({ mode, roomCode, name, loadout, botCount, difficulty, timeLimitMinutes }) {
+  async connect(options) {
+    try {
+      return await this.connectOnce(options);
+    } catch (error) {
+      if (options.mode !== "quick" || error.message !== TEXT.errors.roomTimeout) throw error;
+      const failedRoomCode = this.roomCode;
+      await new Promise((resolve) => setTimeout(resolve, this.retryDelay));
+      return this.connectOnce(options, failedRoomCode);
+    }
+  }
+
+  async connectOnce({ mode, roomCode, name, loadout, botCount, difficulty, timeLimitMinutes }, excludeRoomCode = "") {
     this.close();
     this.closedByClient = false;
     const origin = apiOrigin();
@@ -44,7 +57,7 @@ export class MultiplayerClient extends EventTarget {
         response = await fetch(new URL("/api/quick", origin), {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ botCount, difficulty, timeLimitMinutes })
+          body: JSON.stringify({ botCount, difficulty, timeLimitMinutes, excludeRoomCode })
         });
       } catch {
         throw new Error(TEXT.errors.couldNotConnect);
@@ -61,6 +74,7 @@ export class MultiplayerClient extends EventTarget {
       v: MULTIPLAYER_PROTOCOL_VERSION,
       name,
       loadout,
+      mode,
       botCount,
       difficulty,
       timeLimitMinutes
@@ -70,14 +84,17 @@ export class MultiplayerClient extends EventTarget {
     catch { throw new Error(TEXT.errors.couldNotConnect); }
     this.socket = socket;
     return new Promise((resolve, reject) => {
+      let joined = false;
       const timeout = setTimeout(() => {
         socket.close(4000, TEXT.errors.roomTimeout);
         reject(new Error(TEXT.errors.roomTimeout));
-      }, 10_000);
+      }, this.roomTimeout);
       socket.addEventListener("message", (event) => {
+        if (socket !== this.socket) return;
         const message = parseClientMessage(event.data);
         if (!message) return;
         if (message.type === "welcome") {
+          joined = true;
           clearTimeout(timeout);
           this.playerId = message.playerId;
           this.botHostId = message.botHostId;
@@ -89,14 +106,14 @@ export class MultiplayerClient extends EventTarget {
       });
       socket.addEventListener("error", () => {
         clearTimeout(timeout);
-        if (!this.welcome) reject(new Error(TEXT.errors.couldNotConnect));
+        if (!joined) reject(new Error(TEXT.errors.couldNotConnect));
       }, { once: true });
       socket.addEventListener("close", (event) => {
         clearTimeout(timeout);
         const knownReason = [TEXT.errors.invalidSessionState, TEXT.errors.deliveryFailed].includes(event.reason) ? event.reason : "";
-        const reason = knownReason || (this.welcome ? TEXT.errors.connectionDescription : TEXT.errors.roomClosedBeforeJoining);
-        this.dispatchEvent(new CustomEvent("disconnect", { detail: { code: event.code, reason, expected: this.closedByClient } }));
-        if (!this.welcome) reject(new Error(reason));
+        const reason = knownReason || (joined ? TEXT.errors.connectionDescription : TEXT.errors.roomClosedBeforeJoining);
+        this.dispatchEvent(new CustomEvent("disconnect", { detail: { code: event.code, reason, expected: this.closedByClient || socket !== this.socket } }));
+        if (!joined) reject(new Error(reason));
       });
     });
   }
@@ -105,6 +122,10 @@ export class MultiplayerClient extends EventTarget {
     if (!this.connected) return false;
     this.socket.send(JSON.stringify({ type, ...payload }));
     return true;
+  }
+
+  startPrivateMatch() {
+    return this.send("lobby_start");
   }
 
   sendState(players, now = performance.now()) {

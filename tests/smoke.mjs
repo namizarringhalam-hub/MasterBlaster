@@ -10,7 +10,7 @@ import { NeonRenderPipeline } from "../src/renderPipeline.js";
 import { ArenaWorld } from "../src/world.js";
 import { weaponPresentation } from "../src/weaponPresentation.js";
 
-const [mainSource, bootSource, renderPipelineSource, worldSource, serviceWorkerSource, stylesSource, indexSource, multiplayerWorkerSource] = await Promise.all([
+const [mainSource, bootSource, renderPipelineSource, worldSource, serviceWorkerSource, stylesSource, indexSource, multiplayerWorkerSource, multiplayerClientSource] = await Promise.all([
   readFile(new URL("../src/main.js", import.meta.url), "utf8"),
   readFile(new URL("../src/boot.js", import.meta.url), "utf8"),
   readFile(new URL("../src/renderPipeline.js", import.meta.url), "utf8"),
@@ -18,7 +18,8 @@ const [mainSource, bootSource, renderPipelineSource, worldSource, serviceWorkerS
   readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
   readFile(new URL("../src/styles.css", import.meta.url), "utf8"),
   readFile(new URL("../index.html", import.meta.url), "utf8"),
-  readFile(new URL("../multiplayer/worker.js", import.meta.url), "utf8")
+  readFile(new URL("../multiplayer/worker.js", import.meta.url), "utf8"),
+  readFile(new URL("../src/multiplayer.js", import.meta.url), "utf8")
 ]);
 assert.doesNotMatch(mainSource, /serviceWorker\.register/, "the renderer does not own service-worker startup");
 assert.match(bootSource, /serviceWorker\.register\("\/sw\.js"/, "the lightweight shell starts immutable caching without waiting for the engine");
@@ -87,7 +88,7 @@ recoveryPipeline.dispose();
 assert.equal(disposedRenderResources.length, 6, "repeated match cleanup is idempotent and cannot leak old GPU targets");
 assert.match(mainSource, /dataset\.action === "rematch"\) return this\.queueRematch\(\)/, "the results button uses the clean renderer rematch path");
 assert.match(mainSource, /queueRematch\(\)\s*\{\s*this\.queueMatchStart\(true\)/, "rematches preserve the same-seed label while using the shared clean launch path");
-assert.match(mainSource, /startMatch\(\)\s*\{\s*if \(!this\.freshSessionReady\) return this\.queueMatchStart\(false\)/, "every direct game launch is forced through a fresh page and graphics device");
+assert.match(mainSource, /startMatch\(welcomeOverride = null\)\s*\{\s*if \(!welcomeOverride && !this\.freshSessionReady\) return this\.queueMatchStart\(false\)/, "direct launches use a fresh graphics device while a server-started private lobby preserves its live connection");
 assert.match(mainSource, /queueMatchStart\(sameSeed = false\)[\s\S]*?sessionStorage\.setItem\(MATCH_SESSION_KEY[\s\S]*?location\.reload\(\)/, "all match types preserve their setup and restart with a fresh graphics device");
 assert.match(mainSource, /resumePendingMatch\(\)[\s\S]*?sessionStorage\.removeItem\(MATCH_SESSION_KEY\)[\s\S]*?freshSessionReady = true;[\s\S]*?this\.startMatch\(\)/, "the reload consumes the match ticket exactly once and enters the guarded initializer");
 assert.match(indexSource, /id="match-loading"[\s\S]*?sessionStorage\.getItem\("blaster-pending-match"\)[\s\S]*?type="module"/, "the match loader appears before the new renderer module starts");
@@ -225,7 +226,12 @@ assert.equal(clampMatchMinutes(45), 30, "saved time limits cannot exceed the sup
 assert.match(mainSource, /id="time-limit" type="number" min="1" max="30"[\s\S]*?timeLimitInput\.value = String\(this\.timeLimitMinutes\)[\s\S]*?timeLimitMinutes: this\.timeLimitMinutes/, "every setup exposes, visibly normalizes, and saves a one-to-thirty-minute match limit");
 assert.match(mainSource, /queueMatchStart[\s\S]*?timeLimitMinutes: this\.timeLimitMinutes[\s\S]*?resumePendingMatch[\s\S]*?clampMatchMinutes\(saved\.timeLimitMinutes\)/, "fresh-session loading preserves the selected time limit");
 assert.match(mainSource, /client\.connect\([\s\S]*?timeLimitMinutes: this\.timeLimitMinutes[\s\S]*?welcome\.endsAt - Math\.max\(Date\.now\(\), welcome\.startsAt\)[\s\S]*?: this\.timeLimitMinutes \* 60/, "offline and online matches both start with the selected duration without counting the pre-match delay");
-assert.match(multiplayerWorkerSource, /timeLimitMinutes = clampMatchMinutes\(input\.timeLimitMinutes\)[\s\S]*?open:\$\{targetSize\}:\$\{difficulty\}:\$\{timeLimitMinutes\}[\s\S]*?endsAt: now \+ 4_000 \+ timeLimitMinutes \* 60_000/, "online matchmaking separates durations and makes the room server authoritative for the chosen limit");
+assert.match(multiplayerWorkerSource, /timeLimitMinutes = clampMatchMinutes\(input\.timeLimitMinutes\)[\s\S]*?open:\$\{targetSize\}:\$\{difficulty\}:\$\{timeLimitMinutes\}[\s\S]*?endsAt: mode === "private" \? 0 : now \+ 4_000 \+ timeLimitMinutes \* 60_000/, "online matchmaking separates durations and makes the room server authoritative for the chosen limit");
+assert.match(multiplayerClientSource, /failedRoomCode = this\.roomCode[\s\S]*?connectOnce\(options, failedRoomCode\)[\s\S]*?excludeRoomCode/, "Quick Play retries one timed-out room with a fresh assignment");
+assert.match(mainSource, /renderPrivateLobby\(message\)[\s\S]*?data-action="lobby-start"[\s\S]*?startPrivateMatch/, "Private Room enters a shared roster lobby with a host-controlled start action");
+assert.match(multiplayerWorkerSource, /phase: mode === "private" \? "lobby" : "playing"[\s\S]*?handleLobbyStart[\s\S]*?rosterMessage\("match_start"\)[\s\S]*?this\.meta\.phase = "lobby"[\s\S]*?rosterMessage\("lobby"\)/, "the room authority starts private matches from the lobby and returns the whole room after each result");
+assert.match(multiplayerWorkerSource, /this\.meta\.mode === "private"[\s\S]*?this\.meta\.configuredBotCount[\s\S]*?MAX_MATCH_PLAYERS - humans/, "private rooms preserve their configured bot count while respecting the sixteen-player cap");
+assert.match(mainSource, /privateStartTimer[\s\S]*?matchStartTimeout/, "private match start has bounded loading recovery");
 assert.match(mainSource, /closest\?\.\("\.setup-form"\)\) this\.captureSetupPreferences\(\)/, "committed setup changes persist even when the player returns to another menu");
 assert.match(mainSource, /event\.target\.id === "display-name"[\s\S]*?saveSettings\(this\.settings\)/, "display-name edits persist locally without requiring a match start");
 assert.match(mainSource, /toggleLoadout\(id\)[\s\S]*?this\.settings\.loadout = current;[\s\S]*?saveSettings\(this\.settings\)/, "weapon selection changes persist locally as they are made");

@@ -115,6 +115,26 @@ export const PLAYER_TEXT = {
     onlineNote: "Guest session · Quick Play and Private Room use the live multiplayer fleet · Training remains offline"
   },
 
+  privateLobby: {
+    section: "PRIVATE LOBBY",
+    title: "Squad assembly",
+    description: "Share the room code and wait here until everyone has joined. The host controls when the fight begins.",
+    roomCode: "ROOM CODE",
+    copyCode: "COPY CODE",
+    copied: "Room code copied.",
+    roster: "PLAYERS IN LOBBY",
+    hostBadge: "HOST",
+    playerCount: "{count}/16 PLAYERS",
+    matchRules: "{minutes} MIN · {bots} BOTS · {difficulty}",
+    hostReady: "Everyone here? Launch the match when your squad is ready.",
+    guestWaiting: "Waiting for {host} to start the match.",
+    start: "START GAME",
+    waiting: "WAITING FOR HOST",
+    leave: "← LEAVE LOBBY",
+    lastResult: "LAST MATCH · {winner} WON",
+    lastDraw: "LAST MATCH · DRAW"
+  },
+
   settings: {
     section: "LOCAL PREFERENCES",
     title: "Settings",
@@ -159,6 +179,8 @@ export const PLAYER_TEXT = {
     roomTimeout: "The multiplayer room did not respond in time.",
     couldNotConnect: "Could not connect to the multiplayer service.",
     roomClosedBeforeJoining: "The multiplayer room closed before joining.",
+    matchInProgress: "This private room is currently in a match.",
+    matchStartTimeout: "The room did not confirm the match start. Try again.",
     invalidSessionState: "Invalid session state",
     deliveryFailed: "Delivery failed",
     methodNotAllowed: "Method not allowed",

@@ -11,7 +11,7 @@
     "check:multiplayer": "node tests/multiplayerProtocol.test.mjs && wrangler deploy --dry-run --outdir .wrangler-dry-run",
     "test:multiplayer-live": "node tests/multiplayerLive.mjs",
     "start": "npm run build && node server.mjs",
-    "test": "node tests/playerText.test.mjs && node tests/smoke.mjs && node tests/botBrain.test.mjs && node tests/performance.test.mjs && node tests/audioLifecycle.test.mjs && node tests/audioAssets.test.mjs && node tests/audioQuality.test.mjs && node tests/musicScore.test.mjs && node tests/weaponStress.mjs && node tests/multiplayerProtocol.test.mjs"
+    "test": "node tests/playerText.test.mjs && node tests/smoke.mjs && node tests/botBrain.test.mjs && node tests/performance.test.mjs && node tests/audioLifecycle.test.mjs && node tests/audioAssets.test.mjs && node tests/audioQuality.test.mjs && node tests/musicScore.test.mjs && node tests/weaponStress.mjs && node tests/multiplayerProtocol.test.mjs && node tests/multiplayerClient.test.mjs"
   },
   "dependencies": {
     "three": "0.185.1",
