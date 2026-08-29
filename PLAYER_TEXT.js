@@ -66,7 +66,8 @@ export const PLAYER_TEXT = {
       roomCode: "Room code",
       mapSeed: "Map seed",
       botDifficulty: "Bot difficulty",
-      botCount: "Number of bots"
+      botCount: "Number of bots",
+      timeLimit: "Time limit (minutes)"
     },
     difficulties: { rookie: "rookie", normal: "normal", veteran: "veteran" },
     loadout: {

@@ -7,7 +7,7 @@ import { CombatVisuals } from "./combatVisuals.js";
 import { ArenaWorld } from "./world.js";
 import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraCollisionFirstPerson, cameraRelative, damageIndicatorAngle, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reticleAim } from "./player.js";
 import { InputManager, clearTouchActions, deliberateTouchTap, updateOrbit } from "./input.js";
-import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, topScoreIndices, weaponFireMode, weaponUsesAmmo, WEAPON_GROUPS, WEAPONS } from "./gameData.js";
+import { activePresetLoadout, clampMatchMinutes, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, topScoreIndices, weaponFireMode, weaponUsesAmmo, WEAPON_GROUPS, WEAPONS } from "./gameData.js";
 import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, clampBotCount, safestSpawn, shouldBotPlaceWall } from "./botBrain.js";
 import { NeonRenderPipeline } from "./renderPipeline.js";
 import { combatMusicIntensity } from "./musicScore.js";
@@ -206,6 +206,7 @@ class BlasterBattle {
     this.mode = "training";
     this.seed = TEXT.loading.defaultSeed;
     this.botDifficulty = "normal";
+    this.timeLimitMinutes = 3;
     this.world = null;
     this.players = [];
     this.projectiles = [];
@@ -440,6 +441,7 @@ class BlasterBattle {
     const remembered = this.settings.matchSettings[mode];
     this.settings.botCount = remembered.botCount;
     this.botDifficulty = remembered.botDifficulty;
+    this.timeLimitMinutes = remembered.timeLimitMinutes;
     this.seed = remembered.seed || (mode === "private" ? this.roomCode() : TEXT.loading.defaultSeed);
     const minimumBots = mode === "private" ? 0 : 1;
     const modeText = TEXT.setup.modes[mode];
@@ -460,6 +462,7 @@ class BlasterBattle {
               </select>
             </label>
             <label>${TEXT.setup.labels.botCount}<input id="bot-count" type="number" min="${minimumBots}" max="15" step="1" value="${clampBotCount(this.settings.botCount, minimumBots)}"></label>
+            <label>${TEXT.setup.labels.timeLimit}<input id="time-limit" type="number" min="1" max="30" step="1" value="${this.timeLimitMinutes}"></label>
           </div>
           <section class="loadout-builder">
             <div><h2>${TEXT.setup.loadout.title}</h2><span data-loadout-count>${formatText(TEXT.setup.loadout.selected, { count: this.settings.loadout.length })}</span></div>
@@ -859,10 +862,12 @@ class BlasterBattle {
     this.seed = ui.querySelector("#map-seed")?.value.trim().toUpperCase() || TEXT.loading.defaultSeed;
     this.botDifficulty = ui.querySelector("#bot-difficulty")?.value || "normal";
     this.settings.botCount = clampBotCount(ui.querySelector("#bot-count")?.value, this.mode === "private" ? 0 : 1);
+    this.timeLimitMinutes = clampMatchMinutes(ui.querySelector("#time-limit")?.value);
     this.settings.matchSettings[this.mode] = {
       seed: this.seed,
       botDifficulty: this.botDifficulty,
-      botCount: this.settings.botCount
+      botCount: this.settings.botCount,
+      timeLimitMinutes: this.timeLimitMinutes
     };
     saveSettings(this.settings);
   }
@@ -898,7 +903,7 @@ class BlasterBattle {
   queueMatchStart(sameSeed = false) {
     sessionStorage.setItem(MATCH_SESSION_KEY, JSON.stringify({
       seed: this.seed, mode: this.mode, botDifficulty: this.botDifficulty,
-      botCount: this.settings.botCount, sameSeed, queuedAt: Date.now()
+      botCount: this.settings.botCount, timeLimitMinutes: this.timeLimitMinutes, sameSeed, queuedAt: Date.now()
     }));
     this.setMatchLoading(true, this.seed, sameSeed);
     requestAnimationFrame(() => requestAnimationFrame(() => location.reload()));
@@ -931,6 +936,7 @@ class BlasterBattle {
       this.mode = ["quick", "private", "training"].includes(saved.mode) ? saved.mode : "training";
       this.botDifficulty = ["rookie", "normal", "veteran"].includes(saved.botDifficulty) ? saved.botDifficulty : "normal";
       this.settings.botCount = clampBotCount(saved.botCount, this.mode === "private" ? 0 : 1);
+      this.timeLimitMinutes = clampMatchMinutes(saved.timeLimitMinutes);
       this.freshSessionReady = true;
       this.startMatch();
       return true;
@@ -984,7 +990,8 @@ class BlasterBattle {
       name: this.settings.displayName,
       loadout: this.settings.loadout,
       botCount: this.settings.botCount,
-      difficulty: this.botDifficulty
+      difficulty: this.botDifficulty,
+      timeLimitMinutes: this.timeLimitMinutes
     });
     this.onlineWelcome = welcome;
     this.seed = welcome.seed;
@@ -1042,7 +1049,7 @@ class BlasterBattle {
     }
     this.state = "play";
     this.paused = false;
-    this.matchTime = 180;
+    this.matchTime = welcome ? Math.max(0, (welcome.endsAt - Date.now()) / 1000) : this.timeLimitMinutes * 60;
     this.matchStartDelay = welcome ? Math.max(0, (welcome.startsAt - Date.now()) / 1000) : 60 / 132 * 8;
     this.countdownBeat = 8;
     this.audioCountdown = false;

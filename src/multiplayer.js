@@ -34,7 +34,7 @@ export class MultiplayerClient extends EventTarget {
     return Boolean(this.playerId && this.playerId === this.botHostId);
   }
 
-  async connect({ mode, roomCode, name, loadout, botCount, difficulty }) {
+  async connect({ mode, roomCode, name, loadout, botCount, difficulty, timeLimitMinutes }) {
     this.close();
     this.closedByClient = false;
     const origin = apiOrigin();
@@ -44,7 +44,7 @@ export class MultiplayerClient extends EventTarget {
         response = await fetch(new URL("/api/quick", origin), {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ botCount, difficulty })
+          body: JSON.stringify({ botCount, difficulty, timeLimitMinutes })
         });
       } catch {
         throw new Error(TEXT.errors.couldNotConnect);
@@ -62,7 +62,8 @@ export class MultiplayerClient extends EventTarget {
       name,
       loadout,
       botCount,
-      difficulty
+      difficulty,
+      timeLimitMinutes
     });
     let socket;
     try { socket = new WebSocket(url); }

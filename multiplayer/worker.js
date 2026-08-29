@@ -2,10 +2,10 @@ import { DurableObject } from "cloudflare:workers";
 import { DEFAULT_LOADOUT, WEAPONS, structuralPartBounds, weaponFireMode, weaponUsesAmmo } from "../src/gameData.js";
 import TEXT, { formatText } from "../src/playerText.js";
 import {
-  MATCH_DURATION_MS,
   MATCH_TARGET_SCORE,
   MAX_MATCH_PLAYERS,
   MULTIPLAYER_PROTOCOL_VERSION,
+  clampMatchMinutes,
   finiteNumber,
   matchTimeRemaining,
   normalizeRoomCode,
@@ -92,7 +92,8 @@ export class Matchmaker extends DurableObject {
     const input = await safeBody(request);
     const targetSize = Math.min(MAX_MATCH_PLAYERS, Math.max(2, Math.trunc(finiteNumber(input.botCount, 7, 1, 15)) + 1));
     const difficulty = DIFFICULTIES.has(input.difficulty) ? input.difficulty : "normal";
-    const key = `open:${targetSize}:${difficulty}`;
+    const timeLimitMinutes = clampMatchMinutes(input.timeLimitMinutes);
+    const key = `open:${targetSize}:${difficulty}:${timeLimitMinutes}`;
     let roomCode = await this.ctx.storage.get(key);
     if (roomCode) {
       const room = this.env.MATCH_ROOMS.getByName(roomCode);
@@ -103,7 +104,7 @@ export class Matchmaker extends DurableObject {
       roomCode = normalizeRoomCode(`Q-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 4)}`);
       await this.ctx.storage.put(key, roomCode);
     }
-    return json({ roomCode, targetSize, difficulty });
+    return json({ roomCode, targetSize, difficulty, timeLimitMinutes });
   }
 }
 
@@ -164,13 +165,15 @@ export class MatchRoom extends DurableObject {
     if (this.meta && !this.meta.ended && matchTimeRemaining(this.meta.endsAt) > 0) return;
     const now = Date.now();
     const targetSize = Math.min(MAX_MATCH_PLAYERS, Math.max(1, Math.trunc(finiteNumber(url.searchParams.get("botCount"), 7, 0, 15)) + 1));
+    const timeLimitMinutes = clampMatchMinutes(url.searchParams.get("timeLimitMinutes"));
     this.meta = {
       roomCode: normalizeRoomCode(url.pathname.split("/").filter(Boolean).at(-2), "ROOM"),
       seed: normalizeRoomCode(url.searchParams.get("seed"), normalizeRoomCode(url.pathname.split("/").filter(Boolean).at(-2), TEXT.loading.defaultSeed)),
       difficulty: DIFFICULTIES.has(url.searchParams.get("difficulty")) ? url.searchParams.get("difficulty") : "normal",
       targetSize,
       startedAt: now + 4_000,
-      endsAt: now + 4_000 + MATCH_DURATION_MS,
+      endsAt: now + 4_000 + timeLimitMinutes * 60_000,
+      timeLimitMinutes,
       targetScore: MATCH_TARGET_SCORE,
       ended: false
     };

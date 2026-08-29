@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import * as THREE from "three/webgpu";
 import { chooseBotSlot, botFireChance, botWeaponPolicy, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
 import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
-import { activePresetLoadout, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, LOADOUT_SLOTS, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, seededRandom, seedFromText, structuralPartBounds, swapStolenWeapon, topScoreIndices, weaponFireMode, weaponUsesAmmo, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
+import { activePresetLoadout, clampMatchMinutes, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, LOADOUT_SLOTS, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, seededRandom, seedFromText, structuralPartBounds, swapStolenWeapon, topScoreIndices, weaponFireMode, weaponUsesAmmo, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
 import { InputManager, TOUCH_LOOK_GAIN, clearTouchActions, deliberateTouchTap, shouldCaptureGameKey, touchLookDelta, touchMoveDelta, updateOrbit } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraCollisionFirstPerson, cameraRelative, damageIndicatorAngle, directionFromKeys, directionFromTouch, Fighter, flameConeFactor, GRAPPLE_SPEED_CAP, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
 import { NeonRenderPipeline } from "../src/renderPipeline.js";
@@ -205,9 +205,9 @@ const persistedPresetSettings = loadSettings();
 settingsStorage = JSON.stringify({ loadoutPresets: [{ name: "Broken", weaponIds: ["railgun", "railgun", "missing"] }], defaultLoadoutPreset: 0 });
 const repairedPresetSettings = loadSettings();
 settingsStorage = JSON.stringify({ matchSettings: {
-  quick: { botCount: 15, botDifficulty: "hard", seed: "quick-15" },
-  private: { botCount: 4, botDifficulty: "rookie", seed: "room42" },
-  training: { botCount: 9, botDifficulty: "normal", seed: "practice" }
+  quick: { botCount: 15, botDifficulty: "hard", seed: "quick-15", timeLimitMinutes: 12 },
+  private: { botCount: 4, botDifficulty: "rookie", seed: "room42", timeLimitMinutes: 8 },
+  training: { botCount: 9, botDifficulty: "normal", seed: "practice", timeLimitMinutes: 5 }
 } });
 const persistedMatchSettings = loadSettings();
 delete globalThis.localStorage;
@@ -218,9 +218,14 @@ assert.equal(repairedPresetSettings.defaultLoadoutPreset, null, "an invalid pres
 settingsStorage = JSON.stringify({ matchSettings: { private: { botCount: 1, botDifficulty: "normal", seed: "" } } });
 const migratedPrivateSettings = loadSettings();
 assert.equal(migratedPrivateSettings.matchSettings.private.botCount, 0, "the former one-bot private default migrates to zero once");
-assert.deepEqual(persistedMatchSettings.matchSettings.quick, { botCount: 15, botDifficulty: "veteran", seed: "QUICK-15" }, "Quick Play remembers its last device-local count, difficulty, and seed");
-assert.deepEqual(persistedMatchSettings.matchSettings.private, { botCount: 4, botDifficulty: "rookie", seed: "ROOM42" }, "Private Room keeps an independent setup profile");
-assert.deepEqual(persistedMatchSettings.matchSettings.training, { botCount: 9, botDifficulty: "normal", seed: "PRACTICE" }, "Training keeps an independent setup profile");
+assert.deepEqual(persistedMatchSettings.matchSettings.quick, { botCount: 15, botDifficulty: "veteran", seed: "QUICK-15", timeLimitMinutes: 12 }, "Quick Play remembers its last device-local count, difficulty, seed, and time limit");
+assert.deepEqual(persistedMatchSettings.matchSettings.private, { botCount: 4, botDifficulty: "rookie", seed: "ROOM42", timeLimitMinutes: 8 }, "Private Room keeps an independent setup profile including its time limit");
+assert.deepEqual(persistedMatchSettings.matchSettings.training, { botCount: 9, botDifficulty: "normal", seed: "PRACTICE", timeLimitMinutes: 5 }, "Training keeps an independent setup profile including its time limit");
+assert.equal(clampMatchMinutes(45), 30, "saved time limits cannot exceed the supported thirty-minute match length");
+assert.match(mainSource, /id="time-limit" type="number" min="1" max="30"[\s\S]*?timeLimitMinutes: this\.timeLimitMinutes/, "every setup exposes and saves a one-to-thirty-minute match limit");
+assert.match(mainSource, /queueMatchStart[\s\S]*?timeLimitMinutes: this\.timeLimitMinutes[\s\S]*?resumePendingMatch[\s\S]*?clampMatchMinutes\(saved\.timeLimitMinutes\)/, "fresh-session loading preserves the selected time limit");
+assert.match(mainSource, /client\.connect\([\s\S]*?timeLimitMinutes: this\.timeLimitMinutes[\s\S]*?this\.matchTime = welcome \?[^\n]+: this\.timeLimitMinutes \* 60/, "offline and online matches both start with the selected duration");
+assert.match(multiplayerWorkerSource, /timeLimitMinutes = clampMatchMinutes\(input\.timeLimitMinutes\)[\s\S]*?open:\$\{targetSize\}:\$\{difficulty\}:\$\{timeLimitMinutes\}[\s\S]*?endsAt: now \+ 4_000 \+ timeLimitMinutes \* 60_000/, "online matchmaking separates durations and makes the room server authoritative for the chosen limit");
 assert.match(mainSource, /closest\?\.\("\.setup-form"\)\) this\.captureSetupPreferences\(\)/, "committed setup changes persist even when the player returns to another menu");
 assert.match(mainSource, /event\.target\.id === "display-name"[\s\S]*?saveSettings\(this\.settings\)/, "display-name edits persist locally without requiring a match start");
 assert.match(mainSource, /toggleLoadout\(id\)[\s\S]*?this\.settings\.loadout = current;[\s\S]*?saveSettings\(this\.settings\)/, "weapon selection changes persist locally as they are made");

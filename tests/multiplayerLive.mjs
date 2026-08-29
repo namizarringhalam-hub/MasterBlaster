@@ -4,12 +4,13 @@ import { WEAPONS, structuralPartBounds } from "../src/gameData.js";
 const origin = process.env.MULTIPLAYER_TEST_ORIGIN || "http://127.0.0.1:8787";
 const loadout = ["blaster", "charged_energy_rifle", "rocket_launcher", "cluster_grenade", "railgun"];
 const botCount = 15;
+const timeLimitMinutes = 7;
 
 async function assignment() {
   const response = await fetch(`${origin}/api/quick`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ botCount, difficulty: "veteran" })
+    body: JSON.stringify({ botCount, difficulty: "veteran", timeLimitMinutes })
   });
   assert.equal(response.status, 200);
   return response.json();
@@ -23,6 +24,7 @@ async function connect(roomCode, name, roomBotCount = botCount) {
   url.searchParams.set("loadout", loadout.join(","));
   url.searchParams.set("botCount", String(roomBotCount));
   url.searchParams.set("difficulty", "veteran");
+  url.searchParams.set("timeLimitMinutes", String(timeLimitMinutes));
   const socket = new WebSocket(url);
   const messages = [];
   const waiters = [];

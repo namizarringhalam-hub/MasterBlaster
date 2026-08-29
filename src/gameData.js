@@ -1,12 +1,13 @@
 import TEXT, { formatText } from "./playerText.js";
+import { clampMatchMinutes } from "./multiplayerProtocol.js";
 
 const SAVE_KEY = "master-blaster-settings";
 const LEGACY_SAVE_KEYS = ["blaster-battle-settings-v1"];
 export const LOADOUT_PRESET_COUNT = 3;
 const MATCH_SETTINGS_DEFAULTS = {
-  quick: { botCount: 7, botDifficulty: "normal", seed: TEXT.loading.defaultSeed },
-  private: { botCount: 0, botDifficulty: "normal", seed: "" },
-  training: { botCount: 1, botDifficulty: "normal", seed: TEXT.loading.defaultSeed }
+  quick: { botCount: 7, botDifficulty: "normal", seed: TEXT.loading.defaultSeed, timeLimitMinutes: 3 },
+  private: { botCount: 0, botDifficulty: "normal", seed: "", timeLimitMinutes: 3 },
+  training: { botCount: 1, botDifficulty: "normal", seed: TEXT.loading.defaultSeed, timeLimitMinutes: 3 }
 };
 const MATCH_SETTINGS_VERSION = 2;
 
@@ -339,7 +340,8 @@ export function loadSettings() {
       return [mode, {
         botCount: legacyPrivateDefault ? 0 : Math.max(minimumBots, Math.min(15, Math.trunc(Number.isFinite(parsedBotCount) ? parsedBotCount : fallback.botCount))),
         botDifficulty: ["rookie", "normal", "veteran"].includes(difficulty) ? difficulty : fallback.botDifficulty,
-        seed: String(remembered.seed ?? fallback.seed).trim().toUpperCase().slice(0, 12)
+        seed: String(remembered.seed ?? fallback.seed).trim().toUpperCase().slice(0, 12),
+        timeLimitMinutes: clampMatchMinutes(remembered.timeLimitMinutes, fallback.timeLimitMinutes)
       }];
     }));
     return { ...defaults(), ...saved, graphics, loadout, loadoutPresets, defaultLoadoutPreset, matchSettingsVersion: MATCH_SETTINGS_VERSION, matchSettings };
@@ -347,6 +349,8 @@ export function loadSettings() {
     return defaults();
   }
 }
+
+export { clampMatchMinutes };
 
 export function saveSettings(settings) {
   localStorage.setItem(SAVE_KEY, JSON.stringify(settings));

@@ -34,6 +34,10 @@ export function finiteNumber(value, fallback = 0, minimum = -Infinity, maximum =
   return Number.isFinite(number) ? Math.min(maximum, Math.max(minimum, number)) : fallback;
 }
 
+export function clampMatchMinutes(value, fallback = MATCH_DURATION_MS / 60_000) {
+  return Math.trunc(finiteNumber(value, fallback, 1, 30));
+}
+
 export function sanitizeVector(value, maximumLength = Infinity) {
   const vector = {
     x: finiteNumber(value?.x, 0, -500, 500),
