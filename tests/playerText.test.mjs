@@ -34,11 +34,11 @@ assert.match(mainSource, /import TEXT, \{ formatText \} from "\.\/playerText\.js
 assert.match(bootSource, /import TEXT from "\.\/playerText\.js"/, "boot messages use the editable text source");
 assert.match(gameDataSource, /import TEXT, \{ formatText \} from "\.\/playerText\.js"/, "maps, defaults, categories, and weapons use the editable text source");
 assert.doesNotMatch(gameDataSource, /weapon\("[^"]+", "[^"]+", "[A-Z][^"]+",/, "weapon names and descriptions are not duplicated beside weapon mechanics");
-assert.match(multiplayerSource, /TEXT\.errors\.matchmakingUnavailable[\s\S]*?TEXT\.errors\.roomTimeout[\s\S]*?TEXT\.errors\.roomClosedBeforeJoining/, "client network messages use the editable text source");
+assert.match(multiplayerSource, /TEXT\.errors\.couldNotConnect[\s\S]*?TEXT\.errors\.matchmakingUnavailable[\s\S]*?TEXT\.errors\.roomTimeout[\s\S]*?TEXT\.errors\.invalidSessionState[\s\S]*?TEXT\.errors\.connectionDescription/, "expected and unexpected client network messages use the editable text source");
 assert.match(protocolSource, /TEXT\.defaults\.displayName/, "multiplayer name fallbacks use the editable text source");
 assert.match(workerSource, /TEXT\.errors\.invalidSessionState[\s\S]*?TEXT\.defaults\.quickBotName[\s\S]*?TEXT\.errors\.deliveryFailed/, "server disconnect reasons and bot names use the editable text source");
 assert.match(renderPipelineSource, /TEXT\.performanceProfiles[\s\S]*?TEXT\.performanceProfiles\.directSafety/, "visible renderer profile labels use the editable text source");
-assert.doesNotMatch([mainSource, multiplayerSource, protocolSource, workerSource, renderPipelineSource].join("\n"), /"(?:BLAST-01|Rookie|Region Bot|Invalid session state|Delivery failed|DIRECT SAFETY|WEBGPU ULTRA|WEBGL2 BLOOM)"/, "known player-visible literals cannot bypass PLAYER_TEXT.js");
+assert.doesNotMatch([mainSource, multiplayerSource, protocolSource, workerSource, renderPipelineSource].join("\n"), /"(?:BLAST-01|Rookie|Region Bot|Invalid session state|Delivery failed|Could not connect to the multiplayer service\.|DIRECT SAFETY|WEBGPU ULTRA|WEBGL2 BLOOM)"|quality\.toUpperCase\(\)/, "known player-visible literals and generated labels cannot bypass PLAYER_TEXT.js");
 assert.doesNotMatch(stylesSource, /content:\s*["'][^"']*[A-Za-z][^"']*["']/, "CSS cannot hide player-facing copy outside PLAYER_TEXT.js");
 
 console.log("Master Blaster editable player text check passed.");

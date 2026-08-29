@@ -156,6 +156,7 @@ export const PLAYER_TEXT = {
     matchmakingUnavailable: "Matchmaking unavailable ({status})",
     invalidRoomCode: "Enter a valid room code.",
     roomTimeout: "The multiplayer room did not respond in time.",
+    couldNotConnect: "Could not connect to the multiplayer service.",
     roomClosedBeforeJoining: "The multiplayer room closed before joining.",
     invalidSessionState: "Invalid session state",
     deliveryFailed: "Delivery failed",
@@ -213,7 +214,8 @@ export const PLAYER_TEXT = {
     bloom: "BLOOM",
     sixteenPlayerBloom: "16P BLOOM",
     ultra: "ULTRA",
-    directSafety: "DIRECT SAFETY"
+    directSafety: "DIRECT SAFETY",
+    quality: { low: "LOW", medium: "MEDIUM", high: "HIGH" }
   },
 
   pause: {

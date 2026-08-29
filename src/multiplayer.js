@@ -39,13 +39,20 @@ export class MultiplayerClient extends EventTarget {
     this.closedByClient = false;
     const origin = apiOrigin();
     if (mode === "quick") {
-      const response = await fetch(new URL("/api/quick", origin), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ botCount, difficulty })
-      });
+      let response;
+      try {
+        response = await fetch(new URL("/api/quick", origin), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ botCount, difficulty })
+        });
+      } catch {
+        throw new Error(TEXT.errors.couldNotConnect);
+      }
       if (!response.ok) throw new Error(formatText(TEXT.errors.matchmakingUnavailable, { status: response.status }));
-      const assignment = await response.json();
+      let assignment;
+      try { assignment = await response.json(); }
+      catch { throw new Error(TEXT.errors.couldNotConnect); }
       roomCode = assignment.roomCode;
     }
     this.roomCode = normalizeRoomCode(roomCode);
@@ -57,11 +64,13 @@ export class MultiplayerClient extends EventTarget {
       botCount,
       difficulty
     });
-    const socket = new WebSocket(url);
+    let socket;
+    try { socket = new WebSocket(url); }
+    catch { throw new Error(TEXT.errors.couldNotConnect); }
     this.socket = socket;
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        socket.close(4000, "Connection timeout");
+        socket.close(4000, TEXT.errors.roomTimeout);
         reject(new Error(TEXT.errors.roomTimeout));
       }, 10_000);
       socket.addEventListener("message", (event) => {
@@ -79,12 +88,14 @@ export class MultiplayerClient extends EventTarget {
       });
       socket.addEventListener("error", () => {
         clearTimeout(timeout);
-        if (!this.welcome) reject(new Error("Could not connect to the multiplayer service."));
+        if (!this.welcome) reject(new Error(TEXT.errors.couldNotConnect));
       }, { once: true });
       socket.addEventListener("close", (event) => {
         clearTimeout(timeout);
-        this.dispatchEvent(new CustomEvent("disconnect", { detail: { code: event.code, reason: event.reason, expected: this.closedByClient } }));
-        if (!this.welcome) reject(new Error(event.reason || TEXT.errors.roomClosedBeforeJoining));
+        const knownReason = [TEXT.errors.invalidSessionState, TEXT.errors.deliveryFailed].includes(event.reason) ? event.reason : "";
+        const reason = knownReason || (this.welcome ? TEXT.errors.connectionDescription : TEXT.errors.roomClosedBeforeJoining);
+        this.dispatchEvent(new CustomEvent("disconnect", { detail: { code: event.code, reason, expected: this.closedByClient } }));
+        if (!this.welcome) reject(new Error(reason));
       });
     });
   }

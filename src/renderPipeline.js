@@ -115,7 +115,7 @@ export class NeonRenderPipeline {
   setQuality(quality = "high") {
     this.quality = ["low", "medium", "high"].includes(quality) ? quality : "high";
     if (this.direct) {
-      this.profile = `${this.nativeWebGPU ? TEXT.performanceProfiles.webgpu : TEXT.performanceProfiles.webgl} ${TEXT.performanceProfiles.mobileDirect} · ${this.quality.toUpperCase()}`;
+      this.profile = `${this.nativeWebGPU ? TEXT.performanceProfiles.webgpu : TEXT.performanceProfiles.webgl} ${TEXT.performanceProfiles.mobileDirect} · ${TEXT.performanceProfiles.quality[this.quality]}`;
       return this.quality;
     }
     if (this.nativeWebGPU && this.quality === "medium") this.ensurePerformancePipeline();
