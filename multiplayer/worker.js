@@ -98,12 +98,22 @@ export class Matchmaker extends DurableObject {
     if (roomCode) {
       const room = this.env.MATCH_ROOMS.getByName(roomCode);
       const status = await room.fetch("https://room.internal/status").then((response) => response.json()).catch(() => null);
-      if (!status || status.ended || status.humans >= status.capacity) roomCode = null;
+      if (
+        !status || status.ended || status.humans >= status.capacity ||
+        status.targetSize !== targetSize || status.difficulty !== difficulty || status.timeLimitMinutes !== timeLimitMinutes
+      ) roomCode = null;
     }
     if (!roomCode) {
       roomCode = normalizeRoomCode(`Q-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 4)}`);
       await this.ctx.storage.put(key, roomCode);
     }
+    const room = this.env.MATCH_ROOMS.getByName(roomCode);
+    const reserved = await room.fetch(`https://room.internal/rooms/${roomCode}/reserve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ targetSize, difficulty, timeLimitMinutes })
+    });
+    if (!reserved.ok) return json({ error: TEXT.errors.deliveryFailed }, 503);
     return json({ roomCode, targetSize, difficulty, timeLimitMinutes });
   }
 }
@@ -114,6 +124,7 @@ export class MatchRoom extends DurableObject {
     this.ctx = ctx;
     this.env = env;
     this.meta = null;
+    this.reservation = null;
     this.bots = new Map();
     this.recentFires = new Map();
     this.terrainEvents = [];
@@ -121,6 +132,7 @@ export class MatchRoom extends DurableObject {
     this.structuralFailures = new Map();
     this.ready = this.ctx.blockConcurrencyWhile(async () => {
       this.meta = await this.ctx.storage.get("meta") || null;
+      this.reservation = await this.ctx.storage.get("reservation") || null;
       for (const bot of await this.ctx.storage.get("bots") || []) this.bots.set(bot.id, bot);
       this.terrainEvents = await this.ctx.storage.get("terrainEvents") || [];
       const storedStructuralHealth = await this.ctx.storage.get("structuralHealth");
@@ -164,12 +176,13 @@ export class MatchRoom extends DurableObject {
   async initialize(url) {
     if (this.meta && !this.meta.ended && matchTimeRemaining(this.meta.endsAt) > 0) return;
     const now = Date.now();
-    const targetSize = Math.min(MAX_MATCH_PLAYERS, Math.max(1, Math.trunc(finiteNumber(url.searchParams.get("botCount"), 7, 0, 15)) + 1));
-    const timeLimitMinutes = clampMatchMinutes(url.searchParams.get("timeLimitMinutes"));
+    const targetSize = this.reservation?.targetSize ?? Math.min(MAX_MATCH_PLAYERS, Math.max(1, Math.trunc(finiteNumber(url.searchParams.get("botCount"), 7, 0, 15)) + 1));
+    const timeLimitMinutes = this.reservation?.timeLimitMinutes ?? clampMatchMinutes(url.searchParams.get("timeLimitMinutes"));
+    const difficulty = this.reservation?.difficulty ?? (DIFFICULTIES.has(url.searchParams.get("difficulty")) ? url.searchParams.get("difficulty") : "normal");
     this.meta = {
       roomCode: normalizeRoomCode(url.pathname.split("/").filter(Boolean).at(-2), "ROOM"),
       seed: normalizeRoomCode(url.searchParams.get("seed"), normalizeRoomCode(url.pathname.split("/").filter(Boolean).at(-2), TEXT.loading.defaultSeed)),
-      difficulty: DIFFICULTIES.has(url.searchParams.get("difficulty")) ? url.searchParams.get("difficulty") : "normal",
+      difficulty,
       targetSize,
       startedAt: now + 4_000,
       endsAt: now + 4_000 + timeLimitMinutes * 60_000,
@@ -182,6 +195,8 @@ export class MatchRoom extends DurableObject {
     this.terrainEvents = [];
     this.structuralHealth.clear();
     this.structuralFailures.clear();
+    this.reservation = null;
+    await this.ctx.storage.delete("reservation");
     await this.persistRoom();
   }
 
@@ -236,9 +251,28 @@ export class MatchRoom extends DurableObject {
   async fetch(request) {
     await this.ready;
     const url = new URL(request.url);
+    if (request.method === "POST" && url.pathname.endsWith("/reserve")) {
+      if (this.meta && !this.meta.ended) return json({ ok: true, ...this.meta });
+      const input = await safeBody(request);
+      this.reservation = {
+        targetSize: Math.min(MAX_MATCH_PLAYERS, Math.max(2, Math.trunc(finiteNumber(input.targetSize, 8, 2, MAX_MATCH_PLAYERS)))),
+        difficulty: DIFFICULTIES.has(input.difficulty) ? input.difficulty : "normal",
+        timeLimitMinutes: clampMatchMinutes(input.timeLimitMinutes)
+      };
+      await this.ctx.storage.put("reservation", this.reservation);
+      return json({ ok: true, ...this.reservation });
+    }
     if (url.pathname.endsWith("/status")) {
       const humans = this.humanEntries().length;
-      return json({ humans, capacity: MAX_MATCH_PLAYERS, targetSize: this.meta?.targetSize || 0, ended: !this.meta || this.meta.ended || matchTimeRemaining(this.meta.endsAt) === 0 });
+      const settings = this.meta || this.reservation;
+      return json({
+        humans,
+        capacity: MAX_MATCH_PLAYERS,
+        targetSize: settings?.targetSize || 0,
+        difficulty: settings?.difficulty || "normal",
+        timeLimitMinutes: settings?.timeLimitMinutes || clampMatchMinutes(),
+        ended: !settings || Boolean(this.meta?.ended) || Boolean(this.meta && matchTimeRemaining(this.meta.endsAt) === 0)
+      });
     }
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: TEXT.errors.websocketRequired }, 426);
     if (Number(url.searchParams.get("v")) !== MULTIPLAYER_PROTOCOL_VERSION) return json({ error: TEXT.errors.unsupportedProtocol }, 426);

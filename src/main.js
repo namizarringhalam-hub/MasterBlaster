@@ -862,7 +862,9 @@ class BlasterBattle {
     this.seed = ui.querySelector("#map-seed")?.value.trim().toUpperCase() || TEXT.loading.defaultSeed;
     this.botDifficulty = ui.querySelector("#bot-difficulty")?.value || "normal";
     this.settings.botCount = clampBotCount(ui.querySelector("#bot-count")?.value, this.mode === "private" ? 0 : 1);
-    this.timeLimitMinutes = clampMatchMinutes(ui.querySelector("#time-limit")?.value);
+    const timeLimitInput = ui.querySelector("#time-limit");
+    this.timeLimitMinutes = clampMatchMinutes(timeLimitInput?.value);
+    if (timeLimitInput) timeLimitInput.value = String(this.timeLimitMinutes);
     this.settings.matchSettings[this.mode] = {
       seed: this.seed,
       botDifficulty: this.botDifficulty,
@@ -1049,7 +1051,9 @@ class BlasterBattle {
     }
     this.state = "play";
     this.paused = false;
-    this.matchTime = welcome ? Math.max(0, (welcome.endsAt - Date.now()) / 1000) : this.timeLimitMinutes * 60;
+    this.matchTime = welcome
+      ? Math.max(0, (welcome.endsAt - Math.max(Date.now(), welcome.startsAt)) / 1000)
+      : this.timeLimitMinutes * 60;
     this.matchStartDelay = welcome ? Math.max(0, (welcome.startsAt - Date.now()) / 1000) : 60 / 132 * 8;
     this.countdownBeat = 8;
     this.audioCountdown = false;

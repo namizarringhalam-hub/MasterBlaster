@@ -6,17 +6,21 @@ const loadout = ["blaster", "charged_energy_rifle", "rocket_launcher", "cluster_
 const botCount = 15;
 const timeLimitMinutes = 7;
 
-async function assignment() {
+function closeSocket(socket) {
+  if (socket.readyState !== WebSocket.CLOSED) socket.close(1000, "test complete");
+}
+
+async function assignment(requestedMinutes = timeLimitMinutes) {
   const response = await fetch(`${origin}/api/quick`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ botCount, difficulty: "veteran", timeLimitMinutes })
+    body: JSON.stringify({ botCount, difficulty: "veteran", timeLimitMinutes: requestedMinutes })
   });
   assert.equal(response.status, 200);
   return response.json();
 }
 
-async function connect(roomCode, name, roomBotCount = botCount) {
+async function connect(roomCode, name, roomBotCount = botCount, requestedMinutes = timeLimitMinutes) {
   const url = new URL(`/api/rooms/${roomCode}/connect`, origin);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.searchParams.set("v", "1");
@@ -24,7 +28,7 @@ async function connect(roomCode, name, roomBotCount = botCount) {
   url.searchParams.set("loadout", loadout.join(","));
   url.searchParams.set("botCount", String(roomBotCount));
   url.searchParams.set("difficulty", "veteran");
-  url.searchParams.set("timeLimitMinutes", String(timeLimitMinutes));
+  url.searchParams.set("timeLimitMinutes", String(requestedMinutes));
   const socket = new WebSocket(url);
   const messages = [];
   const waiters = [];
@@ -55,7 +59,11 @@ async function connect(roomCode, name, roomBotCount = botCount) {
 }
 
 const firstAssignment = await assignment();
-const first = await connect(firstAssignment.roomCode, "Alpha");
+assert.equal(firstAssignment.timeLimitMinutes, timeLimitMinutes);
+const otherDurationAssignment = await assignment(8);
+assert.notEqual(otherDurationAssignment.roomCode, firstAssignment.roomCode, "different durations never share a Quick Play room");
+const first = await connect(firstAssignment.roomCode, "Alpha", botCount, 30);
+assert.equal(first.welcome.endsAt - first.welcome.startsAt, timeLimitMinutes * 60_000, "the matchmaker reservation overrides a manipulated WebSocket duration");
 const secondAssignment = await assignment();
 assert.equal(secondAssignment.roomCode, firstAssignment.roomCode);
 const second = await connect(firstAssignment.roomCode, "Bravo");
@@ -165,13 +173,13 @@ assert.ok(lateJoin.welcome.terrainEvents.some((event) => event.id === terrainDam
 assert.equal(lateJoin.welcome.structuralState["structure-1-pillar-1"], 0, "late joiners receive the compact destroyed-section snapshot");
 assert.equal(lateJoin.welcome.structuralState["structure-1-platform-1"], 6.2, "late joiners receive partial chunk health even when the hit log is trimmed");
 assert.equal(lateJoin.welcome.structuralState[fallingPartId], 6.2, "late joiners retain damage applied while a support was visibly collapsing");
-lateJoin.socket.close(1000, "test complete");
-
-first.socket.close(1000, "test complete");
-second.socket.close(1000, "test complete");
+closeSocket(lateJoin.socket);
+closeSocket(first.socket);
+closeSocket(second.socket);
 
 const privateRoom = await connect(`P-${Date.now().toString(36).slice(-8)}`, "Solo", 0);
 assert.equal(privateRoom.welcome.players.length, 1);
 assert.equal(privateRoom.welcome.players.some((player) => player.bot), false);
-privateRoom.socket.close(1000, "test complete");
+closeSocket(privateRoom.socket);
 console.log("Two-client lifecycle and zero-bot private room passed.");
+process.exit(0);
