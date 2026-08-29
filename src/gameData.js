@@ -1,3 +1,5 @@
+import TEXT, { formatText } from "./playerText.js";
+
 const SAVE_KEY = "master-blaster-settings";
 const LEGACY_SAVE_KEYS = ["blaster-battle-settings-v1"];
 export const LOADOUT_PRESET_COUNT = 3;
@@ -15,9 +17,9 @@ export function topScoreIndices(scores, count = 3) {
 }
 
 export const MAP_THEMES = [
-  { id: "foundry", name: "Neon Foundry", ground: 0x102234, grid: 0x1fd7ff, accent: 0x67f4ff, danger: 0xff416c, haze: 0x173149 },
-  { id: "solar", name: "Solar Rift", ground: 0x2a1d24, grid: 0xffc857, accent: 0xffd166, danger: 0xff5d4a, haze: 0x4a2033 },
-  { id: "ion", name: "Ion Garden", ground: 0x11282a, grid: 0x54ffb4, accent: 0x6effcf, danger: 0xff4fd8, haze: 0x173b3d }
+  { id: "foundry", name: TEXT.maps.foundry, ground: 0x102234, grid: 0x1fd7ff, accent: 0x67f4ff, danger: 0xff416c, haze: 0x173149 },
+  { id: "solar", name: TEXT.maps.solar, ground: 0x2a1d24, grid: 0xffc857, accent: 0xffd166, danger: 0xff5d4a, haze: 0x4a2033 },
+  { id: "ion", name: TEXT.maps.ion, ground: 0x11282a, grid: 0x54ffb4, accent: 0x6effcf, danger: 0xff4fd8, haze: 0x173b3d }
 ];
 
 export const LOADOUT_SLOTS = [
@@ -29,6 +31,11 @@ export const LOADOUT_SLOTS = [
 ];
 
 function weapon(category, id, name, type, color, description, stats = {}) {
+  const copy = TEXT.weapons[id];
+  const categoryId = {
+    "Rapid Fire": "rapid", Explosive: "explosive", Energy: "energy", Precision: "precision",
+    "Close Quarters": "close", Unusual: "unusual", Melee: "melee"
+  }[category];
   const rangePolicy = {
     projectile: { preferredRange: 22, maxUsefulRange: 150 },
     spread: { preferredRange: 9, maxUsefulRange: 42 },
@@ -47,7 +54,7 @@ function weapon(category, id, name, type, color, description, stats = {}) {
     melee: { preferredRange: 3, maxUsefulRange: 6 }
   }[type] || { preferredRange: 20, maxUsefulRange: 150 };
   const value = {
-    id, name, category, type, color, description,
+    id, name: copy.name, category: TEXT.weaponGroups[categoryId], type, color, description: copy.description,
     damage: 20, projectileSpeed: 70, cooldown: .4, spread: .01,
     ammo: 8, reload: 1.2, recoil: 1,
     ...rangePolicy,
@@ -72,13 +79,13 @@ function weapon(category, id, name, type, color, description, stats = {}) {
 }
 
 export const WEAPON_GROUPS = [
-  { id: "rapid", name: "Rapid Fire", color: "#5ff0a4", ids: ["burst_rifle", "machine_gun", "minigun", "needle_launcher", "plasma_repeater", "submachine_gun"] },
-  { id: "explosive", name: "Explosive", color: "#ff9b4a", ids: ["bouncing_bomb", "cluster_grenade", "grenade_launcher", "implosion_bomb", "mine", "mortar", "napalm_launcher", "remote_explosive", "rocket_launcher", "sticky_launcher"] },
-  { id: "energy", name: "Energy", color: "#51dcff", ids: ["arc_lightning", "blaster", "gravity_beam", "plasma_cannon", "pulse_cannon"] },
-  { id: "precision", name: "Precision", color: "#9fb7ff", ids: ["charged_energy_rifle", "disintegration_weapon", "laser_beam", "railgun"] },
-  { id: "close", name: "Close Quarters", color: "#ffd166", ids: ["flamethrower", "shotgun"] },
-  { id: "unusual", name: "Unusual", color: "#d978ff", ids: ["black_hole_generator", "boomerang_blade", "decoy_launcher", "drill_missile", "fireball", "freeze_gun", "grapple_disrupting_pulse", "gravity_grenade", "ricochet_cannon", "teleport_projectile", "temporary_wall", "tornado_generator", "weapon_stealing_projectile"] },
-  { id: "melee", name: "Melee", color: "#ff607d", ids: ["chainsaw", "energy_sword", "hammer", "knife", "punch_glove", "shock_baton", "spear"] }
+  { id: "rapid", name: TEXT.weaponGroups.rapid, color: "#5ff0a4", ids: ["burst_rifle", "machine_gun", "minigun", "needle_launcher", "plasma_repeater", "submachine_gun"] },
+  { id: "explosive", name: TEXT.weaponGroups.explosive, color: "#ff9b4a", ids: ["bouncing_bomb", "cluster_grenade", "grenade_launcher", "implosion_bomb", "mine", "mortar", "napalm_launcher", "remote_explosive", "rocket_launcher", "sticky_launcher"] },
+  { id: "energy", name: TEXT.weaponGroups.energy, color: "#51dcff", ids: ["arc_lightning", "blaster", "gravity_beam", "plasma_cannon", "pulse_cannon"] },
+  { id: "precision", name: TEXT.weaponGroups.precision, color: "#9fb7ff", ids: ["charged_energy_rifle", "disintegration_weapon", "laser_beam", "railgun"] },
+  { id: "close", name: TEXT.weaponGroups.close, color: "#ffd166", ids: ["flamethrower", "shotgun"] },
+  { id: "unusual", name: TEXT.weaponGroups.unusual, color: "#d978ff", ids: ["black_hole_generator", "boomerang_blade", "decoy_launcher", "drill_missile", "fireball", "freeze_gun", "grapple_disrupting_pulse", "gravity_grenade", "ricochet_cannon", "teleport_projectile", "temporary_wall", "tornado_generator", "weapon_stealing_projectile"] },
+  { id: "melee", name: TEXT.weaponGroups.melee, color: "#ff607d", ids: ["chainsaw", "energy_sword", "hammer", "knife", "punch_glove", "shock_baton", "spear"] }
 ];
 
 const weaponList = [
@@ -287,7 +294,7 @@ export function structuralPartBounds(seed, partId) {
 
 function defaults() {
   return {
-    displayName: "Rookie",
+    displayName: TEXT.defaults.displayName,
     blood: "reduced",
     graphics: "high",
     shake: 60,
@@ -319,7 +326,7 @@ export function loadSettings() {
       const weaponIds = validLoadout(preset?.weaponIds);
       if (weaponIds.length !== LOADOUT_SLOTS.length) return null;
       return {
-        name: String(preset.name || `Set ${index + 1}`).trim().slice(0, 18) || `Set ${index + 1}`,
+        name: String(preset.name || formatText(TEXT.defaults.presetName, { number: index + 1 })).trim().slice(0, 18) || formatText(TEXT.defaults.presetName, { number: index + 1 }),
         weaponIds
       };
     });

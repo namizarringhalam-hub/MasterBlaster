@@ -12,6 +12,7 @@ import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, c
 import { NeonRenderPipeline } from "./renderPipeline.js";
 import { combatMusicIntensity } from "./musicScore.js";
 import { MultiplayerClient } from "./multiplayer.js";
+import TEXT, { formatText } from "./playerText.js";
 
 const canvas = document.querySelector("#game-canvas");
 const ui = document.querySelector("#ui-root");
@@ -25,7 +26,7 @@ const WEAPON_CSS_COLOR_BY_ID = Object.fromEntries(Object.values(WEAPONS).map((we
 const MENU_ACCENTS = Object.freeze({ quick: "#ef3f58", private: "#52e9ff", training: "#b86cff" });
 const STRUCTURAL_COLLAPSE = Object.freeze({
   id: "structural_collapse",
-  name: "COLLAPSING PLATFORM",
+  name: TEXT.structuralCollapseName,
   type: "explosive",
   color: 0xff9b4d,
   damage: 100,
@@ -323,7 +324,7 @@ class BlasterBattle {
 
   showRendererFailure(message) {
     this.paused = true;
-    ui.insertAdjacentHTML("beforeend", `<div class="overlay"><section class="dialog"><p>GRAPHICS RECOVERY</p><h1>Renderer paused.</h1><p class="dialog-lead">${escapeHtml(message)}</p><button class="primary" onclick="location.reload()">RELOAD</button></section></div>`);
+    ui.insertAdjacentHTML("beforeend", `<div class="overlay"><section class="dialog"><p>${TEXT.errors.graphicsSection}</p><h1>${TEXT.errors.graphicsTitle}</h1><p class="dialog-lead">${escapeHtml(message)}</p><button class="primary" onclick="location.reload()">${TEXT.errors.reload}</button></section></div>`);
   }
 
   resize() {
@@ -409,25 +410,23 @@ class BlasterBattle {
       <main class="menu-shell menu-scene" data-menu-scene="landing" data-menu-quality="${this.settings.graphics}" style="--menu-energy:.22;--menu-accent:#52e9ff">
         ${menuAtmosphereMarkup("landing")}
         <section class="hero-panel">
-          <div class="brand-mark"><i></i><span>MASTER</span><b>BLASTER</b></div>
-          <p class="kicker">GRAPPLE. BLAST. BRING THE ARENA DOWN.</p>
-          <h1>Swing wild.<br><em>Break everything.</em></h1>
-          <p class="lead">Grapple anything. Shatter towers. Flatten your friends with 47 wildly different weapons. Every fight leaves the battlefield a little less intact.</p>
+          <div class="brand-mark"><i></i><span>${TEXT.landing.brandFirst}</span><b>${TEXT.landing.brandSecond}</b></div>
+          <p class="kicker">${TEXT.landing.kicker}</p>
+          <h1>${TEXT.landing.headlineLine1}<br><em>${TEXT.landing.headlineLine2}</em></h1>
+          <p class="lead">${TEXT.landing.lead}</p>
           <div class="primary-actions">
-            <button class="primary" data-mode="quick"><span>QUICK PLAY</span><small>Eight-player chaos in seconds</small></button>
-            <button data-mode="private"><span>PRIVATE ROOM</span><small>Bring friends. Break everything.</small></button>
-            <button data-mode="training"><span>TRAINING</span><small>Test 47 weapons on up to 15 bots</small></button>
+            <button class="primary" data-mode="quick"><span>${TEXT.landing.buttons.quick.label}</span><small>${TEXT.landing.buttons.quick.description}</small></button>
+            <button data-mode="private"><span>${TEXT.landing.buttons.private.label}</span><small>${TEXT.landing.buttons.private.description}</small></button>
+            <button data-mode="training"><span>${TEXT.landing.buttons.training.label}</span><small>${TEXT.landing.buttons.training.description}</small></button>
           </div>
           <div class="secondary-actions">
-            <button data-screen="settings">Settings</button>
-            <button data-screen="credits">Credits</button>
+            <button data-screen="settings">${TEXT.landing.buttons.settings}</button>
+            <button data-screen="credits">${TEXT.landing.buttons.credits}</button>
           </div>
-          <div class="capabilities" aria-label="Game highlights">GRAPPLE ANY SURFACE · DESTRUCTIBLE TOWERS · UP TO 16 FIGHTERS · ZERO INSTALL</div>
+          <div class="capabilities" aria-label="${TEXT.landing.highlightsAria}">${TEXT.landing.highlights}</div>
         </section>
         <aside class="feature-rail">
-          <span>01</span><div><b>GRAPPLE ANYTHING</b><small>Walls. Floors. Towers. If you can hit it, hook it.</small></div>
-          <span>02</span><div><b>BREAK THE ARENA</b><small>Blast towers apart and drop floors on your rivals.</small></div>
-          <span>03</span><div><b>47 WEAPONS</b><small>Rockets. Fireballs. Black holes. Chainsaws. Choose five.</small></div>
+          ${TEXT.landing.features.map((feature) => `<span>${feature.number}</span><div><b>${feature.title}</b><small>${feature.description}</small></div>`).join("")}
         </aside>
       </main>`;
     this.bindUi();
@@ -441,42 +440,37 @@ class BlasterBattle {
     const remembered = this.settings.matchSettings[mode];
     this.settings.botCount = remembered.botCount;
     this.botDifficulty = remembered.botDifficulty;
-    this.seed = remembered.seed || (mode === "private" ? this.roomCode() : "BLAST-01");
+    this.seed = remembered.seed || (mode === "private" ? this.roomCode() : TEXT.loading.defaultSeed);
     const minimumBots = mode === "private" ? 0 : 1;
-    const title = mode === "quick" ? "Quick Play" : mode === "private" ? "Private Room" : "Training";
-    const detail = mode === "quick"
-      ? "Join an online regional room, filled with AI combatants until more players arrive."
-      : mode === "private"
-        ? "Create or join an online room by sharing its short room code."
-        : "Choose up to fifteen bots and master movement, trajectories, recoil, and grappling.";
+    const modeText = TEXT.setup.modes[mode];
     ui.innerHTML = `
       <main class="screen menu-scene setup-scene" data-menu-scene="${mode}" data-menu-quality="${this.settings.graphics}" style="--menu-energy:.28;--menu-accent:${MENU_ACCENTS[mode]}">
         ${menuAtmosphereMarkup(mode)}
         <section class="dialog setup-dialog">
-          <header><button class="back" data-screen="main">← Back</button><p>${mode.toUpperCase()}</p></header>
-          <h1>${title}</h1>
-          <p class="dialog-lead">${detail}</p>
-          <button class="launch primary" data-action="start">START</button>
+          <header><button class="back" data-screen="main">${TEXT.setup.back}</button><p>${modeText.tag}</p></header>
+          <h1>${modeText.title}</h1>
+          <p class="dialog-lead">${modeText.description}</p>
+          <button class="launch primary" data-action="start">${TEXT.setup.start}</button>
           <div class="setup-form">
-            <label>Display name<input id="display-name" maxlength="18" value="${escapeHtml(this.settings.displayName)}"></label>
-            <label>${mode === "private" ? "Room code" : "Map seed"}<input id="map-seed" maxlength="12" value="${escapeHtml(this.seed)}"></label>
-            <label>Bot difficulty
+            <label>${TEXT.setup.labels.displayName}<input id="display-name" maxlength="18" value="${escapeHtml(this.settings.displayName)}"></label>
+            <label>${mode === "private" ? TEXT.setup.labels.roomCode : TEXT.setup.labels.mapSeed}<input id="map-seed" maxlength="12" value="${escapeHtml(this.seed)}"></label>
+            <label>${TEXT.setup.labels.botDifficulty}
               <select id="bot-difficulty">
-                ${["rookie", "normal", "veteran"].map((level) => `<option ${this.botDifficulty === level ? "selected" : ""}>${level}</option>`).join("")}
+                ${["rookie", "normal", "veteran"].map((level) => `<option value="${level}" ${this.botDifficulty === level ? "selected" : ""}>${TEXT.setup.difficulties[level]}</option>`).join("")}
               </select>
             </label>
-            <label>Number of bots<input id="bot-count" type="number" min="${minimumBots}" max="15" step="1" value="${clampBotCount(this.settings.botCount, minimumBots)}"></label>
+            <label>${TEXT.setup.labels.botCount}<input id="bot-count" type="number" min="${minimumBots}" max="15" step="1" value="${clampBotCount(this.settings.botCount, minimumBots)}"></label>
           </div>
           <section class="loadout-builder">
-            <div><h2>Choose five weapons</h2><span data-loadout-count>${this.settings.loadout.length}/5 selected</span></div>
-            <p class="loadout-help">Weapon order becomes slots 1–5. Drag on desktop or use the arrow controls on any device.</p>
+            <div><h2>${TEXT.setup.loadout.title}</h2><span data-loadout-count>${formatText(TEXT.setup.loadout.selected, { count: this.settings.loadout.length })}</span></div>
+            <p class="loadout-help">${TEXT.setup.loadout.help}</p>
             <div class="loadout-order" data-loadout-order>${this.loadoutOrderMarkup()}</div>
-            <div class="preset-heading"><h3>Saved sets</h3><span>One default applies automatically to every game</span></div>
-            <section class="loadout-presets" aria-label="Saved weapon sets" data-loadout-presets>${this.loadoutPresetsMarkup()}</section>
+            <div class="preset-heading"><h3>${TEXT.setup.loadout.savedSets}</h3><span>${TEXT.setup.loadout.savedSetsDescription}</span></div>
+            <section class="loadout-presets" aria-label="${TEXT.setup.loadout.savedSetsAria}" data-loadout-presets>${this.loadoutPresetsMarkup()}</section>
             <p class="loadout-status" data-loadout-status aria-live="polite"></p>
             <div class="weapon-categories">${this.weaponCategoriesMarkup()}</div>
           </section>
-          <p class="prototype-note">Guest session · Quick Play and Private Room use the live multiplayer fleet · Training remains offline</p>
+          <p class="prototype-note">${TEXT.setup.onlineNote}</p>
         </section>
       </main>`;
     this.bindUi();
@@ -485,14 +479,14 @@ class BlasterBattle {
 
   weaponCategoriesMarkup() {
     return WEAPON_GROUPS.map((group) => `<section class="weapon-category" data-weapon-category="${group.id}" style="--category:${group.color}" aria-labelledby="weapon-category-${group.id}">
-      <header><h3 id="weapon-category-${group.id}"><i></i>${group.name}</h3><span>${group.ids.length} weapons · A–Z</span></header>
+      <header><h3 id="weapon-category-${group.id}"><i></i>${group.name}</h3><span>${formatText(TEXT.setup.loadout.categorySummary, { count: group.ids.length })}</span></header>
       <div class="weapon-grid">
         ${group.ids.map((id) => {
           const weapon = WEAPONS[id];
           const slot = this.settings.loadout.indexOf(id);
           return `<button class="weapon-choice ${slot >= 0 ? "selected" : ""}" data-weapon-choice="${id}" data-weapon="${id}" data-category="${group.id}" data-shape="${weapon.type}" data-slot="${slot >= 0 ? slot + 1 : ""}" style="--weapon:#${weapon.color.toString(16).padStart(6, "0")};--category:${group.color};${weaponPreviewVariables(weapon, WEAPON_INDEX_BY_ID[id])}">
             <i></i><span class="weapon-preview" aria-hidden="true"></span>
-            <b>${weapon.name}</b><em>${group.name}</em><small>${weapon.description}</small><span class="weapon-capacity">${weaponUsesAmmo(weapon) ? `MAG ${weapon.ammo} · ${weapon.reload.toFixed(1)}S RELOAD` : "NO RELOAD"}</span>
+            <b>${weapon.name}</b><em>${group.name}</em><small>${weapon.description}</small><span class="weapon-capacity">${weaponUsesAmmo(weapon) ? formatText(TEXT.setup.loadout.magazineAndReload, { ammo: weapon.ammo, seconds: weapon.reload.toFixed(1) }) : TEXT.setup.loadout.noReload}</span>
           </button>`;
         }).join("")}
       </div>
@@ -503,15 +497,15 @@ class BlasterBattle {
     return Array.from({ length: 5 }, (_, index) => {
       const id = this.settings.loadout[index];
       const weapon = WEAPONS[id];
-      if (!weapon) return `<div class="loadout-slot empty"><span>${index + 1}</span><small>Empty slot</small></div>`;
+      if (!weapon) return `<div class="loadout-slot empty"><span>${index + 1}</span><small>${TEXT.setup.loadout.emptySlot}</small></div>`;
       const color = `#${weapon.color.toString(16).padStart(6, "0")}`;
       const category = WEAPON_CATEGORY_BY_ID[id];
       return `<div class="loadout-slot" draggable="true" data-loadout-drag="${index}" style="--weapon:${color};--category:${category.color}">
-        <span>${index + 1}</span><b>${escapeHtml(weapon.name)}</b><small>${category.name} · ${weaponUsesAmmo(weapon) ? `MAG ${weapon.ammo}` : "NO RELOAD"}</small>
+        <span>${index + 1}</span><b>${escapeHtml(weapon.name)}</b><small>${category.name} · ${weaponUsesAmmo(weapon) ? formatText(TEXT.setup.loadout.magazine, { ammo: weapon.ammo }) : TEXT.setup.loadout.noReload}</small>
         <div>
-          <button data-loadout-move="${index}" data-direction="-1" aria-label="Move ${escapeHtml(weapon.name)} left" ${index === 0 ? "disabled" : ""}>‹</button>
-          <button data-loadout-move="${index}" data-direction="1" aria-label="Move ${escapeHtml(weapon.name)} right" ${index === this.settings.loadout.length - 1 ? "disabled" : ""}>›</button>
-          <button data-loadout-remove="${index}" aria-label="Remove ${escapeHtml(weapon.name)}">×</button>
+          <button data-loadout-move="${index}" data-direction="-1" aria-label="${formatText(TEXT.setup.loadout.moveLeftAria, { weapon: escapeHtml(weapon.name) })}" ${index === 0 ? "disabled" : ""}>‹</button>
+          <button data-loadout-move="${index}" data-direction="1" aria-label="${formatText(TEXT.setup.loadout.moveRightAria, { weapon: escapeHtml(weapon.name) })}" ${index === this.settings.loadout.length - 1 ? "disabled" : ""}>›</button>
+          <button data-loadout-remove="${index}" aria-label="${formatText(TEXT.setup.loadout.removeAria, { weapon: escapeHtml(weapon.name) })}">×</button>
         </div>
       </div>`;
     }).join("");
@@ -521,19 +515,19 @@ class BlasterBattle {
     return Array.from({ length: LOADOUT_PRESET_COUNT }, (_, index) => {
       const preset = this.settings.loadoutPresets[index];
       const isDefault = this.settings.defaultLoadoutPreset === index;
-      const name = preset?.name || `Set ${index + 1}`;
+      const name = preset?.name || formatText(TEXT.defaults.presetName, { number: index + 1 });
       const label = escapeHtml(name);
-      const summary = preset ? preset.weaponIds.map((id, slot) => `<span style="--category:${WEAPON_CATEGORY_BY_ID[id].color}"><i>${slot + 1}</i>${escapeHtml(WEAPONS[id].name)}</span>`).join("") : `<small>No saved weapons</small>`;
-      return `<article class="loadout-preset ${isDefault ? "default" : ""}" aria-label="${label} weapon set">
+      const summary = preset ? preset.weaponIds.map((id, slot) => `<span style="--category:${WEAPON_CATEGORY_BY_ID[id].color}"><i>${slot + 1}</i>${escapeHtml(WEAPONS[id].name)}</span>`).join("") : `<small>${TEXT.setup.loadout.noSavedWeapons}</small>`;
+      return `<article class="loadout-preset ${isDefault ? "default" : ""}" aria-label="${formatText(TEXT.setup.loadout.weaponSetAria, { name: label })}">
         <header>
-          <input value="${label}" maxlength="18" data-preset-name="${index}" aria-label="Name for weapon set ${index + 1}">
-          <button data-preset-default="${index}" ${preset ? "" : "disabled"} aria-label="${isDefault ? `Remove ${label} as default` : `Make ${label} the default`} weapon set" aria-pressed="${isDefault}">${isDefault ? "★ DEFAULT" : "☆ DEFAULT"}</button>
+          <input value="${label}" maxlength="18" data-preset-name="${index}" aria-label="${formatText(TEXT.setup.loadout.nameSetAria, { number: index + 1 })}">
+          <button data-preset-default="${index}" ${preset ? "" : "disabled"} aria-label="${formatText(isDefault ? TEXT.setup.loadout.removeDefaultAria : TEXT.setup.loadout.makeDefaultAria, { name: label })}" aria-pressed="${isDefault}">${isDefault ? TEXT.setup.loadout.defaultActive : TEXT.setup.loadout.defaultInactive}</button>
         </header>
         <div class="preset-summary">${summary}</div>
         <footer>
-          <button data-preset-load="${index}" ${preset ? "" : "disabled"} aria-label="Load ${label} weapon set">LOAD</button>
-          <button data-preset-save="${index}" ${this.settings.loadout.length === 5 ? "" : "disabled"} aria-label="Save current loadout to ${label}">SAVE CURRENT</button>
-          <button data-preset-clear="${index}" ${preset ? "" : "disabled"} aria-label="Clear ${label} weapon set">CLEAR</button>
+          <button data-preset-load="${index}" ${preset ? "" : "disabled"} aria-label="${formatText(TEXT.setup.loadout.loadAria, { name: label })}">${TEXT.setup.loadout.load}</button>
+          <button data-preset-save="${index}" ${this.settings.loadout.length === 5 ? "" : "disabled"} aria-label="${formatText(TEXT.setup.loadout.saveAria, { name: label })}">${TEXT.setup.loadout.saveCurrent}</button>
+          <button data-preset-clear="${index}" ${preset ? "" : "disabled"} aria-label="${formatText(TEXT.setup.loadout.clearAria, { name: label })}">${TEXT.setup.loadout.clear}</button>
         </footer>
       </article>`;
     }).join("");
@@ -543,42 +537,42 @@ class BlasterBattle {
     ui.innerHTML = `
       <main class="screen">
         <section class="dialog settings-dialog">
-          <header><button class="back" data-screen="main">← Back</button><p>LOCAL PREFERENCES</p></header>
-          <h1>Settings</h1>
+          <header><button class="back" data-screen="main">${TEXT.setup.back}</button><p>${TEXT.settings.section}</p></header>
+          <h1>${TEXT.settings.title}</h1>
           <div class="settings-grid">
-            <label>Graphics quality
+            <label>${TEXT.settings.labels.graphics}
               <select data-setting="graphics">
-                ${["low", "medium", "high"].map((value) => `<option ${this.settings.graphics === value ? "selected" : ""}>${value}</option>`).join("")}
+                ${["low", "medium", "high"].map((value) => `<option value="${value}" ${this.settings.graphics === value ? "selected" : ""}>${TEXT.settings.options.graphics[value]}</option>`).join("")}
               </select>
             </label>
-            <label>Blood and impact effects
+            <label>${TEXT.settings.labels.blood}
               <select data-setting="blood">
-                ${["off", "reduced", "full"].map((value) => `<option ${this.settings.blood === value ? "selected" : ""}>${value}</option>`).join("")}
+                ${["off", "reduced", "full"].map((value) => `<option value="${value}" ${this.settings.blood === value ? "selected" : ""}>${TEXT.settings.options.blood[value]}</option>`).join("")}
               </select>
             </label>
-            <label>Camera shake <output>${this.settings.shake}%</output>
+            <label>${TEXT.settings.labels.cameraShake} <output>${this.settings.shake}%</output>
               <input type="range" min="0" max="100" value="${this.settings.shake}" data-setting="shake">
             </label>
-            <label>Master volume <output>${this.settings.volume}%</output>
+            <label>${TEXT.settings.labels.masterVolume} <output>${this.settings.volume}%</output>
               <input type="range" min="0" max="100" value="${this.settings.volume}" data-setting="volume">
             </label>
-            <label>Music volume <output>${this.settings.musicVolume}%</output>
+            <label>${TEXT.settings.labels.musicVolume} <output>${this.settings.musicVolume}%</output>
               <input type="range" min="0" max="100" value="${this.settings.musicVolume}" data-setting="musicVolume">
             </label>
-            <label>Effects volume <output>${this.settings.effectsVolume}%</output>
+            <label>${TEXT.settings.labels.effectsVolume} <output>${this.settings.effectsVolume}%</output>
               <input type="range" min="0" max="100" value="${this.settings.effectsVolume}" data-setting="effectsVolume">
             </label>
-            <label>Ambience volume <output>${this.settings.ambienceVolume}%</output>
+            <label>${TEXT.settings.labels.ambienceVolume} <output>${this.settings.ambienceVolume}%</output>
               <input type="range" min="0" max="100" value="${this.settings.ambienceVolume}" data-setting="ambienceVolume">
             </label>
-            <label>Dynamic range
+            <label>${TEXT.settings.labels.dynamicRange}
               <select data-setting="dynamicRange">
-                ${["wide", "standard", "night"].map((value) => `<option ${this.settings.dynamicRange === value ? "selected" : ""}>${value}</option>`).join("")}
+                ${["wide", "standard", "night"].map((value) => `<option value="${value}" ${this.settings.dynamicRange === value ? "selected" : ""}>${TEXT.settings.options.dynamicRange[value]}</option>`).join("")}
               </select>
             </label>
-            <label class="toggle"><input type="checkbox" data-setting="reducedMotion" ${this.settings.reducedMotion ? "checked" : ""}> Reduce motion and flashes</label>
+            <label class="toggle"><input type="checkbox" data-setting="reducedMotion" ${this.settings.reducedMotion ? "checked" : ""}> ${TEXT.settings.labels.reducedMotion}</label>
           </div>
-          <button class="primary" data-action="save-settings">SAVE SETTINGS</button>
+          <button class="primary" data-action="save-settings">${TEXT.settings.save}</button>
         </section>
       </main>`;
     this.bindUi();
@@ -591,10 +585,10 @@ class BlasterBattle {
     ui.innerHTML = `
       <main class="screen">
         <section class="dialog credits-dialog">
-          <header><button class="back" data-screen="main">← Back</button><p>MASTER BLASTER v0.1</p></header>
-          <h1>Built for the open web.</h1>
-          <p>Three.js rendering, deterministic seeded arenas, Web Audio, Pointer Events, keyboard, mouse, and touch-friendly controls.</p>
-          <p>Game direction follows the Master Blaster browser-native specification, inspired by the immediate projectile combat and grappling movement of classic arena games.</p>
+          <header><button class="back" data-screen="main">${TEXT.setup.back}</button><p>${TEXT.credits.section}</p></header>
+          <h1>${TEXT.credits.title}</h1>
+          <p>${TEXT.credits.technology}</p>
+          <p>${TEXT.credits.direction}</p>
         </section>
       </main>`;
     this.bindUi();
@@ -676,7 +670,7 @@ class BlasterBattle {
     };
     ui.oninput = (event) => {
       if (event.target.id === "display-name") {
-        this.settings.displayName = event.target.value.trim().slice(0, 18) || "Rookie";
+        this.settings.displayName = event.target.value.trim().slice(0, 18) || TEXT.defaults.displayName;
         saveSettings(this.settings);
         return;
       }
@@ -722,11 +716,11 @@ class BlasterBattle {
     const index = current.indexOf(id);
     if (index >= 0) current.splice(index, 1);
     else if (current.length < 5) current.push(id);
-    else return this.announceLoadout("All five weapon slots are full.");
+    else return this.announceLoadout(TEXT.setup.loadout.full);
     this.settings.loadout = current;
     saveSettings(this.settings);
     this.updateLoadoutUi();
-    this.announceLoadout(index >= 0 ? `${WEAPONS[id].name} removed.` : `${WEAPONS[id].name} added to slot ${current.length}.`);
+    this.announceLoadout(formatText(index >= 0 ? TEXT.setup.loadout.removed : TEXT.setup.loadout.added, { weapon: WEAPONS[id].name, slot: current.length }));
   }
 
   moveLoadout(index, direction) {
@@ -737,7 +731,7 @@ class BlasterBattle {
     saveSettings(this.settings);
     const focusDirection = next + direction >= 0 && next + direction < this.settings.loadout.length ? direction : -direction;
     this.updateLoadoutUi(`[data-loadout-move="${next}"][data-direction="${focusDirection}"]`);
-    this.announceLoadout(`${name} moved to slot ${next + 1}.`);
+    this.announceLoadout(formatText(TEXT.setup.loadout.moved, { weapon: name, slot: next + 1 }));
   }
 
   moveLoadoutTo(from, to) {
@@ -746,7 +740,7 @@ class BlasterBattle {
     this.settings.loadout.splice(to, 0, weapon);
     saveSettings(this.settings);
     this.updateLoadoutUi();
-    this.announceLoadout(`${WEAPONS[weapon].name} moved to slot ${to + 1}.`);
+    this.announceLoadout(formatText(TEXT.setup.loadout.moved, { weapon: WEAPONS[weapon].name, slot: to + 1 }));
   }
 
   removeLoadout(index) {
@@ -754,7 +748,7 @@ class BlasterBattle {
     const [weapon] = this.settings.loadout.splice(index, 1);
     saveSettings(this.settings);
     this.updateLoadoutUi(`[data-weapon-choice="${weapon}"]`);
-    this.announceLoadout(`${WEAPONS[weapon].name} removed.`);
+    this.announceLoadout(formatText(TEXT.setup.loadout.removed, { weapon: WEAPONS[weapon].name }));
   }
 
   loadPreset(index) {
@@ -763,40 +757,40 @@ class BlasterBattle {
     this.settings.loadout = [...preset.weaponIds];
     saveSettings(this.settings);
     this.updateLoadoutUi(`[data-preset-load="${index}"]`);
-    this.announceLoadout(`${preset.name} loaded in slots 1 through 5.`);
+    this.announceLoadout(formatText(TEXT.setup.loadout.presetLoaded, { name: preset.name }));
   }
 
   savePreset(index) {
     if (index < 0 || index >= LOADOUT_PRESET_COUNT || this.settings.loadout.length !== 5) return;
-    const name = ui.querySelector(`[data-preset-name="${index}"]`)?.value.trim().slice(0, 18) || `Set ${index + 1}`;
+    const name = ui.querySelector(`[data-preset-name="${index}"]`)?.value.trim().slice(0, 18) || formatText(TEXT.defaults.presetName, { number: index + 1 });
     const existing = this.settings.loadoutPresets[index];
     const unchanged = existing?.name === name && existing.weaponIds.every((id, slot) => id === this.settings.loadout[slot]);
-    if (existing && !unchanged && !globalThis.confirm(`Replace ${existing.name} with the current weapon order?`)) return;
+    if (existing && !unchanged && !globalThis.confirm(formatText(TEXT.setup.loadout.replaceConfirm, { name: existing.name }))) return;
     const firstPreset = !this.settings.loadoutPresets.some(Boolean);
     this.settings.loadoutPresets[index] = { name, weaponIds: [...this.settings.loadout] };
     if (firstPreset) this.settings.defaultLoadoutPreset = index;
     saveSettings(this.settings);
     this.updateLoadoutUi(`[data-preset-save="${index}"]`);
-    this.announceLoadout(`${name} saved${firstPreset ? " and set as default" : ""}.`);
+    this.announceLoadout(formatText(TEXT.setup.loadout.presetSaved, { name, defaultSuffix: firstPreset ? TEXT.setup.loadout.presetSavedDefaultSuffix : "" }));
   }
 
   renamePreset(index, value) {
     const preset = this.settings.loadoutPresets[index];
     if (!preset) return;
-    preset.name = value.trim().slice(0, 18) || `Set ${index + 1}`;
+    preset.name = value.trim().slice(0, 18) || formatText(TEXT.defaults.presetName, { number: index + 1 });
     saveSettings(this.settings);
     const input = ui.querySelector(`[data-preset-name="${index}"]`);
     if (input) input.value = preset.name;
     const label = preset.name;
     const article = input?.closest(".loadout-preset");
-    article?.setAttribute("aria-label", `${label} weapon set`);
-    article?.querySelector("[data-preset-load]")?.setAttribute("aria-label", `Load ${label} weapon set`);
-    article?.querySelector("[data-preset-save]")?.setAttribute("aria-label", `Save current loadout to ${label}`);
-    article?.querySelector("[data-preset-clear]")?.setAttribute("aria-label", `Clear ${label} weapon set`);
+    article?.setAttribute("aria-label", formatText(TEXT.setup.loadout.weaponSetAria, { name: label }));
+    article?.querySelector("[data-preset-load]")?.setAttribute("aria-label", formatText(TEXT.setup.loadout.loadAria, { name: label }));
+    article?.querySelector("[data-preset-save]")?.setAttribute("aria-label", formatText(TEXT.setup.loadout.saveAria, { name: label }));
+    article?.querySelector("[data-preset-clear]")?.setAttribute("aria-label", formatText(TEXT.setup.loadout.clearAria, { name: label }));
     article?.querySelector("[data-preset-default]")?.setAttribute("aria-label", this.settings.defaultLoadoutPreset === index
-      ? `Remove ${label} as default weapon set`
-      : `Make ${label} the default weapon set`);
-    this.announceLoadout(`Weapon set renamed to ${preset.name}.`);
+      ? formatText(TEXT.setup.loadout.removeDefaultAria, { name: label })
+      : formatText(TEXT.setup.loadout.makeDefaultAria, { name: label }));
+    this.announceLoadout(formatText(TEXT.setup.loadout.renamed, { name: preset.name }));
   }
 
   toggleDefaultPreset(index) {
@@ -809,19 +803,19 @@ class BlasterBattle {
     saveSettings(this.settings);
     this.updateLoadoutUi(`[data-preset-default="${index}"]`);
     this.announceLoadout(this.settings.defaultLoadoutPreset === index
-      ? `${this.settings.loadoutPresets[index].name} is now the default and has been loaded.`
-      : "Default weapon set cleared.");
+      ? formatText(TEXT.setup.loadout.defaultLoaded, { name: this.settings.loadoutPresets[index].name })
+      : TEXT.setup.loadout.defaultCleared);
   }
 
   clearPreset(index) {
     if (index < 0 || index >= LOADOUT_PRESET_COUNT) return;
     const preset = this.settings.loadoutPresets[index];
-    if (!preset || !globalThis.confirm(`Clear ${preset.name}? This cannot be undone.`)) return;
+    if (!preset || !globalThis.confirm(formatText(TEXT.setup.loadout.clearConfirm, { name: preset.name }))) return;
     this.settings.loadoutPresets[index] = null;
     if (this.settings.defaultLoadoutPreset === index) this.settings.defaultLoadoutPreset = null;
     saveSettings(this.settings);
     this.updateLoadoutUi(`[data-preset-save="${index}"]`);
-    this.announceLoadout(`${preset.name} cleared.`);
+    this.announceLoadout(formatText(TEXT.setup.loadout.presetCleared, { name: preset.name }));
   }
 
   updateLoadoutUi(focusSelector = "") {
@@ -835,7 +829,7 @@ class BlasterBattle {
     const presets = ui.querySelector("[data-loadout-presets]");
     if (presets) presets.innerHTML = this.loadoutPresetsMarkup();
     const count = ui.querySelector("[data-loadout-count]");
-    if (count) count.textContent = `${this.settings.loadout.length}/5 selected`;
+    if (count) count.textContent = formatText(TEXT.setup.loadout.selected, { count: this.settings.loadout.length });
     const launch = ui.querySelector('[data-action="start"]');
     if (launch) launch.disabled = this.settings.loadout.length !== 5;
     if (focusSelector) ui.querySelector(focusSelector)?.focus({ preventScroll: true });
@@ -861,7 +855,7 @@ class BlasterBattle {
   }
 
   captureSetupPreferences() {
-    this.settings.displayName = ui.querySelector("#display-name")?.value.trim() || "Rookie";
+    this.settings.displayName = ui.querySelector("#display-name")?.value.trim() || TEXT.defaults.displayName;
     this.seed = ui.querySelector("#map-seed")?.value.trim().toUpperCase() || "BLAST-01";
     this.botDifficulty = ui.querySelector("#bot-difficulty")?.value || "normal";
     this.settings.botCount = clampBotCount(ui.querySelector("#bot-count")?.value, this.mode === "private" ? 0 : 1);
@@ -915,7 +909,7 @@ class BlasterBattle {
     matchLoading.hidden = !visible;
     if (!visible) return;
     matchLoading.querySelector("[data-match-seed]").textContent = String(seed).slice(0, 12);
-    matchLoading.querySelector("[data-match-kind]").textContent = sameSeed ? "SAME SEED" : "NEW SESSION";
+    matchLoading.querySelector("[data-match-kind]").textContent = sameSeed ? TEXT.loading.sameSeed : TEXT.loading.newSession;
   }
 
   resumePendingMatch() {
@@ -1003,7 +997,7 @@ class BlasterBattle {
     if (ui.querySelector("[data-network-disconnect]")) return;
     this.paused = true;
     this.input.releasePointer();
-    ui.insertAdjacentHTML("beforeend", `<div class="overlay" data-network-disconnect><section class="dialog"><p>CONNECTION LOST</p><h1>The arena link dropped.</h1><p class="dialog-lead">${escapeHtml(reason || "Return to the menu and reconnect to continue online.")}</p><button class="primary" data-screen="main">RETURN TO MENU</button></section></div>`);
+    ui.insertAdjacentHTML("beforeend", `<div class="overlay" data-network-disconnect><section class="dialog"><p>${TEXT.errors.connectionSection}</p><h1>${TEXT.errors.connectionTitle}</h1><p class="dialog-lead">${escapeHtml(reason || TEXT.errors.connectionDescription)}</p><button class="primary" data-screen="main">${TEXT.errors.returnToMenu}</button></section></div>`);
     this.bindUi();
   }
 
@@ -1042,7 +1036,7 @@ class BlasterBattle {
         this.multiplayer = null;
         this.setMatchLoading(false);
         this.renderSetup(this.mode);
-        ui.querySelector(".setup-dialog")?.insertAdjacentHTML("afterbegin", `<p class="network-error" role="alert">ONLINE SERVICE: ${escapeHtml(error.message)} Training remains available offline.</p>`);
+        ui.querySelector(".setup-dialog")?.insertAdjacentHTML("afterbegin", `<p class="network-error" role="alert">${formatText(TEXT.errors.onlineService, { message: escapeHtml(error.message) })}</p>`);
         return;
       }
     }
@@ -1094,7 +1088,7 @@ class BlasterBattle {
       this.players = [new Fighter(this.scene, { id: "p1", name: this.settings.displayName, ...PLAYER_COLORS[0] }, playerLoadout, spawns[0])];
       for (let index = 0; index < clampBotCount(this.settings.botCount); index++) {
         const number = String(index + 1).padStart(2, "0");
-        const name = this.mode === "quick" ? `Region Bot ${number}` : `Atlas Bot ${number}`;
+        const name = formatText(this.mode === "quick" ? TEXT.defaults.quickBotName : TEXT.defaults.botName, { number });
         const botLoadout = Array.from({ length: 5 }, (_, slot) => weaponIds[(8 + index * 5 + slot) % weaponIds.length]);
         this.players.push(new Fighter(this.scene, { id: `p${index + 2}`, name, ...PLAYER_COLORS[(index + 1) % PLAYER_COLORS.length] }, botLoadout, spawns[index + 1], true));
       }
@@ -1307,12 +1301,12 @@ class BlasterBattle {
           <div class="health"><i data-health="0"></i></div>
         </section>
         <section class="match-state">
-          <small>${escapeHtml(this.world.theme.name)} · ${this.mode.toUpperCase()} · ${escapeHtml(this.seed)}</small>
+          <small>${escapeHtml(this.world.theme.name)} · ${TEXT.setup.modes[this.mode].tag} · ${escapeHtml(this.seed)}</small>
           <strong data-time>03:00</strong>
-          <span>FIRST TO ${this.targetScore}</span>
+          <span>${formatText(TEXT.hud.firstTo, { score: this.targetScore })}</span>
         </section>
         <section class="combatant right leaders">
-          <small>TOP 3 · ${this.players.length} FIGHTERS</small>
+          <small>${formatText(TEXT.hud.leaders, { count: this.players.length })}</small>
           <div class="leader-list">
             ${[0, 1, 2].map((rank) => `<div class="leader-row" data-leader-row="${rank}"><i>${rank + 1}</i><b data-leader-name="${rank}">${escapeHtml(this.players[rank]?.name || "—")}</b><span data-leader-score="${rank}">0</span></div>`).join("")}
           </div>
@@ -1322,7 +1316,7 @@ class BlasterBattle {
         <div class="incoming-direction" data-incoming-direction aria-hidden="true"><i></i></div>
         <div class="reticle" data-reticle aria-hidden="true"><i></i></div>
         <div class="target-health" data-target-health aria-live="polite">
-          <span><b data-target-name>ENEMY</b><strong data-target-value>100</strong></span>
+          <span><b data-target-name>${TEXT.hud.enemy}</b><strong data-target-value>100</strong></span>
           <i><b data-target-fill></b></i>
         </div>
         <div class="combat-log" data-combat-log aria-live="polite"></div>
@@ -1333,23 +1327,23 @@ class BlasterBattle {
             </button>`).join("")}
         </div>
         <div class="active-weapon-readout" data-active-weapon>
-          <small>ACTIVE WEAPON</small><b data-active-weapon-name>${escapeHtml(this.players[0].weapon.name)}</b><span data-active-weapon-ammo></span>
+          <small>${TEXT.hud.activeWeapon}</small><b data-active-weapon-name>${escapeHtml(this.players[0].weapon.name)}</b><span data-active-weapon-ammo></span>
         </div>
-        <div class="grapple-readout" data-grapple>GRAPPLE READY · E / RIGHT CLICK</div>
-        <div class="perf-readout" data-perf>MEASURING FRAME PACE</div>
-        <button class="pause" data-action="pause" aria-label="Pause">Ⅱ</button>
+        <div class="grapple-readout" data-grapple>${this.coarsePointer ? TEXT.hud.grappleReadyTouch : TEXT.hud.grappleReadyDesktop}</div>
+        <div class="perf-readout" data-perf>${TEXT.hud.measuringFramePace}</div>
+        <button class="pause" data-action="pause" aria-label="${TEXT.hud.pauseAria}">Ⅱ</button>
         <div class="scoreboard" data-scoreboard>
-          <h2>Deathmatch</h2>
+          <h2>${TEXT.hud.matchType}</h2>
           <div class="score-list">
             ${this.players.map((player, index) => `<p><b>${escapeHtml(player.name)}</b><span data-board-score="${index}">0</span></p>`).join("")}
           </div>
         </div>
-        <div class="touch-controls" aria-label="Touch controls">
+        <div class="touch-controls" aria-label="${TEXT.hud.touchControlsAria}">
           <div class="touch-actions">
-            <button class="swap" data-touch="weapon" aria-label="Swap weapon">SWAP</button>
-            <button class="hook" data-touch="grapple" aria-label="Fire or release grapple hook">HOOK</button>
-            <button class="jump" data-touch="jump" aria-label="Jump">JUMP</button>
-            <button class="fire" data-touch="fire" aria-label="Fire weapon">FIRE</button>
+            <button class="swap" data-touch="weapon" aria-label="${TEXT.hud.swapAria}">${TEXT.hud.swap}</button>
+            <button class="hook" data-touch="grapple" aria-label="${TEXT.hud.hookAria}">${TEXT.hud.hook}</button>
+            <button class="jump" data-touch="jump" aria-label="${TEXT.hud.jumpAria}">${TEXT.hud.jump}</button>
+            <button class="fire" data-touch="fire" aria-label="${TEXT.hud.fireAria}">${TEXT.hud.fire}</button>
           </div>
         </div>
       </div>`;
@@ -1446,10 +1440,10 @@ class BlasterBattle {
     ui.insertAdjacentHTML("beforeend", `
       <div class="overlay">
         <section class="dialog pause-dialog">
-          <p>SIMULATION PAUSED</p><h1>Take a breath.</h1>
-          <button class="primary" data-action="pause">RESUME</button>
-          <button data-action="rematch">RESTART MATCH</button>
-          <button data-screen="main">MAIN MENU</button>
+          <p>${TEXT.pause.section}</p><h1>${TEXT.pause.title}</h1>
+          <button class="primary" data-action="pause">${TEXT.pause.resume}</button>
+          <button data-action="rematch">${TEXT.pause.restart}</button>
+          <button data-screen="main">${TEXT.pause.mainMenu}</button>
         </section>
       </div>`);
     this.bindUi();
@@ -2762,7 +2756,7 @@ class BlasterBattle {
     source.style.color = `#${new THREE.Color(attacker.accent).getHexString()}`;
     victim.textContent = target.name;
     victim.style.color = `#${new THREE.Color(target.accent).getHexString()}`;
-    line.append(source, document.createTextNode(`  ${weapon?.name || "impact"}  `), victim);
+    line.append(source, document.createTextNode(`  ${weapon?.name || TEXT.hud.impact}  `), victim);
     this.hud.combatLog.prepend(line);
     while (this.hud.combatLog.children.length > 4) this.hud.combatLog.lastElementChild.remove();
   }
@@ -2913,8 +2907,8 @@ class BlasterBattle {
     const minutes = Math.floor(this.matchTime / 60).toString().padStart(2, "0");
     const seconds = Math.floor(this.matchTime % 60).toString().padStart(2, "0");
     setText(this.hud.time, `${minutes}:${seconds}`);
-    setText(this.hud.grapple, this.awaitingAudioGesture ? "CLICK / TAP TO START MATCH"
-      : player.grapple ? "GRAPPLE PULLING · RELEASE TO SLINGSHOT" : "GRAPPLE READY · E / RIGHT CLICK");
+    setText(this.hud.grapple, this.awaitingAudioGesture ? (this.coarsePointer ? TEXT.hud.tapToStart : TEXT.hud.clickToStart)
+      : player.grapple ? TEXT.hud.grapplePulling : (this.coarsePointer ? TEXT.hud.grappleReadyTouch : TEXT.hud.grappleReadyDesktop));
     this.hud.slots.forEach((slot, index) => {
       const weapon = WEAPONS[player.loadout[index]];
       slot.classList.toggle("selected", index === player.slotIndex);
@@ -2933,14 +2927,14 @@ class BlasterBattle {
       const weapon = WEAPONS[player.loadout[index]];
       const isReloading = player.reloadTimer > 0 && player.reloadWeaponId === weapon.id;
       const charge = player.chargingWeaponId === weapon.id && weapon.chargeTime
-        ? `CHARGE ${Math.round(100 * Math.min(1, player.chargeTimer / weapon.chargeTime))}%`
+        ? formatText(TEXT.hud.charge, { percent: Math.round(100 * Math.min(1, player.chargeTimer / weapon.chargeTime)) })
         : null;
       const armed = weapon.type === "remote" ? this.armedCounts.get(weapon.id) || 0 : 0;
-      setText(node, isReloading ? "RELOAD" : !weaponUsesAmmo(weapon) ? "READY" : charge || `${player.ammo[weapon.id]}/${weapon.ammo}${armed ? ` · ${armed} ARMED` : ""}`);
+      setText(node, isReloading ? TEXT.hud.reload : !weaponUsesAmmo(weapon) ? TEXT.hud.ready : charge || `${player.ammo[weapon.id]}/${weapon.ammo}${armed ? ` · ${armed} ${TEXT.hud.armed}` : ""}`);
     });
     const activeWeapon = player.weapon;
     const activeReloading = player.reloadTimer > 0 && player.reloadWeaponId === activeWeapon.id;
-    setText(this.hud.activeWeaponAmmo, activeReloading ? "RELOADING" : !weaponUsesAmmo(activeWeapon) ? "READY · NO RELOAD" : `${player.ammo[activeWeapon.id]}/${activeWeapon.ammo}`);
+    setText(this.hud.activeWeaponAmmo, activeReloading ? TEXT.hud.reloading : !weaponUsesAmmo(activeWeapon) ? TEXT.hud.readyNoReload : `${player.ammo[activeWeapon.id]}/${activeWeapon.ammo}`);
     this.hud.scoreboard.classList.toggle("visible", this.input.down("Tab"));
     const motion = this.settings.reducedMotion ? 0 : clamp((player.velocity.length() - 14) / 30, 0, 1);
     const grappleBlur = player.grapple && this.graphics.level !== "low" ? motion * (this.graphics.level === "high" ? 3.2 : 1.7) : 0;
@@ -2966,7 +2960,7 @@ class BlasterBattle {
     if (!node) return;
     const seconds = Math.min(60, Math.floor(sample.elapsed));
     const average = sample.total / sample.samples;
-    node.textContent = `${Math.round(sample.fps)} FPS · ${this.renderer.info.render.drawCalls} DRAWS · ${this.players.length} FIGHTERS · ${this.renderPipeline.profile} · ${seconds}/60 SEC`;
+    node.textContent = formatText(TEXT.hud.performance, { fps: Math.round(sample.fps), draws: this.renderer.info.render.drawCalls, fighters: this.players.length, mode: this.renderPipeline.profile, seconds });
     node.dataset.fps = sample.fps.toFixed(1);
     node.dataset.averageFps = average.toFixed(1);
     node.dataset.minimumFps = sample.minimum.toFixed(1);
@@ -2993,15 +2987,15 @@ class BlasterBattle {
     this.sound.stopAll();
     const winningScore = Math.max(...this.scores);
     const winners = this.scores.map((score, index) => score === winningScore ? index : -1).filter((index) => index >= 0);
-    const headline = winners.length > 1 ? "Draw match" : `${escapeHtml(this.players[winners[0]].name)} wins`;
+    const headline = winners.length > 1 ? TEXT.results.draw : formatText(TEXT.results.winner, { name: escapeHtml(this.players[winners[0]].name) });
     const ranking = this.players.map((player, index) => ({ player, score: this.scores[index] })).sort((a, b) => b.score - a.score);
     ui.insertAdjacentHTML("beforeend", `
       <div class="overlay results">
         <section class="dialog results-dialog">
-          <p>MATCH COMPLETE</p><h1>${headline}</h1>
+          <p>${TEXT.results.section}</p><h1>${headline}</h1>
           <div class="results-ranking">${ranking.slice(0, 5).map(({ player, score }) => `<p><b>${escapeHtml(player.name)}</b><span>${score}</span></p>`).join("")}</div>
-          <button class="primary" data-action="rematch">REMATCH · SAME SEED</button>
-          <button data-screen="main">RETURN TO MENU</button>
+          <button class="primary" data-action="rematch">${TEXT.results.rematch}</button>
+          <button data-screen="main">${TEXT.results.menu}</button>
         </section>
       </div>`);
     const humanWon = winners.includes(0);
@@ -3089,6 +3083,6 @@ export const gameReady = game.init().then(() => game).catch((error) => {
   console.error("Master Blaster renderer failed to initialize", error);
   try { sessionStorage.removeItem(MATCH_SESSION_KEY); } catch {}
   if (matchLoading) matchLoading.hidden = true;
-  ui.innerHTML = `<main class="menu-shell"><section class="hero-panel"><p class="kicker">RENDERER ERROR</p><h1>Graphics initialization failed.</h1><p class="lead">Update your browser or enable WebGL2, then reload.</p></section></main>`;
+  ui.innerHTML = `<main class="menu-shell"><section class="hero-panel"><p class="kicker">${TEXT.errors.rendererSection}</p><h1>${TEXT.errors.rendererTitle}</h1><p class="lead">${TEXT.errors.rendererDescription}</p></section></main>`;
   throw error;
 });

@@ -1,7 +1,7 @@
 {
-  "name": "Master Blaster",
-  "short_name": "Master Blaster",
-  "description": "Grapple anything, shatter towers, and flatten your friends with 47 wildly different weapons.",
+  "name": "{{site.title}}",
+  "short_name": "{{site.title}}",
+  "description": "{{site.description}}",
   "start_url": "/",
   "display": "fullscreen",
   "background_color": "#07111d",

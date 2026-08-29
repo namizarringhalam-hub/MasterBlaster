@@ -24,7 +24,7 @@ assert.doesNotMatch(mainSource, /serviceWorker\.register/, "the renderer does no
 assert.match(bootSource, /serviceWorker\.register\("\/sw\.js"/, "the lightweight shell starts immutable caching without waiting for the engine");
 assert.deepEqual(topScoreIndices([2, 7, 7, 4, 9]), [4, 1, 2], "the HUD ranks the top three scores with stable tie ordering");
 assert.match(mainSource, /\[0, 1, 2\]\.map[\s\S]*data-leader-row/, "the top-right HUD renders three leaderboard rows");
-assert.match(mainSource, /dialog-lead[^]*?<button class="launch primary" data-action="start">START<\/button>[^]*?<div class="setup-form">/, "every setup sheet puts one consistently named start action above its controls");
+assert.match(mainSource, /dialog-lead[^]*?<button class="launch primary" data-action="start">\$\{TEXT\.setup\.start\}<\/button>[^]*?<div class="setup-form">/, "every setup sheet puts one editable start action above its controls");
 assert.doesNotMatch(mainSource, /FIND MATCH|CREATE ROOM|START TRAINING/, "setup actions no longer change labels by mode");
 assert.match(mainSource, /reticleAim\(player, this\.camera\.position, this\.camera\.getWorldDirection/, "weapons fire through the visible camera's exact center ray");
 assert.match(mainSource, /remembered = this\.settings\.matchSettings\[mode\][\s\S]*?botCount = remembered\.botCount[\s\S]*?botDifficulty = remembered\.botDifficulty/, "each setup mode restores its own saved bot settings");
@@ -92,9 +92,9 @@ assert.match(mainSource, /queueMatchStart\(sameSeed = false\)[\s\S]*?sessionStor
 assert.match(mainSource, /resumePendingMatch\(\)[\s\S]*?sessionStorage\.removeItem\(MATCH_SESSION_KEY\)[\s\S]*?freshSessionReady = true;[\s\S]*?this\.startMatch\(\)/, "the reload consumes the match ticket exactly once and enters the guarded initializer");
 assert.match(indexSource, /id="match-loading"[\s\S]*?sessionStorage\.getItem\("blaster-pending-match"\)[\s\S]*?type="module"/, "the match loader appears before the new renderer module starts");
 assert.match(indexSource, /data-boot-mode="quick"[\s\S]*?\/src\/boot\.js/, "the functional menu shell is present before the deferred Three.js engine downloads");
-assert.match(indexSource, /GRAPPLE\. BLAST\. BRING THE ARENA DOWN\.[\s\S]*?Swing wild\.[\s\S]*?Break everything\.[\s\S]*?Grapple anything\. Shatter towers\.[\s\S]*?Every fight leaves the battlefield a little less intact\.[\s\S]*?GRAPPLE ANY SURFACE · DESTRUCTIBLE TOWERS · UP TO 16 FIGHTERS/, "the lightweight landing shell sells Master Blaster's destructive grapple-and-weapons fantasy without claiming every shot destroys terrain");
-assert.match(mainSource, /GRAPPLE\. BLAST\. BRING THE ARENA DOWN\.[\s\S]*?Swing wild\.[\s\S]*?Break everything\.[\s\S]*?GRAPPLE ANYTHING[\s\S]*?BREAK THE ARENA[\s\S]*?Rockets\. Fireballs\. Black holes\. Chainsaws\./, "the interactive landing page preserves the same game-specific voice after the engine loads");
-assert.match(indexSource, /CLEAR THE DROP ZONE[\s\S]*?Rebuilding the mayhem[\s\S]*?Sweeping up the wreckage and dropping in a fresh arena\.[\s\S]*?FRESH ARENA/, "match loading copy stays inside the game's destructive-action voice instead of exposing renderer internals");
+assert.match(indexSource, /\{\{landing\.kicker\}\}[\s\S]*?\{\{landing\.headlineLine1\}\}[\s\S]*?\{\{landing\.lead\}\}[\s\S]*?\{\{landing\.highlights\}\}/, "the lightweight landing shell is generated from the editable player-text source");
+assert.match(mainSource, /TEXT\.landing\.kicker[\s\S]*?TEXT\.landing\.headlineLine1[\s\S]*?TEXT\.landing\.features/, "the interactive landing page uses the same editable player-text source after the engine loads");
+assert.match(indexSource, /\{\{loading\.kicker\}\}[\s\S]*?\{\{loading\.title\}\}[\s\S]*?\{\{loading\.description\}\}[\s\S]*?\{\{loading\.freshArena\}\}/, "match loading copy comes from the editable player-text source");
 assert.match(indexSource, /master-blaster-settings[\s\S]*?dataset\.menuQuality[\s\S]*?reducedMotion/, "the lightweight shell applies saved graphics and motion preferences before the engine downloads");
 assert.match(indexSource, /menu-atmosphere[\s\S]*?arena-grid[\s\S]*?arena-towers[\s\S]*?arena-rings[\s\S]*?grapple-arc[\s\S]*?arena-streaks/, "the lightweight shell paints the complete arena-energy atmosphere before the engine downloads");
 assert.match(indexSource, /preload" as="image" href="\/menu-arena-v2\.webp"[\s\S]*?battle-drum\.wav\?bank=orchestra-2[\s\S]*?cello-trem\.wav\?bank=orchestra-2[\s\S]*?horn-sustain\.wav\?bank=orchestra-2/, "the arena plate and core menu orchestra begin loading with the shell");
@@ -123,7 +123,7 @@ assert.equal(cameraCollisionFirstPerson(3, true), true, "camera mode hysteresis 
 assert.equal(cameraCollisionFirstPerson(3.5, true), false, "the normal third-person boom returns when enough clearance is restored");
 assert.match(mainSource, /cameraCollisionFirstPerson\(availableDistance[\s\S]*?cameraTarget\.copy\(pivot\)[\s\S]*?actualDistance >= 3\.2/, "a collapsed camera boom follows the player's eye line and keeps the local body hidden throughout the transition");
 assert.match(stylesSource, /\.rematch-loading\[hidden\] \{ display: none; \}[\s\S]*?@keyframes rematch-track/, "the loading screen has a deterministic hidden state and animated progress treatment");
-assert.match(mainSource, /game\.init\(\)\.then[\s\S]*?sessionStorage\.removeItem\(MATCH_SESSION_KEY\)[\s\S]*?matchLoading\.hidden = true[\s\S]*?RENDERER ERROR/, "renderer startup errors cannot remain trapped behind a persistent match loader");
+assert.match(mainSource, /game\.init\(\)\.then[\s\S]*?sessionStorage\.removeItem\(MATCH_SESSION_KEY\)[\s\S]*?matchLoading\.hidden = true[\s\S]*?TEXT\.errors\.rendererSection/, "renderer startup errors cannot remain trapped behind a persistent match loader");
 assert.doesNotMatch(mainSource, /startMatch\(\)\s*\{\s*this\.clearMatch\(\);\s*this\.rebuildRenderPipeline\(\)/, "no rematch can rebuild post-processing on a live graphics device");
 assert.match(mainSource, /addEventListener\("pointerdown", this\.resumeAudioGesture, \{ passive: true, capture: true \}\)/, "the first canvas or HUD gesture restores browser-gated rematch audio on every device");
 assert.match(mainSource, /resumeAudioAfterReload\(\)[\s\S]*?startAmbience\(this\.world\?\.theme\.id\)[\s\S]*?startMusic\("combat", this\.seed\)[\s\S]*?return true/, "rematch audio restoration includes the full ambience and music mix");
@@ -227,8 +227,8 @@ assert.match(mainSource, /toggleLoadout\(id\)[\s\S]*?this\.settings\.loadout = c
 assert.match(mainSource, /closest\?\.\("\.settings-grid"\)\) this\.captureSettingsPreferences\(\)/, "graphics, accessibility, audio, and effects preferences persist when changed");
 assert.match(mainSource, /savedDefault = activePresetLoadout\(this\.settings\)[\s\S]*?if \(savedDefault\) this\.settings\.loadout = \[\.\.\.savedDefault\]/, "saved defaults apply to every setup mode");
 assert.match(mainSource, /mode === "quick" && !savedDefault\) this\.settings\.loadout = randomLoadout\(\)/, "Quick Play randomizes only when no default preset exists");
-assert.match(mainSource, /confirm\(`Replace \$\{existing\.name\}/, "overwriting a saved preset requires confirmation");
-assert.match(mainSource, /confirm\(`Clear \$\{preset\.name\}/, "clearing a saved preset requires confirmation");
+assert.match(mainSource, /confirm\(formatText\(TEXT\.setup\.loadout\.replaceConfirm/, "overwriting a saved preset requires editable confirmation copy");
+assert.match(mainSource, /confirm\(formatText\(TEXT\.setup\.loadout\.clearConfirm/, "clearing a saved preset requires editable confirmation copy");
 assert.match(mainSource, /aria-live="polite"/, "loadout changes are announced to assistive technology");
 assert.match(mainSource, /aria-pressed="\$\{isDefault\}"/, "default preset controls expose their active state");
 assert.match(stylesSource, /minmax\(160px, 1fr\)[\s\S]*?min-height: 44px/, "mobile reorder controls retain reliable touch dimensions");
@@ -403,7 +403,7 @@ assert.match(mainSource, /updateWeaponLoop\(player\.id, player\.weapon, fireHeld
 assert.match(mainSource, /updateChargeLoop\(player\.id, weapon, player\.chargeLevel, this\.audioSpatial\(/, "charged shots escalate a continuous spatial wind-up cue with their charge level");
 assert.match(mainSource, /if \(!bot\.alive\)[\s\S]*?stopChargeLoop\(bot\.id\)[\s\S]*?if \(!target\)[\s\S]*?stopChargeLoop\(bot\.id\)/, "dead and targetless bots always stop charged-rifle wind-up audio");
 assert.match(mainSource, /stolenId === "remote_explosive"[\s\S]*?trimRemoteCharges\(attacker, WEAPONS\[stolenId\], WEAPONS\[stolenId\]\.maxCharges\)/, "stealing Remote Explosives immediately restores the receiver's charge cap");
-assert.match(mainSource, /weapon\.type === "remote"[\s\S]*?\$\{armed\} ARMED/, "the Remote Explosive HUD displays its live armed-charge count");
+assert.match(mainSource, /weapon\.type === "remote"[\s\S]*?\$\{armed\} \$\{TEXT\.hud\.armed\}/, "the Remote Explosive HUD displays its live armed-charge count with editable copy");
 assert.match(mainSource, /presentationPayload === "mortar"[\s\S]*?RingGeometry\([\s\S]*?shot\.telegraph = telegraph/, "mortar shells show a predicted landing telegraph");
 const flameOrigin = new THREE.Vector3();
 const flameDirection = new THREE.Vector3(0, 0, 1);

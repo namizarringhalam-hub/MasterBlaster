@@ -755,7 +755,6 @@ input, select {
   .overlay { padding: 12px; place-items: start center; }
   .dialog { margin: 12px 0; padding: 22px; }
   .setup-form { grid-template-columns: 1fr; }
-  .loadout-help::after { content: " Swipe slots and weapon categories horizontally."; color: #9bb5c5; }
   .loadout-order { grid-template-columns: repeat(5, minmax(160px, 1fr)); overflow-x: auto; padding-bottom: 5px; scroll-snap-type: x mandatory; scrollbar-width: none; touch-action: pan-x; }
   .loadout-order::-webkit-scrollbar, .weapon-categories::-webkit-scrollbar { display: none; }
   .loadout-slot { scroll-snap-align: start; }
