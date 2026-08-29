@@ -181,6 +181,8 @@ export const PLAYER_TEXT = {
     roomClosedBeforeJoining: "The multiplayer room closed before joining.",
     matchInProgress: "This private room is currently in a match.",
     matchStartTimeout: "The room did not confirm the match start. Try again.",
+    sessionExpired: "The reconnect window expired.",
+    reconnecting: "CONNECTION INTERRUPTED · RECONNECTING",
     invalidSessionState: "Invalid session state",
     deliveryFailed: "Delivery failed",
     methodNotAllowed: "Method not allowed",

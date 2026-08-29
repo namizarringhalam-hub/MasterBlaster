@@ -5,6 +5,7 @@ import {
   MATCH_TARGET_SCORE,
   MAX_MATCH_PLAYERS,
   MULTIPLAYER_PROTOCOL_VERSION,
+  NETWORK_TICK_MS,
   clampMatchMinutes,
   finiteNumber,
   matchTimeRemaining,
@@ -18,6 +19,11 @@ import {
 
 const WEAPON_IDS = Object.keys(WEAPONS);
 const DIFFICULTIES = new Set(["rookie", "normal", "veteran"]);
+const RESUME_SESSION_MS = 45_000;
+const RESUME_ACK_GRACE_MS = 15_000;
+const PRIVATE_LOBBY_REJOIN_MS = 10 * 60_000;
+const PRIVATE_MATCH_REJOIN_GRACE_MS = 60_000;
+const RESUME_TOKEN_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const COLORS = [
   [0x129dba, 0x6ff6ff], [0xc82849, 0xff6b82], [0x6bad22, 0xb9ff55], [0x7847ca, 0xc793ff],
   [0xd77a16, 0xffc14f], [0xb92d86, 0xff75cf], [0x2867ce, 0x75b5ff], [0x15987b, 0x62ffd0],
@@ -55,6 +61,7 @@ function publicPlayer(player) {
     velocity: player.velocity,
     aim: player.aim,
     slotIndex: player.slotIndex,
+    grounded: player.grounded,
     ammo: player.ammo,
     respawnAt: player.respawnAt || 0
   };
@@ -152,6 +159,10 @@ export class MatchRoom extends DurableObject {
     this.terrainEvents = [];
     this.structuralHealth = new Map();
     this.structuralFailures = new Map();
+    this.resumeSessions = new Map();
+    this.pendingStates = new Map();
+    this.stateFlushTimer = 0;
+    this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('{"type":"ping"}', '{"type":"pong"}'));
     this.ready = this.ctx.blockConcurrencyWhile(async () => {
       this.meta = await this.ctx.storage.get("meta") || null;
       if (this.meta && !this.meta.mode) this.meta.mode = this.meta.roomCode?.startsWith("Q-") ? "quick" : "private";
@@ -167,7 +178,49 @@ export class MatchRoom extends DurableObject {
       const storedStructuralFailures = await this.ctx.storage.get("structuralFailures");
       if (storedStructuralFailures) for (const [partId, failedAt] of storedStructuralFailures) this.structuralFailures.set(partId, failedAt);
       else for (const event of this.terrainEvents) if (event.collapsed && event.partId) this.structuralFailures.set(event.partId, event.serverTime || 0);
+      for (const [token, session] of await this.ctx.storage.get("resumeSessions") || []) this.resumeSessions.set(token, session);
+      this.pruneResumeSessions();
     });
+  }
+
+  pruneResumeSessions(now = Date.now()) {
+    for (const [token, session] of this.resumeSessions) if (!session?.player || session.expiresAt <= now) this.resumeSessions.delete(token);
+  }
+
+  async persistResumeSessions() {
+    this.pruneResumeSessions();
+    if (this.resumeSessions.size) await this.ctx.storage.put("resumeSessions", [...this.resumeSessions]);
+    else await this.ctx.storage.delete("resumeSessions");
+  }
+
+  resumableSession(token) {
+    if (!RESUME_TOKEN_PATTERN.test(token)) return null;
+    const active = this.humanEntries().find(([, player]) => player.resumeToken === token);
+    if (active) return { socket: active[0], player: active[1] };
+    this.pruneResumeSessions();
+    const stored = this.resumeSessions.get(token);
+    return stored ? { socket: null, player: stored.player } : null;
+  }
+
+  async rememberDisconnectedPlayer(socket) {
+    let player;
+    try { player = socket.deserializeAttachment(); }
+    catch { return; }
+    const token = player?.resumeToken;
+    if (!RESUME_TOKEN_PATTERN.test(token || "") || this.meta?.ended) return;
+    if (this.humanEntries(socket).some(([, active]) => active.resumeToken === token)) this.resumeSessions.delete(token);
+    else {
+      const now = Date.now();
+      const privateExpiry = this.meta?.mode === "private"
+        ? this.meta.phase === "playing"
+          ? (this.meta.endsAt || now) + PRIVATE_MATCH_REJOIN_GRACE_MS
+          : now + PRIVATE_LOBBY_REJOIN_MS
+        : 0;
+      this.resumeSessions.set(token, { player, expiresAt: Math.max(now + RESUME_SESSION_MS, privateExpiry) });
+    }
+    this.pruneResumeSessions();
+    while (this.resumeSessions.size > MAX_MATCH_PLAYERS * 2) this.resumeSessions.delete(this.resumeSessions.keys().next().value);
+    await this.persistResumeSessions();
   }
 
   humanEntries(excludedSocket = null) {
@@ -182,6 +235,20 @@ export class MatchRoom extends DurableObject {
       }
     }
     return entries;
+  }
+
+  reservedPlayerIds() {
+    this.pruneResumeSessions();
+    const activeIds = new Set(this.humanEntries().map(([, player]) => player.id));
+    return new Set(
+      [...this.resumeSessions.values()]
+        .map((session) => session?.player?.id)
+        .filter((id) => id && !activeIds.has(id))
+    );
+  }
+
+  effectiveHumanCount() {
+    return this.humanEntries().length + this.reservedPlayerIds().size;
   }
 
   allPlayers(excludedSocket = null) {
@@ -227,8 +294,10 @@ export class MatchRoom extends DurableObject {
     this.terrainEvents = [];
     this.structuralHealth.clear();
     this.structuralFailures.clear();
+    this.resumeSessions.clear();
     this.reservation = null;
     await this.ctx.storage.delete("reservation");
+    await this.ctx.storage.delete("resumeSessions");
     await this.persistRoom();
   }
 
@@ -292,6 +361,25 @@ export class MatchRoom extends DurableObject {
     }
   }
 
+  queueStateBroadcast(changed) {
+    for (const state of changed) this.pendingStates.set(state.id, state);
+    if (this.stateFlushTimer) return;
+    this.stateFlushTimer = setTimeout(() => {
+      this.stateFlushTimer = 0;
+      const players = [...this.pendingStates.values()];
+      this.pendingStates.clear();
+      if (players.length && this.meta?.phase === "playing" && !this.meta.ended) {
+        this.broadcast({ type: "state", players, serverTime: Date.now(), endsAt: this.meta.endsAt });
+      }
+    }, NETWORK_TICK_MS);
+  }
+
+  clearStateBroadcast() {
+    clearTimeout(this.stateFlushTimer);
+    this.stateFlushTimer = 0;
+    this.pendingStates.clear();
+  }
+
   async fetch(request) {
     await this.ready;
     const url = new URL(request.url);
@@ -307,7 +395,7 @@ export class MatchRoom extends DurableObject {
       return json({ ok: true, ...this.reservation });
     }
     if (url.pathname.endsWith("/status")) {
-      const humans = this.humanEntries().length;
+      const humans = this.effectiveHumanCount();
       const settings = this.meta || this.reservation;
       return json({
         humans,
@@ -321,20 +409,40 @@ export class MatchRoom extends DurableObject {
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: TEXT.errors.websocketRequired }, 426);
     if (Number(url.searchParams.get("v")) !== MULTIPLAYER_PROTOCOL_VERSION) return json({ error: TEXT.errors.unsupportedProtocol }, 426);
     await this.initialize(url);
-    if (this.meta.mode === "private" && this.meta.phase === "playing") return json({ error: TEXT.errors.matchInProgress }, 409);
-    if (this.humanEntries().length >= MAX_MATCH_PLAYERS || this.meta.ended) return json({ error: TEXT.errors.roomFull }, 409);
+    const requestedResumeToken = String(url.searchParams.get("resumeToken") || "");
+    const resumed = requestedResumeToken ? this.resumableSession(requestedResumeToken) : null;
+    if (requestedResumeToken && !resumed && this.meta.phase === "playing") return json({ error: TEXT.errors.sessionExpired }, 409);
+    if (this.meta.mode === "private" && this.meta.phase === "playing" && !resumed) return json({ error: TEXT.errors.matchInProgress }, 409);
+    if ((this.effectiveHumanCount() >= MAX_MATCH_PLAYERS && !resumed) || this.meta.ended) return json({ error: TEXT.errors.roomFull }, 409);
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     const humans = this.humanEntries().length;
-    const id = `player-${crypto.randomUUID().slice(0, 12)}`;
-    const loadout = sanitizeLoadout(url.searchParams.get("loadout"), WEAPONS, DEFAULT_LOADOUT);
-    const player = roomPlayer(id, sanitizePlayerName(url.searchParams.get("name")), loadout, humans);
+    const id = resumed?.player.id || `player-${crypto.randomUUID().slice(0, 12)}`;
+    const loadout = resumed?.player.loadout || sanitizeLoadout(url.searchParams.get("loadout"), WEAPONS, DEFAULT_LOADOUT);
+    const player = resumed ? structuredClone(resumed.player) : roomPlayer(id, sanitizePlayerName(url.searchParams.get("name")), loadout, humans);
+    const priorResumeToken = resumed?.player.resumeToken || "";
+    const supersededSocket = resumed
+      ? resumed.socket || this.humanEntries().find(([, active]) => active.id === id)?.[0] || null
+      : null;
+    player.resumeToken = crypto.randomUUID();
+    if (this.meta.phase === "lobby") resetRoomPlayer(player);
+    if (supersededSocket) {
+      supersededSocket.serializeAttachment({ ...resumed.player, resumeToken: "" });
+      supersededSocket.close(4001, "Session resumed");
+    }
+    if (priorResumeToken) {
+      const aliasPlayer = structuredClone(player);
+      aliasPlayer.resumeToken = priorResumeToken;
+      this.resumeSessions.set(priorResumeToken, { player: aliasPlayer, expiresAt: Date.now() + RESUME_ACK_GRACE_MS });
+    }
+    await this.persistResumeSessions();
     server.serializeAttachment(player);
     this.ctx.acceptWebSocket(server);
-    await this.reconcileBots();
-    server.send(JSON.stringify({ ...this.rosterMessage("welcome"), playerId: id }));
-    this.broadcast(this.rosterMessage());
+    await this.reconcileBots(supersededSocket);
+    server.send(JSON.stringify({ ...this.rosterMessage("welcome", supersededSocket), playerId: id, resumeToken: player.resumeToken }));
+    this.broadcast(this.rosterMessage("roster", supersededSocket));
+    if (resumed) console.log(JSON.stringify({ event: "socket_resumed", roomCode: this.meta.roomCode, playerId: id, phase: this.meta.phase }));
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -391,7 +499,7 @@ export class MatchRoom extends DurableObject {
       if (update) changed.push(update);
       if (entry.socket) entry.socket.serializeAttachment(entry.player);
     }
-    if (changed.length) this.broadcast({ type: "state", players: changed, serverTime: now, endsAt: this.meta.endsAt });
+    if (changed.length) this.queueStateBroadcast(changed);
     await this.checkMatchEnd(now);
   }
 
@@ -634,6 +742,18 @@ export class MatchRoom extends DurableObject {
     this.broadcast({ type: "respawn", playerId: player.id, spawnIndex: (player.deaths * 5 + this.allPlayers().indexOf(player)) % MAX_MATCH_PLAYERS, ammo: player.ammo, serverTime: Date.now() });
   }
 
+  async handleResumeAck(socket, message) {
+    const player = socket.deserializeAttachment();
+    if (!player?.id || message.resumeToken !== player.resumeToken) return;
+    let changed = false;
+    for (const [token, session] of this.resumeSessions) {
+      if (session?.player?.id !== player.id) continue;
+      this.resumeSessions.delete(token);
+      changed = true;
+    }
+    if (changed) await this.persistResumeSessions();
+  }
+
   async handleLobbyStart(socket) {
     const session = socket.deserializeAttachment();
     if (this.meta.mode !== "private" || this.meta.phase !== "lobby" || session?.id !== this.botHostId()) return;
@@ -643,12 +763,19 @@ export class MatchRoom extends DurableObject {
     this.meta.startedAt = now + 4_000;
     this.meta.endsAt = this.meta.startedAt + this.meta.timeLimitMinutes * 60_000;
     this.meta.lastResult = null;
+    this.clearStateBroadcast();
     this.bots.clear();
     this.recentFires.clear();
     this.terrainEvents = [];
     this.structuralHealth.clear();
     this.structuralFailures.clear();
     for (const [playerSocket, player] of this.humanEntries()) playerSocket.serializeAttachment(resetRoomPlayer(player));
+    this.pruneResumeSessions(now);
+    for (const session of this.resumeSessions.values()) {
+      session.player = resetRoomPlayer(structuredClone(session.player));
+      session.expiresAt = this.meta.endsAt + PRIVATE_MATCH_REJOIN_GRACE_MS;
+    }
+    await this.persistResumeSessions();
     await this.reconcileBots();
     this.broadcast(this.rosterMessage("match_start"));
   }
@@ -659,6 +786,7 @@ export class MatchRoom extends DurableObject {
     const winner = players.reduce((best, player) => !best || player.score > best.score ? player : best, null);
     if (now < this.meta.endsAt && (winner?.score || 0) < this.meta.targetScore) return;
     const scores = Object.fromEntries(players.map((player) => [player.id, player.score]));
+    this.clearStateBroadcast();
     if (this.meta.mode === "private") {
       const winners = players.filter((player) => player.score === (winner?.score || 0));
       this.meta.phase = "lobby";
@@ -672,6 +800,12 @@ export class MatchRoom extends DurableObject {
       };
       this.bots.clear();
       for (const [playerSocket, player] of this.humanEntries()) playerSocket.serializeAttachment(resetRoomPlayer(player));
+      this.pruneResumeSessions(now);
+      for (const session of this.resumeSessions.values()) {
+        session.player = resetRoomPlayer(structuredClone(session.player));
+        session.expiresAt = now + PRIVATE_LOBBY_REJOIN_MS;
+      }
+      await this.persistResumeSessions();
       await this.reconcileBots();
       this.broadcast(this.rosterMessage("lobby"));
       return;
@@ -689,6 +823,7 @@ export class MatchRoom extends DurableObject {
     const message = parseClientMessage(value);
     if (!message) return;
     if (message.type === "ping") return socket.send(JSON.stringify({ type: "pong", serverTime: Date.now() }));
+    if (message.type === "resume_ack") return this.handleResumeAck(socket, message);
     if (message.type === "lobby_start") return this.handleLobbyStart(socket);
     if (this.meta?.ended || this.meta?.phase !== "playing") return;
     if (message.type === "state") await this.handleState(socket, message);
@@ -700,16 +835,24 @@ export class MatchRoom extends DurableObject {
     else if (message.type === "respawn") await this.handleRespawn(socket, message);
   }
 
-  async webSocketClose(socket) {
+  async webSocketClose(socket, code, reason, wasClean) {
     await this.ready;
+    await this.rememberDisconnectedPlayer(socket);
     await this.reconcileBots(socket);
     this.broadcast(this.rosterMessage("roster", socket));
+    let playerId = "";
+    try { playerId = socket.deserializeAttachment()?.id || ""; } catch {}
+    console.log(JSON.stringify({ event: "socket_close", roomCode: this.meta?.roomCode, playerId, code, reason, wasClean, phase: this.meta?.phase }));
   }
 
-  async webSocketError(socket) {
+  async webSocketError(socket, error) {
     await this.ready;
+    await this.rememberDisconnectedPlayer(socket);
     await this.reconcileBots(socket);
     this.broadcast(this.rosterMessage("roster", socket));
+    let playerId = "";
+    try { playerId = socket.deserializeAttachment()?.id || ""; } catch {}
+    console.error(JSON.stringify({ event: "socket_error", roomCode: this.meta?.roomCode, playerId, error: String(error), phase: this.meta?.phase }));
   }
 }
 

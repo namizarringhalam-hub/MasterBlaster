@@ -32,7 +32,7 @@ async function assignment(requestedMinutes = timeLimitMinutes, excludeRoomCode =
   return response.json();
 }
 
-async function connect(roomCode, name, roomBotCount = botCount, requestedMinutes = timeLimitMinutes, mode = "quick") {
+function connectionUrl(roomCode, name, roomBotCount, requestedMinutes, mode, resumeToken = "") {
   const url = new URL(`/api/rooms/${roomCode}/connect`, origin);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.searchParams.set("v", "1");
@@ -42,6 +42,12 @@ async function connect(roomCode, name, roomBotCount = botCount, requestedMinutes
   url.searchParams.set("botCount", String(roomBotCount));
   url.searchParams.set("difficulty", "veteran");
   url.searchParams.set("timeLimitMinutes", String(requestedMinutes));
+  if (resumeToken) url.searchParams.set("resumeToken", resumeToken);
+  return url;
+}
+
+async function connect(roomCode, name, roomBotCount = botCount, requestedMinutes = timeLimitMinutes, mode = "quick", resumeToken = "") {
+  const url = connectionUrl(roomCode, name, roomBotCount, requestedMinutes, mode, resumeToken);
   const socket = new WebSocket(url);
   const messages = [];
   const waiters = [];
@@ -69,7 +75,26 @@ async function connect(roomCode, name, roomBotCount = botCount, requestedMinutes
     });
   };
   const welcome = await next((message) => message.type === "welcome");
+  socket.send(JSON.stringify({ type: "resume_ack", resumeToken: welcome.resumeToken }));
   return { socket, next, welcome };
+}
+
+async function expectConnectionRejected(roomCode, name, roomBotCount = 0, requestedMinutes = timeLimitMinutes, mode = "private") {
+  const socket = new WebSocket(connectionUrl(roomCode, name, roomBotCount, requestedMinutes, mode));
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(`Timed out waiting for ${name} rejection`)), 2_000);
+    socket.addEventListener("open", () => {
+      clearTimeout(timeout);
+      closeSocket(socket);
+      reject(new Error(`${name} unexpectedly joined a reserved full room`));
+    }, { once: true });
+    const rejected = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+    socket.addEventListener("error", rejected, { once: true });
+    socket.addEventListener("close", rejected, { once: true });
+  });
 }
 
 const firstAssignment = await assignment();
@@ -99,7 +124,8 @@ second.socket.send(JSON.stringify({
   type: "state",
   players: [{ id: secondId, position: { x: 5, y: 1, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, aim: { x: -1, y: 0, z: 0 }, slotIndex: 0, grounded: true }]
 }));
-await first.next((message) => message.type === "state" && message.players.some((player) => player.id === secondId));
+const coalescedState = await first.next((message) => message.type === "state" && message.players.some((player) => player.id === secondId));
+assert.ok(coalescedState.players.some((player) => player.id === botId), "same-tick player updates share one room broadcast");
 await second.next((message) => message.type === "state" && message.players.some((player) => player.id === botId));
 
 first.socket.send(JSON.stringify({ type: "fire", playerId: firstId, weaponId: "blaster", slotIndex: 0, direction: { x: 1, y: 0, z: 0 } }));
@@ -188,7 +214,14 @@ assert.equal(lateJoin.welcome.structuralState["structure-1-pillar-1"], 0, "late 
 assert.equal(lateJoin.welcome.structuralState["structure-1-platform-1"], 6.2, "late joiners receive partial chunk health even when the hit log is trimmed");
 assert.equal(lateJoin.welcome.structuralState[fallingPartId], 6.2, "late joiners retain damage applied while a support was visibly collapsing");
 closeSocket(lateJoin.socket);
-closeSocket(first.socket);
+await closeSocketAndWait(first.socket);
+const resumedFirst = await connect(firstAssignment.roomCode, "Alpha reconnect", botCount, timeLimitMinutes, "quick", first.welcome.resumeToken);
+assert.equal(resumedFirst.welcome.playerId, firstId, "a dropped player resumes the same authoritative identity");
+assert.notEqual(resumedFirst.welcome.resumeToken, first.welcome.resumeToken, "a successful resume rotates the reconnect credential");
+assert.ok(resumedFirst.welcome.terrainEvents.some((event) => event.id === terrainDamage.id), "reconnect receives the current terrain snapshot");
+resumedFirst.socket.send('{"type":"ping"}');
+await resumedFirst.next((message) => message.type === "pong");
+closeSocket(resumedFirst.socket);
 closeSocket(second.socket);
 
 const privateCode = `P-${Date.now().toString(36).slice(-8)}`;
@@ -243,23 +276,45 @@ privateGuest.socket.send(JSON.stringify({
 }));
 const privateCollapse = await privateReplacement.next((message) => message.type === "terrain_damage" && message.partId === privatePartId);
 assert.equal(privateCollapse.collapsed, true);
-const hostLobbyReturn = privateGuest.next((message) => message.type === "lobby");
-const guestLobbyReturn = privateReplacement.next((message) => message.type === "lobby");
-for (const bot of privateBots) {
-  privateGuest.socket.send(JSON.stringify({ type: "crush", playerId: bot.id, structureId: "structure-2" }));
-  await privateReplacement.next((message) => message.type === "crush" && message.targetId === bot.id);
+privateGuest.socket.send(JSON.stringify({ type: "crush", playerId: privateBots[0].id, structureId: "structure-2" }));
+await privateReplacement.next((message) => message.type === "crush" && message.targetId === privateBots[0].id);
+await closeSocketAndWait(privateGuest.socket);
+const rejoinedPrivateHost = await connect(privateCode, "Changed name cannot reset score", privateBotCount, timeLimitMinutes, "private", privateGuest.welcome.resumeToken);
+assert.equal(rejoinedPrivateHost.welcome.playerId, privateHostId, "a private-room player can deliberately leave and rejoin the active match");
+assert.notEqual(rejoinedPrivateHost.welcome.resumeToken, privateGuest.welcome.resumeToken, "manual rejoin rotates the room credential");
+assert.equal(rejoinedPrivateHost.welcome.players.find((player) => player.id === privateHostId)?.score, 1, "manual rejoin restores the authoritative score");
+assert.equal(rejoinedPrivateHost.welcome.players.find((player) => player.id === privateHostId)?.name, "Guest", "manual rejoin cannot replace the authoritative identity with a new name");
+await closeSocketAndWait(privateReplacement.socket);
+const hostLobbyReturn = rejoinedPrivateHost.next((message) => message.type === "lobby");
+for (const bot of privateBots.slice(1)) {
+  rejoinedPrivateHost.socket.send(JSON.stringify({ type: "crush", playerId: bot.id, structureId: "structure-2" }));
+  await rejoinedPrivateHost.next((message) => message.type === "crush" && message.targetId === bot.id);
 }
-const [returnedHost, returnedGuest] = await Promise.all([hostLobbyReturn, guestLobbyReturn]);
-for (const returned of [returnedHost, returnedGuest]) {
-  assert.equal(returned.phase, "lobby");
-  assert.equal(returned.hostId, privateHostId);
-  assert.equal(returned.players.length, 2, "bots leave the room when the match returns to the lobby");
-  assert.equal(returned.lastResult.winnerId, privateHostId);
-}
-closeSocket(privateGuest.socket);
-closeSocket(privateReplacement.socket);
+const returnedHost = await hostLobbyReturn;
+assert.equal(returnedHost.phase, "lobby");
+assert.equal(returnedHost.hostId, privateHostId);
+assert.equal(returnedHost.players.length, 1, "bots and disconnected fighters leave the active lobby roster after the result");
+assert.equal(returnedHost.lastResult.winnerId, privateHostId);
+rejoinedPrivateHost.socket.send(JSON.stringify({ type: "lobby_start" }));
+await rejoinedPrivateHost.next((message) => message.type === "match_start");
+const rejoinedRematchGuest = await connect(privateCode, "Cannot carry old points", privateBotCount, timeLimitMinutes, "private", privateReplacement.welcome.resumeToken);
+assert.equal(rejoinedRematchGuest.welcome.players.find((player) => player.id === privateReplacement.welcome.playerId)?.score, 0, "a player leaving the rematch resumes only that round's score");
+closeSocket(rejoinedPrivateHost.socket);
+closeSocket(rejoinedRematchGuest.socket);
+
+const capacityCode = `C-${Date.now().toString(36).slice(-8)}`;
+const capacityPlayers = [];
+for (let index = 0; index < 16; index++) capacityPlayers.push(await connect(capacityCode, `Capacity ${index + 1}`, 0, timeLimitMinutes, "private"));
+const reservedPlayer = capacityPlayers.shift();
+await closeSocketAndWait(reservedPlayer.socket);
+await expectConnectionRejected(capacityCode, "Unreserved seventeenth player");
+const resumedCapacityPlayer = await connect(capacityCode, "Reserved player returns", 0, timeLimitMinutes, "private", reservedPlayer.welcome.resumeToken);
+assert.equal(resumedCapacityPlayer.welcome.players.filter((player) => !player.bot).length, 16, "a stored identity reserves one of the room's sixteen human slots");
+for (const participant of capacityPlayers) closeSocket(participant.socket);
+closeSocket(resumedCapacityPlayer.socket);
+
 const recoveryAssignment = await assignment(timeLimitMinutes, firstAssignment.roomCode);
 assert.notEqual(recoveryAssignment.roomCode, firstAssignment.roomCode, "a timed-out Quick Play room is replaced on the retry");
 assert.equal((await assignment()).roomCode, firstAssignment.roomCode, "a recovery room does not fragment the healthy canonical pool");
-console.log("Quick recovery plus persistent private-lobby lifecycle passed.");
+console.log("Quick recovery, session resume, coalesced state, and persistent private-lobby lifecycle passed.");
 process.exit(0);

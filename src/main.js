@@ -240,6 +240,7 @@ class BlasterBattle {
     this.privateStartTimer = 0;
     this.networkTargets = new Map();
     this.networkEndsAt = 0;
+    this.networkRecovering = false;
     this.networkRespawnRequests = new Set();
     this.botPlanTimer = 0;
     this.botPlanPending = false;
@@ -364,6 +365,8 @@ class BlasterBattle {
     clearTimeout(this.damageDirectionTimer);
     clearTimeout(this.privateStartTimer);
     this.privateStartTimer = 0;
+    this.networkRecovering = false;
+    this.hideNetworkReconnecting();
     this.combatVisuals?.dispose();
     this.combatVisuals = null;
     this.world?.dispose();
@@ -1070,8 +1073,12 @@ class BlasterBattle {
     const client = new MultiplayerClient();
     this.multiplayer = client;
     client.addEventListener("message", ({ detail }) => this.handleNetworkMessage(detail));
+    client.addEventListener("reconnecting", () => this.showNetworkReconnecting());
+    client.addEventListener("reconnected", ({ detail }) => this.handleNetworkReconnect(detail));
     client.addEventListener("disconnect", ({ detail }) => {
       if (detail.expected) return;
+      this.networkRecovering = false;
+      this.hideNetworkReconnecting();
       if (this.state === "play") this.showNetworkDisconnect(detail.reason);
       else if (this.state === "lobby") {
         clearTimeout(this.privateStartTimer);
@@ -1104,6 +1111,60 @@ class BlasterBattle {
     this.input.releasePointer();
     ui.insertAdjacentHTML("beforeend", `<div class="overlay" data-network-disconnect><section class="dialog"><p>${TEXT.errors.connectionSection}</p><h1>${TEXT.errors.connectionTitle}</h1><p class="dialog-lead">${escapeHtml(reason || TEXT.errors.connectionDescription)}</p><button class="primary" data-screen="main">${TEXT.errors.returnToMenu}</button></section></div>`);
     this.bindUi();
+  }
+
+  showNetworkReconnecting() {
+    this.networkRecovering = true;
+    if (ui.querySelector("[data-network-reconnecting]")) return;
+    ui.insertAdjacentHTML("beforeend", `<div class="network-reconnecting" data-network-reconnecting role="status">${TEXT.errors.reconnecting}</div>`);
+  }
+
+  hideNetworkReconnecting() {
+    ui.querySelector("[data-network-reconnecting]")?.remove();
+  }
+
+  handleNetworkReconnect(welcome) {
+    this.networkRecovering = false;
+    this.hideNetworkReconnecting();
+    this.onlineWelcome = { ...(this.onlineWelcome || {}), ...welcome };
+    this.networkEndsAt = welcome.endsAt || this.networkEndsAt;
+    if (welcome.phase === "lobby") return this.renderPrivateLobby(welcome);
+    if (!this.world || this.state !== "play") return;
+    this.clearTransientNetworkCombat();
+    this.syncOnlineRoster(welcome);
+    const localData = welcome.players?.find((player) => player.id === this.multiplayer?.playerId);
+    const local = this.players.find((player) => player.id === this.multiplayer?.playerId);
+    if (local && localData) {
+      const authoritativePosition = localData.position
+        ? new THREE.Vector3(localData.position.x, localData.position.y, localData.position.z)
+        : local.position;
+      if (localData.alive !== false && !local.alive) local.respawn(authoritativePosition);
+      local.position.copy(authoritativePosition);
+      if (localData.velocity) local.velocity.set(localData.velocity.x, localData.velocity.y, localData.velocity.z);
+      if (localData.aim) local.aim.set(localData.aim.x, localData.aim.y, localData.aim.z).normalize();
+      local.grounded = Boolean(localData.grounded);
+      local.slotIndex = localData.slotIndex || 0;
+      local.health = localData.health ?? local.health;
+      local.ammo = { ...local.ammo, ...localData.ammo };
+      this.updateCamera(1);
+    }
+    if (welcome.structuralState) {
+      this.world.applyStructuralState(welcome.structuralState);
+      for (const event of welcome.terrainEvents || []) if (event.id) this.world.appliedTerrainEvents.add(event.id);
+    }
+  }
+
+  clearTransientNetworkCombat() {
+    while (this.projectiles.length) this.removeProjectile(this.projectiles.length - 1);
+    for (const hazard of this.hazards) {
+      this.sound.updateHazardLoop(hazard.audioId, hazard.weapon, false);
+      this.removeObject(hazard.mesh);
+    }
+    for (const decoy of this.decoys) this.removeObject(decoy.mesh);
+    for (const effect of this.effects) this.removeObject(effect.mesh);
+    this.hazards = [];
+    this.decoys = [];
+    this.effects = [];
   }
 
   createOnlineFighter(data, position) {
@@ -1677,6 +1738,11 @@ class BlasterBattle {
     this.matchTime = this.isOnlineMatch()
       ? Math.max(0, (this.networkEndsAt - Date.now()) / 1000)
       : Math.max(0, this.matchTime - dt);
+    if (this.networkRecovering) {
+      this.updateAudio(dt);
+      this.updateHud();
+      return;
+    }
     this.world.update(dt, this.players);
     this.handleWeaponSwitch();
     this.updateHuman(dt);
