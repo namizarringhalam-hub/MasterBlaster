@@ -2,6 +2,7 @@ import * as THREE from "three/webgpu";
 import { mrt, normalView, output, pass, vec3, vec4 } from "three/tsl";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
+import TEXT from "./playerText.js";
 
 export class NeonRenderPipeline {
   constructor(renderer, scene, camera, { reducedMotion = false, coarsePointer = false, quality = "high" } = {}) {
@@ -30,7 +31,7 @@ export class NeonRenderPipeline {
     const nativeWebGPU = renderer.backend.isWebGPUBackend === true;
     this.nativeWebGPU = nativeWebGPU;
     this.direct = coarsePointer;
-    this.profile = nativeWebGPU ? "WEBGPU MOBILE DIRECT" : coarsePointer ? "WEBGL2 MOBILE DIRECT" : "WEBGL2 BLOOM";
+    this.profile = nativeWebGPU ? TEXT.performanceProfiles.webgpuMobileDirect : coarsePointer ? TEXT.performanceProfiles.webglMobileDirect : TEXT.performanceProfiles.webglBloom;
     if (this.direct) {
       this.setQuality(this.quality);
       return;
@@ -114,15 +115,15 @@ export class NeonRenderPipeline {
   setQuality(quality = "high") {
     this.quality = ["low", "medium", "high"].includes(quality) ? quality : "high";
     if (this.direct) {
-      this.profile = `${this.nativeWebGPU ? "WEBGPU" : "WEBGL2"} MOBILE DIRECT · ${this.quality.toUpperCase()}`;
+      this.profile = `${this.nativeWebGPU ? TEXT.performanceProfiles.webgpu : TEXT.performanceProfiles.webgl} ${TEXT.performanceProfiles.mobileDirect} · ${this.quality.toUpperCase()}`;
       return this.quality;
     }
     if (this.nativeWebGPU && this.quality === "medium") this.ensurePerformancePipeline();
     this.updateBloomQuality();
-    this.profile = this.quality === "low" ? `${this.nativeWebGPU ? "WEBGPU" : "WEBGL2"} LOW DIRECT`
-      : !this.nativeWebGPU ? this.quality === "medium" ? "WEBGL2 MEDIUM BLOOM" : "WEBGL2 BLOOM"
-        : this.quality === "medium" ? "WEBGPU MEDIUM BLOOM"
-          : this.highLoadMode ? "WEBGPU 16P BLOOM" : "WEBGPU ULTRA";
+    const backend = this.nativeWebGPU ? TEXT.performanceProfiles.webgpu : TEXT.performanceProfiles.webgl;
+    this.profile = this.quality === "low" ? `${backend} ${TEXT.performanceProfiles.lowDirect}`
+      : !this.nativeWebGPU ? `${backend} ${this.quality === "medium" ? TEXT.performanceProfiles.mediumBloom : TEXT.performanceProfiles.bloom}`
+        : `${backend} ${this.quality === "medium" ? TEXT.performanceProfiles.mediumBloom : this.highLoadMode ? TEXT.performanceProfiles.sixteenPlayerBloom : TEXT.performanceProfiles.ultra}`;
     return this.quality;
   }
 
@@ -131,15 +132,15 @@ export class NeonRenderPipeline {
     if (!this.nativeWebGPU) {
       this.highLoadMode = false;
       this.updateBloomQuality();
-      this.profile = this.quality === "low" ? "WEBGL2 LOW DIRECT" : this.quality === "medium" ? "WEBGL2 MEDIUM BLOOM" : "WEBGL2 BLOOM";
+      this.profile = `${TEXT.performanceProfiles.webgl} ${this.quality === "low" ? TEXT.performanceProfiles.lowDirect : this.quality === "medium" ? TEXT.performanceProfiles.mediumBloom : TEXT.performanceProfiles.bloom}`;
       return;
     }
     this.highLoadMode = Boolean(enabled);
     if (this.quality === "medium" || (this.highLoadMode && this.quality === "high")) this.ensurePerformancePipeline();
     this.updateBloomQuality();
-    this.profile = this.quality === "low" ? "WEBGPU LOW DIRECT"
-      : this.quality === "medium" ? "WEBGPU MEDIUM BLOOM"
-        : this.highLoadMode ? "WEBGPU 16P BLOOM" : "WEBGPU ULTRA";
+    this.profile = `${TEXT.performanceProfiles.webgpu} ${this.quality === "low" ? TEXT.performanceProfiles.lowDirect
+      : this.quality === "medium" ? TEXT.performanceProfiles.mediumBloom
+        : this.highLoadMode ? TEXT.performanceProfiles.sixteenPlayerBloom : TEXT.performanceProfiles.ultra}`;
   }
 
   degradeToDirect(reason) {
@@ -165,7 +166,7 @@ export class NeonRenderPipeline {
     this.disposePipelineResources();
     this.direct = true;
     this.highLoadMode = false;
-    this.profile = "DIRECT SAFETY";
+    this.profile = TEXT.performanceProfiles.directSafety;
   }
 
   dispose() {

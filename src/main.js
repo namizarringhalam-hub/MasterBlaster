@@ -204,7 +204,7 @@ class BlasterBattle {
     this.state = "menu";
     this.paused = false;
     this.mode = "training";
-    this.seed = "BLAST-01";
+    this.seed = TEXT.loading.defaultSeed;
     this.botDifficulty = "normal";
     this.world = null;
     this.players = [];
@@ -271,7 +271,7 @@ class BlasterBattle {
         location.reload();
         return;
       }
-      this.showRendererFailure("The graphics device was reset. Reload the page to restart the arena.");
+      this.showRendererFailure(TEXT.errors.graphicsReset);
     };
     const reportRendererError = this.renderer.onError.bind(this.renderer);
     this.renderer.onError = (info) => {
@@ -856,7 +856,7 @@ class BlasterBattle {
 
   captureSetupPreferences() {
     this.settings.displayName = ui.querySelector("#display-name")?.value.trim() || TEXT.defaults.displayName;
-    this.seed = ui.querySelector("#map-seed")?.value.trim().toUpperCase() || "BLAST-01";
+    this.seed = ui.querySelector("#map-seed")?.value.trim().toUpperCase() || TEXT.loading.defaultSeed;
     this.botDifficulty = ui.querySelector("#bot-difficulty")?.value || "normal";
     this.settings.botCount = clampBotCount(ui.querySelector("#bot-count")?.value, this.mode === "private" ? 0 : 1);
     this.settings.matchSettings[this.mode] = {

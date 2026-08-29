@@ -1,3 +1,5 @@
+import TEXT from "./playerText.js";
+
 export const MULTIPLAYER_PROTOCOL_VERSION = 1;
 export const MAX_MATCH_PLAYERS = 16;
 export const MATCH_DURATION_MS = 180_000;
@@ -12,7 +14,7 @@ export function normalizeRoomCode(value, fallback = "") {
 }
 
 export function sanitizePlayerName(value) {
-  return String(value || "Rookie").replace(/[<>\u0000-\u001f]/g, "").trim().slice(0, 18) || "Rookie";
+  return String(value || TEXT.defaults.displayName).replace(/[<>\u0000-\u001f]/g, "").trim().slice(0, 18) || TEXT.defaults.displayName;
 }
 
 export function sanitizeLoadout(value, weapons, fallback = []) {

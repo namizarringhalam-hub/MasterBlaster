@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { DEFAULT_LOADOUT, WEAPONS, structuralPartBounds, weaponFireMode, weaponUsesAmmo } from "../src/gameData.js";
+import TEXT, { formatText } from "../src/playerText.js";
 import {
   MATCH_DURATION_MS,
   MATCH_TARGET_SCORE,
@@ -87,7 +88,7 @@ function safeBody(request) {
 
 export class Matchmaker extends DurableObject {
   async fetch(request) {
-    if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
+    if (request.method !== "POST") return json({ error: TEXT.errors.methodNotAllowed }, 405);
     const input = await safeBody(request);
     const targetSize = Math.min(MAX_MATCH_PLAYERS, Math.max(2, Math.trunc(finiteNumber(input.botCount, 7, 1, 15)) + 1));
     const difficulty = DIFFICULTIES.has(input.difficulty) ? input.difficulty : "normal";
@@ -137,7 +138,7 @@ export class MatchRoom extends DurableObject {
         const player = socket.deserializeAttachment();
         if (player?.id) entries.push([socket, player]);
       } catch {
-        socket.close(1011, "Invalid session state");
+        socket.close(1011, TEXT.errors.invalidSessionState);
       }
     }
     return entries;
@@ -165,7 +166,7 @@ export class MatchRoom extends DurableObject {
     const targetSize = Math.min(MAX_MATCH_PLAYERS, Math.max(1, Math.trunc(finiteNumber(url.searchParams.get("botCount"), 7, 0, 15)) + 1));
     this.meta = {
       roomCode: normalizeRoomCode(url.pathname.split("/").filter(Boolean).at(-2), "ROOM"),
-      seed: normalizeRoomCode(url.searchParams.get("seed"), normalizeRoomCode(url.pathname.split("/").filter(Boolean).at(-2), "BLAST-01")),
+      seed: normalizeRoomCode(url.searchParams.get("seed"), normalizeRoomCode(url.pathname.split("/").filter(Boolean).at(-2), TEXT.loading.defaultSeed)),
       difficulty: DIFFICULTIES.has(url.searchParams.get("difficulty")) ? url.searchParams.get("difficulty") : "normal",
       targetSize,
       startedAt: now + 4_000,
@@ -197,7 +198,7 @@ export class MatchRoom extends DurableObject {
     for (let index = 0; index < desired; index++) {
       const id = `bot-${index + 1}`;
       if (this.bots.has(id)) continue;
-      const bot = roomPlayer(id, `Region Bot ${String(index + 1).padStart(2, "0")}`, botLoadout(index), humans + index, true);
+      const bot = roomPlayer(id, formatText(TEXT.defaults.quickBotName, { number: String(index + 1).padStart(2, "0") }), botLoadout(index), humans + index, true);
       this.bots.set(id, bot);
     }
     for (const id of [...this.bots.keys()]) {
@@ -225,7 +226,7 @@ export class MatchRoom extends DurableObject {
   broadcast(message) {
     const encoded = JSON.stringify(message);
     for (const socket of this.ctx.getWebSockets()) {
-      try { socket.send(encoded); } catch { socket.close(1011, "Delivery failed"); }
+      try { socket.send(encoded); } catch { socket.close(1011, TEXT.errors.deliveryFailed); }
     }
   }
 
@@ -236,10 +237,10 @@ export class MatchRoom extends DurableObject {
       const humans = this.humanEntries().length;
       return json({ humans, capacity: MAX_MATCH_PLAYERS, targetSize: this.meta?.targetSize || 0, ended: !this.meta || this.meta.ended || matchTimeRemaining(this.meta.endsAt) === 0 });
     }
-    if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "WebSocket upgrade required" }, 426);
-    if (Number(url.searchParams.get("v")) !== MULTIPLAYER_PROTOCOL_VERSION) return json({ error: "Unsupported multiplayer protocol" }, 426);
+    if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: TEXT.errors.websocketRequired }, 426);
+    if (Number(url.searchParams.get("v")) !== MULTIPLAYER_PROTOCOL_VERSION) return json({ error: TEXT.errors.unsupportedProtocol }, 426);
     await this.initialize(url);
-    if (this.humanEntries().length >= MAX_MATCH_PLAYERS || this.meta.ended) return json({ error: "Room is full or complete" }, 409);
+    if (this.humanEntries().length >= MAX_MATCH_PLAYERS || this.meta.ended) return json({ error: TEXT.errors.roomFull }, 409);
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
@@ -603,7 +604,7 @@ export default {
       return env.MATCHMAKER.getByName("global").fetch(request);
     }
     const match = url.pathname.match(/^\/api\/rooms\/([A-Za-z0-9-]{1,12})\/(connect|status)$/);
-    if (!match) return json({ error: "Not found" }, 404);
+    if (!match) return json({ error: TEXT.errors.notFound }, 404);
     const roomCode = normalizeRoomCode(match[1]);
     return env.MATCH_ROOMS.getByName(roomCode).fetch(request);
   }

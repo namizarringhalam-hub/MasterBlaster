@@ -146,12 +146,24 @@ export const PLAYER_TEXT = {
   errors: {
     graphicsSection: "GRAPHICS RECOVERY",
     graphicsTitle: "Renderer paused.",
+    graphicsReset: "The graphics device was reset. Reload the page to restart the arena.",
     reload: "RELOAD",
     connectionSection: "CONNECTION LOST",
     connectionTitle: "The arena link dropped.",
     connectionDescription: "Return to the menu and start a new match.",
     returnToMenu: "RETURN TO MENU",
     onlineService: "ONLINE SERVICE: {message} Training remains available offline.",
+    matchmakingUnavailable: "Matchmaking unavailable ({status})",
+    invalidRoomCode: "Enter a valid room code.",
+    roomTimeout: "The multiplayer room did not respond in time.",
+    roomClosedBeforeJoining: "The multiplayer room closed before joining.",
+    invalidSessionState: "Invalid session state",
+    deliveryFailed: "Delivery failed",
+    methodNotAllowed: "Method not allowed",
+    websocketRequired: "WebSocket upgrade required",
+    unsupportedProtocol: "Unsupported multiplayer protocol",
+    roomFull: "Room is full or complete",
+    notFound: "Not found",
     rendererSection: "RENDERER ERROR",
     rendererTitle: "Graphics initialization failed.",
     rendererDescription: "Update your browser or enable hardware acceleration, then reload."
@@ -187,6 +199,21 @@ export const PLAYER_TEXT = {
     fire: "FIRE",
     fireAria: "Fire weapon",
     impact: "impact"
+  },
+
+  performanceProfiles: {
+    webgpuMobileDirect: "WEBGPU MOBILE DIRECT",
+    webglMobileDirect: "WEBGL2 MOBILE DIRECT",
+    webglBloom: "WEBGL2 BLOOM",
+    webgpu: "WEBGPU",
+    webgl: "WEBGL2",
+    mobileDirect: "MOBILE DIRECT",
+    lowDirect: "LOW DIRECT",
+    mediumBloom: "MEDIUM BLOOM",
+    bloom: "BLOOM",
+    sixteenPlayerBloom: "16P BLOOM",
+    ultra: "ULTRA",
+    directSafety: "DIRECT SAFETY"
   },
 
   pause: {

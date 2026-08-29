@@ -5,6 +5,7 @@ import {
   parseClientMessage,
   socketUrl
 } from "./multiplayerProtocol.js";
+import TEXT, { formatText } from "./playerText.js";
 
 function apiOrigin() {
   const configured = import.meta.env.VITE_MULTIPLAYER_ORIGIN;
@@ -43,12 +44,12 @@ export class MultiplayerClient extends EventTarget {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ botCount, difficulty })
       });
-      if (!response.ok) throw new Error(`Matchmaking unavailable (${response.status})`);
+      if (!response.ok) throw new Error(formatText(TEXT.errors.matchmakingUnavailable, { status: response.status }));
       const assignment = await response.json();
       roomCode = assignment.roomCode;
     }
     this.roomCode = normalizeRoomCode(roomCode);
-    if (!this.roomCode) throw new Error("Enter a valid room code.");
+    if (!this.roomCode) throw new Error(TEXT.errors.invalidRoomCode);
     const url = socketUrl(origin, this.roomCode, {
       v: MULTIPLAYER_PROTOCOL_VERSION,
       name,
@@ -61,7 +62,7 @@ export class MultiplayerClient extends EventTarget {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         socket.close(4000, "Connection timeout");
-        reject(new Error("The multiplayer room did not respond in time."));
+        reject(new Error(TEXT.errors.roomTimeout));
       }, 10_000);
       socket.addEventListener("message", (event) => {
         const message = parseClientMessage(event.data);
@@ -83,7 +84,7 @@ export class MultiplayerClient extends EventTarget {
       socket.addEventListener("close", (event) => {
         clearTimeout(timeout);
         this.dispatchEvent(new CustomEvent("disconnect", { detail: { code: event.code, reason: event.reason, expected: this.closedByClient } }));
-        if (!this.welcome) reject(new Error(event.reason || "The multiplayer room closed before joining."));
+        if (!this.welcome) reject(new Error(event.reason || TEXT.errors.roomClosedBeforeJoining));
       });
     });
   }
