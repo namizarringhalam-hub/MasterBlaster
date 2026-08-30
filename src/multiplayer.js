@@ -252,7 +252,10 @@ export class MultiplayerClient extends EventTarget {
   }
 
   fire(player, weapon, direction, triggerTap = false, action = "fire", chargeRatio = 1) {
+    const shotId = crypto.randomUUID();
+    player.networkShotId = shotId;
     return this.send("fire", {
+      shotId,
       playerId: player.id,
       weaponId: weapon.id,
       slotIndex: player.slotIndex,
@@ -263,18 +266,22 @@ export class MultiplayerClient extends EventTarget {
     });
   }
 
-  reportHit(attacker, target, weapon, damage, push) {
+  reportHit(attacker, target, weapon, damage, push, context = {}) {
     return this.send("hit", {
+      shotId: context.shotId || attacker.networkShotId,
       attackerId: attacker.id,
       targetId: target.id,
       weaponId: weapon.id,
       damage,
-      push
+      push,
+      impact: context.point || null,
+      phase: context.phase || "impact"
     });
   }
 
-  reportTerrainHit(attacker, weapon, position, radius, structureId = "", partId = "") {
+  reportTerrainHit(attacker, weapon, position, radius, structureId = "", partId = "", shotId = "") {
     return this.send("terrain_hit", {
+      shotId: shotId || attacker.networkShotId,
       attackerId: attacker.id,
       weaponId: weapon.id,
       position,

@@ -1,7 +1,6 @@
 import { MUSIC, MUSIC_SAMPLE_MANIFEST, musicEventsForStep, tempoForIntensity } from "./musicScore.js";
 import { weaponPresentation } from "./weaponPresentation.js";
 import { WEAPONS } from "./gameData.js";
-import { createProceduralAudioAssets, createWeaponAudioAssets } from "./audioAssets.js";
 
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 const MASTER_GAIN = .52;
@@ -94,6 +93,8 @@ export class SoundBoard {
     this.musicSamples = {};
     this.musicSamplePromise = null;
     this.musicPrefetchPromise = null;
+    this.musicAbortController = null;
+    this.musicPrefetchAbortController = null;
     this.musicSamplesReady = false;
     this.musicLoadFailed = false;
     this.musicLoadCycles = 0;
@@ -133,8 +134,77 @@ export class SoundBoard {
     this.musicPauseTime = null;
     this.musicPaused = false;
     this.ambienceNodes = null;
+    this.pendingAmbienceTheme = null;
     this.mix = { music: 70, effects: 85, ambience: 65 };
     this.dynamicRange = "standard";
+    this.audioAssetData = null;
+    this.audioAssetPromise = null;
+    this.audioAssetWorker = null;
+    this.pendingSampleCue = null;
+    this.lifecycleTimers = new Set();
+    this.routeGraphs = new WeakMap();
+    this.disposed = false;
+    this.prefetchAudioAssets();
+  }
+
+  prefetchAudioAssets() {
+    if (this.audioAssetPromise) return this.audioAssetPromise;
+    if (typeof Worker === "undefined") {
+      if (typeof window === "undefined") return null;
+      this.audioAssetPromise = this._prepareAudioAssetsFallback();
+      return this.audioAssetPromise;
+    }
+    this.audioAssetPromise = new Promise((resolve, reject) => {
+      const worker = this.audioAssetWorker = new Worker(new URL("./audioAssets.worker.js", import.meta.url), { type: "module" });
+      worker.onmessage = ({ data }) => {
+        if (this.disposed || worker !== this.audioAssetWorker) return resolve(false);
+        this.audioAssetData = data;
+        worker.terminate();
+        this.audioAssetWorker = null;
+        this._hydrateAudioAssets();
+        resolve(true);
+      };
+      worker.onerror = (error) => {
+        if (worker === this.audioAssetWorker) this.audioAssetWorker = null;
+        worker.terminate();
+        reject(error);
+      };
+      worker.postMessage({ sampleRate: 48000, weapons: Object.values(WEAPONS), identities: WEAPON_AUDIO_IDENTITIES });
+    }).catch(() => this._prepareAudioAssetsFallback());
+    return this.audioAssetPromise;
+  }
+
+  async _prepareAudioAssetsFallback() {
+    if (this.disposed) return false;
+    try {
+      const { createProceduralAudioAssets, createWeaponAudioAssets } = await import("./audioAssets.js");
+      if (this.disposed) return false;
+      const sampleRate = 48000;
+      const assets = {
+        ...createProceduralAudioAssets(sampleRate),
+        ...createWeaponAudioAssets(sampleRate, Object.values(WEAPONS), WEAPON_AUDIO_IDENTITIES)
+      };
+      if (this.disposed) return false;
+      this.audioAssetData = { sampleRate, entries: Object.entries(assets) };
+      this._hydrateAudioAssets();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  _hydrateAudioAssets() {
+    if (!this.context || !this.audioAssetData || this.disposed) return false;
+    const { sampleRate, entries } = this.audioAssetData;
+    this.sampleBank = Object.fromEntries(entries.map(([name, data]) => [name, this._audioBufferFromMono(data, sampleRate)]));
+    this.audioAssetData = null;
+    const pending = this.pendingSampleCue;
+    this.pendingSampleCue = null;
+    if (pending) this.sample(pending.name, pending.volume, pending.options);
+    const ambienceTheme = this.pendingAmbienceTheme;
+    this.pendingAmbienceTheme = null;
+    if (ambienceTheme) this.startAmbience(ambienceTheme);
+    return true;
   }
 
   resume() {
@@ -220,9 +290,7 @@ export class SoundBoard {
       this.musicDelay.connect(this.musicDelayFeedback).connect(this.musicDelay);
       this.musicDelay.connect(this.musicDelayGain).connect(this.buses.music);
     }
-    const proceduralAssets = createProceduralAudioAssets(context.sampleRate);
-    const weaponAssets = createWeaponAudioAssets(context.sampleRate, Object.values(WEAPONS), WEAPON_AUDIO_IDENTITIES);
-    this.sampleBank = Object.fromEntries(Object.entries({ ...proceduralAssets, ...weaponAssets }).map(([name, data]) => [name, this._audioBufferFromMono(data)]));
+    this._hydrateAudioAssets();
     this._loadMusicSamples();
     this.setVolume(this.volume);
     this.setMix(this.mix);
@@ -239,10 +307,20 @@ export class SoundBoard {
     return impulse;
   }
 
-  _audioBufferFromMono(data) {
-    const buffer = this.context.createBuffer(1, data.length, this.context.sampleRate);
+  _audioBufferFromMono(data, sampleRate = 48000) {
+    const buffer = this.context.createBuffer(1, data.length, sampleRate);
     buffer.getChannelData(0).set(data);
     return buffer;
+  }
+
+  _later(callback, milliseconds) {
+    if (this.disposed) return null;
+    const timer = setTimeout(() => {
+      this.lifecycleTimers.delete(timer);
+      if (!this.disposed) callback();
+    }, Math.max(0, milliseconds));
+    this.lifecycleTimers.add(timer);
+    return timer;
   }
 
   prefetchMusic() {
@@ -251,9 +329,11 @@ export class SoundBoard {
     if (connection?.saveData || /(^|-)2g$/.test(connection?.effectiveType || "")) return null;
     const criticalRoles = new Set(["battleDrum", "celloTrem", "hornSustain", "tromboneBuzz"]);
     const files = Object.entries(MUSIC_SAMPLE_MANIFEST).flatMap(([role, asset]) => asset.files.map((file) => ({ ...file, critical: criticalRoles.has(role) })));
+    const abortController = typeof AbortController === "function" ? new AbortController() : null;
+    this.musicPrefetchAbortController = abortController;
     const fetchFile = async (file) => {
       const separator = file.url.includes("?") ? "&" : "?";
-      const response = await fetch(`${file.url}${separator}bank=${MUSIC_ASSET_REVISION}`, { cache: "force-cache" });
+      const response = await fetch(`${file.url}${separator}bank=${MUSIC_ASSET_REVISION}`, { cache: "force-cache", signal: abortController?.signal });
       if (response.ok) await response.arrayBuffer();
     };
     const waitForIdle = () => new Promise((resolve) => {
@@ -262,7 +342,8 @@ export class SoundBoard {
     });
     this.musicPrefetchPromise = Promise.allSettled(files.filter((file) => file.critical).map(fetchFile))
       .then(waitForIdle)
-      .then(() => Promise.allSettled(files.filter((file) => !file.critical).map(fetchFile)));
+      .then(() => this.disposed ? [] : Promise.allSettled(files.filter((file) => !file.critical).map(fetchFile)))
+      .finally(() => { if (this.musicPrefetchAbortController === abortController) this.musicPrefetchAbortController = null; });
     return this.musicPrefetchPromise;
   }
 
@@ -270,16 +351,24 @@ export class SoundBoard {
     if ((!force && this.musicSamplePromise) || !this.context || typeof fetch !== "function") return this.musicSamplePromise;
     if (this.musicRetryTimer) { clearTimeout(this.musicRetryTimer); this.musicRetryTimer = null; }
     const context = this.context;
+    this.musicAbortController?.abort();
+    const abortController = typeof AbortController === "function" ? new AbortController() : null;
+    this.musicAbortController = abortController;
+    const loadIsActive = () => !this.disposed && this.context === context && !abortController?.signal.aborted;
     const decodeFile = async (file) => {
       let lastError;
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
+          if (!loadIsActive()) throw new Error("Audio load cancelled");
           const separator = file.url.includes("?") ? "&" : "?";
-          const response = await fetch(`${file.url}${separator}bank=${MUSIC_ASSET_REVISION}`, { cache: attempt ? "reload" : "default" });
+          const response = await fetch(`${file.url}${separator}bank=${MUSIC_ASSET_REVISION}`, { cache: attempt ? "reload" : "default", signal: abortController?.signal });
           if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-          return { buffer: await context.decodeAudioData(await response.arrayBuffer()), rootMidi: file.rootMidi ?? null, trim: file.trim ?? 1 };
+          const buffer = await context.decodeAudioData(await response.arrayBuffer());
+          if (!loadIsActive()) throw new Error("Audio load cancelled");
+          return { buffer, rootMidi: file.rootMidi ?? null, trim: file.trim ?? 1 };
         } catch (error) {
           lastError = error;
+          if (!loadIsActive()) throw lastError;
           if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 90 * (attempt + 1)));
         }
       }
@@ -291,10 +380,10 @@ export class SoundBoard {
     const remainingEntries = entries.map(([name, asset]) => [name, startupNames.has(name) ? asset.files.slice(1) : asset.files]).filter(([, files]) => files.length);
     const decodeRole = async ([name, files]) => {
       const decoded = (await Promise.allSettled(files.map(decodeFile))).filter((entry) => entry.status === "fulfilled").map((entry) => entry.value);
-      if (decoded.length) this.musicSamples[name] = [...(this.musicSamples[name] || []), ...decoded];
+      if (loadIsActive() && decoded.length) this.musicSamples[name] = [...(this.musicSamples[name] || []), ...decoded];
     };
     const finishLoad = (terminal = false) => {
-      if (this.context !== context) return this.musicSamples;
+      if (!loadIsActive()) return this.musicSamples;
       if (!terminal) {
         this.musicSamplesReady = startupEntries.every(([name]) => this.musicSamples[name]?.length);
         if (this.musicSamplesReady) {
@@ -309,6 +398,7 @@ export class SoundBoard {
       const decodedRoles = Object.values(this.musicSamples).filter((entries) => Array.isArray(entries) && entries.length).length;
       this.musicSamplesReady = decodedRoles > 0;
       this.musicLoadFailed = decodedRoles === 0;
+      if (this.musicAbortController === abortController) this.musicAbortController = null;
       if (this.musicSamplesReady) {
         this.musicLoadCycles = 0;
         this._flushPendingMenuAccent();
@@ -321,7 +411,10 @@ export class SoundBoard {
         this.musicCountdown = null;
         this.musicSamplePromise = null;
         this.musicLoadCycles += 1;
-        if (this.musicLoadCycles < 4) this.musicRetryTimer = setTimeout(() => this._loadMusicSamples(true), 700 * 2 ** this.musicLoadCycles);
+        if (this.musicLoadCycles < 4) this.musicRetryTimer = this._later(() => {
+          this.musicRetryTimer = null;
+          this._loadMusicSamples(true);
+        }, 700 * 2 ** this.musicLoadCycles);
       }
       return this.musicSamples;
     };
@@ -427,6 +520,7 @@ export class SoundBoard {
       this.continuousSources.delete(source);
       try { source.stop(now); } catch {}
     }
+    for (const node of metadata.nodes || [source]) try { node.disconnect?.(); } catch {}
     return true;
   }
 
@@ -449,7 +543,7 @@ export class SoundBoard {
     return true;
   }
 
-  _trackContinuous(source, metadata = {}) { this.continuousSources.set(source, { priority: 0, ...metadata }); }
+  _trackContinuous(source, metadata = {}) { this.continuousSources.set(source, { priority: 0, nodes: [source], ...metadata }); }
   _evictForPriority(priority, requesterGroup = "sfx") {
     const musicCount = [...this.activeVoices].filter((voice) => voice.group === "music").length;
     const candidates = [
@@ -459,22 +553,40 @@ export class SoundBoard {
     ].sort((a, b) => a.priority - b.priority);
     const weakest = candidates[0];
     if (!weakest || weakest.priority >= priority) return false;
-    if (weakest.kind === "active") this.activeVoices.delete(weakest.voice);
+    if (weakest.kind === "active") {
+      this.activeVoices.delete(weakest.voice);
+      for (const node of weakest.voice.nodes || [weakest.source]) try { node.disconnect?.(); } catch {}
+    }
     else if (weakest.kind === "continuous") return this._preemptContinuous(weakest.source);
-    else this.fadingSources.delete(weakest.source);
+    else {
+      const metadata = this.fadingSources.get(weakest.source);
+      this.fadingSources.delete(weakest.source);
+      for (const node of metadata?.nodes || [weakest.source]) try { node.disconnect?.(); } catch {}
+    }
     try { weakest.source.stop(this.context?.currentTime || 0); } catch {}
     return true;
   }
-  _countFade(source, seconds, priority = 0) {
-    this.fadingSources.set(source, { priority });
-    setTimeout(() => this.fadingSources.delete(source), Math.max(0, seconds * 1000 + 12));
+  _countFade(source, seconds, priority = 0, nodes = [source]) {
+    if (this.disposed || seconds <= 0) {
+      this.fadingSources.delete(source);
+      for (const node of nodes) try { node.disconnect?.(); } catch {}
+      return;
+    }
+    this.fadingSources.set(source, { priority, nodes });
+    this._later(() => {
+      this.fadingSources.delete(source);
+      for (const node of nodes) try { node.disconnect?.(); } catch {}
+    }, seconds * 1000 + 12);
   }
   totalVoiceCount() { return this.activeVoices.size + this.continuousSources.size + this.fadingSources.size; }
 
-  _track(source, priority, group = "sfx") {
-    const voice = { source, priority, group };
+  _track(source, priority, group = "sfx", nodes = []) {
+    const voice = { source, priority, group, nodes: [source, ...nodes] };
     this.activeVoices.add(voice);
-    const cleanup = () => this.activeVoices.delete(voice);
+    const cleanup = () => {
+      this.activeVoices.delete(voice);
+      for (const node of voice.nodes) try { node.disconnect?.(); } catch {}
+    };
     if (source.addEventListener) source.addEventListener("ended", cleanup, { once: true });
     else source.onended = cleanup;
   }
@@ -482,11 +594,13 @@ export class SoundBoard {
   _route(node, busName, pan = 0, wet = 0, delay = 0) {
     let tail = node;
     let panner = null;
+    const graph = [];
     if (this.context.createStereoPanner) {
       panner = this.context.createStereoPanner();
       panner.pan.value = clamp(pan, -1, 1);
       tail.connect(panner);
       tail = panner;
+      graph.push(panner);
     }
     tail.connect(this._bus(busName));
     const reverb = busName === "music" ? this.musicReverb : this.reverb;
@@ -494,18 +608,26 @@ export class SoundBoard {
       const send = this.context.createGain();
       send.gain.value = wet;
       node.connect(send).connect(reverb);
+      graph.push(send);
     }
     if (delay > 0 && busName === "music" && this.musicDelay) {
       const send = this.context.createGain();
       send.gain.value = delay;
       node.connect(send).connect(this.musicDelay);
+      graph.push(send);
     }
+    this.routeGraphs.set(node, graph);
     return panner;
   }
 
   sample(name, volume = .1, options = {}) {
     const buffer = this.sampleBank?.[name];
-    if (!this.enabled || !this.context || !buffer || !this._claimVoice(options.priority ?? 45, options.group || "sfx")) return false;
+    if (!this.enabled || !this.context) return false;
+    if (!buffer) {
+      if (this.audioAssetPromise && options.bus === "ui" && !this.pendingSampleCue) this.pendingSampleCue = { name, volume, options };
+      return false;
+    }
+    if (!this._claimVoice(options.priority ?? 45, options.group || "sfx")) return false;
     const now = Math.max(this.context.currentTime, options.at ?? this.context.currentTime);
     const source = this.context.createBufferSource();
     const filter = this.context.createBiquadFilter();
@@ -525,7 +647,7 @@ export class SoundBoard {
     this._route(gain, options.bus || "impact", options.pan || 0, options.wet ?? .03, options.delay || 0);
     source.start(now);
     source.stop(now + duration + .025);
-    this._track(source, options.priority ?? 45, options.group || "sfx");
+    this._track(source, options.priority ?? 45, options.group || "sfx", [filter, gain, ...(this.routeGraphs.get(gain) || [])]);
     return true;
   }
 
@@ -567,7 +689,7 @@ export class SoundBoard {
     this._route(gain, "music", options.pan || 0, options.wet ?? .08, options.delay || 0);
     source.start(now);
     source.stop(now + duration + .025);
-    this._track(source, options.priority ?? 8, "music");
+    this._track(source, options.priority ?? 8, "music", [filter, gain, ...(this.routeGraphs.get(gain) || [])]);
     return true;
   }
 
@@ -683,12 +805,15 @@ export class SoundBoard {
     if (loop?.weaponId !== weapon.id) { this.stopChargeLoop(id); loop = null; }
     if (!loop) {
       const priority = typeof spatial === "object" && spatial.local ? 62 : 28;
+      const authored = weaponAudioProfile(weapon), buffer = this.sampleBank[authored.chargeSample] || this.sampleBank.chargeLoop;
+      if (!buffer) return false;
       if (!this._claimContinuous(1, priority)) return false;
-      const profile = weaponPresentation(weapon), authored = weaponAudioProfile(weapon), source = this.context.createBufferSource(), filter = this.context.createBiquadFilter(), gain = this.context.createGain();
-      source.buffer = this.sampleBank[authored.chargeSample] || this.sampleBank.chargeLoop; source.loop = true; source.playbackRate.value = 1;
+      const profile = weaponPresentation(weapon), source = this.context.createBufferSource(), filter = this.context.createBiquadFilter(), gain = this.context.createGain();
+      source.buffer = buffer; source.loop = true; source.playbackRate.value = 1;
       filter.type = "bandpass"; filter.Q.value = .85; gain.gain.value = .0001;
       source.connect(filter).connect(gain); const panner = this._route(gain, "weapon", mix.pan, .025); source.start();
-      loop = { nodes: [source], source, panner, filter, gain, profile, weaponId: weapon.id }; this.chargeLoops.set(id, loop); this._trackContinuous(source, { priority, group: "charge", map: this.chargeLoops, id });
+      const graph = [source, filter, gain, ...(this.routeGraphs.get(gain) || [])];
+      loop = { nodes: [source], graph, source, panner, filter, gain, profile, weaponId: weapon.id }; this.chargeLoops.set(id, loop); this._trackContinuous(source, { priority, group: "charge", map: this.chargeLoops, id, nodes: graph });
     }
     const volume = Math.max(.002, .036 * mix.gain) * (.12 + level ** 1.35 * .88);
     loop.filter.frequency.setTargetAtTime(mix.occluded ? 950 : 420 + level * 2300, now, .035); loop.filter.Q.setTargetAtTime(.85 + level * 1.1, now, .04); loop.gain.gain.setTargetAtTime(volume, now, .025); loop.panner?.pan.setTargetAtTime(mix.pan, now, .035);
@@ -705,14 +830,16 @@ export class SoundBoard {
     if (loop?.weaponId !== weapon.id) { this.stopWeaponLoop(id); loop = null; }
     if (!loop) {
       const priority = typeof spatial === "object" && spatial.local ? 58 : 26;
-      const profile = weaponPresentation(weapon), authored = weaponAudioProfile(weapon);
+      const profile = weaponPresentation(weapon), authored = weaponAudioProfile(weapon), buffer = this.sampleBank[authored.loopSample] || this.sampleBank.weaponLoop;
+      if (!buffer) return false;
       if (!this._claimContinuous(1, priority)) return false;
       const source = this.context.createBufferSource(), filter = this.context.createBiquadFilter(), gain = this.context.createGain();
-      source.buffer = this.sampleBank[authored.loopSample] || this.sampleBank.weaponLoop; source.loop = true; source.playbackRate.value = 1;
+      source.buffer = buffer; source.loop = true; source.playbackRate.value = 1;
       filter.type = "lowpass"; filter.Q.value = .65; gain.gain.value = .0001; source.connect(filter).connect(gain); const panner = this._route(gain, "weapon", mix.pan, .035); source.start();
       const nodes = [source];
-      loop = { nodes, source, panner, filter, gain, profile, weaponId: weapon.id }; this.weaponLoops.set(id, loop);
-      for (const node of nodes) this._trackContinuous(node, { priority, group: "weapon", map: this.weaponLoops, id });
+      const graph = [source, filter, gain, ...(this.routeGraphs.get(gain) || [])];
+      loop = { nodes, graph, source, panner, filter, gain, profile, weaponId: weapon.id }; this.weaponLoops.set(id, loop);
+      for (const node of nodes) this._trackContinuous(node, { priority, group: "weapon", map: this.weaponLoops, id, nodes: graph });
     }
     const volume = Math.max(.002, .032 * mix.gain);
     loop.filter.frequency.setTargetAtTime(mix.occluded ? 980 : 480 + loop.profile.audioPitch * 1.1, now, .045); loop.gain.gain.setTargetAtTime(volume, now, .025); loop.panner?.pan.setTargetAtTime(mix.pan, now, .035);
@@ -727,11 +854,14 @@ export class SoundBoard {
     let loop = this.grappleLoops.get(id);
     if (!loop) {
       const priority = spatial.local ? 55 : 24;
+      const buffer = this.sampleBank.grappleLoop;
+      if (!buffer) return false;
       if (!this._claimContinuous(1, priority)) return false;
       const source = this.context.createBufferSource(), filter = this.context.createBiquadFilter(), gain = this.context.createGain();
-      source.buffer = this.sampleBank.grappleLoop; source.loop = true; source.playbackRate.value = .82;
+      source.buffer = buffer; source.loop = true; source.playbackRate.value = .82;
       filter.type = "bandpass"; filter.Q.value = 1.1; gain.gain.value = .0001; source.connect(filter).connect(gain); const panner = this._route(gain, "movement", mix.pan, .03); source.start();
-      loop = { nodes: [source], source, panner, filter, gain }; this.grappleLoops.set(id, loop); this._trackContinuous(source, { priority, group: "grapple", map: this.grappleLoops, id });
+      const graph = [source, filter, gain, ...(this.routeGraphs.get(gain) || [])];
+      loop = { nodes: [source], graph, source, panner, filter, gain }; this.grappleLoops.set(id, loop); this._trackContinuous(source, { priority, group: "grapple", map: this.grappleLoops, id, nodes: graph });
     }
     loop.source.playbackRate.setTargetAtTime?.(.78 + clamp(tension) * .18 + Math.min(.16, speed * .004), now, .05); loop.filter.frequency.setTargetAtTime(mix.occluded ? 950 : 540 + clamp(tension) * 1450, now, .05); loop.gain.gain.setTargetAtTime(.004 + mix.gain * (.008 + clamp(tension) * .018), now, .04); loop.panner?.pan.setTargetAtTime(mix.pan, now, .035);
     return true;
@@ -743,12 +873,14 @@ export class SoundBoard {
     const mix = this._mix(spatial), now = this.context.currentTime;
     let loop = this.hazardLoops.get(id);
     if (!loop) {
+      const authored = weaponAudioProfile(weapon), buffer = this.sampleBank[authored.hazardSample] || this.sampleBank.hazardLoop;
+      if (!buffer) return false;
       if (!this._claimContinuous(1, 68)) return false;
       const source = this.context.createBufferSource(), filter = this.context.createBiquadFilter(), gain = this.context.createGain();
-      const authored = weaponAudioProfile(weapon);
-      source.buffer = this.sampleBank[authored.hazardSample] || this.sampleBank.hazardLoop; source.loop = true; source.playbackRate.value = 1; filter.type = "lowpass"; gain.gain.value = .0001;
+      source.buffer = buffer; source.loop = true; source.playbackRate.value = 1; filter.type = "lowpass"; gain.gain.value = .0001;
       source.connect(filter).connect(gain); const panner = this._route(gain, "weapon", mix.pan, .1); source.start();
-      loop = { nodes: [source], source, panner, filter, gain, weaponId: weapon.id }; this.hazardLoops.set(id, loop); this._trackContinuous(source, { priority: 68, group: "hazard", map: this.hazardLoops, id });
+      const graph = [source, filter, gain, ...(this.routeGraphs.get(gain) || [])];
+      loop = { nodes: [source], graph, source, panner, filter, gain, weaponId: weapon.id }; this.hazardLoops.set(id, loop); this._trackContinuous(source, { priority: 68, group: "hazard", map: this.hazardLoops, id, nodes: graph });
     }
     loop.filter.frequency.setTargetAtTime(mix.occluded ? 880 : 420 + mix.gain * 1800, now, .1); loop.gain.gain.setTargetAtTime(.002 + mix.gain * .025, now, .08); loop.panner?.pan.setTargetAtTime(mix.pan, now, .05);
     return true;
@@ -760,11 +892,14 @@ export class SoundBoard {
     const mix = this._mix(spatial), now = this.context.currentTime;
     let loop = this.projectileLoops.get(id);
     if (!loop) {
+      const authored = weaponAudioProfile(weapon), buffer = this.sampleBank[authored.flightSample] || this.sampleBank.projectileLoop;
+      if (!buffer) return false;
       if (!this._claimContinuous(1, 76)) return false;
-      const profile = weaponPresentation(weapon), authored = weaponAudioProfile(weapon), source = this.context.createBufferSource(), filter = this.context.createBiquadFilter(), gain = this.context.createGain();
-      source.buffer = this.sampleBank[authored.flightSample] || this.sampleBank.projectileLoop; source.loop = true; source.playbackRate.value = 1;
+      const profile = weaponPresentation(weapon), source = this.context.createBufferSource(), filter = this.context.createBiquadFilter(), gain = this.context.createGain();
+      source.buffer = buffer; source.loop = true; source.playbackRate.value = 1;
       filter.type = "bandpass"; filter.Q.value = .75; gain.gain.value = .0001; source.connect(filter).connect(gain); const panner = this._route(gain, "weapon", mix.pan, .055); source.start();
-      loop = { nodes: [source], source, panner, filter, gain, profile, weaponId: weapon.id }; this.projectileLoops.set(id, loop); this._trackContinuous(source, { priority: 76, group: "projectile", map: this.projectileLoops, id });
+      const graph = [source, filter, gain, ...(this.routeGraphs.get(gain) || [])];
+      loop = { nodes: [source], graph, source, panner, filter, gain, profile, weaponId: weapon.id }; this.projectileLoops.set(id, loop); this._trackContinuous(source, { priority: 76, group: "projectile", map: this.projectileLoops, id, nodes: graph });
     }
     const speed = spatial.speed || weapon.projectileSpeed || 1;
     loop.filter.frequency.setTargetAtTime(mix.occluded ? 900 : 700 + speed * 22, now, .05);
@@ -781,7 +916,8 @@ export class SoundBoard {
     for (const node of loop.nodes || [loop.source].filter(Boolean)) {
       const priority = this.continuousSources.get(node)?.priority || 0;
       this.continuousSources.delete(node);
-      if (fade > 0) this._countFade(node, fade, priority);
+      if (fade > 0) this._countFade(node, fade, priority, loop.graph || [node]);
+      else for (const entry of loop.graph || [node]) try { entry.disconnect?.(); } catch {}
       try { node.stop(now + fade); } catch {}
     }
     map.delete(id);
@@ -815,13 +951,17 @@ export class SoundBoard {
 
   startAmbience(theme = "foundry") {
     if (!this.context || this.ambienceNodes) return false;
+    const buffer = this.sampleBank[`ambience${theme[0].toUpperCase()}${theme.slice(1)}`] || this.sampleBank.ambienceFoundry;
+    if (!buffer) { this.pendingAmbienceTheme = theme; return false; }
     if (!this._claimContinuous(2, 4)) return false;
+    this.pendingAmbienceTheme = null;
     const gain = this.context.createGain(), filter = this.context.createBiquadFilter();
     gain.gain.value = .018; filter.type = "lowpass"; filter.frequency.value = 720;
-    const buffer = this.sampleBank[`ambience${theme[0].toUpperCase()}${theme.slice(1)}`] || this.sampleBank.ambienceFoundry;
     const nodes = [0, 1].map((index) => { const source = this.context.createBufferSource(); source.buffer = buffer; source.loop = true; source.playbackRate.value = index ? .73 : 1; source.connect(filter); source.start(0, index ? .61 : 0); return source; });
-    filter.connect(gain).connect(this._bus("ambience")); this.ambienceNodes = { nodes, filter, gain, theme };
-    for (const node of nodes) this._trackContinuous(node, { priority: 4, group: "ambience" });
+    filter.connect(gain).connect(this._bus("ambience"));
+    const graph = [...nodes, filter, gain];
+    this.ambienceNodes = { nodes, graph, filter, gain, theme };
+    for (const node of nodes) this._trackContinuous(node, { priority: 4, group: "ambience", nodes: graph });
     return true;
   }
 
@@ -837,8 +977,9 @@ export class SoundBoard {
   }
 
   stopAmbience() {
+    this.pendingAmbienceTheme = null;
     if (!this.ambienceNodes) return;
-    for (const node of this.ambienceNodes.nodes) { const priority = this.continuousSources.get(node)?.priority || 4; this.continuousSources.delete(node); this._countFade(node, .1, priority); try { node.stop?.(this.context?.currentTime + .1); } catch {} }
+    for (const node of this.ambienceNodes.nodes) { const priority = this.continuousSources.get(node)?.priority || 4; this.continuousSources.delete(node); this._countFade(node, .1, priority, this.ambienceNodes.graph); try { node.stop?.(this.context?.currentTime + .1); } catch {} }
     this.ambienceNodes = null;
   }
 
@@ -1079,8 +1220,8 @@ export class SoundBoard {
       bus.gain.setValueAtTime?.(Math.max(.0001, bus.gain.value), now);
       bus.gain.linearRampToValueAtTime?.(.0001, now + fade);
     }
-    for (const voice of [...this.activeVoices]) if (voice.group === "music") { try { voice.source.stop(now + fade); } catch {} this.activeVoices.delete(voice); if (fade > 0) this._countFade(voice.source, fade, voice.priority); }
-    if (bus) setTimeout(() => bus.gain.setTargetAtTime?.(this._musicBusGain(), this.context?.currentTime || 0, .02), Math.max(0, fade * 1000 + 20));
+    for (const voice of [...this.activeVoices]) if (voice.group === "music") { try { voice.source.stop(now + fade); } catch {} this.activeVoices.delete(voice); if (fade > 0) this._countFade(voice.source, fade, voice.priority, voice.nodes); else for (const node of voice.nodes) try { node.disconnect?.(); } catch {} }
+    if (bus) this._later(() => bus.gain.setTargetAtTime?.(this._musicBusGain(), this.context?.currentTime || 0, .02), fade * 1000 + 20);
     return true;
   }
 
@@ -1105,8 +1246,39 @@ export class SoundBoard {
   }
 
   dispose() {
+    this.disposed = true;
+    this.musicAbortController?.abort();
+    this.musicPrefetchAbortController?.abort();
+    this.musicAbortController = null;
+    this.musicPrefetchAbortController = null;
     if (this.musicRetryTimer) clearTimeout(this.musicRetryTimer);
     this.musicRetryTimer = null;
-    this.stopAll(); this.stopMusic(0); for (const voice of [...this.activeVoices]) try { voice.source.stop?.(); } catch {} this.activeVoices.clear(); this.context?.close?.(); this.context = null;
+    for (const timer of this.lifecycleTimers) clearTimeout(timer);
+    this.lifecycleTimers.clear();
+    this.audioAssetWorker?.terminate();
+    this.audioAssetWorker = null;
+    this.audioAssetData = null;
+    this.pendingSampleCue = null;
+    this.pendingAmbienceTheme = null;
+    this.stopAll();
+    this.stopMusic(0);
+    for (const voice of [...this.activeVoices]) {
+      try { voice.source.stop?.(); } catch {}
+      for (const node of voice.nodes || [voice.source]) try { node.disconnect?.(); } catch {}
+    }
+    for (const metadata of this.fadingSources.values()) for (const node of metadata.nodes || []) try { node.disconnect?.(); } catch {}
+    this.activeVoices.clear();
+    this.continuousSources.clear();
+    this.fadingSources.clear();
+    this.context?.close?.();
+    for (const node of [
+      ...Object.values(this.buses), this.master, this.saturator, this.compressor, this.limiter, this.peakMeter,
+      this.musicFilter, this.musicLowShelf, this.musicHighShelf, this.reverb, this.reverbGain,
+      this.musicReverb, this.musicReverbGain, this.musicDelay, this.musicDelayFeedback, this.musicDelayGain
+    ]) try { node?.disconnect?.(); } catch {}
+    this.buses = {};
+    this.sampleBank = {};
+    this.musicSamples = {};
+    this.context = null;
   }
 }

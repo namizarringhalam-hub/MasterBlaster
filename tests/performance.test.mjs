@@ -14,9 +14,29 @@ const bot = new Fighter(
   new THREE.Vector3(),
   true
 );
+let fighterRenderables = 0;
+bot.group.traverse((object) => { if (object.isMesh || object.isLine || object.isPoints) fighterRenderables++; });
+assert.ok(fighterRenderables <= 30, `a complete fighter stays within the thirty-renderable budget (received ${fighterRenderables})`);
 assert.ok(bot.botTargetPoint?.isVector3, "bot target-position scratch storage survives AI target initialization");
 assert.equal(bot.botTarget, null, "bot target selection remains independent from its target-position scratch vector");
 bot.dispose();
+
+let maximumFighterRenderables = 0;
+for (const weaponId of Object.keys(WEAPONS)) for (let variant = 0; variant < 4; variant++) {
+  const fighterScene = new THREE.Scene();
+  const fighter = new Fighter(
+    fighterScene,
+    { id: `${weaponId}-${"v".repeat(variant + 1)}`, name: weaponId, color: WEAPONS[weaponId].color, accent: 0x9df8ff },
+    [weaponId],
+    new THREE.Vector3()
+  );
+  let count = 0;
+  fighter.group.traverse((object) => { if (object.isMesh || object.isLine || object.isPoints) count++; });
+  maximumFighterRenderables = Math.max(maximumFighterRenderables, count);
+  assert.ok(count <= 30, `${weaponId} costume ${variant} stays within the fighter render budget`);
+  fighter.dispose();
+}
+assert.ok(maximumFighterRenderables <= 30, "all forty-seven weapons and four costume variants preserve the full-quality draw budget");
 
 const scene = new THREE.Scene();
 const world = new ArenaWorld(scene, "PERFORMANCE-GRID");

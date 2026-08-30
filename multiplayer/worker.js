@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { DEFAULT_LOADOUT, WEAPONS, structuralPartBounds, weaponFireMode, weaponUsesAmmo } from "../src/gameData.js";
 import TEXT, { formatText } from "../src/playerText.js";
+import { hitProposalLimit, validateHitProposal, validateImpactProposal, weaponAuthorityStrategy } from "../src/combatAuthority.js";
 import {
   MATCH_TARGET_SCORE,
   MAX_MATCH_PLAYERS,
@@ -23,6 +24,7 @@ const RESUME_SESSION_MS = 45_000;
 const RESUME_ACK_GRACE_MS = 15_000;
 const PRIVATE_LOBBY_REJOIN_MS = 10 * 60_000;
 const PRIVATE_MATCH_REJOIN_GRACE_MS = 60_000;
+const PERSISTENCE_WINDOW_MS = 250;
 const RESUME_TOKEN_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const COLORS = [
   [0x129dba, 0x6ff6ff], [0xc82849, 0xff6b82], [0x6bad22, 0xb9ff55], [0x7847ca, 0xc793ff],
@@ -122,19 +124,22 @@ export class Matchmaker extends DurableObject {
     const excludeRoomCode = normalizeRoomCode(input.excludeRoomCode);
     const key = `open:${targetSize}:${difficulty}:${timeLimitMinutes}`;
     let roomCode = await this.ctx.storage.get(key);
-    const oneOffFallback = roomCode && roomCode === excludeRoomCode;
-    if (oneOffFallback) roomCode = null;
+    let preserveCanonical = false;
     if (roomCode) {
       const room = this.env.MATCH_ROOMS.getByName(roomCode);
       const status = await room.fetch("https://room.internal/status").then((response) => response.json()).catch(() => null);
-      if (
-        !status || status.ended || status.humans >= status.capacity ||
+      const joinable = !(
+        !status || status.ended || (status.initialized && (status.activeHumans ?? status.humans) === 0) || status.humans >= status.capacity ||
         status.targetSize !== targetSize || status.difficulty !== difficulty || status.timeLimitMinutes !== timeLimitMinutes
-      ) roomCode = null;
+      );
+      if (roomCode === excludeRoomCode) {
+        preserveCanonical = joinable;
+        roomCode = null;
+      } else if (!joinable) roomCode = null;
     }
     if (!roomCode) {
       roomCode = normalizeRoomCode(`Q-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 4)}`);
-      if (!oneOffFallback) await this.ctx.storage.put(key, roomCode);
+      if (!preserveCanonical) await this.ctx.storage.put(key, roomCode);
     }
     const room = this.env.MATCH_ROOMS.getByName(roomCode);
     const reserved = await room.fetch(`https://room.internal/rooms/${roomCode}/reserve`, {
@@ -162,6 +167,9 @@ export class MatchRoom extends DurableObject {
     this.resumeSessions = new Map();
     this.pendingStates = new Map();
     this.stateFlushTimer = 0;
+    this.pendingBotPersistence = false;
+    this.pendingFirePersistence = false;
+    this.persistenceTask = null;
     this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('{"type":"ping"}', '{"type":"pong"}'));
     this.ready = this.ctx.blockConcurrencyWhile(async () => {
       this.meta = await this.ctx.storage.get("meta") || null;
@@ -171,6 +179,7 @@ export class MatchRoom extends DurableObject {
       if (this.meta && !Number.isFinite(this.meta.configuredBotCount)) this.meta.configuredBotCount = Math.max(0, (this.meta.targetSize || 1) - 1);
       this.reservation = await this.ctx.storage.get("reservation") || null;
       for (const bot of await this.ctx.storage.get("bots") || []) this.bots.set(bot.id, bot);
+      for (const [playerId, shots] of await this.ctx.storage.get("recentFires") || []) this.recentFires.set(playerId, shots);
       this.terrainEvents = await this.ctx.storage.get("terrainEvents") || [];
       const storedStructuralHealth = await this.ctx.storage.get("structuralHealth");
       if (storedStructuralHealth) for (const [partId, health] of storedStructuralHealth) this.structuralHealth.set(partId, health);
@@ -307,8 +316,54 @@ export class MatchRoom extends DurableObject {
       this.ctx.storage.put("bots", [...this.bots.values()]),
       this.ctx.storage.put("terrainEvents", this.terrainEvents),
       this.ctx.storage.put("structuralHealth", [...this.structuralHealth]),
-      this.ctx.storage.put("structuralFailures", [...this.structuralFailures])
+      this.ctx.storage.put("structuralFailures", [...this.structuralFailures]),
+      this.ctx.storage.put("recentFires", [...this.recentFires])
     ]);
+  }
+
+  async persistBots() {
+    await this.ctx.storage.put("bots", [...this.bots.values()]);
+  }
+
+  async persistCombatState(includeBots = false) {
+    const writes = [this.ctx.storage.put("recentFires", [...this.recentFires])];
+    if (includeBots) writes.push(this.persistBots());
+    await Promise.all(writes);
+  }
+
+  persistBatchEntry(key, value) {
+    return this.ctx.storage.put(key, value);
+  }
+
+  schedulePersistence({ bots = false, fires = false } = {}) {
+    this.pendingBotPersistence ||= bots;
+    this.pendingFirePersistence ||= fires;
+    if (!this.pendingBotPersistence && !this.pendingFirePersistence) return Promise.resolve();
+    if (this.persistenceTask) return this.persistenceTask;
+    const task = new Promise((resolve) => setTimeout(resolve, PERSISTENCE_WINDOW_MS))
+      .then(async () => {
+        const writeBots = this.pendingBotPersistence;
+        const writeFires = this.pendingFirePersistence;
+        this.pendingBotPersistence = false;
+        this.pendingFirePersistence = false;
+        try {
+          const writes = [];
+          if (writeBots) writes.push(this.persistBatchEntry("bots", [...this.bots.values()]));
+          if (writeFires) writes.push(this.persistBatchEntry("recentFires", [...this.recentFires]));
+          await Promise.all(writes);
+        } catch (error) {
+          this.pendingBotPersistence ||= writeBots;
+          this.pendingFirePersistence ||= writeFires;
+          console.error(JSON.stringify({ event: "persistence_retry", roomCode: this.meta?.roomCode, error: String(error) }));
+        }
+      })
+      .finally(() => {
+        if (this.persistenceTask === task) this.persistenceTask = null;
+        if (this.pendingBotPersistence || this.pendingFirePersistence) this.schedulePersistence();
+      });
+    this.persistenceTask = task;
+    this.ctx.waitUntil(task);
+    return task;
   }
 
   async reconcileBots(excludedSocket = null) {
@@ -399,6 +454,8 @@ export class MatchRoom extends DurableObject {
       const settings = this.meta || this.reservation;
       return json({
         humans,
+        activeHumans: this.humanEntries().length,
+        initialized: Boolean(this.meta),
         capacity: MAX_MATCH_PLAYERS,
         targetSize: settings?.targetSize || 0,
         difficulty: settings?.difficulty || "normal",
@@ -491,14 +548,17 @@ export class MatchRoom extends DurableObject {
     const now = Date.now();
     const requested = Array.isArray(message.players) ? message.players.slice(0, MAX_MATCH_PLAYERS) : [];
     const changed = [];
+    let botsChanged = false;
     for (const state of this.authorizedPlayers(socket, requested)) {
       const entry = this.playerById(state.id);
       if (!entry) continue;
       for (const weaponId of entry.player.loadout) this.applyLazyReload(entry.player, weaponId, now);
       const update = this.updatePlayerState(entry.player, state, now);
       if (update) changed.push(update);
+      if (update && entry.player.bot) botsChanged = true;
       if (entry.socket) entry.socket.serializeAttachment(entry.player);
     }
+    if (botsChanged) this.schedulePersistence({ bots: true });
     if (changed.length) this.queueStateBroadcast(changed);
     await this.checkMatchEnd(now);
   }
@@ -531,21 +591,33 @@ export class MatchRoom extends DurableObject {
     player.lastFireAt[weapon.id] = now;
     if (usesAmmo && !detonation) player.ammo[weapon.id] -= weaponFireMode(weapon) === "burst" ? Math.min(weapon.burstCount || 1, player.ammo[weapon.id]) : 1;
     if (usesAmmo && player.ammo[weapon.id] === 0) player.reloadEndsAt[weapon.id] = now + weapon.reload * 1000;
+    const direction = sanitizeVector(message.direction, 1);
+    const directionLength = Math.hypot(direction.x, direction.y, direction.z);
+    if (directionLength < .5) return;
+    direction.x /= directionLength; direction.y /= directionLength; direction.z /= directionLength;
+    const requestedShotId = String(message.shotId || "");
     const shot = {
-      id: crypto.randomUUID(), playerId: player.id, weaponId: weapon.id, firedAt: now,
-      origin: { ...player.position }, hits: Object.create(null),
+      id: /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(requestedShotId) ? requestedShotId : crypto.randomUUID(),
+      playerId: player.id, weaponId: weapon.id, firedAt: now,
+      origin: { x: player.position.x, y: player.position.y + 1.2, z: player.position.z },
+      direction, hits: Object.create(null), hitPositions: [],
+      damageScale: weapon.chargeTime
+        ? .35 + finiteNumber(message.chargeRatio, weapon.minCharge || 0, weapon.minCharge || 0, 1) * .65
+        : 1,
       structureDamageScale: weapon.chargeTime
         ? .35 + finiteNumber(message.chargeRatio, weapon.minCharge || 0, weapon.minCharge || 0, 1) * .65
-        : 1
+        : 1,
+      strategy: weaponAuthorityStrategy(weapon)
     };
     const history = this.recentFires.get(player.id) || [];
     history.push(shot);
-    while (history.length > 24 || history[0]?.firedAt < now - 12_000) history.shift();
+    while (history.length > 48 || history[0]?.firedAt < now - 40_000) history.shift();
     this.recentFires.set(player.id, history);
     if (entry.socket) entry.socket.serializeAttachment(player);
+    this.schedulePersistence({ bots: player.bot, fires: true });
     this.broadcast({
       type: "fire", shotId: shot.id, playerId: player.id, weaponId: weapon.id, slotIndex,
-      direction: sanitizeVector(message.direction, 1), triggerTap: Boolean(message.triggerTap), action: detonation ? "detonate" : "fire",
+      direction, triggerTap: Boolean(message.triggerTap), action: detonation ? "detonate" : "fire",
       chargeRatio: weapon.chargeTime ? finiteNumber(message.chargeRatio, weapon.minCharge || 0, weapon.minCharge || 0, 1) : 1,
       ammo: player.ammo[weapon.id], reloadCompleteAt: player.reloadEndsAt[weapon.id] || 0, serverTime: now
     });
@@ -559,38 +631,35 @@ export class MatchRoom extends DurableObject {
     if (player.ammo[weapon.id] >= weapon.ammo || player.reloadEndsAt[weapon.id]) return;
     player.reloadEndsAt[weapon.id] = Date.now() + weapon.reload * 1000;
     if (entry.socket) entry.socket.serializeAttachment(player);
+    if (player.bot) this.schedulePersistence({ bots: true });
     this.broadcast({ type: "reload", playerId: player.id, weaponId: weapon.id, completeAt: player.reloadEndsAt[weapon.id] });
   }
 
-  recentValidShot(attacker, target, weapon, now) {
+  recentValidShot(attacker, target, weapon, message, now) {
     const history = this.recentFires.get(attacker.id) || [];
-    const maximumAge = Math.min(12_000, 1_500 + 1000 * Math.max(0, weapon.fuse || weapon.hazardDuration || 0));
-    const maximumRange = (weapon.maxUsefulRange || weapon.reach || 180) + (weapon.radius || 0) + 14;
     for (let index = history.length - 1; index >= 0; index--) {
       const shot = history[index];
-      if (shot.weaponId !== weapon.id || now - shot.firedAt > maximumAge) continue;
-      if (squaredDistance(shot.origin, target.position) > maximumRange * maximumRange) continue;
+      if (shot.id !== message.shotId || shot.weaponId !== weapon.id) continue;
       const prior = shot.hits[target.id] || 0;
-      const limit = weapon.hazard ? 32 : weapon.pellets || (weapon.type === "chain" ? weapon.chains || 3 : 1);
+      const limit = hitProposalLimit(weapon);
       if (prior >= limit) continue;
+      const impact = message.impact ? sanitizeVector(message.impact) : null;
+      const validation = validateHitProposal({
+        shot, attacker, target, weapon, impact, phase: message.phase,
+        now, seed: this.meta.seed, structuralHealth: this.structuralHealth
+      });
+      if (!validation) return null;
       shot.hits[target.id] = prior + 1;
-      return shot;
+      shot.hitPositions.push({ x: target.position.x, y: target.position.y + 1.05, z: target.position.z });
+      return { shot, validation, impact };
     }
     return null;
   }
 
-  async handleHit(socket, message) {
-    const attackerEntry = this.authorizedActor(socket, message.attackerId);
-    const targetEntry = this.playerById(message.targetId);
-    const weapon = WEAPONS[message.weaponId];
-    if (!attackerEntry?.player.alive || !targetEntry?.player.alive || !weapon) return;
+  async applyAuthoritativeDamage(attackerEntry, targetEntry, weapon, validation, now) {
     const attacker = attackerEntry.player;
     const target = targetEntry.player;
-    if (!attacker.loadout.includes(weapon.id)) return;
-    const now = Date.now();
-    if (!this.recentValidShot(attacker, target, weapon, now)) return;
-    const claimed = finiteNumber(message.damage, weapon.damage, 0, weapon.damage);
-    const damage = Math.max(1, Math.min(weapon.damage, claimed));
+    const damage = Math.min(target.health, Math.max(1, validation.damage));
     target.health = Math.max(0, target.health - damage);
     const killed = target.health === 0;
     if (killed) {
@@ -603,22 +672,54 @@ export class MatchRoom extends DurableObject {
     if (attackerEntry.socket) attackerEntry.socket.serializeAttachment(attacker);
     this.broadcast({
       type: "damage", attackerId: attacker.id, targetId: target.id, weaponId: weapon.id,
-      damage, health: target.health, killed, push: sanitizeVector(message.push, 40), respawnAt: target.respawnAt,
+      damage, health: target.health, killed, push: validation.push, respawnAt: target.respawnAt,
       scores: Object.fromEntries(this.allPlayers().map((player) => [player.id, player.score])), serverTime: now
     });
+    return killed;
+  }
+
+  async handleHit(socket, message) {
+    const attackerEntry = this.authorizedActor(socket, message.attackerId);
+    const weapon = WEAPONS[message.weaponId];
+    if (!attackerEntry?.player.alive || !weapon) return;
+    const attacker = attackerEntry.player;
+    if (!attacker.loadout.includes(weapon.id)) return;
+    const now = Date.now();
+    const requestedTarget = this.playerById(message.targetId);
+    if (!requestedTarget?.player.alive) return;
+    const candidate = this.recentValidShot(attacker, requestedTarget.player, weapon, message, now);
+    if (!candidate) return;
+    if (candidate.validation.strategy === "explosive" && message.phase !== "hazard") {
+      if (candidate.shot.resolvedExplosion) return;
+      candidate.shot.resolvedExplosion = true;
+      candidate.shot.hits = Object.create(null);
+      for (const target of this.allPlayers()) {
+        if (!target.alive) continue;
+        const entry = this.playerById(target.id);
+        const validation = validateHitProposal({
+          shot: candidate.shot, attacker, target, weapon, impact: candidate.impact,
+          phase: "impact", now, seed: this.meta.seed, structuralHealth: this.structuralHealth
+        });
+        if (!validation) continue;
+        candidate.shot.hits[target.id] = 1;
+        await this.applyAuthoritativeDamage(attackerEntry, entry, weapon, validation, now);
+      }
+    } else await this.applyAuthoritativeDamage(attackerEntry, requestedTarget, weapon, candidate.validation, now);
+    this.schedulePersistence({ bots: attacker.bot || this.bots.has(message.targetId), fires: true });
     await this.checkMatchEnd(now);
   }
 
-  recentValidTerrainShot(attacker, weapon, position, now) {
+  recentValidTerrainShot(attacker, weapon, position, message, now) {
     const history = this.recentFires.get(attacker.id) || [];
-    const maximumAge = Math.min(12_000, 1_800 + 1000 * Math.max(0, weapon.fuse || weapon.hazardDuration || 0));
+    const maximumAge = Math.min(40_000, 1_800 + 1000 * Math.max(0, weapon.fuse || weapon.hazardDuration || 0));
     const maximumRange = (weapon.maxUsefulRange || weapon.reach || 180) + (weapon.radius || 0) + 18;
     const limit = Math.max(1, weapon.split || weapon.pellets || weapon.burstCount || (weapon.terrainPenetration || weapon.penetration || 0) + 1);
     for (let index = history.length - 1; index >= 0; index--) {
       const shot = history[index];
-      if (shot.weaponId !== weapon.id || now - shot.firedAt > maximumAge) continue;
+      if (shot.id !== message.shotId || shot.weaponId !== weapon.id || now - shot.firedAt > maximumAge) continue;
       if (squaredDistance(shot.origin, position) > maximumRange * maximumRange) continue;
       if ((shot.terrainHits || 0) >= limit) continue;
+      if (!validateImpactProposal({ shot, weapon, impact: position, now })) continue;
       shot.terrainHits = (shot.terrainHits || 0) + 1;
       return shot;
     }
@@ -633,7 +734,7 @@ export class MatchRoom extends DurableObject {
     const position = sanitizeVector(message.position);
     if (Math.abs(position.x) > 120 || Math.abs(position.z) > 120 || position.y < -2 || position.y > 100) return;
     const now = Date.now();
-    const terrainShot = this.recentValidTerrainShot(attackerEntry.player, weapon, position, now);
+    const terrainShot = this.recentValidTerrainShot(attackerEntry.player, weapon, position, message, now);
     if (!terrainShot) return;
     const structuralDamage = canonicalStructuralDamage * (terrainShot.structureDamageScale || 1);
     const structureId = /^structure-(?:[1-9]|1[0-6])$/.test(String(message.structureId || "")) ? String(message.structureId) : "";
@@ -739,6 +840,7 @@ export class MatchRoom extends DurableObject {
     player.reloadEndsAt = {};
     player.hasState = false;
     if (entry.socket) entry.socket.serializeAttachment(player);
+    if (player.bot) this.schedulePersistence({ bots: true });
     this.broadcast({ type: "respawn", playerId: player.id, spawnIndex: (player.deaths * 5 + this.allPlayers().indexOf(player)) % MAX_MATCH_PLAYERS, ammo: player.ammo, serverTime: Date.now() });
   }
 

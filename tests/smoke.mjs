@@ -7,6 +7,7 @@ import { activePresetLoadout, clampMatchMinutes, DEFAULT_LOADOUT, excessOwnedPro
 import { InputManager, TOUCH_LOOK_GAIN, clearTouchActions, deliberateTouchTap, shouldCaptureGameKey, touchLookDelta, touchMoveDelta, updateOrbit } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraCollisionFirstPerson, cameraRelative, damageIndicatorAngle, directionFromKeys, directionFromTouch, Fighter, flameConeFactor, GRAPPLE_SPEED_CAP, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reticleAim } from "../src/player.js";
 import { NeonRenderPipeline } from "../src/renderPipeline.js";
+import { createGrappleRopeGeometry, MAX_GRAPPLE_SEGMENTS, updateGrappleRopeGeometry } from "../src/grappleRope.js";
 import { ArenaWorld } from "../src/world.js";
 import { weaponPresentation } from "../src/weaponPresentation.js";
 
@@ -33,8 +34,9 @@ assert.doesNotMatch(mainSource, /EffectComposer|UnrealBloomPass|composer\.render
 assert.match(mainSource, /new THREE\.WebGPURenderer/, "the game uses Three.js's WebGPU renderer");
 assert.match(mainSource, /await this\.renderer\.init\(\)/, "WebGPU initializes before environment generation");
 assert.match(mainSource, /this\.renderPipeline\.render\(\)/, "the game renders through the node-based HDR pipeline");
+assert.match(mainSource, /onSubmittedWorkDone\?\.\(\)[\s\S]*?renderer\.setSize[\s\S]*?resizeInFlight \|\| this\.pendingResize/, "WebGPU resize waits for submitted frames and suspends rendering before replacing HDR targets");
 assert.match(renderPipelineSource, /RenderPipeline[\s\S]*?bloom\([\s\S]*?ao\(/, "the HDR pipeline combines bloom with ambient grounding");
-assert.match(renderPipelineSource, /this\.direct = coarsePointer[\s\S]*?if \(!nativeWebGPU\)[\s\S]*?bloom\([\s\S]*?renderer\.render\(this\.scene, this\.camera\)/, "desktop WebGL2 keeps lightweight bloom while coarse devices retain a framebuffer-safe direct path");
+assert.match(renderPipelineSource, /this\.direct = false[\s\S]*?if \(!nativeWebGPU\)[\s\S]*?bloom\([\s\S]*?renderer\.render\(this\.scene, this\.camera\)/, "pointer type cannot silently replace a selected graphics tier with direct rendering");
 assert.match(renderPipelineSource, /catch \(error\)[\s\S]*?degradeToDirect\(error\)/, "post-processing failures degrade to direct rendering");
 const recoveryRenderer = {
   backend: { isWebGPUBackend: false }, toneMapping: "ACES", toneMappingExposure: 1.02, outputColorSpace: "sRGB", xr: { enabled: false }, target: null, cubeFace: 0, mipLevel: 0,
@@ -58,7 +60,12 @@ const recoveryRenderer = {
 };
 const recoveryScene = { name: "Arena", overrideMaterial: null };
 const recoveryCamera = { layers: { mask: 7 } };
-const recoveryPipeline = new NeonRenderPipeline(recoveryRenderer, recoveryScene, recoveryCamera, { coarsePointer: true });
+const recoveryPipeline = Object.create(NeonRenderPipeline.prototype);
+Object.assign(recoveryPipeline, {
+  renderer: recoveryRenderer, rendererState: THREE.RendererUtils.saveRendererState(recoveryRenderer), rendererXrEnabled: false,
+  passState: { transparent: true, opaque: true, contextNode: "baseline-context", sceneName: "Arena", overrideMaterial: null, cameraLayerMask: 7 },
+  scene: recoveryScene, camera: recoveryCamera, quality: "high", nativeWebGPU: false, direct: false, highLoadMode: false
+});
 recoveryPipeline.direct = false;
 const disposedRenderResources = [];
 recoveryPipeline.pipeline = {
@@ -123,7 +130,7 @@ assert.equal(cameraCollisionFirstPerson(2.5, false), true, "a body-width camera 
 assert.equal(cameraCollisionFirstPerson(3, true), true, "camera mode hysteresis prevents flicker beside curved pillars");
 assert.equal(cameraCollisionFirstPerson(3.5, true), false, "the normal third-person boom returns when enough clearance is restored");
 assert.match(mainSource, /cameraCollisionFirstPerson\(availableDistance[\s\S]*?cameraTarget\.copy\(pivot\)[\s\S]*?actualDistance >= 3\.2/, "a collapsed camera boom follows the player's eye line and keeps the local body hidden throughout the transition");
-assert.match(stylesSource, /\.rematch-loading\[hidden\] \{ display: none; \}[\s\S]*?@keyframes rematch-track/, "the loading screen has a deterministic hidden state and animated progress treatment");
+assert.match(stylesSource, /\[hidden\] \{ display: none !important; \}[\s\S]*?@keyframes rematch-track/, "every loading or status surface has a deterministic hidden state and the rematch loader keeps its animated progress treatment");
 assert.match(mainSource, /game\.init\(\)\.then[\s\S]*?sessionStorage\.removeItem\(MATCH_SESSION_KEY\)[\s\S]*?matchLoading\.hidden = true[\s\S]*?TEXT\.errors\.rendererSection/, "renderer startup errors cannot remain trapped behind a persistent match loader");
 assert.doesNotMatch(mainSource, /startMatch\(\)\s*\{\s*this\.clearMatch\(\);\s*this\.rebuildRenderPipeline\(\)/, "no rematch can rebuild post-processing on a live graphics device");
 assert.match(mainSource, /addEventListener\("pointerdown", this\.resumeAudioGesture, \{ passive: true, capture: true \}\)/, "the first canvas or HUD gesture restores browser-gated rematch audio on every device");
@@ -142,7 +149,21 @@ assert.match(mainSource, /data-incoming-direction[\s\S]*?data-target-health[\s\S
 assert.match(mainSource, /attacker === this\.players\[0\][\s\S]*?targetValue[\s\S]*?targetFill[\s\S]*?targetHealth/, "confirmed hits reveal the struck enemy's remaining health");
 assert.match(mainSource, /damageIndicatorAngle\(this\.cameraYaw[\s\S]*?incomingDirection/, "damage feedback rotates from the current camera heading toward the attacker");
 assert.match(stylesSource, /\.incoming-direction\.visible[\s\S]*?\.target-health\.visible[\s\S]*?@keyframes incoming-direction-pulse/, "combat feedback has distinct readable motion and health-bar treatments");
-assert.doesNotMatch(mainSource, /grapple\.line\.geometry\.setFromPoints/, "grapple rope updates reuse fixed GPU buffers");
+const ropeGeometry = createGrappleRopeGeometry();
+const ropeData = ropeGeometry.attributes.instanceStart.data;
+const ropeBuffer = ropeData.array.buffer;
+for (let update = 0; update < 10000; update++) {
+  const segmentCount = update % MAX_GRAPPLE_SEGMENTS + 1;
+  const points = Array.from({ length: segmentCount + 1 }, (_, index) => new THREE.Vector3(index, update % 17, index * .5));
+  assert.equal(updateGrappleRopeGeometry(ropeGeometry, points), segmentCount);
+  assert.equal(ropeGeometry.instanceCount, segmentCount);
+  assert.equal(ropeGeometry.attributes.instanceStart.data, ropeData);
+  assert.equal(ropeGeometry.attributes.instanceEnd.data, ropeData);
+  assert.equal(ropeGeometry.attributes.instanceStart.data.array.buffer, ropeBuffer);
+}
+assert.equal(ropeData.array.byteLength, 216, "the grapple keeps one exact nine-segment GPU position buffer");
+assert.equal(ropeGeometry.attributes.instanceDistanceStart, undefined, "an undashed rope allocates no distance buffer");
+ropeGeometry.dispose();
 assert.doesNotMatch(worldSource, /new THREE\.ShaderMaterial/, "the arena has no legacy GLSL-only material");
 assert.match(worldSource, /MeshBasicNodeMaterial[\s\S]*?colorNode[\s\S]*?opacityNode/, "the animated route floor uses an MRT-compatible TSL node material");
 assert.doesNotMatch(mainSource, /data-touch="(?:up|down|left|right)"/, "mobile movement has no directional-button overlay");
@@ -314,7 +335,14 @@ for (const [id, weapon] of Object.entries(WEAPONS)) {
   assert.ok(["spread", "burst", "mine", "beam", "chain", "flame", "melee", "hitscan", "projectile"].includes(fireMode), `${id} resolves to an implemented firing path`);
 
   const model = new Fighter(modelScene, { id: `model-${id}`, name: id, color: weapon.color, accent: 0xffffff }, [id], new THREE.Vector3());
-  assert.ok(model.weaponGroup.children.length >= 3, `${id} has a layered held-weapon model`);
+  const weaponMaterials = new Set();
+  let weaponTriangles = 0;
+  model.weaponGroup.traverse((child) => {
+    if (!child.isMesh) return;
+    for (const entry of Array.isArray(child.material) ? child.material : [child.material]) weaponMaterials.add(entry);
+    weaponTriangles += child.geometry.index ? child.geometry.index.count / 3 : child.geometry.attributes.position.count / 3;
+  });
+  assert.ok(weaponMaterials.size >= 3 && weaponTriangles >= 80, `${id} retains a layered, fully modeled held-weapon silhouette after rigid batching`);
   assert.ok(model.weaponMuzzleDistance > .3, `${id} exposes a valid muzzle or strike origin`);
   assert.equal(model.group.getObjectByProperty("castShadow", true), undefined, `${id} cannot create blocky per-fighter shadow-map patches`);
   assert.equal(model.group.getObjectByName("Soft contact shadow"), undefined, `${id} has no transparent floor quad that can leak into WebGPU ambient occlusion`);
@@ -885,7 +913,9 @@ const flameFighter = new Fighter(
   ["flamethrower", ...DEFAULT_LOADOUT.slice(1)],
   new THREE.Vector3(4, 0, 4)
 );
-assert.ok(flameFighter.weaponMuzzleDistance > 1.4 && flameFighter.weaponGroup.children.length >= 6, "the Flamethrower has a distinct long-nozzle and fuel-tank silhouette");
+const flameBounds = new THREE.Box3().setFromObject(flameFighter.weaponGroup);
+assert.ok(flameFighter.weaponMuzzleDistance > 1.4 && flameBounds.max.z - flameBounds.min.z > 1.35, "the merged Flamethrower retains its distinct long-nozzle and fuel-tank silhouette");
+assert.ok(flameFighter.weaponGroup.children.filter((child) => child.isMesh).length <= 4, "rigid Flamethrower parts collapse into material batches");
 flameFighter.slowTimer = 1;
 flameFighter.update(.016, new THREE.Vector3(), new THREE.Vector3(0, 0, 1), {}, worldB);
 assert.ok(flameFighter.freezeRing.material.opacity > 0, "the geometry-based cyan frozen-state cue remains visible while slowed");

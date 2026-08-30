@@ -48,8 +48,8 @@ for (const name of ["energy", "mechanical", "heavyUi", "chargeLoop", "weaponLoop
 assert.ok(assets.structuralLand.length > assets.structuralBreak.length && assets.structuralBreak.length > assets.structuralWarning.length, "tower destruction escalates from stressed warning through fracture to a long debris landing tail");
 assert.ok(analyzeAudioAsset(assets.structuralLand).rms > .1 && periodicity(assets.structuralWarning) < .72, "structural cues have physical low-frequency weight without tonal warning beeps");
 
-const weaponAssets = createWeaponAudioAssets(16000, Object.values(WEAPONS), WEAPON_AUDIO_IDENTITIES);
-const weaponAssetsAgain = createWeaponAudioAssets(16000, Object.values(WEAPONS), WEAPON_AUDIO_IDENTITIES);
+const weaponAssets = createWeaponAudioAssets(48000, Object.values(WEAPONS), WEAPON_AUDIO_IDENTITIES);
+const weaponAssetsAgain = createWeaponAudioAssets(48000, Object.values(WEAPONS), WEAPON_AUDIO_IDENTITIES);
 const fireFingerprints = [];
 for (const weapon of Object.values(WEAPONS)) {
   for (const kind of ["Fire", "Impact", "Operate"]) {
@@ -67,7 +67,7 @@ for (const weapon of Object.values(WEAPONS)) {
     for (let index = from; index < to; index++) energy += fire[index] ** 2;
     return Math.sqrt(energy / Math.max(1, to - from));
   });
-  fireFingerprints.push({ id: weapon.id, values: [fire.length / 16000, metrics.rms, metrics.crest / 8, metrics.motion * 10, metrics.crossings / fire.length, ...envelope] });
+  fireFingerprints.push({ id: weapon.id, values: [fire.length / 48000, metrics.rms, metrics.crest / 8, metrics.motion * 10, metrics.crossings / fire.length, ...envelope] });
   if (weapon.maintained) assert.ok(weaponAssets[`weaponLoop:${weapon.id}`], `${weapon.name} owns a dedicated maintained-operation loop`);
   if (weapon.chargeTime) assert.ok(weaponAssets[`weaponCharge:${weapon.id}`], `${weapon.name} owns a dedicated charge loop`);
   if (weapon.projectileSpeed > 0 && !weapon.hitscan) assert.ok(weaponAssets[`weaponFlight:${weapon.id}`], `${weapon.name} owns a dedicated projectile-flight loop`);

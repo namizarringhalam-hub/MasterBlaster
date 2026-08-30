@@ -82,7 +82,8 @@ assert.ok(["flameA", "flameB", "flameC"].every((name) => visuals.fireballLayers[
 
 const mainSource = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
 assert.match(mainSource, /this\.hazards\.length >= 24/, "persistent hazards also have a global match cap");
-assert.match(mainSource, /setHighLoadMode\(fighterCount >= 13\)/, "maximum-size matches select the lighter WebGPU bloom profile before heavy fighter materials are created");
+assert.match(mainSource, /setHighLoadMode\(fighterCount >= 13\)/, "maximum-size matches expose high-load telemetry before heavy fighter materials are created");
+assert.match(await readFile(new URL("../src/renderPipeline.js", import.meta.url), "utf8"), /this\.quality === "medium" \? this\.highLoadPipeline : this\.pipeline/, "fighter count cannot silently replace the selected High renderer");
 assert.match(mainSource, /new THREE\.InstancedMesh[\s\S]*?kind: "flame"[\s\S]*?vortexRibbonGeometry[\s\S]*?kind: "ribbon"/, "napalm stays instanced while tornadoes use one authored helical ribbon draw");
 assert.match(mainSource, /shot\.bounces < \(shot\.weapon\.bounces \|\| 0\)[\s\S]*?bounceProjectile\(shot, previous\)/, "infinite Fireball ricochets stay on the swept world-collision path");
 

@@ -10,6 +10,18 @@ function closeSocket(socket) {
   if (socket.readyState !== WebSocket.CLOSED) socket.close(1000, "test complete");
 }
 
+function fire(client, payload) {
+  const shotId = crypto.randomUUID();
+  client.socket.send(JSON.stringify({ type: "fire", shotId, ...payload }));
+  return shotId;
+}
+
+function directionTo(position, origin = { x: 0, y: 2.2, z: 0 }) {
+  const direction = { x: position.x - origin.x, y: position.y - origin.y, z: position.z - origin.z };
+  const magnitude = Math.hypot(direction.x, direction.y, direction.z) || 1;
+  return { x: direction.x / magnitude, y: direction.y / magnitude, z: direction.z / magnitude };
+}
+
 function closeSocketAndWait(socket) {
   if (socket.readyState === WebSocket.CLOSED) return Promise.resolve();
   return new Promise((resolve) => {
@@ -76,7 +88,7 @@ async function connect(roomCode, name, roomBotCount = botCount, requestedMinutes
   };
   const welcome = await next((message) => message.type === "welcome");
   socket.send(JSON.stringify({ type: "resume_ack", resumeToken: welcome.resumeToken }));
-  return { socket, next, welcome };
+  return { socket, next, welcome, messages };
 }
 
 async function expectConnectionRejected(roomCode, name, roomBotCount = 0, requestedMinutes = timeLimitMinutes, mode = "private") {
@@ -128,55 +140,90 @@ const coalescedState = await first.next((message) => message.type === "state" &&
 assert.ok(coalescedState.players.some((player) => player.id === botId), "same-tick player updates share one room broadcast");
 await second.next((message) => message.type === "state" && message.players.some((player) => player.id === botId));
 
-first.socket.send(JSON.stringify({ type: "fire", playerId: firstId, weaponId: "blaster", slotIndex: 0, direction: { x: 1, y: 0, z: 0 } }));
+const firstShotId = fire(first, { playerId: firstId, weaponId: "blaster", slotIndex: 0, direction: { x: 1, y: 0, z: 0 } });
 await second.next((message) => message.type === "fire" && message.playerId === firstId);
-first.socket.send(JSON.stringify({ type: "hit", attackerId: firstId, targetId: secondId, weaponId: "blaster", damage: 18, push: { x: 1, y: 0, z: 0 } }));
+await new Promise((resolve) => setTimeout(resolve, 35));
+first.socket.send(JSON.stringify({ type: "hit", shotId: firstShotId, attackerId: firstId, targetId: secondId, weaponId: "blaster", damage: 999, push: { x: -99, y: 99, z: 99 }, impact: { x: 5, y: 2.05, z: 0 } }));
 const damage = await second.next((message) => message.type === "damage" && message.targetId === secondId);
 assert.equal(damage.health, 82);
 assert.equal(damage.damage, 18);
 
-await new Promise((resolve) => setTimeout(resolve, 320));
-first.socket.send(JSON.stringify({ type: "fire", playerId: firstId, weaponId: "blaster", slotIndex: 0, direction: { x: 1, y: 0, z: 0 } }));
-await second.next((message) => message.type === "fire" && message.playerId === firstId && message.weaponId === "blaster" && message.serverTime > damage.serverTime);
+await new Promise((resolve) => setTimeout(resolve, 220));
+second.socket.send(JSON.stringify({
+  type: "state",
+  players: [{ id: secondId, position: { x: -20, y: 1, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, aim: { x: 1, y: 0, z: 0 }, slotIndex: 0, grounded: true }]
+}));
+await first.next((message) => message.type === "state" && message.players.some((player) => player.id === secondId && player.position?.x === -20));
+const forgedRocketShotId = fire(first, { playerId: firstId, weaponId: "rocket_launcher", slotIndex: 2, direction: { x: 1, y: 0, z: 0 } });
+await second.next((message) => message.type === "fire" && message.shotId === forgedRocketShotId);
+const damageCount = second.messages.filter((message) => message.type === "damage" && message.targetId === secondId).length;
 first.socket.send(JSON.stringify({
-  type: "terrain_hit", attackerId: firstId, weaponId: "blaster",
-  position: { x: 28.4, y: 31, z: -31.75 }, structureId: "structure-1", partId: "structure-1-platform-1"
+  type: "hit", shotId: forgedRocketShotId, attackerId: firstId, targetId: secondId,
+  weaponId: "rocket_launcher", damage: 999, impact: { x: -20, y: 2.05, z: 0 }
+}));
+await new Promise((resolve) => setTimeout(resolve, 350));
+assert.equal(second.messages.filter((message) => message.type === "damage" && message.targetId === secondId).length, damageCount, "a live room rejects an impact behind the authoritative rocket path");
+second.socket.send(JSON.stringify({
+  type: "state",
+  players: [{ id: secondId, position: { x: 5, y: 1, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, aim: { x: -1, y: 0, z: 0 }, slotIndex: 0, grounded: true }]
+}));
+await first.next((message) => message.type === "state" && message.players.some((player) => player.id === secondId && player.position?.x === 5));
+
+await new Promise((resolve) => setTimeout(resolve, 320));
+const chipPosition = { x: 28.4, y: 31, z: -31.75 };
+const chipShotId = fire(first, { playerId: firstId, weaponId: "blaster", slotIndex: 0, direction: directionTo(chipPosition) });
+await second.next((message) => message.type === "fire" && message.playerId === firstId && message.weaponId === "blaster" && message.serverTime > damage.serverTime);
+await new Promise((resolve) => setTimeout(resolve, 750));
+first.socket.send(JSON.stringify({
+  type: "terrain_hit", shotId: chipShotId, attackerId: firstId, weaponId: "blaster",
+  position: chipPosition, structureId: "structure-1", partId: "structure-1-platform-1"
 }));
 const chipDamage = await second.next((message) => message.type === "terrain_damage" && message.partId === "structure-1-platform-1");
 assert.equal(chipDamage.structuralDamage, 1.8, "ordinary blaster fire applies canonical chip damage to a deck chunk");
 assert.equal(chipDamage.collapsed, false);
 
-first.socket.send(JSON.stringify({ type: "fire", playerId: firstId, weaponId: "charged_energy_rifle", slotIndex: 1, direction: { x: 1, y: 0, z: 0 }, chargeRatio: .5 }));
-await second.next((message) => message.type === "fire" && message.playerId === firstId && message.weaponId === "charged_energy_rifle");
 const chargedPartId = "structure-1-platform-3";
 const chargedBounds = structuralPartBounds(first.welcome.seed, chargedPartId);
+const chargedPosition = { x: chargedBounds.x, y: (chargedBounds.baseY + chargedBounds.top) / 2, z: chargedBounds.z };
+const chargedShotId = fire(first, { playerId: firstId, weaponId: "charged_energy_rifle", slotIndex: 1, direction: directionTo(chargedPosition), chargeRatio: .5 });
+await second.next((message) => message.type === "fire" && message.playerId === firstId && message.weaponId === "charged_energy_rifle");
 first.socket.send(JSON.stringify({
-  type: "terrain_hit", attackerId: firstId, weaponId: "charged_energy_rifle",
-  position: { x: chargedBounds.x, y: (chargedBounds.baseY + chargedBounds.top) / 2, z: chargedBounds.z },
+  type: "terrain_hit", shotId: chargedShotId, attackerId: firstId, weaponId: "charged_energy_rifle",
+  position: chargedPosition,
   structureId: "structure-1", partId: chargedPartId
 }));
 const chargedDamage = await second.next((message) => message.type === "terrain_damage" && message.partId === chargedPartId);
 assert.equal(chargedDamage.structuralDamage, WEAPONS.charged_energy_rifle.structureDamage * (.35 + .5 * .65), "partial charge uses the same structural damage scale on the client and room authority");
 
-first.socket.send(JSON.stringify({ type: "fire", playerId: firstId, weaponId: "cluster_grenade", slotIndex: 3, direction: { x: 1, y: 0, z: 0 } }));
-await second.next((message) => message.type === "fire" && message.playerId === firstId && message.weaponId === "cluster_grenade");
 const clusterPartId = "structure-1-platform-4";
 const clusterBounds = structuralPartBounds(first.welcome.seed, clusterPartId);
+const clusterPosition = { x: clusterBounds.x, y: (clusterBounds.baseY + clusterBounds.top) / 2, z: clusterBounds.z };
+const clusterOrigin = { x: clusterPosition.x - 3, y: clusterPosition.y - 1.2, z: clusterPosition.z };
+await new Promise((resolve) => setTimeout(resolve, 320));
+first.socket.send(JSON.stringify({ type: "state", players: [{ id: firstId, position: clusterOrigin, velocity: { x: 0, y: 0, z: 0 }, aim: { x: 1, y: 0, z: 0 }, slotIndex: 3, grounded: true }] }));
+await second.next((message) => message.type === "state" && message.players.some((player) => player.id === firstId && player.position?.x === clusterOrigin.x));
+const clusterShotId = fire(first, { playerId: firstId, weaponId: "cluster_grenade", slotIndex: 3, direction: { x: 1, y: 0, z: 0 } });
+await second.next((message) => message.type === "fire" && message.playerId === firstId && message.weaponId === "cluster_grenade");
 first.socket.send(JSON.stringify({
-  type: "terrain_hit", attackerId: firstId, weaponId: "cluster_grenade",
-  position: { x: clusterBounds.x, y: (clusterBounds.baseY + clusterBounds.top) / 2, z: clusterBounds.z },
+  type: "terrain_hit", shotId: clusterShotId, attackerId: firstId, weaponId: "cluster_grenade",
+  position: clusterPosition,
   structureId: "structure-1", partId: clusterPartId
 }));
 const clusterDamage = await second.next((message) => message.type === "terrain_damage" && message.partId === clusterPartId);
 assert.equal(clusterDamage.structuralDamage, WEAPONS.cluster_grenade.structureDamage, "cluster bomblets are accepted under their authoritative parent weapon identity");
 
-first.socket.send(JSON.stringify({ type: "fire", playerId: firstId, weaponId: "rocket_launcher", slotIndex: 2, direction: { x: 1, y: 0, z: 0 } }));
+await new Promise((resolve) => setTimeout(resolve, 450));
+const rocketPosition = { x: 42, y: 2, z: -22 };
+const rocketOrigin = { x: rocketPosition.x - 4, y: rocketPosition.y - 1.2, z: rocketPosition.z };
+first.socket.send(JSON.stringify({ type: "state", players: [{ id: firstId, position: rocketOrigin, velocity: { x: 0, y: 0, z: 0 }, aim: { x: 1, y: 0, z: 0 }, slotIndex: 2, grounded: true }] }));
+await second.next((message) => message.type === "state" && message.players.some((player) => player.id === firstId && player.position?.x === rocketOrigin.x));
+const rocketShotId = fire(first, { playerId: firstId, weaponId: "rocket_launcher", slotIndex: 2, direction: { x: 1, y: 0, z: 0 } });
 await second.next((message) => message.type === "fire" && message.playerId === firstId && message.weaponId === "rocket_launcher");
 first.socket.send(JSON.stringify({
-  type: "terrain_hit",
+  type: "terrain_hit", shotId: rocketShotId,
   attackerId: firstId,
   weaponId: "rocket_launcher",
-  position: { x: 42, y: 2, z: -22 },
+  position: rocketPosition,
   radius: 99,
   structureId: "structure-1",
   partId: "structure-1-pillar-1"
@@ -187,13 +234,18 @@ assert.equal(firstTerrainDamage.structuralDamage, 20, "the room uses the rocket'
 assert.equal(firstTerrainDamage.collapsed, true, "one accepted rocket destroys a major stand section");
 const terrainDamage = firstTerrainDamage;
 await new Promise((resolve) => setTimeout(resolve, 320));
-first.socket.send(JSON.stringify({ type: "fire", playerId: firstId, weaponId: "blaster", slotIndex: 0, direction: { x: 1, y: 0, z: 0 } }));
-await second.next((message) => message.type === "fire" && message.playerId === firstId && message.weaponId === "blaster" && message.serverTime > firstTerrainDamage.serverTime);
 const fallingPartId = "structure-1-platform-2";
 const fallingBounds = structuralPartBounds(first.welcome.seed, fallingPartId);
+const fallingPosition = { x: fallingBounds.x, y: (fallingBounds.baseY + fallingBounds.top) / 2, z: fallingBounds.z };
+const fallingOrigin = { x: fallingPosition.x - 5, y: fallingPosition.y - 1.2, z: fallingPosition.z };
+first.socket.send(JSON.stringify({ type: "state", players: [{ id: firstId, position: fallingOrigin, velocity: { x: 0, y: 0, z: 0 }, aim: { x: 1, y: 0, z: 0 }, slotIndex: 0, grounded: true }] }));
+await second.next((message) => message.type === "state" && message.players.some((player) => player.id === firstId && player.position?.x === fallingOrigin.x));
+const fallingShotId = fire(first, { playerId: firstId, weaponId: "blaster", slotIndex: 0, direction: { x: 1, y: 0, z: 0 } });
+await second.next((message) => message.type === "fire" && message.playerId === firstId && message.weaponId === "blaster" && message.serverTime > firstTerrainDamage.serverTime);
+await new Promise((resolve) => setTimeout(resolve, 80));
 first.socket.send(JSON.stringify({
-  type: "terrain_hit", attackerId: firstId, weaponId: "blaster",
-  position: { x: fallingBounds.x, y: (fallingBounds.baseY + fallingBounds.top) / 2, z: fallingBounds.z },
+  type: "terrain_hit", shotId: fallingShotId, attackerId: firstId, weaponId: "blaster",
+  position: fallingPosition,
   structureId: "structure-1", partId: fallingPartId
 }));
 const fallingDamage = await second.next((message) => message.type === "terrain_damage" && message.partId === fallingPartId);
@@ -268,10 +320,10 @@ privateGuest.socket.send(JSON.stringify({
     ...privateBots.map((bot) => ({ id: bot.id, position: privatePosition, velocity: { x: 0, y: 0, z: 0 }, aim: { x: -1, y: 0, z: 0 }, slotIndex: 0, grounded: true }))
   ]
 }));
-privateGuest.socket.send(JSON.stringify({ type: "fire", playerId: privateHostId, weaponId: "rocket_launcher", slotIndex: 2, direction: { x: 1, y: 0, z: 0 } }));
+const privateRocketShotId = fire(privateGuest, { playerId: privateHostId, weaponId: "rocket_launcher", slotIndex: 2, direction: { x: 1, y: 0, z: 0 } });
 await privateReplacement.next((message) => message.type === "fire" && message.playerId === privateHostId && message.weaponId === "rocket_launcher");
 privateGuest.socket.send(JSON.stringify({
-  type: "terrain_hit", attackerId: privateHostId, weaponId: "rocket_launcher", position: privatePosition,
+  type: "terrain_hit", shotId: privateRocketShotId, attackerId: privateHostId, weaponId: "rocket_launcher", position: privatePosition,
   structureId: "structure-2", partId: privatePartId
 }));
 const privateCollapse = await privateReplacement.next((message) => message.type === "terrain_damage" && message.partId === privatePartId);
@@ -315,6 +367,6 @@ closeSocket(resumedCapacityPlayer.socket);
 
 const recoveryAssignment = await assignment(timeLimitMinutes, firstAssignment.roomCode);
 assert.notEqual(recoveryAssignment.roomCode, firstAssignment.roomCode, "a timed-out Quick Play room is replaced on the retry");
-assert.equal((await assignment()).roomCode, firstAssignment.roomCode, "a recovery room does not fragment the healthy canonical pool");
+assert.equal((await assignment()).roomCode, recoveryAssignment.roomCode, "an abandoned canonical room is replaced by the recovery room");
 console.log("Quick recovery, session resume, coalesced state, and persistent private-lobby lifecycle passed.");
 process.exit(0);

@@ -1,7 +1,6 @@
 import * as THREE from "three/webgpu";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { Line2 } from "three/addons/lines/webgpu/Line2.js";
-import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { SoundBoard } from "./audio.js";
 import { CombatVisuals } from "./combatVisuals.js";
 import { ArenaWorld } from "./world.js";
@@ -12,6 +11,7 @@ import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, c
 import { NeonRenderPipeline } from "./renderPipeline.js";
 import { combatMusicIntensity } from "./musicScore.js";
 import { MultiplayerClient } from "./multiplayer.js";
+import { createGrappleRopeGeometry, updateGrappleRopeGeometry } from "./grappleRope.js";
 import TEXT, { formatText } from "./playerText.js";
 
 const canvas = document.querySelector("#game-canvas");
@@ -245,6 +245,9 @@ class BlasterBattle {
     this.botPlanTimer = 0;
     this.botPlanPending = false;
     this.botPlanner = null;
+    this.animationStarted = false;
+    this.pendingResize = null;
+    this.resizeInFlight = false;
     if (typeof Worker === "function") {
       try {
         this.botPlanner = new Worker(new URL("./botPlanner.worker.js", import.meta.url), { type: "module" });
@@ -285,10 +288,13 @@ class BlasterBattle {
     this.renderMain();
     performance.mark?.("blaster-engine-ready");
     performance.measure?.("blaster-shell-to-engine", "blaster-shell-visible", "blaster-engine-ready");
-    const prefetchAudio = () => this.sound.prefetchMusic?.();
+    const prefetchAudio = () => {
+      this.sound.prefetchAudioAssets?.();
+      this.sound.prefetchMusic?.();
+    };
     if ("requestIdleCallback" in window) requestIdleCallback(prefetchAudio, { timeout: 1800 });
     else setTimeout(prefetchAudio, 400);
-    this.resize();
+    this.resize(true);
     addEventListener("resize", () => this.resize());
     addEventListener("blur", () => {
       clearTouchActions(this.touch);
@@ -307,6 +313,7 @@ class BlasterBattle {
       }
       this.sound.setPaused(document.hidden || this.paused);
     });
+    this.animationStarted = true;
     await this.renderer.setAnimationLoop((time) => this.frame(time));
     this.resumePendingMatch();
   }
@@ -326,15 +333,76 @@ class BlasterBattle {
     this.scene.add(rim);
   }
 
-  showRendererFailure(message) {
-    this.paused = true;
-    ui.insertAdjacentHTML("beforeend", `<div class="overlay"><section class="dialog"><p>${TEXT.errors.graphicsSection}</p><h1>${TEXT.errors.graphicsTitle}</h1><p class="dialog-lead">${escapeHtml(message)}</p><button class="primary" onclick="location.reload()">${TEXT.errors.reload}</button></section></div>`);
+  showModal(markup, { kind = "notice", cancel = "block" } = {}) {
+    const previous = document.activeElement;
+    ui.insertAdjacentHTML("beforeend", `<dialog class="overlay" data-modal="${kind}">${markup}</dialog>`);
+    const dialog = ui.querySelector(`dialog[data-modal="${kind}"]:last-of-type`);
+    const semanticContent = dialog.querySelector("[aria-labelledby]");
+    for (const attribute of ["aria-labelledby", "aria-describedby", "role"]) {
+      const value = semanticContent?.getAttribute(attribute);
+      if (value) {
+        dialog.setAttribute(attribute, value);
+        semanticContent.removeAttribute(attribute);
+      }
+    }
+    dialog.returnFocus = previous;
+    const handleCancel = (event) => {
+      event.preventDefault();
+      if (cancel === "resume" && this.paused) this.togglePause();
+    };
+    dialog.addEventListener("cancel", handleCancel);
+    dialog.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") handleCancel(event);
+    });
+    dialog.showModal();
+    queueMicrotask(() => (dialog.querySelector("[autofocus]") || dialog.querySelector("button"))?.focus());
+    return dialog;
   }
 
-  resize() {
-    this.renderer.setSize(innerWidth, innerHeight, false);
-    this.camera.aspect = innerWidth / innerHeight;
+  closeModal(dialog) {
+    if (!dialog) return;
+    const returnFocus = dialog.returnFocus;
+    if (dialog.open) dialog.close();
+    dialog.remove();
+    returnFocus?.focus?.();
+  }
+
+  showRendererFailure(message) {
+    this.paused = true;
+    this.showModal(`<section class="dialog" role="alertdialog" aria-labelledby="renderer-error-title" aria-describedby="renderer-error-description"><p>${TEXT.errors.graphicsSection}</p><h1 id="renderer-error-title">${TEXT.errors.graphicsTitle}</h1><p class="dialog-lead" id="renderer-error-description">${escapeHtml(message)}</p><button class="primary" data-action="reload-page" autofocus>${TEXT.errors.reload}</button></section>`, { kind: "renderer-error" });
+    this.bindUi();
+  }
+
+  resize(immediate = false) {
+    const size = { width: Math.max(1, innerWidth), height: Math.max(1, innerHeight) };
+    this.camera.aspect = size.width / size.height;
     this.camera.updateProjectionMatrix();
+    if (immediate || !this.animationStarted || this.renderer.backend.isWebGPUBackend !== true) {
+      this.renderer.setSize(size.width, size.height, false);
+      return;
+    }
+    this.pendingResize = size;
+    void this.commitResize();
+  }
+
+  async commitResize() {
+    if (this.resizeInFlight) return;
+    this.resizeInFlight = true;
+    try {
+      while (this.pendingResize) {
+        let size = this.pendingResize;
+        this.pendingResize = null;
+        await this.renderer.backend.device?.queue?.onSubmittedWorkDone?.();
+        if (this.pendingResize) {
+          size = this.pendingResize;
+          this.pendingResize = null;
+        }
+        this.renderer.setSize(size.width, size.height, false);
+      }
+    } finally {
+      this.resizeInFlight = false;
+      if (this.pendingResize) void this.commitResize();
+    }
   }
 
   applyGraphicsSettings() {
@@ -745,6 +813,7 @@ class BlasterBattle {
         }, 10_000);
         return;
       }
+      if (button.dataset.action === "reload-page") return location.reload();
       if (button.dataset.action === "start") return this.captureSetupAndStart();
       if (button.dataset.action === "pause") return this.togglePause();
       if (button.dataset.action === "rematch") return this.queueRematch();
@@ -1106,10 +1175,10 @@ class BlasterBattle {
   }
 
   showNetworkDisconnect(reason = "") {
-    if (ui.querySelector("[data-network-disconnect]")) return;
+    if (ui.querySelector('dialog[data-modal="network-disconnect"]')) return;
     this.paused = true;
     this.input.releasePointer();
-    ui.insertAdjacentHTML("beforeend", `<div class="overlay" data-network-disconnect><section class="dialog"><p>${TEXT.errors.connectionSection}</p><h1>${TEXT.errors.connectionTitle}</h1><p class="dialog-lead">${escapeHtml(reason || TEXT.errors.connectionDescription)}</p><button class="primary" data-screen="main">${TEXT.errors.returnToMenu}</button></section></div>`);
+    this.showModal(`<section class="dialog" role="alertdialog" aria-labelledby="network-error-title" aria-describedby="network-error-description"><p>${TEXT.errors.connectionSection}</p><h1 id="network-error-title">${TEXT.errors.connectionTitle}</h1><p class="dialog-lead" id="network-error-description">${escapeHtml(reason || TEXT.errors.connectionDescription)}</p><button class="primary" data-screen="main" autofocus>${TEXT.errors.returnToMenu}</button></section>`, { kind: "network-disconnect" });
     this.bindUi();
   }
 
@@ -1219,8 +1288,8 @@ class BlasterBattle {
     this.performanceSample = this.freshPerformanceSample();
     this.combatMusicPulse = 0;
     const fighterCount = welcome?.players.length || 1 + clampBotCount(this.settings.botCount);
-    // The full post stack is ideal for normal matches. Sixteen-fighter sessions use
-    // the lighter WebGPU bloom profile to preserve effects under maximum material load.
+    // Player-count optimizations batch equivalent geometry; the selected graphics
+    // tier remains unchanged at maximum room capacity.
     this.renderPipeline.setHighLoadMode(fighterCount >= 13);
     this.world = new ArenaWorld(this.scene, this.seed);
     if (welcome?.structuralState) {
@@ -1476,7 +1545,8 @@ class BlasterBattle {
       <div class="hud">
         <section class="combatant left">
           <div><b>${escapeHtml(this.players[0].name)}</b><span data-score="0">0</span></div>
-          <div class="health"><i data-health="0"></i></div>
+          <div class="health" data-health-meter role="progressbar" aria-label="${TEXT.hud.health}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><i data-health="0"></i></div>
+          <small class="health-value" data-health-value>100 HP</small>
         </section>
         <section class="match-state">
           <small>${escapeHtml(this.world.theme.name)} · ${TEXT.setup.modes[this.mode].tag} · ${escapeHtml(this.seed)}</small>
@@ -1498,9 +1568,11 @@ class BlasterBattle {
           <i><b data-target-fill></b></i>
         </div>
         <div class="combat-log" data-combat-log aria-live="polite"></div>
+        <div class="respawn-status" data-respawn-status hidden><strong data-respawn-cause></strong><span data-respawn-countdown></span></div>
+        <div class="sr-status" data-respawn-announcement aria-live="polite"></div>
         <div class="weapon-strip">
           ${this.players[0].loadout.map((id, index) => `
-            <button data-weapon-slot="${index}" data-category="${WEAPONS[id].category.toLowerCase().replaceAll(" ", "-")}" class="${index === 0 ? "selected" : ""}" style="--weapon:#${WEAPONS[id].color.toString(16).padStart(6, "0")}">
+            <button data-weapon-slot="${index}" aria-label="${escapeHtml(WEAPONS[id].name)}" aria-pressed="${index === 0}" data-category="${WEAPONS[id].category.toLowerCase().replaceAll(" ", "-")}" class="${index === 0 ? "selected" : ""}" style="--weapon:#${WEAPONS[id].color.toString(16).padStart(6, "0")}">
               <span>${index + 1}</span><i aria-hidden="true"></i><b>${WEAPONS[id].name}</b><small data-ammo-slot="${index}"></small>
             </button>`).join("")}
         </div>
@@ -1528,6 +1600,8 @@ class BlasterBattle {
     this.hud = {
       root: ui.querySelector(".hud"),
       health: ui.querySelector('[data-health="0"]'),
+      healthMeter: ui.querySelector("[data-health-meter]"),
+      healthValue: ui.querySelector("[data-health-value]"),
       score: ui.querySelector('[data-score="0"]'),
       boardScore: [...ui.querySelectorAll("[data-board-score]")],
       leaderRows: [...ui.querySelectorAll("[data-leader-row]")],
@@ -1547,6 +1621,10 @@ class BlasterBattle {
       damageVignette: ui.querySelector("[data-damage-vignette]"),
       motionVignette: ui.querySelector("[data-motion-vignette]"),
       combatLog: ui.querySelector("[data-combat-log]"),
+      respawnStatus: ui.querySelector("[data-respawn-status]"),
+      respawnCause: ui.querySelector("[data-respawn-cause]"),
+      respawnCountdown: ui.querySelector("[data-respawn-countdown]"),
+      respawnAnnouncement: ui.querySelector("[data-respawn-announcement]"),
       slots: [...ui.querySelectorAll("[data-weapon-slot]")],
       slotNames: [...ui.querySelectorAll("[data-weapon-slot] b")],
       ammo: [...ui.querySelectorAll("[data-ammo-slot]")],
@@ -1613,17 +1691,15 @@ class BlasterBattle {
         this.sound.stopChargeLoop(player.id);
       }
     }
-    ui.querySelector(".overlay")?.remove();
-    if (!this.paused) return;
-    ui.insertAdjacentHTML("beforeend", `
-      <div class="overlay">
-        <section class="dialog pause-dialog">
-          <p>${TEXT.pause.section}</p><h1>${TEXT.pause.title}</h1>
-          <button class="primary" data-action="pause">${TEXT.pause.resume}</button>
+    const existing = ui.querySelector('dialog[data-modal="pause"]');
+    if (!this.paused) return this.closeModal(existing);
+    this.showModal(`
+        <section class="dialog pause-dialog" aria-labelledby="pause-title">
+          <p>${TEXT.pause.section}</p><h1 id="pause-title">${TEXT.pause.title}</h1>
+          <button class="primary" data-action="pause" autofocus>${TEXT.pause.resume}</button>
           <button data-action="rematch">${TEXT.pause.restart}</button>
           <button data-screen="main">${TEXT.pause.mainMenu}</button>
-        </section>
-      </div>`);
+        </section>`, { kind: "pause", cancel: "resume" });
     this.bindUi();
   }
 
@@ -1991,11 +2067,11 @@ class BlasterBattle {
       return;
     }
     this.sound.play("grappleFire", null, this.audioSpatial(start, local, local ? 1 : .34, player.id));
-    const geometry = new LineGeometry();
-    geometry.setPositions([start.x, start.y, start.z, anchor.x, anchor.y, anchor.z]);
+    const geometry = createGrappleRopeGeometry();
+    updateGrappleRopeGeometry(geometry, [start, anchor]);
     const ropeMaterial = new THREE.Line2NodeMaterial({
       color: new THREE.Color(player.accent).multiplyScalar(1.65),
-      lineWidth: player.isBot ? 1.55 : 2.35,
+      linewidth: player.isBot ? 1.55 : 2.35,
       transparent: true,
       opacity: player.isBot ? .64 : .92,
       depthWrite: false,
@@ -2004,7 +2080,6 @@ class BlasterBattle {
     });
     const line = new Line2(geometry, ropeMaterial);
     line.frustumCulled = false;
-    line.computeLineDistances();
     this.scene.add(line);
     player.grapple = { anchor, line, wraps: [], ropeLength: Math.max(5, start.distanceTo(anchor) * .92), pullSpeed: 0, launchLift: true };
     const direction = anchor.clone().sub(start).normalize();
@@ -2029,10 +2104,7 @@ class BlasterBattle {
     if (wraps.length !== previousWrapCount) this.sound.play("grappleWrap", null, this.audioSpatial(player.position, player === this.players[0], player === this.players[0] ? .8 : .25, player.id));
     applyGrapplePhysics(player, dt);
     const ropePoints = [chest, ...wraps, player.grapple.anchor];
-    const ropePositions = [];
-    for (const point of ropePoints) ropePositions.push(point.x, point.y, point.z);
-    player.grapple.line.geometry.setPositions(ropePositions);
-    player.grapple.line.computeLineDistances();
+    updateGrappleRopeGeometry(player.grapple.line.geometry, ropePoints);
   }
 
   releaseGrapple(player, boost = false, silent = false) {
@@ -2173,7 +2245,7 @@ class BlasterBattle {
     player.chargingWeaponId = null;
   }
 
-  spawnProjectile(player, weapon, direction, position = null) {
+  spawnProjectile(player, weapon, direction, position = null, networkShotId = player.networkShotId) {
     if (weapon.type === "remote") {
       this.trimRemoteCharges(player, weapon, weapon.maxCharges - 1, true);
     }
@@ -2195,7 +2267,8 @@ class BlasterBattle {
       firedDirection: direction.clone(),
       remainingPenetration: weapon.penetration || 0,
       remainingTerrainPenetration: weapon.terrainPenetration || 0,
-      remote: weapon.type === "remote"
+      remote: weapon.type === "remote",
+      networkShotId
     };
     if (mesh.userData.combatVisual?.instancedFireball) mesh.userData.projectileVelocity = velocity;
     if (weapon.presentationPayload === "mortar") {
@@ -2263,7 +2336,7 @@ class BlasterBattle {
     }
   }
 
-  damageTerrain(position, weapon, owner) {
+  damageTerrain(position, weapon, owner, networkShotId = owner?.networkShotId) {
     const radius = weapon?.terrainRadius || 0;
     const structuralDamage = weapon?.structureDamage || 0;
     if (!radius && !structuralDamage) return 0;
@@ -2279,7 +2352,8 @@ class BlasterBattle {
           position,
           radius,
           structuralPart?.structure?.id || "",
-          structuralPart?.structuralId || ""
+          structuralPart?.structuralId || "",
+          networkShotId
         );
       }
       return structuralPart ? 1 : 0;
@@ -2472,7 +2546,7 @@ class BlasterBattle {
               this.finishProjectile(index, shot);
             } else {
               this.damageTarget(target, shot.weapon.damage, shot.velocity.clone().normalize().multiplyScalar(shot.weapon.recoil * 1.7), shot.owner, shot.weapon, {
-                point: shot.mesh.position.clone(), direction: shot.velocity.clone(), sourceSlot: shot.sourceSlot
+                point: shot.mesh.position.clone(), direction: shot.velocity.clone(), sourceSlot: shot.sourceSlot, shotId: shot.networkShotId
               });
               shot.hitTargets.add(target.id);
               if (shot.remainingPenetration > 0) {
@@ -2486,7 +2560,7 @@ class BlasterBattle {
           }
           if (worldHit) {
             const terrainHit = shot.remainingTerrainPenetration > 0 || !shot.weapon.radius
-              ? this.damageTerrain(shot.mesh.position, shot.weapon, shot.owner)
+              ? this.damageTerrain(shot.mesh.position, shot.weapon, shot.owner, shot.networkShotId)
               : 0;
             if (shot.weapon.type === "wall") {
               this.world.addTemporaryWall(previous, shot.velocity, shot.weapon.color, shot.weapon.wallDuration);
@@ -2589,7 +2663,7 @@ class BlasterBattle {
     for (let i = 0; i < count; i++) {
       const angle = i / count * Math.PI * 2;
       const direction = new THREE.Vector3(Math.cos(angle), .55 + (i % 2) * .25, Math.sin(angle)).normalize();
-      this.spawnProjectile(shot.owner, child, direction, shot.mesh.position.clone().add(new THREE.Vector3(0, .35, 0)));
+      this.spawnProjectile(shot.owner, child, direction, shot.mesh.position.clone().add(new THREE.Vector3(0, .35, 0)), shot.networkShotId);
     }
     this.combatVisuals?.impact(shot.mesh.position, shot.weapon, shot.owner, { size: 1.5 });
     this.sound.play("split", shot.weapon, this.audioSpatial(shot.mesh.position, false, .9, shot.owner.id));
@@ -2607,11 +2681,11 @@ class BlasterBattle {
       const factor = 1 - distance / shot.weapon.radius;
       const selfScale = target === shot.owner ? .35 : 1;
       const push = targetPoint.clone().sub(position).setY(.18).normalize().multiplyScalar((8 + shot.weapon.recoil) * factor * (shot.weapon.pull ? -1 : 1));
-      this.damageTarget(target, Math.ceil(shot.weapon.damage * factor * selfScale), push, shot.owner, shot.weapon);
+      this.damageTarget(target, Math.ceil(shot.weapon.damage * factor * selfScale), push, shot.owner, shot.weapon, { point: position, phase: "impact", shotId: shot.networkShotId });
       if (shot.weapon.grappleDisrupt && target.grapple) this.releaseGrapple(target);
     }
-    if (shot.weapon.terrainRadius > 0 || shot.weapon.structureDamage > 0) this.damageTerrain(position, shot.weapon, shot.owner);
-    if (shot.weapon.hazard) this.spawnHazard(position, shot.owner, shot.weapon, shot.velocity);
+    if (shot.weapon.terrainRadius > 0 || shot.weapon.structureDamage > 0) this.damageTerrain(position, shot.weapon, shot.owner, shot.networkShotId);
+    if (shot.weapon.hazard) this.spawnHazard(position, shot.owner, shot.weapon, shot.velocity, shot.networkShotId);
     this.combatVisuals?.impact(position, shot.weapon, shot.owner, { size: Math.min(2.6, Math.max(1.35, shot.weapon.radius * .42)), explosive: true });
     this.sound.playImpact(shot.weapon, this.audioSpatial(position, false, 1, shot.owner.id), 0, "explosive");
   }
@@ -2624,7 +2698,7 @@ class BlasterBattle {
       if (target.health <= 0) this.removeDecoy(target);
       return;
     }
-    this.damagePlayer(target, damage, push, attacker, weapon);
+    this.damagePlayer(target, damage, push, attacker, weapon, context);
     if (this.isOnlineMatch()) return;
     applyWeaponStatus(target, weapon);
     if (weapon.effect === "steal" && target.alive) this.stealWeapon(attacker, target, weapon, context.sourceSlot);
@@ -2673,7 +2747,7 @@ class BlasterBattle {
     }
   }
 
-  spawnHazard(position, owner, weapon, projectileVelocity = new THREE.Vector3()) {
+  spawnHazard(position, owner, weapon, projectileVelocity = new THREE.Vector3(), networkShotId = owner.networkShotId) {
     const ownerHazards = this.hazards
       .map((hazard, index) => ({ hazard, index }))
       .filter(({ hazard }) => hazard.owner === owner && hazard.weapon.id === weapon.id);
@@ -2742,7 +2816,7 @@ class BlasterBattle {
     if (velocity.lengthSq()) velocity.normalize().multiplyScalar(weapon.hazardSpeed || 0);
     const audioId = `hazard-${owner.id}-${weapon.id}-${performance.now().toString(36)}`;
     this.hazards.push({
-      audioId, mesh, owner, weapon, radius: hazardRadius, life: weapon.hazardDuration, tick: 0, velocity, elapsed: 0, instances, fadeMaterials,
+      audioId, mesh, owner, weapon, networkShotId, radius: hazardRadius, life: weapon.hazardDuration, tick: 0, velocity, elapsed: 0, instances, fadeMaterials,
       previousPosition: new THREE.Vector3(), nextPosition: new THREE.Vector3(), probePosition: new THREE.Vector3()
     });
     this.sound.play("hazardSpawn", weapon, this.audioSpatial(mesh.position, false, .9, audioId));
@@ -2810,7 +2884,7 @@ class BlasterBattle {
             damage = .6 + factor * .8;
             push.set(-offset.z, 8, offset.x).normalize().multiplyScalar(13 * factor).setY(7 * factor);
           }
-          this.damagePlayer(player, Math.ceil(damage * (player === hazard.owner ? .35 : 1)), push, hazard.owner, hazard.weapon);
+          this.damagePlayer(player, Math.ceil(damage * (player === hazard.owner ? .35 : 1)), push, hazard.owner, hazard.weapon, { point: hazard.mesh.position, phase: "hazard", shotId: hazard.networkShotId });
         }
       }
       if (hazard.life <= 0) {
@@ -2874,9 +2948,10 @@ class BlasterBattle {
     this.decoys.splice(index, 1);
   }
 
-  damagePlayer(target, damage, push, attacker, weapon = null) {
+  damagePlayer(target, damage, push, attacker, weapon = null, context = {}) {
     if (this.isOnlineMatch()) {
-      if (attacker && weapon && this.controlsNetworkPlayer(attacker)) this.multiplayer.reportHit(attacker, target, weapon, damage, push);
+      const authorityWeapon = WEAPONS[weapon?.sourceWeaponId] || weapon;
+      if (attacker && authorityWeapon && this.controlsNetworkPlayer(attacker)) this.multiplayer.reportHit(attacker, target, authorityWeapon, damage, push, context);
       return false;
     }
     const killed = target.takeHit(damage, push);
@@ -2895,6 +2970,7 @@ class BlasterBattle {
 
   showCombatFeedback(target, attacker, weapon, killed) {
     if (!this.hud) return;
+    if (killed && target === this.players[0]) this.localEliminatorName = attacker?.name || TEXT.hud.environment;
     if (attacker === this.players[0]) {
       this.hud.reticle.classList.remove("hit", "elimination");
       void this.hud.reticle.offsetWidth;
@@ -3070,6 +3146,9 @@ class BlasterBattle {
                 : player.controlMove.lengthSq() > .01 ? "running" : "idle";
     if (this.hud.root.dataset.playerState !== actionState) this.hud.root.dataset.playerState = actionState;
     setStyle(this.hud.health, "width", `${player.health}%`);
+    const roundedHealth = Math.round(clamp(player.health, 0, 100));
+    setText(this.hud.healthValue, `${roundedHealth} HP`);
+    if (this.hud.healthMeter.getAttribute("aria-valuenow") !== String(roundedHealth)) this.hud.healthMeter.setAttribute("aria-valuenow", String(roundedHealth));
     setText(this.hud.score, this.scores[0]);
     let rankingChanged = false;
     for (let index = 0; index < this.scores.length; index++) {
@@ -3095,6 +3174,7 @@ class BlasterBattle {
     this.hud.slots.forEach((slot, index) => {
       const weapon = WEAPONS[player.loadout[index]];
       slot.classList.toggle("selected", index === player.slotIndex);
+      slot.setAttribute("aria-pressed", String(index === player.slotIndex));
       const category = WEAPON_CATEGORY_SLUG_BY_ID[weapon.id];
       if (slot.dataset.category !== category) slot.dataset.category = category;
       setStyle(slot, "--weapon", WEAPON_CSS_COLOR_BY_ID[weapon.id]);
@@ -3124,6 +3204,22 @@ class BlasterBattle {
     setStyle(this.hud.motionVignette, "--motion", motion.toFixed(3));
     setStyle(this.hud.motionVignette, "--environment-blur", `${grappleBlur.toFixed(2)}px`);
     this.hud.motionVignette.classList.toggle("grappling", Boolean(player.grapple));
+    if (!player.alive) {
+      const seconds = Math.max(0, Math.ceil(this.respawnTimers[0] || 0));
+      const cause = formatText(TEXT.hud.eliminatedBy, { name: this.localEliminatorName || TEXT.hud.environment });
+      this.hud.respawnStatus.hidden = false;
+      setText(this.hud.respawnCause, cause);
+      setText(this.hud.respawnCountdown, formatText(TEXT.hud.respawningIn, { seconds }));
+      if (this.lastRespawnAnnouncement !== cause) {
+        setText(this.hud.respawnAnnouncement, cause);
+        this.lastRespawnAnnouncement = cause;
+      }
+    } else {
+      this.hud.respawnStatus.hidden = true;
+      if (this.lastRespawnAnnouncement) setText(this.hud.respawnAnnouncement, TEXT.hud.controlRestored);
+      this.lastRespawnAnnouncement = "";
+      this.localEliminatorName = "";
+    }
   }
 
   updatePerformanceSample(dt) {
@@ -3172,15 +3268,13 @@ class BlasterBattle {
     const winners = this.scores.map((score, index) => score === winningScore ? index : -1).filter((index) => index >= 0);
     const headline = winners.length > 1 ? TEXT.results.draw : formatText(TEXT.results.winner, { name: escapeHtml(this.players[winners[0]].name) });
     const ranking = this.players.map((player, index) => ({ player, score: this.scores[index] })).sort((a, b) => b.score - a.score);
-    ui.insertAdjacentHTML("beforeend", `
-      <div class="overlay results">
-        <section class="dialog results-dialog">
-          <p>${TEXT.results.section}</p><h1>${headline}</h1>
-          <div class="results-ranking">${ranking.slice(0, 5).map(({ player, score }) => `<p><b>${escapeHtml(player.name)}</b><span>${score}</span></p>`).join("")}</div>
-          <button class="primary" data-action="rematch">${TEXT.results.rematch}</button>
+    this.showModal(`
+        <section class="dialog results-dialog" aria-labelledby="results-title">
+          <p>${TEXT.results.section}</p><h1 id="results-title">${headline}</h1>
+          <ol class="results-ranking">${ranking.slice(0, 5).map(({ player, score }) => `<li><b>${escapeHtml(player.name)}</b><span>${score}</span></li>`).join("")}</ol>
+          <button class="primary" data-action="rematch" autofocus>${TEXT.results.rematch}</button>
           <button data-screen="main">${TEXT.results.menu}</button>
-        </section>
-      </div>`);
+        </section>`, { kind: "results" });
     const humanWon = winners.includes(0);
     this.sound.startMusic(`results-${humanWon ? "win" : "loss"}`, this.seed);
     this.sound.setMusicIntensity(humanWon ? .58 : .34);
@@ -3229,6 +3323,7 @@ class BlasterBattle {
   }
 
   renderScene() {
+    if (this.resizeInFlight || this.pendingResize) return;
     if (this.state !== "play" || this.paused) this.updateCamera();
     this.renderPipeline.render();
   }

@@ -30,8 +30,8 @@ export class NeonRenderPipeline {
     this.aoPass = null;
     const nativeWebGPU = renderer.backend.isWebGPUBackend === true;
     this.nativeWebGPU = nativeWebGPU;
-    this.direct = coarsePointer;
-    this.profile = nativeWebGPU ? TEXT.performanceProfiles.webgpuMobileDirect : coarsePointer ? TEXT.performanceProfiles.webglMobileDirect : TEXT.performanceProfiles.webglBloom;
+    this.direct = false;
+    this.profile = nativeWebGPU ? TEXT.performanceProfiles.webgpu : TEXT.performanceProfiles.webglBloom;
     if (this.direct) {
       this.setQuality(this.quality);
       return;
@@ -80,7 +80,7 @@ export class NeonRenderPipeline {
   render() {
     if (this.direct || this.quality === "low") return this.renderer.render(this.scene, this.camera);
     try {
-      (this.nativeWebGPU && (this.highLoadMode || this.quality === "medium") ? this.highLoadPipeline : this.pipeline).render();
+      (this.nativeWebGPU && this.quality === "medium" ? this.highLoadPipeline : this.pipeline).render();
     } catch (error) {
       this.degradeToDirect(error);
       this.renderer.render(this.scene, this.camera);
@@ -123,7 +123,7 @@ export class NeonRenderPipeline {
     const backend = this.nativeWebGPU ? TEXT.performanceProfiles.webgpu : TEXT.performanceProfiles.webgl;
     this.profile = this.quality === "low" ? `${backend} ${TEXT.performanceProfiles.lowDirect}`
       : !this.nativeWebGPU ? `${backend} ${this.quality === "medium" ? TEXT.performanceProfiles.mediumBloom : TEXT.performanceProfiles.bloom}`
-        : `${backend} ${this.quality === "medium" ? TEXT.performanceProfiles.mediumBloom : this.highLoadMode ? TEXT.performanceProfiles.sixteenPlayerBloom : TEXT.performanceProfiles.ultra}`;
+        : `${backend} ${this.quality === "medium" ? TEXT.performanceProfiles.mediumBloom : TEXT.performanceProfiles.ultra}`;
     return this.quality;
   }
 
@@ -136,11 +136,11 @@ export class NeonRenderPipeline {
       return;
     }
     this.highLoadMode = Boolean(enabled);
-    if (this.quality === "medium" || (this.highLoadMode && this.quality === "high")) this.ensurePerformancePipeline();
+    if (this.quality === "medium") this.ensurePerformancePipeline();
     this.updateBloomQuality();
     this.profile = `${TEXT.performanceProfiles.webgpu} ${this.quality === "low" ? TEXT.performanceProfiles.lowDirect
       : this.quality === "medium" ? TEXT.performanceProfiles.mediumBloom
-        : this.highLoadMode ? TEXT.performanceProfiles.sixteenPlayerBloom : TEXT.performanceProfiles.ultra}`;
+        : TEXT.performanceProfiles.ultra}`;
   }
 
   degradeToDirect(reason) {

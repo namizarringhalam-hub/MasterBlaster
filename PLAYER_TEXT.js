@@ -224,7 +224,12 @@ export const PLAYER_TEXT = {
     jumpAria: "Jump",
     fire: "FIRE",
     fireAria: "Fire weapon",
-    impact: "impact"
+    impact: "impact",
+    health: "Health",
+    eliminatedBy: "ELIMINATED BY {name}",
+    environment: "THE ARENA",
+    respawningIn: "RESPAWNING IN {seconds}",
+    controlRestored: "Control restored"
   },
 
   performanceProfiles: {
