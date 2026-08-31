@@ -5,8 +5,12 @@ export const MAX_MATCH_PLAYERS = 16;
 export const MATCH_DURATION_MS = 180_000;
 export const MATCH_TARGET_SCORE = 10;
 export const NETWORK_TICK_MS = 50;
+export const MAX_CLIENT_MESSAGE_BYTES = 16_384;
+export const MAX_SERVER_MESSAGE_BYTES = 256 * 1_024;
 
 const ROOM_CODE_PATTERN = /[^A-Z0-9-]/g;
+const NON_ASCII_PATTERN = /[^\x00-\x7f]/;
+const MESSAGE_ENCODER = new TextEncoder();
 
 export function normalizeRoomCode(value, fallback = "") {
   const normalized = String(value || "").toUpperCase().replace(ROOM_CODE_PATTERN, "").slice(0, 12);
@@ -54,14 +58,23 @@ export function sanitizeVector(value, maximumLength = Infinity) {
   return vector;
 }
 
-export function parseClientMessage(value) {
-  if (typeof value !== "string" || value.length > 16_384) return null;
+function parseMessage(value, maximumBytes) {
+  if (typeof value !== "string" || value.length > maximumBytes) return null;
+  if (NON_ASCII_PATTERN.test(value) && MESSAGE_ENCODER.encode(value).byteLength > maximumBytes) return null;
   try {
     const message = JSON.parse(value);
     return message && typeof message === "object" && typeof message.type === "string" ? message : null;
   } catch {
     return null;
   }
+}
+
+export function parseClientMessage(value) {
+  return parseMessage(value, MAX_CLIENT_MESSAGE_BYTES);
+}
+
+export function parseServerMessage(value) {
+  return parseMessage(value, MAX_SERVER_MESSAGE_BYTES);
 }
 
 export function socketUrl(origin, roomCode, parameters = {}) {

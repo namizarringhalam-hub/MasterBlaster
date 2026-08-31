@@ -1,5 +1,5 @@
 const GAME_KEYS = new Set([
-  "KeyW", "KeyA", "KeyS", "KeyD", "KeyE", "KeyQ", "KeyR",
+  "KeyW", "KeyA", "KeyS", "KeyD", "KeyE", "KeyF", "KeyQ", "KeyR",
   "Space", "Escape", "Tab", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5"
 ]);
 

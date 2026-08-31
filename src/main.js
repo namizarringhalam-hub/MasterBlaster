@@ -184,6 +184,7 @@ class BlasterBattle {
     };
     this.cameraClearance = { actual: 0, target: 0 };
     this.cameraFirstPerson = false;
+    this.cameraFirstPersonRequested = false;
     this.listenerDirection = new THREE.Vector3();
     this.aimDirection = new THREE.Vector3();
     this.damageDirection = new THREE.Vector3();
@@ -461,6 +462,7 @@ class BlasterBattle {
     this.networkTargets.clear();
     this.networkRespawnRequests.clear();
     this.cameraFirstPerson = false;
+    this.cameraFirstPersonRequested = false;
     if (!preserveNetwork) {
       this.multiplayer?.close();
       this.multiplayer = null;
@@ -1859,6 +1861,7 @@ class BlasterBattle {
     const player = this.players[0];
     const look = this.input.consumeLook();
     ({ yaw: this.cameraYaw, pitch: this.cameraPitch } = updateOrbit(this.cameraYaw, this.cameraPitch, look.x, look.y));
+    if (this.input.tapped("KeyF")) this.cameraFirstPersonRequested = !this.cameraFirstPersonRequested;
     this.updateCamera(dt);
     if (!player.alive) {
       this.sound.updateWeaponLoop(player.id, player.weapon, false);
@@ -3308,7 +3311,7 @@ class BlasterBattle {
     this.camera.updateProjectionMatrix();
     const cameraTarget = this.world.constrainCamera(pivot, desired, .45, scratch.target);
     const availableDistance = cameraTarget.distanceTo(pivot);
-    this.cameraFirstPerson = cameraCollisionFirstPerson(availableDistance, this.cameraFirstPerson);
+    this.cameraFirstPerson = this.cameraFirstPersonRequested || cameraCollisionFirstPerson(availableDistance, this.cameraFirstPerson);
     if (this.cameraFirstPerson) cameraTarget.copy(pivot).addScaledVector(forward, .38).setY(pivot.y + .24);
     this.camera.position.lerp(cameraTarget, cameraBlend);
     this.world.constrainCamera(pivot, this.camera.position, .45, scratch.constrained);

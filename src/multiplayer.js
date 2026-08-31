@@ -2,7 +2,7 @@ import {
   MULTIPLAYER_PROTOCOL_VERSION,
   NETWORK_TICK_MS,
   normalizeRoomCode,
-  parseClientMessage,
+  parseServerMessage,
   socketUrl
 } from "./multiplayerProtocol.js";
 import TEXT, { formatText } from "./playerText.js";
@@ -123,7 +123,7 @@ export class MultiplayerClient extends EventTarget {
       socket.addEventListener("message", (event) => {
         if (socket !== this.socket) return;
         this.awaitingPongSince = 0;
-        const message = parseClientMessage(event.data);
+        const message = parseServerMessage(event.data);
         if (!message) return;
         if (message.type === "welcome") {
           joined = true;

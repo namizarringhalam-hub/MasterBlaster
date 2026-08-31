@@ -53,11 +53,37 @@ class FakeWebSocket extends EventTarget {
   send() {}
 }
 
+const terrainEvents = Array.from({ length: 104 }, (_, index) => ({
+  type: "terrain_damage",
+  id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+  attackerId: "player-new",
+  weaponId: "rocket",
+  position: { x: index / 3, y: 4.5, z: -index / 5 },
+  radius: 8,
+  structuralDamage: 1,
+  structureId: `structure-${index % 8 + 1}`,
+  partId: `structure-${index % 8 + 1}-pillar-${index % 4 + 1}`,
+  structuralHealth: index % 6,
+  collapsed: index % 17 === 0,
+  serverTime: 1_800_000_000_000 + index
+}));
+
 const welcomeMessage = {
   type: "welcome", playerId: "player-new", botHostId: "player-new", roomCode: "ROOM-B",
   resumeToken: "12345678-1234-1234-1234-123456789abc",
-  seed: "ROOM-B", startsAt: 1, endsAt: 2, targetScore: 10, players: []
+  seed: "ROOM-B", startsAt: 1, endsAt: 2, targetScore: 10,
+  players: Array.from({ length: 8 }, (_, index) => ({
+    id: `player-${index}`, name: `Reconnect Player ${index}`, color: "#00e5ff", accent: "#ff2bd6",
+    loadout: ["pistol", "rocket", "railgun", "grenade", "plasma"], bot: index > 0,
+    score: index, health: 100, alive: true, position: { x: index, y: 3, z: -index },
+    velocity: { x: 0, y: 0, z: 0 }, aim: { x: 0, y: 0, z: -1 }, slotIndex: 0,
+    grounded: true, ammo: { pistol: 120, rocket: 16, railgun: 18, grenade: 12, plasma: 90 }, respawnAt: 0
+  })),
+  terrainEvents,
+  structuralState: Object.fromEntries(terrainEvents.slice(0, 8).map((event) => [event.partId, event.structuralHealth]))
 };
+
+assert.ok(new TextEncoder().encode(JSON.stringify(welcomeMessage)).byteLength > 16_384, "the reconnect fixture exceeds the former client parser ceiling");
 
 globalThis.location = new URL("https://masterblaster.se/");
 globalThis.WebSocket = FakeWebSocket;

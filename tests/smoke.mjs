@@ -478,12 +478,15 @@ const randomB = seededRandom(seedFromText("BLAST-01"));
 assert.deepEqual([randomA(), randomA(), randomA()], [randomB(), randomB(), randomB()], "map randomness is seed-reproducible");
 
 assert.ok(shouldCaptureGameKey({ code: "KeyE", target: null }, true), "grapple input is captured in play");
+assert.ok(shouldCaptureGameKey({ code: "KeyF", target: null }, true), "camera-view input is captured in play");
 assert.ok(shouldCaptureGameKey({ code: "Digit5", target: null }, true), "the fifth weapon slot is reachable");
 assert.ok(!shouldCaptureGameKey({ code: "KeyR", ctrlKey: true, target: null }, true), "browser shortcuts are preserved");
 assert.deepEqual(updateOrbit(0, 0, 100, -50), { yaw: -.22, pitch: .11 }, "mouse-right turns the third-person camera right without reversing vertical aim");
 const verticalPitch = updateOrbit(0, 0, 0, -1000).pitch;
 assert.ok(verticalPitch > Math.PI / 2 - .001 && Math.sin(verticalPitch) > .99999999, "the camera can aim functionally straight up without flipping");
 assert.equal(updateOrbit(0, 0, 0, 1000).pitch, -verticalPitch, "the camera has the same full vertical range downward");
+assert.match(mainSource, /this\.cameraFirstPersonRequested = !this\.cameraFirstPersonRequested[\s\S]*?this\.updateCamera\(dt\)/, "F toggles the requested camera view before the current frame is aimed");
+assert.match(mainSource, /this\.cameraFirstPerson = this\.cameraFirstPersonRequested \|\| cameraCollisionFirstPerson\(availableDistance, this\.cameraFirstPerson\)/, "the requested first-person view persists while collision can still protect third-person play");
 assert.match(mainSource, /focus\.copy\(this\.camera\.position\)\.addScaledVector\(forward, 28\)/, "the reticle ray stays parallel to the selected pitch instead of converging early on the player");
 assert.equal(TOUCH_LOOK_GAIN, 3.5, "right-side touch aiming is substantially faster than mouse aiming");
 assert.deepEqual(touchLookDelta(20, 30, 70, 5), { x: 175, y: -87.5 }, "right-side dragging applies fast horizontal and vertical touch look");
