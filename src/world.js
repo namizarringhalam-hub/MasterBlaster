@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu";
 import { abs, color, fract, length, max, min, mix, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
-import { MAP_THEMES, seededRandom, seedFromText, structuralTowerBlueprints } from "./gameData.js";
+import { ARENA_PORTAL_COOLDOWN_SECONDS, ARENA_PORTAL_PAIRS, MAP_THEMES, seededRandom, seedFromText, structuralTowerBlueprints } from "./gameData.js";
 
 const TAU = Math.PI * 2;
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -357,8 +357,9 @@ export class ArenaWorld {
     this.addMovingPlatform(80, 25, 0, 12, 10, "y", 15, .7, Math.PI);
     this.addMovingPlatform(0, 34, -82, 11, 11, "x", 25, .62, Math.PI / 2);
     this.addMovingPlatform(0, 51, 82, 11, 11, "x", 25, .55, -Math.PI / 2);
-    this.addPortalPair(new THREE.Vector3(-96, 0, 0), new THREE.Vector3(0, 66, -10));
-    this.addPortalPair(new THREE.Vector3(96, 0, 0), new THREE.Vector3(0, 66, 10));
+    for (const [entry, exit] of ARENA_PORTAL_PAIRS) {
+      this.addPortalPair(new THREE.Vector3(entry.x, entry.y, entry.z), new THREE.Vector3(exit.x, exit.y, exit.z));
+    }
     this.addSweeper(-70, 0, 48, 20, 1.15);
     this.addSweeper(70, 0, -48, 24, -.9);
 
@@ -2580,7 +2581,8 @@ export class ArenaWorld {
       if (!portal) continue;
       player.position.copy(portal.pair.position).setY(portal.pair.position.y + .35);
       player.velocity.y = Math.max(player.velocity.y, 5);
-      player.portalCooldown = 1.2;
+      player.portalCooldown = ARENA_PORTAL_COOLDOWN_SECONDS;
+      player.networkPositionDirty = true;
     }
 
     for (const sweeper of this.sweepers) {
@@ -2649,7 +2651,11 @@ export class ArenaWorld {
       const minZ = item.z - item.d / 2 - radius;
       const maxZ = item.z + item.d / 2 + radius;
       const insideFootprint = position.x > minX && position.x < maxX && position.z > minZ && position.z < maxZ;
-      if (insideFootprint && position.y > previous.y && previous.y + 2.25 <= item.baseY + .05 && position.y + 2.25 >= item.baseY) {
+      const undersideDepth = position.y - (item.baseY - 2.251);
+      const horizontalDepth = Math.min(position.x - minX, maxX - position.x, position.z - minZ, maxZ - position.z);
+      const risingIntoUnderside = position.y > previous.y && previous.y + 2.25 <= item.baseY + .08 && position.y + 2.25 >= item.baseY;
+      const trappedUnderneath = position.y < item.baseY && position.y + 2.25 > item.baseY + .08 && undersideDepth <= horizontalDepth;
+      if (insideFootprint && (risingIntoUnderside || trappedUnderneath)) {
         position.y = item.baseY - 2.251;
         ceiling = true;
         continue;

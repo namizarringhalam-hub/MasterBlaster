@@ -236,10 +236,10 @@ export class MultiplayerClient extends EventTarget {
     return this.send("lobby_start");
   }
 
-  sendState(players, now = performance.now()) {
-    if (now - this.lastStateAt < NETWORK_TICK_MS) return false;
+  sendState(players, now = performance.now(), force = false) {
+    if (!force && now - this.lastStateAt < NETWORK_TICK_MS) return false;
     this.lastStateAt = now;
-    return this.send("state", {
+    const sent = this.send("state", {
       players: players.map((player) => ({
         id: player.id,
         position: player.position,
@@ -249,9 +249,12 @@ export class MultiplayerClient extends EventTarget {
         grounded: player.grounded
       }))
     });
+    if (sent) for (const player of players) player.networkPositionDirty = false;
+    return sent;
   }
 
   fire(player, weapon, direction, triggerTap = false, action = "fire", chargeRatio = 1) {
+    if (player.networkPositionDirty) this.sendState([player], performance.now(), true);
     const shotId = crypto.randomUUID();
     player.networkShotId = shotId;
     return this.send("fire", {
@@ -289,6 +292,10 @@ export class MultiplayerClient extends EventTarget {
       structureId,
       partId
     });
+  }
+
+  reportTeleport(player, impact, shotId = "") {
+    return this.send("teleport", { playerId: player.id, shotId, impact, position: player.position });
   }
 
   reportCrush(player, structureId) {

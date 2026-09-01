@@ -33,6 +33,20 @@ const coverEnd = { x: 50, y: 2.1, z: -22 };
 assert.equal(lineBlockedByStructure(coverStart, coverEnd, coverSeed), true, "an intact structural pillar blocks combat sightlines");
 const destroyedCover = new Map([["structure-1-pillar-1", 0]]);
 assert.equal(lineBlockedByStructure(coverStart, coverEnd, coverSeed, destroyedCover), false, "authoritatively destroyed cover opens the same sightline");
+const embeddedAttacker = player("embedded-attacker", 30, 0, -22);
+const embeddedTarget = player("embedded-target", 42, 0, -22);
+const embeddedShot = {
+  ...shot("machine_gun", { x: 1, y: 0, z: 0 }), playerId: embeddedAttacker.id,
+  origin: { x: 30, y: 1.2, z: -22 }
+};
+assert.equal(validateHitProposal({
+  shot: embeddedShot, attacker: embeddedAttacker, target: player("behind-cover", 50, 0, -22),
+  weapon: WEAPONS.machine_gun, now: 1_050, seed: coverSeed
+}), null, "an ordinary target behind intact cover remains protected");
+assert.equal(validateHitProposal({
+  shot: embeddedShot, attacker: embeddedAttacker, target: { ...embeddedTarget, position: { x: 46.15, y: 0, z: -22 } },
+  weapon: WEAPONS.machine_gun, now: 1_050, seed: coverSeed
+}), null, "a target just inside the far face cannot turn endpoint containment into damage through an intact pillar");
 
 const rocketShot = shot("rocket_launcher");
 assert.equal(validateImpactProposal({ shot: rocketShot, weapon: WEAPONS.rocket_launcher, impact: { x: -20, y: 1.2, z: 0 }, now: 1_250 }), false, "reverse-direction terrain damage is rejected by the same authoritative path rule");

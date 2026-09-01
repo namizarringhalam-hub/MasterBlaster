@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
-import { DEFAULT_LOADOUT, WEAPONS, structuralPartBounds, weaponFireMode, weaponUsesAmmo } from "../src/gameData.js";
+import { ARENA_PORTAL_COOLDOWN_SECONDS, DEFAULT_LOADOUT, WEAPONS, isArenaPortalTransition, structuralPartBounds, weaponFireMode, weaponUsesAmmo } from "../src/gameData.js";
 import TEXT, { formatText } from "../src/playerText.js";
-import { hitProposalLimit, validateHitProposal, validateImpactProposal, weaponAuthorityStrategy } from "../src/combatAuthority.js";
+import { hitProposalLimit, lineBlockedByStructure, playerCapsuleIntersectsStructure, validateHitProposal, validateImpactProposal, weaponAuthorityStrategy } from "../src/combatAuthority.js";
 import {
   MATCH_TARGET_SCORE,
   MAX_MATCH_PLAYERS,
@@ -25,6 +25,7 @@ const RESUME_ACK_GRACE_MS = 15_000;
 const PRIVATE_LOBBY_REJOIN_MS = 10 * 60_000;
 const PRIVATE_MATCH_REJOIN_GRACE_MS = 60_000;
 const PERSISTENCE_WINDOW_MS = 250;
+const MAX_ORDINARY_STATE_DISPLACEMENT = 96;
 const RESUME_TOKEN_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const COLORS = [
   [0x129dba, 0x6ff6ff], [0xc82849, 0xff6b82], [0x6bad22, 0xb9ff55], [0x7847ca, 0xc793ff],
@@ -87,7 +88,7 @@ function roomPlayer(id, name, loadout, colorIndex, bot = false) {
     health: 100, alive: true, score: 0, deaths: 0,
     position: { x: 0, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, aim: { x: 0, y: 0, z: 1 },
     slotIndex: 0, grounded: true, ammo: playerAmmo(loadout), reloadEndsAt: {},
-    lastFireAt: {}, lastStateAt: 0, hasState: false, respawnAt: 0, joinedAt: Date.now()
+    lastFireAt: {}, lastPortalAt: 0, lastStateAt: 0, hasState: false, respawnAt: 0, joinedAt: Date.now()
   };
 }
 
@@ -104,6 +105,7 @@ function resetRoomPlayer(player) {
   player.ammo = playerAmmo(player.loadout);
   player.reloadEndsAt = {};
   player.lastFireAt = {};
+  player.lastPortalAt = 0;
   player.lastStateAt = 0;
   player.hasState = false;
   player.respawnAt = 0;
@@ -527,8 +529,10 @@ export class MatchRoom extends DurableObject {
     if (!player.alive) return null;
     const position = sanitizeVector(state.position);
     const elapsed = Math.min(1.5, Math.max(.05, (now - (player.lastStateAt || now)) / 1000));
-    const movementBudget = 9 + 95 * elapsed;
-    if (player.hasState && squaredDistance(position, player.position) > movementBudget * movementBudget) return null;
+    const movementBudget = Math.min(MAX_ORDINARY_STATE_DISPLACEMENT, 9 + 95 * elapsed);
+    const portalTransition = player.hasState && isArenaPortalTransition(player.position, position);
+    if (portalTransition && player.lastPortalAt && now - player.lastPortalAt < ARENA_PORTAL_COOLDOWN_SECONDS * 1000) return null;
+    if (player.hasState && squaredDistance(position, player.position) > movementBudget * movementBudget && !portalTransition) return null;
     player.position = {
       x: finiteNumber(position.x, player.position.x, -220, 220),
       y: finiteNumber(position.y, player.position.y, -24, 230),
@@ -539,6 +543,7 @@ export class MatchRoom extends DurableObject {
     if (Math.hypot(player.aim.x, player.aim.y, player.aim.z) < .5) player.aim = { x: 0, y: 0, z: 1 };
     player.slotIndex = Math.trunc(finiteNumber(state.slotIndex, player.slotIndex, 0, 4));
     player.grounded = Boolean(state.grounded);
+    if (portalTransition) player.lastPortalAt = now;
     player.lastStateAt = now;
     player.hasState = true;
     return publicState(player);
@@ -707,6 +712,36 @@ export class MatchRoom extends DurableObject {
     } else await this.applyAuthoritativeDamage(attackerEntry, requestedTarget, weapon, candidate.validation, now);
     this.schedulePersistence({ bots: attacker.bot || this.bots.has(message.targetId), fires: true });
     await this.checkMatchEnd(now);
+  }
+
+  async handleTeleport(socket, message) {
+    const entry = this.authorizedActor(socket, message.playerId);
+    const weapon = WEAPONS.teleport_projectile;
+    if (!entry?.player.alive || !entry.player.loadout.includes(weapon.id)) return;
+    const now = Date.now();
+    const history = this.recentFires.get(entry.player.id) || [];
+    const shot = [...history].reverse().find((candidate) => candidate.id === message.shotId && candidate.weaponId === weapon.id && !candidate.teleported);
+    if (!shot) return;
+    const impact = sanitizeVector(message.impact);
+    if (!validateImpactProposal({ shot, weapon, impact, now })) return;
+    const expected = {
+      x: impact.x - shot.direction.x * 1.35,
+      y: Math.max(.2, impact.y - shot.direction.y * 1.35),
+      z: impact.z - shot.direction.z * 1.35
+    };
+    const position = sanitizeVector(message.position);
+    if (squaredDistance(position, expected) > 4 ** 2 || Math.abs(position.x) > 120 || Math.abs(position.z) > 120 || position.y < -.5 || position.y > 100) return;
+    if (playerCapsuleIntersectsStructure(position, this.meta.seed, this.structuralHealth)) return;
+    if (lineBlockedByStructure(expected, position, this.meta.seed, this.structuralHealth)) return;
+    shot.teleported = true;
+    entry.player.position = position;
+    entry.player.velocity = { x: 0, y: 2.5, z: 0 };
+    entry.player.grounded = false;
+    entry.player.lastStateAt = now;
+    entry.player.hasState = true;
+    if (entry.socket) entry.socket.serializeAttachment(entry.player);
+    this.queueStateBroadcast([publicState(entry.player)]);
+    this.schedulePersistence({ bots: entry.player.bot, fires: true });
   }
 
   recentValidTerrainShot(attacker, weapon, position, message, now) {
@@ -931,6 +966,7 @@ export class MatchRoom extends DurableObject {
     if (message.type === "state") await this.handleState(socket, message);
     else if (message.type === "fire") await this.handleFire(socket, message);
     else if (message.type === "hit") await this.handleHit(socket, message);
+    else if (message.type === "teleport") await this.handleTeleport(socket, message);
     else if (message.type === "terrain_hit") await this.handleTerrainHit(socket, message);
     else if (message.type === "crush") await this.handleCrush(socket, message);
     else if (message.type === "reload") await this.handleReload(socket, message);

@@ -17,6 +17,7 @@ class FakeWebSocket extends EventTarget {
     super();
     this.url = url;
     this.readyState = 0;
+    this.sent = [];
     FakeWebSocket.instances.push(this);
     if (FakeWebSocket.instances.length === 2) queueMicrotask(() => this.emitMessage(welcomeMessage));
     if (FakeWebSocket.instances.length === 3) queueMicrotask(() => this.emitMessage({ ...welcomeMessage, serverTime: 3 }));
@@ -50,7 +51,7 @@ class FakeWebSocket extends EventTarget {
     this.emitClose();
   }
 
-  send() {}
+  send(value) { this.sent.push(JSON.parse(value)); }
 }
 
 const terrainEvents = Array.from({ length: 104 }, (_, index) => ({
@@ -122,6 +123,16 @@ try {
   const resumeUrl = new URL(FakeWebSocket.instances[2].url);
   assert.equal(resumeUrl.pathname, "/api/rooms/ROOM-B/connect");
   assert.equal(resumeUrl.searchParams.get("resumeToken"), welcomeMessage.resumeToken);
+  const portalPlayer = {
+    id: client.playerId, position: { x: 0, y: 66.35, z: -10 }, velocity: { x: 0, y: 5, z: 0 },
+    aim: { x: 1, y: 0, z: 0 }, slotIndex: 0, grounded: false, networkPositionDirty: true
+  };
+  const activeSocket = FakeWebSocket.instances[2];
+  client.fire(portalPlayer, { id: "blaster" }, portalPlayer.aim, true);
+  assert.deepEqual(activeSocket.sent.slice(-2).map(({ type }) => type), ["state", "fire"], "a portal frame sends its authoritative state before a shot can use a stale server origin");
+  assert.equal(portalPlayer.networkPositionDirty, false, "a successfully transmitted portal state clears its ordering marker");
+  client.reportTeleport(portalPlayer, { x: 50, y: 1.2, z: 0 }, portalPlayer.networkShotId);
+  assert.equal(activeSocket.sent.at(-1).type, "teleport", "a teleport-projectile displacement is proposed against its authoritative shot instead of masquerading as ordinary movement");
   client.close();
 
   const privateOptions = {

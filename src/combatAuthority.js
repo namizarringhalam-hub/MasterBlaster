@@ -67,6 +67,27 @@ export function lineBlockedByStructure(start, end, seed, structuralHealth = new 
   return false;
 }
 
+export function playerCapsuleIntersectsStructure(position, seed, structuralHealth = new Map()) {
+  const towers = structuralTowerBlueprints(seed);
+  for (let towerIndex = 0; towerIndex < towers.length; towerIndex++) {
+    const tower = towers[towerIndex];
+    const structureId = `structure-${towerIndex + 1}`;
+    const columns = Math.max(3, Math.min(5, Math.round(tower.w / 7)));
+    const rows = Math.max(3, Math.min(5, Math.round(tower.d / 7)));
+    for (const [kind, count] of [["pillar", tower.segmentCount], ["platform", columns * rows]]) {
+      for (let part = 1; part <= count; part++) {
+        const partId = `${structureId}-${kind}-${part}`;
+        if ((structuralHealth.get(partId) ?? 1) <= 0) continue;
+        const bounds = structuralPartBounds(seed, partId);
+        if (bounds && Math.abs(position.x - bounds.x) < bounds.w / 2 + PLAYER_RADIUS &&
+          Math.abs(position.z - bounds.z) < bounds.d / 2 + PLAYER_RADIUS &&
+          position.y < bounds.top && position.y + 2.25 > bounds.baseY) return true;
+      }
+    }
+  }
+  return false;
+}
+
 export function weaponAuthorityStrategy(weapon) {
   const mode = weaponFireMode(weapon);
   if (mode === "melee") return "melee";

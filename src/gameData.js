@@ -249,6 +249,26 @@ const SEEDED_STRUCTURAL_SITES = [
   [84, -72], [-18, 62], [18, -62], [-67, -6], [67, 6]
 ];
 
+export const ARENA_PORTAL_PAIRS = Object.freeze([
+  Object.freeze([Object.freeze({ x: -96, y: 0, z: 0 }), Object.freeze({ x: 0, y: 66, z: -10 })]),
+  Object.freeze([Object.freeze({ x: 96, y: 0, z: 0 }), Object.freeze({ x: 0, y: 66, z: 10 })])
+]);
+export const ARENA_PORTAL_COOLDOWN_SECONDS = 1.2;
+export const ARENA_PORTAL_ENTRY_ALLOWANCE = 5.25;
+
+export function isArenaPortalTransition(previous, candidate, entryAllowance = ARENA_PORTAL_ENTRY_ALLOWANCE, exitAllowance = 8) {
+  if (!previous || !candidate) return false;
+  for (const pair of ARENA_PORTAL_PAIRS) {
+    for (let direction = 0; direction < 2; direction++) {
+      const entry = pair[direction];
+      const exit = pair[1 - direction];
+      if (Math.hypot(previous.x - entry.x, previous.y - entry.y, previous.z - entry.z) <= entryAllowance &&
+        Math.hypot(candidate.x - exit.x, candidate.y - (exit.y + .35), candidate.z - exit.z) <= exitAllowance) return true;
+    }
+  }
+  return false;
+}
+
 export function structuralTowerBlueprints(seed, random = seededRandom(seedFromText(seed))) {
   const towers = MAJOR_STRUCTURAL_TOWERS.map(([x, top, z, w, d, thickness]) => ({
     x, z, top, w, d, thickness, segmentCount: Math.ceil(top / 6), pillarWidth: 8.4, major: true

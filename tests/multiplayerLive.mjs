@@ -113,7 +113,7 @@ const firstAssignment = await assignment();
 assert.equal(firstAssignment.timeLimitMinutes, timeLimitMinutes);
 const otherDurationAssignment = await assignment(8);
 assert.notEqual(otherDurationAssignment.roomCode, firstAssignment.roomCode, "different durations never share a Quick Play room");
-const first = await connect(firstAssignment.roomCode, "Alpha", botCount, 30);
+let first = await connect(firstAssignment.roomCode, "Alpha", botCount, 30);
 assert.equal(first.welcome.endsAt - first.welcome.startsAt, timeLimitMinutes * 60_000, "the matchmaker reservation overrides a manipulated WebSocket duration");
 const secondAssignment = await assignment();
 assert.equal(secondAssignment.roomCode, firstAssignment.roomCode);
@@ -148,11 +148,45 @@ const damage = await second.next((message) => message.type === "damage" && messa
 assert.equal(damage.health, 82);
 assert.equal(damage.damage, 18);
 
-await new Promise((resolve) => setTimeout(resolve, 220));
+await new Promise((resolve) => setTimeout(resolve, 1_600));
+first.socket.send(JSON.stringify({
+  type: "state",
+  players: [{ id: firstId, position: { x: -96, y: 1, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, aim: { x: 1, y: 0, z: 0 }, slotIndex: 0, grounded: true }]
+}));
+second.socket.send(JSON.stringify({
+  type: "state",
+  players: [{ id: secondId, position: { x: 5, y: 66.35, z: -10 }, velocity: { x: 0, y: 0, z: 0 }, aim: { x: -1, y: 0, z: 0 }, slotIndex: 0, grounded: false }]
+}));
+await first.next((message) => message.type === "state" && message.players.some((player) => player.id === secondId && player.position?.y === 66.35));
+await second.next((message) => message.type === "state" && message.players.some((player) => player.id === firstId && player.position?.x === -96));
+first.socket.send(JSON.stringify({
+  type: "state",
+  players: [{ id: firstId, position: { x: 0, y: 66.35, z: -10 }, velocity: { x: 0, y: 5, z: 0 }, aim: { x: 1, y: 0, z: 0 }, slotIndex: 0, grounded: false }]
+}));
+const portalShotId = fire(first, { playerId: firstId, weaponId: "blaster", slotIndex: 0, direction: { x: 1, y: 0, z: 0 } });
+await second.next((message) => message.type === "fire" && message.shotId === portalShotId);
+await new Promise((resolve) => setTimeout(resolve, 35));
+first.socket.send(JSON.stringify({
+  type: "hit", shotId: portalShotId, attackerId: firstId, targetId: secondId,
+  weaponId: "blaster", impact: { x: 5, y: 67.4, z: -10 }
+}));
+const portalDamage = await second.next((message) => message.type === "damage" && message.targetId === secondId && message.serverTime > damage.serverTime);
+assert.equal(portalDamage.health, 64, "an immediate post-portal shot uses the authoritative exit origin and applies canonical damage");
+const portalResumeToken = first.welcome.resumeToken;
+await closeSocketAndWait(first.socket);
+first = await connect(firstAssignment.roomCode, "Alpha portal reconnect", botCount, timeLimitMinutes, "quick", portalResumeToken);
+assert.deepEqual(first.welcome.players.find((player) => player.id === firstId)?.position, { x: 0, y: 66.35, z: -10 }, "reconnect immediately after portal traversal restores the accepted exit position");
+
+await new Promise((resolve) => setTimeout(resolve, 1_600));
+first.socket.send(JSON.stringify({
+  type: "state",
+  players: [{ id: firstId, position: { x: 0, y: 1, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, aim: { x: 1, y: 0, z: 0 }, slotIndex: 0, grounded: true }]
+}));
 second.socket.send(JSON.stringify({
   type: "state",
   players: [{ id: secondId, position: { x: -20, y: 1, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, aim: { x: 1, y: 0, z: 0 }, slotIndex: 0, grounded: true }]
 }));
+await second.next((message) => message.type === "state" && message.players.some((player) => player.id === firstId && player.position?.x === 0 && player.position?.y === 1));
 await first.next((message) => message.type === "state" && message.players.some((player) => player.id === secondId && player.position?.x === -20));
 const forgedRocketShotId = fire(first, { playerId: firstId, weaponId: "rocket_launcher", slotIndex: 2, direction: { x: 1, y: 0, z: 0 } });
 await second.next((message) => message.type === "fire" && message.shotId === forgedRocketShotId);

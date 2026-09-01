@@ -1107,6 +1107,16 @@ export function cameraRelative(vector, yaw) {
   return right.multiplyScalar(vector.x).addScaledVector(forward, -vector.z);
 }
 
+export function reconcileRemotePosition(player, authoritativePosition, blend, world) {
+  const previous = player.previousPosition.copy(player.position);
+  const implausibleDisplacement = player.position.distanceToSquared(authoritativePosition) > 24 ** 2;
+  if (implausibleDisplacement || world.ropeBlocked(player.position, authoritativePosition)) {
+    player.position.copy(authoritativePosition);
+    previous.copy(authoritativePosition);
+  } else player.position.lerp(authoritativePosition, blend);
+  return world.resolve(player.position, player.radius, previous);
+}
+
 export function aimWithSpread(aim, spread, random = Math.random) {
   if (!spread) return aim.clone().normalize();
   const forward = aim.clone().normalize();

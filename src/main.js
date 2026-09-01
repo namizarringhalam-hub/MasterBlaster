@@ -4,7 +4,7 @@ import { Line2 } from "three/addons/lines/webgpu/Line2.js";
 import { SoundBoard } from "./audio.js";
 import { CombatVisuals } from "./combatVisuals.js";
 import { ArenaWorld } from "./world.js";
-import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraCollisionFirstPerson, cameraRelative, damageIndicatorAngle, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reticleAim } from "./player.js";
+import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraCollisionFirstPerson, cameraRelative, damageIndicatorAngle, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reconcileRemotePosition, reticleAim } from "./player.js";
 import { InputManager, clearTouchActions, deliberateTouchTap, updateOrbit } from "./input.js";
 import { activePresetLoadout, clampMatchMinutes, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, topScoreIndices, weaponFireMode, weaponUsesAmmo, WEAPON_GROUPS, WEAPONS } from "./gameData.js";
 import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, clampBotCount, safestSpawn, shouldBotPlaceWall } from "./botBrain.js";
@@ -1915,7 +1915,7 @@ class BlasterBattle {
     if (Number.isInteger(target.slotIndex) && target.slotIndex !== player.slotIndex) player.switchSlot(target.slotIndex);
     player.update(dt, player.networkMove, player.networkAim, {}, this.world);
     const blend = 1 - Math.exp(-14 * dt);
-    player.position.lerp(player.networkPosition, blend);
+    reconcileRemotePosition(player, player.networkPosition, blend, this.world);
     player.velocity.lerp(player.networkVelocity, blend);
     player.grounded = Boolean(target.grounded);
     player.health = target.health ?? player.health;
@@ -2576,7 +2576,7 @@ class BlasterBattle {
               this.removeProjectile(index);
               removed = true;
             } else if (shot.weapon.effect === "teleport") {
-              this.teleportOwner(shot.owner, previous, shot.velocity);
+              this.teleportOwner(shot.owner, previous, shot.velocity, shot.networkShotId);
               this.sound.play("teleport", shot.weapon, this.audioSpatial(previous, false, .9, shot.owner.id));
               this.removeProjectile(index);
               removed = true;
@@ -2694,7 +2694,7 @@ class BlasterBattle {
   }
 
   damageTarget(target, damage, push, attacker, weapon, context = {}) {
-    if (weapon.effect === "teleport") this.teleportOwner(attacker, context.point || target.position, context.direction || attacker.aim);
+    if (weapon.effect === "teleport") this.teleportOwner(attacker, context.point || target.position, context.direction || attacker.aim, context.shotId);
     if (target.isDecoy) {
       target.health -= damage;
       this.spawnImpact(target.position, target, weapon, attacker);
@@ -2726,7 +2726,7 @@ class BlasterBattle {
     this.sound.play("steal", stealingWeapon, this.audioSpatial(target.position, target === this.players[0], .9, attacker.id));
   }
 
-  teleportOwner(player, point, direction) {
+  teleportOwner(player, point, direction, shotId = "") {
     if (!player?.alive) return;
     this.releaseGrapple(player);
     const destination = point.clone().addScaledVector(direction.clone().normalize(), -1.35);
@@ -2736,6 +2736,7 @@ class BlasterBattle {
     player.position.copy(destination);
     this.world.resolve(player.position, player.radius, previous);
     player.velocity.set(0, 2.5, 0);
+    if (shotId && this.isOnlineMatch() && this.controlsNetworkPlayer(player)) this.multiplayer.reportTeleport(player, point, shotId);
     this.spawnBurst(player.position, 0x43ffd1, 14);
     this.sound.play("teleport", WEAPONS.teleport_projectile, this.audioSpatial(player.position, player === this.players[0], 1, player.id));
   }
