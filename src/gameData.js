@@ -90,9 +90,9 @@ const weaponList = [
   weapon("energy", "blaster", "projectile", 0x50e8ff, { damage: 18, projectileSpeed: 75, cooldown: .3, spread: .012, ammo: 12, reload: 1.05, recoil: 1.1 }),
   weapon("close", "shotgun", "spread", 0xffd166, { damage: 8, pellets: 7, projectileSpeed: 165, cooldown: .78, spread: .24, ammo: 5, recoil: 4.8 }),
   weapon("rapid", "machine_gun", "projectile", 0xa3ff8f, { damage: 7, projectileSpeed: 210, cooldown: .085, spread: .025, ammo: 32, reload: 1.45, recoil: .42, hitscan: true, preferredRange: 34, maxUsefulRange: 180 }),
-  weapon("explosive", "rocket_launcher", "rocket", 0xff6b5f, { damage: 56, projectileSpeed: 105, cooldown: 1.05, spread: .006, ammo: 3, reload: 1.6, recoil: 5.6, radius: 5.8, terrainRadius: 5.2, structureDamage: 20 }),
-  weapon("explosive", "grenade_launcher", "grenade", 0xc993ff, { damage: 45, projectileSpeed: 82, cooldown: .88, spread: .02, ammo: 4, reload: 1.45, recoil: 2.2, radius: 5.1, terrainRadius: 4.4, fuse: 1.25, gravity: 17, bounces: 2, arcLift: 7.5 }),
-  weapon("explosive", "mine", "mine", 0xff4fa0, { damage: 60, projectileSpeed: 0, cooldown: 1.05, spread: 0, ammo: 3, reload: 1.6, recoil: .5, radius: 4.7, terrainRadius: 3.8, fuse: 8 }),
+  weapon("explosive", "rocket_launcher", "rocket", 0xff6b5f, { damage: 56, projectileSpeed: 105, cooldown: 1.05, spread: .006, ammo: 3, reload: 1.6, recoil: 5.6, radius: 7.2, terrainRadius: 6.5, structureDamage: 20 }),
+  weapon("explosive", "grenade_launcher", "grenade", 0xc993ff, { damage: 45, projectileSpeed: 82, cooldown: .88, spread: .02, ammo: 4, reload: 1.45, recoil: 2.2, radius: 6.4, terrainRadius: 5.8, fuse: 1.25, gravity: 17, bounces: 2, arcLift: 7.5 }),
+  weapon("explosive", "mine", "mine", 0xff4fa0, { damage: 60, projectileSpeed: 0, cooldown: 1.05, spread: 0, ammo: 3, reload: 1.6, recoil: .5, radius: 5.8, terrainRadius: 5.2, fuse: 8 }),
   weapon("precision", "railgun", "rail", 0xffffff, { damage: 58, projectileSpeed: 520, cooldown: 1.1, spread: .002, ammo: 4, reload: 1.65, recoil: 3, hitscan: true }),
   weapon("energy", "plasma_cannon", "plasma", 0x57a0ff, { damage: 38, projectileSpeed: 110, cooldown: .9, spread: .008, ammo: 5, reload: 1.45, recoil: 3.6, radius: 3.6, terrainRadius: 2.7, projectileRadius: .42 }),
 
@@ -105,13 +105,13 @@ const weaponList = [
   weapon("close", "flamethrower", "flame", 0xff6a24, { damage: 4, projectileSpeed: 0, cooldown: .115, spread: 0, ammo: 48, reload: 1.8, recoil: .08, reach: 11.5, coneAngle: .22, maintained: true }),
 
   // Full library: explosive
-  weapon("explosive", "cluster_grenade", "grenade", 0xff9f68, { damage: 18, projectileSpeed: 15, cooldown: 1.15, ammo: 3, reload: 1.7, recoil: 2.2, radius: 2.8, terrainRadius: 2.3, fuse: 1.05, gravity: 17, bounces: 1, arcLift: 8.5, split: 6 }),
-  weapon("explosive", "sticky_launcher", "grenade", 0xff5fa2, { damage: 54, projectileSpeed: 85, cooldown: .85, ammo: 5, reload: 1.55, recoil: 2.2, radius: 5, terrainRadius: 3.8, fuse: 2.4, gravity: 8, sticky: true, projectileRadius: .22 }),
-  weapon("explosive", "remote_explosive", "remote", 0xff416c, { damage: 68, projectileSpeed: 82, cooldown: .7, ammo: 4, reload: 1.7, recoil: 1.3, radius: 6.2, terrainRadius: 5.4, gravity: 10, sticky: true, projectileRadius: .25, fuse: 30, maxCharges: 4 }),
-  weapon("explosive", "mortar", "grenade", 0xd8b06b, { damage: 64, projectileSpeed: 82, cooldown: 1.45, ammo: 3, reload: 1.9, recoil: 4.2, radius: 6.6, terrainRadius: 6, fuse: 2.2, gravity: 18, bounces: 0, arcLift: 14, presentationPayload: "mortar" }),
-  weapon("explosive", "bouncing_bomb", "grenade", 0x8ce6ff, { damage: 48, projectileSpeed: 25, cooldown: 1, ammo: 4, reload: 1.55, recoil: 2, radius: 4.8, terrainRadius: 3.4, fuse: 3.2, gravity: 14, bounces: 8, bounceEnergy: .88, arcLift: 9, presentationPayload: "ricochet" }),
-  weapon("explosive", "napalm_launcher", "rocket", 0xff6a2a, { damage: 28, projectileSpeed: 100, cooldown: 1.1, ammo: 4, reload: 1.65, recoil: 3.8, radius: 4.2, terrainRadius: 2.5, hazard: "napalm", hazardDuration: 6, maxActiveHazards: 2 }),
-  weapon("explosive", "implosion_bomb", "grenade", 0xa986ff, { damage: 38, projectileSpeed: 17, cooldown: 1.25, ammo: 3, reload: 1.8, recoil: 5, radius: 7.2, terrainRadius: 2, fuse: 1.5, gravity: 16, bounces: 1, arcLift: 8, pull: true }),
+  weapon("explosive", "cluster_grenade", "grenade", 0xff9f68, { damage: 18, projectileSpeed: 15, cooldown: 1.15, ammo: 3, reload: 1.7, recoil: 2.2, radius: 3.6, terrainRadius: 3.2, fuse: 1.05, gravity: 17, bounces: 1, arcLift: 8.5, split: 6 }),
+  weapon("explosive", "sticky_launcher", "grenade", 0xff5fa2, { damage: 54, projectileSpeed: 85, cooldown: .85, ammo: 5, reload: 1.55, recoil: 2.2, radius: 6.2, terrainRadius: 5.5, fuse: 2.4, gravity: 8, sticky: true, projectileRadius: .22 }),
+  weapon("explosive", "remote_explosive", "remote", 0xff416c, { damage: 68, projectileSpeed: 82, cooldown: .7, ammo: 4, reload: 1.7, recoil: 1.3, radius: 7.8, terrainRadius: 7, gravity: 10, sticky: true, projectileRadius: .25, fuse: 30, maxCharges: 4 }),
+  weapon("explosive", "mortar", "grenade", 0xd8b06b, { damage: 64, projectileSpeed: 82, cooldown: 1.45, ammo: 3, reload: 1.9, recoil: 4.2, radius: 8.4, terrainRadius: 8, fuse: 2.2, gravity: 18, bounces: 0, arcLift: 14, presentationPayload: "mortar" }),
+  weapon("explosive", "bouncing_bomb", "grenade", 0x8ce6ff, { damage: 48, projectileSpeed: 25, cooldown: 1, ammo: 4, reload: 1.55, recoil: 2, radius: 6, terrainRadius: 5.2, fuse: 3.2, gravity: 14, bounces: 8, bounceEnergy: .88, arcLift: 9, presentationPayload: "ricochet" }),
+  weapon("explosive", "napalm_launcher", "rocket", 0xff6a2a, { damage: 28, projectileSpeed: 100, cooldown: 1.1, ammo: 4, reload: 1.65, recoil: 3.8, radius: 5.4, terrainRadius: 4, hazard: "napalm", hazardDuration: 6, maxActiveHazards: 2 }),
+  weapon("explosive", "implosion_bomb", "grenade", 0xa986ff, { damage: 38, projectileSpeed: 17, cooldown: 1.25, ammo: 3, reload: 1.8, recoil: 5, radius: 9, terrainRadius: 6, fuse: 1.5, gravity: 16, bounces: 1, arcLift: 8, pull: true }),
 
   // Full library: energy and precision
   weapon("precision", "laser_beam", "beam", 0xff365d, { damage: 24, projectileSpeed: 0, cooldown: .38, spread: .001, ammo: 10, reload: 1.35, recoil: 1.1 }),

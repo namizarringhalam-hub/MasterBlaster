@@ -97,3 +97,13 @@ export function squaredDistance(left, right) {
   const z = (left?.z || 0) - (right?.z || 0);
   return x * x + y * y + z * z;
 }
+
+export function uniquePlayersById(players = []) {
+  const seen = new Set();
+  return (Array.isArray(players) ? players : []).filter((player) => {
+    const id = String(player?.id || "");
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}

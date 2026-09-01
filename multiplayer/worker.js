@@ -15,7 +15,8 @@ import {
   sanitizeLoadout,
   sanitizePlayerName,
   sanitizeVector,
-  squaredDistance
+  squaredDistance,
+  uniquePlayersById
 } from "../src/multiplayerProtocol.js";
 
 const WEAPON_IDS = Object.keys(WEAPONS);
@@ -25,6 +26,7 @@ const RESUME_ACK_GRACE_MS = 15_000;
 const PRIVATE_LOBBY_REJOIN_MS = 10 * 60_000;
 const PRIVATE_MATCH_REJOIN_GRACE_MS = 60_000;
 const PERSISTENCE_WINDOW_MS = 250;
+const MAX_TERRAIN_HITS_PER_BATCH = 6;
 const MAX_ORDINARY_STATE_DISPLACEMENT = 96;
 const RESUME_TOKEN_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const COLORS = [
@@ -85,6 +87,7 @@ function roomPlayer(id, name, loadout, colorIndex, bot = false) {
   const [color, accent] = COLORS[colorIndex % COLORS.length];
   return {
     id, name, loadout, color, accent, bot,
+    active: true,
     health: 100, alive: true, score: 0, deaths: 0,
     position: { x: 0, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, aim: { x: 0, y: 0, z: 1 },
     slotIndex: 0, grounded: true, ammo: playerAmmo(loadout), reloadEndsAt: {},
@@ -167,10 +170,15 @@ export class MatchRoom extends DurableObject {
     this.structuralHealth = new Map();
     this.structuralFailures = new Map();
     this.resumeSessions = new Map();
+    this.pendingResumePlayerIds = new Set();
+    this.resumeTokenClaims = new Map();
     this.pendingStates = new Map();
+    this.pendingTerrainBroadcasts = [];
     this.stateFlushTimer = 0;
+    this.terrainFlushTimer = 0;
     this.pendingBotPersistence = false;
     this.pendingFirePersistence = false;
+    this.pendingTerrainPersistence = false;
     this.persistenceTask = null;
     this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('{"type":"ping"}', '{"type":"pong"}'));
     this.ready = this.ctx.blockConcurrencyWhile(async () => {
@@ -211,6 +219,31 @@ export class MatchRoom extends DurableObject {
     this.pruneResumeSessions();
     const stored = this.resumeSessions.get(token);
     return stored ? { socket: null, player: stored.player } : null;
+  }
+
+  resumePlayerById(id) {
+    this.pruneResumeSessions();
+    for (const session of this.resumeSessions.values()) {
+      if (session?.player?.id === id) return { socket: null, player: session.player };
+    }
+    return null;
+  }
+
+  syncResumePlayer(player) {
+    let changed = false;
+    for (const session of this.resumeSessions.values()) {
+      if (session?.player?.id !== player.id) continue;
+      const resumeToken = session.player.resumeToken;
+      session.player = { ...structuredClone(player), resumeToken };
+      changed = true;
+    }
+    return changed;
+  }
+
+  releaseResumeClaims(playerId) {
+    for (const [token, claimedPlayerId] of this.resumeTokenClaims) {
+      if (claimedPlayerId === playerId) this.resumeTokenClaims.delete(token);
+    }
   }
 
   async rememberDisconnectedPlayer(socket) {
@@ -259,17 +292,21 @@ export class MatchRoom extends DurableObject {
   }
 
   effectiveHumanCount() {
-    return this.humanEntries().length + this.reservedPlayerIds().size;
+    return new Set(this.humanEntries().map(([, player]) => player.id)).size + this.reservedPlayerIds().size;
+  }
+
+  activeBots() {
+    return [...this.bots.values()].filter((bot) => bot.active !== false);
   }
 
   allPlayers(excludedSocket = null) {
-    return [...this.humanEntries(excludedSocket).map(([, player]) => player), ...this.bots.values()];
+    return uniquePlayersById([...this.humanEntries(excludedSocket).map(([, player]) => player), ...this.activeBots()]);
   }
 
   playerById(id) {
     for (const [socket, player] of this.humanEntries()) if (player.id === id) return { socket, player };
     const player = this.bots.get(id);
-    return player ? { socket: null, player } : null;
+    return player && player.active !== false ? { socket: null, player } : null;
   }
 
   botHostId(excludedSocket = null) {
@@ -337,31 +374,40 @@ export class MatchRoom extends DurableObject {
     return this.ctx.storage.put(key, value);
   }
 
-  schedulePersistence({ bots = false, fires = false } = {}) {
+  schedulePersistence({ bots = false, fires = false, terrain = false } = {}) {
     this.pendingBotPersistence ||= bots;
     this.pendingFirePersistence ||= fires;
-    if (!this.pendingBotPersistence && !this.pendingFirePersistence) return Promise.resolve();
+    this.pendingTerrainPersistence ||= terrain;
+    if (!this.pendingBotPersistence && !this.pendingFirePersistence && !this.pendingTerrainPersistence) return Promise.resolve();
     if (this.persistenceTask) return this.persistenceTask;
     const task = new Promise((resolve) => setTimeout(resolve, PERSISTENCE_WINDOW_MS))
       .then(async () => {
         const writeBots = this.pendingBotPersistence;
         const writeFires = this.pendingFirePersistence;
+        const writeTerrain = this.pendingTerrainPersistence;
         this.pendingBotPersistence = false;
         this.pendingFirePersistence = false;
+        this.pendingTerrainPersistence = false;
         try {
           const writes = [];
           if (writeBots) writes.push(this.persistBatchEntry("bots", [...this.bots.values()]));
           if (writeFires) writes.push(this.persistBatchEntry("recentFires", [...this.recentFires]));
+          if (writeTerrain) writes.push(
+            this.persistBatchEntry("terrainEvents", this.terrainEvents),
+            this.persistBatchEntry("structuralHealth", [...this.structuralHealth]),
+            this.persistBatchEntry("structuralFailures", [...this.structuralFailures])
+          );
           await Promise.all(writes);
         } catch (error) {
           this.pendingBotPersistence ||= writeBots;
           this.pendingFirePersistence ||= writeFires;
+          this.pendingTerrainPersistence ||= writeTerrain;
           console.error(JSON.stringify({ event: "persistence_retry", roomCode: this.meta?.roomCode, error: String(error) }));
         }
       })
       .finally(() => {
         if (this.persistenceTask === task) this.persistenceTask = null;
-        if (this.pendingBotPersistence || this.pendingFirePersistence) this.schedulePersistence();
+        if (this.pendingBotPersistence || this.pendingFirePersistence || this.pendingTerrainPersistence) this.schedulePersistence();
       });
     this.persistenceTask = task;
     this.ctx.waitUntil(task);
@@ -378,13 +424,18 @@ export class MatchRoom extends DurableObject {
       : 0;
     for (let index = 0; index < desired; index++) {
       const id = `bot-${index + 1}`;
-      if (this.bots.has(id)) continue;
+      if (this.bots.has(id)) {
+        this.bots.get(id).active = true;
+        continue;
+      }
       const bot = roomPlayer(id, formatText(TEXT.defaults.quickBotName, { number: String(index + 1).padStart(2, "0") }), botLoadout(index), humans + index, true);
       this.bots.set(id, bot);
     }
-    for (const id of [...this.bots.keys()]) {
+    for (const [id, bot] of this.bots) {
       const index = Number(id.split("-")[1]) - 1;
-      if (index >= desired) this.bots.delete(id);
+      if (index < desired || bot.active === false) continue;
+      bot.active = false;
+      this.recentFires.delete(id);
     }
     await this.persistRoom();
   }
@@ -431,10 +482,25 @@ export class MatchRoom extends DurableObject {
     }, NETWORK_TICK_MS);
   }
 
+  queueTerrainBroadcast(event) {
+    this.pendingTerrainBroadcasts.push(event);
+    if (this.terrainFlushTimer) return;
+    this.terrainFlushTimer = setTimeout(() => {
+      this.terrainFlushTimer = 0;
+      const events = this.pendingTerrainBroadcasts.splice(0);
+      if (events.length && this.meta?.phase === "playing" && !this.meta.ended) {
+        this.broadcast({ type: "terrain_damage_batch", events, serverTime: Date.now() });
+      }
+    }, NETWORK_TICK_MS);
+  }
+
   clearStateBroadcast() {
     clearTimeout(this.stateFlushTimer);
+    clearTimeout(this.terrainFlushTimer);
     this.stateFlushTimer = 0;
+    this.terrainFlushTimer = 0;
     this.pendingStates.clear();
+    this.pendingTerrainBroadcasts.length = 0;
   }
 
   async fetch(request) {
@@ -456,7 +522,7 @@ export class MatchRoom extends DurableObject {
       const settings = this.meta || this.reservation;
       return json({
         humans,
-        activeHumans: this.humanEntries().length,
+        activeHumans: new Set(this.humanEntries().map(([, player]) => player.id)).size,
         initialized: Boolean(this.meta),
         capacity: MAX_MATCH_PLAYERS,
         targetSize: settings?.targetSize || 0,
@@ -470,45 +536,64 @@ export class MatchRoom extends DurableObject {
     await this.initialize(url);
     const requestedResumeToken = String(url.searchParams.get("resumeToken") || "");
     const resumed = requestedResumeToken ? this.resumableSession(requestedResumeToken) : null;
-    if (requestedResumeToken && !resumed && this.meta.phase === "playing") return json({ error: TEXT.errors.sessionExpired }, 409);
+    if (requestedResumeToken && !resumed) return json({ error: TEXT.errors.sessionExpired }, 409);
     if (this.meta.mode === "private" && this.meta.phase === "playing" && !resumed) return json({ error: TEXT.errors.matchInProgress }, 409);
     if ((this.effectiveHumanCount() >= MAX_MATCH_PLAYERS && !resumed) || this.meta.ended) return json({ error: TEXT.errors.roomFull }, 409);
 
-    const pair = new WebSocketPair();
-    const [client, server] = Object.values(pair);
-    const humans = this.humanEntries().length;
     const id = resumed?.player.id || `player-${crypto.randomUUID().slice(0, 12)}`;
-    const loadout = resumed?.player.loadout || sanitizeLoadout(url.searchParams.get("loadout"), WEAPONS, DEFAULT_LOADOUT);
-    const player = resumed ? structuredClone(resumed.player) : roomPlayer(id, sanitizePlayerName(url.searchParams.get("name")), loadout, humans);
-    const priorResumeToken = resumed?.player.resumeToken || "";
-    const supersededSocket = resumed
-      ? resumed.socket || this.humanEntries().find(([, active]) => active.id === id)?.[0] || null
-      : null;
-    player.resumeToken = crypto.randomUUID();
-    if (this.meta.phase === "lobby") resetRoomPlayer(player);
-    if (supersededSocket) {
-      supersededSocket.serializeAttachment({ ...resumed.player, resumeToken: "" });
-      supersededSocket.close(4001, "Session resumed");
+    if (resumed && (this.pendingResumePlayerIds.has(id) || this.resumeTokenClaims.has(requestedResumeToken))) return json({ error: TEXT.errors.sessionExpired }, 409);
+    if (resumed) {
+      this.pendingResumePlayerIds.add(id);
+      this.resumeTokenClaims.set(requestedResumeToken, id);
     }
-    if (priorResumeToken) {
-      const aliasPlayer = structuredClone(player);
-      aliasPlayer.resumeToken = priorResumeToken;
-      this.resumeSessions.set(priorResumeToken, { player: aliasPlayer, expiresAt: Date.now() + RESUME_ACK_GRACE_MS });
+    let resumeEstablished = false;
+    try {
+      const pair = new WebSocketPair();
+      const [client, server] = Object.values(pair);
+      const humans = this.humanEntries().length;
+      const loadout = resumed?.player.loadout || sanitizeLoadout(url.searchParams.get("loadout"), WEAPONS, DEFAULT_LOADOUT);
+      const player = resumed ? structuredClone(resumed.player) : roomPlayer(id, sanitizePlayerName(url.searchParams.get("name")), loadout, humans);
+      const priorResumeToken = resumed?.player.resumeToken || "";
+      const supersededSockets = resumed
+        ? [...new Set([resumed.socket, ...this.humanEntries().filter(([, active]) => active.id === id).map(([socket]) => socket)].filter(Boolean))]
+        : [];
+      const supersededSocket = supersededSockets[0] || null;
+      player.resumeToken = crypto.randomUUID();
+      if (resumed) this.resumeTokenClaims.set(player.resumeToken, id);
+      if (this.meta.phase === "lobby") resetRoomPlayer(player);
+      for (const oldSocket of supersededSockets) {
+        try {
+          const oldPlayer = oldSocket.deserializeAttachment();
+          oldSocket.serializeAttachment({ ...oldPlayer, resumeToken: "" });
+          oldSocket.close(4001, "Session resumed");
+        } catch {
+          oldSocket.close(1011, TEXT.errors.invalidSessionState);
+        }
+      }
+      if (priorResumeToken) {
+        const aliasPlayer = structuredClone(player);
+        aliasPlayer.resumeToken = priorResumeToken;
+        this.resumeSessions.set(priorResumeToken, { player: aliasPlayer, expiresAt: Date.now() + RESUME_ACK_GRACE_MS });
+      }
+      await this.persistResumeSessions();
+      server.serializeAttachment(player);
+      this.ctx.acceptWebSocket(server);
+      await this.reconcileBots(supersededSocket);
+      server.send(JSON.stringify({ ...this.rosterMessage("welcome", supersededSocket), playerId: id, resumeToken: player.resumeToken }));
+      this.broadcast(this.rosterMessage("roster", supersededSocket));
+      if (resumed) console.log(JSON.stringify({ event: "socket_resumed", roomCode: this.meta.roomCode, playerId: id, phase: this.meta.phase }));
+      resumeEstablished = true;
+      return new Response(null, { status: 101, webSocket: client });
+    } finally {
+      if (resumed) this.pendingResumePlayerIds.delete(id);
+      if (resumed && !resumeEstablished) this.releaseResumeClaims(id);
     }
-    await this.persistResumeSessions();
-    server.serializeAttachment(player);
-    this.ctx.acceptWebSocket(server);
-    await this.reconcileBots(supersededSocket);
-    server.send(JSON.stringify({ ...this.rosterMessage("welcome", supersededSocket), playerId: id, resumeToken: player.resumeToken }));
-    this.broadcast(this.rosterMessage("roster", supersededSocket));
-    if (resumed) console.log(JSON.stringify({ event: "socket_resumed", roomCode: this.meta.roomCode, playerId: id, phase: this.meta.phase }));
-    return new Response(null, { status: 101, webSocket: client });
   }
 
   authorizedPlayers(socket, requested) {
     const session = socket.deserializeAttachment();
     const allowed = new Set([session.id]);
-    if (session.id === this.botHostId()) for (const id of this.bots.keys()) allowed.add(id);
+    if (session.id === this.botHostId()) for (const bot of this.activeBots()) allowed.add(bot.id);
     return requested.filter((state) => allowed.has(state?.id));
   }
 
@@ -675,6 +760,10 @@ export class MatchRoom extends DurableObject {
     }
     if (targetEntry.socket) targetEntry.socket.serializeAttachment(target);
     if (attackerEntry.socket) attackerEntry.socket.serializeAttachment(attacker);
+    const targetResumeChanged = this.syncResumePlayer(target);
+    const attackerResumeChanged = this.syncResumePlayer(attacker);
+    if (target.bot || attacker.bot) this.schedulePersistence({ bots: true });
+    if (killed && (targetResumeChanged || attackerResumeChanged)) await this.persistResumeSessions();
     this.broadcast({
       type: "damage", attackerId: attacker.id, targetId: target.id, weaponId: weapon.id,
       damage, health: target.health, killed, push: validation.push, respawnAt: target.respawnAt,
@@ -789,11 +878,11 @@ export class MatchRoom extends DurableObject {
         if (failedAt && now - failedAt < 1_650) fallingDrop += height;
         else settledDrop += height;
       }
-      const padding = .85;
-      const validPosition = Math.abs(position.x - bounds.x) <= bounds.w / 2 + padding &&
-        Math.abs(position.z - bounds.z) <= bounds.d / 2 + padding &&
-        position.y >= bounds.baseY - settledDrop - fallingDrop - padding &&
-        position.y <= bounds.top - settledDrop + padding;
+      const padding = weapon.radius ? weapon.terrainRadius || 0 : .85;
+      const dx = Math.max(Math.abs(position.x - bounds.x) - bounds.w / 2, 0);
+      const dy = Math.max(bounds.baseY - settledDrop - fallingDrop - position.y, 0, position.y - (bounds.top - settledDrop));
+      const dz = Math.max(Math.abs(position.z - bounds.z) - bounds.d / 2, 0);
+      const validPosition = Math.hypot(dx, dy, dz) <= Math.max(.85, padding);
       if (!validPosition) partId = "";
     } else partId = "";
     let structuralHealth = null;
@@ -823,24 +912,32 @@ export class MatchRoom extends DurableObject {
     };
     this.terrainEvents.push(event);
     if (this.terrainEvents.length > 256) this.terrainEvents.splice(0, this.terrainEvents.length - 256);
-    await this.persistRoom();
-    this.broadcast(event);
+    this.schedulePersistence({ fires: true, terrain: true });
+    this.queueTerrainBroadcast(event);
+  }
+
+  async handleTerrainHitBatch(socket, message) {
+    const hits = Array.isArray(message.hits) ? message.hits.slice(0, MAX_TERRAIN_HITS_PER_BATCH) : [];
+    for (const hit of hits) await this.handleTerrainHit(socket, hit);
   }
 
   async handleCrush(socket, message) {
     const targetEntry = this.authorizedActor(socket, message.playerId);
     if (!targetEntry?.player.alive) return;
     const structureId = String(message.structureId || "");
+    const terrainEventId = String(message.terrainEventId || "");
     const now = Date.now();
-    const event = [...this.terrainEvents].reverse().find((candidate) =>
+    const matchesCrush = (candidate) =>
       candidate.structureId === structureId &&
       candidate.collapsed === true &&
-      now - candidate.serverTime <= 5_000 &&
-      Math.hypot(candidate.position.x - targetEntry.player.position.x, candidate.position.z - targetEntry.player.position.z) <= 18
-    );
+      now - candidate.serverTime <= 15_000 &&
+      Math.hypot(candidate.position.x - targetEntry.player.position.x, candidate.position.z - targetEntry.player.position.z) <= 18;
+    const event = terrainEventId
+      ? this.terrainEvents.find((candidate) => candidate.id === terrainEventId && matchesCrush(candidate))
+      : [...this.terrainEvents].reverse().find(matchesCrush);
     if (!event || targetEntry.player.lastCrushEventId === event.id) return;
     const target = targetEntry.player;
-    const attackerEntry = this.playerById(event.attackerId);
+    const attackerEntry = this.playerById(event.attackerId) || this.resumePlayerById(event.attackerId);
     target.lastCrushEventId = event.id;
     target.health = 0;
     target.alive = false;
@@ -849,12 +946,15 @@ export class MatchRoom extends DurableObject {
     if (attackerEntry?.player && attackerEntry.player.id !== target.id) attackerEntry.player.score += 1;
     if (targetEntry.socket) targetEntry.socket.serializeAttachment(target);
     if (attackerEntry?.socket) attackerEntry.socket.serializeAttachment(attackerEntry.player);
-    await this.persistRoom();
+    this.syncResumePlayer(target);
+    if (attackerEntry?.player) this.syncResumePlayer(attackerEntry.player);
+    await Promise.all([this.persistRoom(), this.persistResumeSessions()]);
     this.broadcast({
       type: "crush",
       targetId: target.id,
       attackerId: attackerEntry?.player?.id || "",
       structureId,
+      terrainEventId: event.id,
       health: 0,
       killed: true,
       respawnAt: target.respawnAt,
@@ -882,10 +982,12 @@ export class MatchRoom extends DurableObject {
   async handleResumeAck(socket, message) {
     const player = socket.deserializeAttachment();
     if (!player?.id || message.resumeToken !== player.resumeToken) return;
+    this.resumeTokenClaims.delete(message.resumeToken);
     let changed = false;
     for (const [token, session] of this.resumeSessions) {
       if (session?.player?.id !== player.id) continue;
       this.resumeSessions.delete(token);
+      this.resumeTokenClaims.delete(token);
       changed = true;
     }
     if (changed) await this.persistResumeSessions();
@@ -967,6 +1069,7 @@ export class MatchRoom extends DurableObject {
     else if (message.type === "fire") await this.handleFire(socket, message);
     else if (message.type === "hit") await this.handleHit(socket, message);
     else if (message.type === "teleport") await this.handleTeleport(socket, message);
+    else if (message.type === "terrain_hit_batch") await this.handleTerrainHitBatch(socket, message);
     else if (message.type === "terrain_hit") await this.handleTerrainHit(socket, message);
     else if (message.type === "crush") await this.handleCrush(socket, message);
     else if (message.type === "reload") await this.handleReload(socket, message);
@@ -975,21 +1078,33 @@ export class MatchRoom extends DurableObject {
 
   async webSocketClose(socket, code, reason, wasClean) {
     await this.ready;
+    let playerId = "";
+    let resumeToken = "";
+    try {
+      const player = socket.deserializeAttachment();
+      playerId = player?.id || "";
+      resumeToken = player?.resumeToken || "";
+    } catch {}
     await this.rememberDisconnectedPlayer(socket);
+    if (resumeToken) this.releaseResumeClaims(playerId);
     await this.reconcileBots(socket);
     this.broadcast(this.rosterMessage("roster", socket));
-    let playerId = "";
-    try { playerId = socket.deserializeAttachment()?.id || ""; } catch {}
     console.log(JSON.stringify({ event: "socket_close", roomCode: this.meta?.roomCode, playerId, code, reason, wasClean, phase: this.meta?.phase }));
   }
 
   async webSocketError(socket, error) {
     await this.ready;
+    let playerId = "";
+    let resumeToken = "";
+    try {
+      const player = socket.deserializeAttachment();
+      playerId = player?.id || "";
+      resumeToken = player?.resumeToken || "";
+    } catch {}
     await this.rememberDisconnectedPlayer(socket);
+    if (resumeToken) this.releaseResumeClaims(playerId);
     await this.reconcileBots(socket);
     this.broadcast(this.rosterMessage("roster", socket));
-    let playerId = "";
-    try { playerId = socket.deserializeAttachment()?.id || ""; } catch {}
     console.error(JSON.stringify({ event: "socket_error", roomCode: this.meta?.roomCode, playerId, error: String(error), phase: this.meta?.phase }));
   }
 }

@@ -14,7 +14,8 @@ import {
   sanitizePlayerName,
   sanitizeVector,
   socketUrl,
-  squaredDistance
+  squaredDistance,
+  uniquePlayersById
 } from "../src/multiplayerProtocol.js";
 
 assert.equal(MULTIPLAYER_PROTOCOL_VERSION, 1);
@@ -46,5 +47,10 @@ assert.ok(oversizedUnicodeServerMessage.length < MAX_SERVER_MESSAGE_BYTES);
 assert.ok(new TextEncoder().encode(oversizedUnicodeServerMessage).byteLength > MAX_SERVER_MESSAGE_BYTES);
 assert.equal(parseServerMessage(oversizedUnicodeServerMessage), null, "server limit counts UTF-8 bytes rather than UTF-16 code units");
 assert.equal(socketUrl("https://masterblaster.se", "room-1", { name: "Ace" }), "wss://masterblaster.se/api/rooms/ROOM-1/connect?name=Ace");
+assert.deepEqual(
+  uniquePlayersById([{ id: "same", health: 0 }, { id: "same", health: 100 }, { id: "other", health: 75 }]),
+  [{ id: "same", health: 0 }, { id: "other", health: 75 }],
+  "a duplicate reconnect roster cannot create more than one fighter for one authoritative identity"
+);
 
 console.log("Multiplayer protocol checks passed.");

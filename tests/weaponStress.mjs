@@ -40,6 +40,26 @@ for (let burst = 0; burst < 45; burst++) {
 }
 assert.ok(visuals.cursors.tracer - synchronizedTracerStart >= fighters.length * 45, "synchronized sixteen-player Arc Lightning and minigun bursts stay active without dropping their presentation events");
 
+for (const quality of [.5, .75, 1]) {
+  const blastScene = new THREE.Scene();
+  const blastVisuals = new CombatVisuals(blastScene, { quality });
+  for (let index = 0; index < fighters.length; index++) {
+    const center = new THREE.Vector3((index % 4) * 8, 2, Math.floor(index / 4) * 8);
+    blastVisuals.impact(center, WEAPONS.mortar, fighters[index], { size: 3.6, explosive: true });
+    for (let child = 0; child < 6; child++) {
+      const angle = child / 6 * Math.PI * 2;
+      const position = center.clone().add(new THREE.Vector3(Math.cos(angle) * 1.6, child % 2 * .55, Math.sin(angle) * 1.6));
+      blastVisuals.impact(position, WEAPONS.cluster_grenade, fighters[index], { size: 1.52, explosive: true });
+    }
+  }
+  blastVisuals.update(1 / 60);
+  assert.equal(blastVisuals.cursors.ring, fighters.length * 7, `${quality} quality processes every mortar and six-child cluster impact in a synchronized 16-player volley`);
+  assert.equal(blastVisuals.rings.filter((ring) => ring.life > 0).length, Math.round(80 * quality), `${quality} quality keeps its entire fixed shockwave pool visible under explosive saturation`);
+  assert.ok(Math.max(...blastVisuals.rings.map((ring) => ring.size || 0)) > 3, `${quality} quality preserves the enlarged mortar shockwave instead of covertly scaling it down`);
+  assert.equal(blastVisuals.group.children.length, 10, `${quality} quality keeps the explosive volley inside the fixed render-group budget`);
+  blastVisuals.dispose();
+}
+
 assert.equal(fighters.length, 16, "the stress matrix renders a full sixteen-fighter match");
 assert.equal(visuals.group.children.length, 10, "rapid effects, pooled splatters, response lights, and Fireballs stay in fixed render groups");
 assert.equal(visuals.group.getObjectByName("Momentum speed streaks"), undefined, "the local cone shower has been removed from the grapple presentation");

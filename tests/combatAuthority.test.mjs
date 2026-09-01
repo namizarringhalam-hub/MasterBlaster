@@ -70,4 +70,23 @@ const selfBlast = validateHitProposal({
 });
 assert.equal(selfBlast.damage, Math.ceil(WEAPONS.rocket_launcher.damage * .35), "explosive self-damage is calculated by authority");
 
+const previousExplosiveRadii = {
+  bouncing_bomb: [4.8, 3.4], cluster_grenade: [2.8, 2.3], grenade_launcher: [5.1, 4.4],
+  implosion_bomb: [7.2, 2], mine: [4.7, 3.8], mortar: [6.6, 6], napalm_launcher: [4.2, 2.5],
+  remote_explosive: [6.2, 5.4], rocket_launcher: [5.8, 5.2], sticky_launcher: [5, 3.8]
+};
+for (const [weaponId, [playerRadius, terrainRadius]] of Object.entries(previousExplosiveRadii)) {
+  assert.ok(WEAPONS[weaponId].radius >= playerRadius * 1.2, `${weaponId} has at least twenty percent more enemy splash reach`);
+  assert.ok(WEAPONS[weaponId].terrainRadius >= terrainRadius * 1.2, `${weaponId} has at least twenty percent more structural splash reach`);
+}
+const nearMissBlast = validateHitProposal({
+  shot: rocketShot, attacker, target: player("near-miss", 47), weapon: WEAPONS.rocket_launcher,
+  impact: { x: 40, y: 1.05, z: 0 }, now: 1_450, seed: "AUTHORITY"
+});
+assert.ok(nearMissBlast?.damage > 0, "an enemy seven metres from a rocket impact receives authoritative splash damage");
+assert.equal(validateHitProposal({
+  shot: rocketShot, attacker, target: player("outside-blast", 47.93), weapon: WEAPONS.rocket_launcher,
+  impact: { x: 40, y: 1.05, z: 0 }, now: 1_450, seed: "AUTHORITY"
+}), null, "an enemy just beyond the canonical rocket radius and player hull receives no splash damage");
+
 console.log("Server combat-authority geometry and canonical-damage checks passed.");

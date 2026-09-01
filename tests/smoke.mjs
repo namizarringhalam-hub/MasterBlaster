@@ -619,6 +619,13 @@ assert.ok(new Set(worldB.structures.map((structure) => structure.platformChunks[
 assert.ok(WEAPONS.rocket_launcher.structureDamage >= 8, "one canonical rocket destroys any outer deck or stand section");
 assert.ok(Object.values(WEAPONS).filter((weapon) => weapon.structureDamage > 0).length >= 35, "most combat weapons can damage tower structures");
 assert.equal(WEAPONS.temporary_wall.structureDamage, 0, "pure utility projectiles cannot damage towers");
+const splashWorld = new ArenaWorld(new THREE.Scene(), "MORTAR-SPLASH-QA");
+const splashPart = splashWorld.structures[0].segments[0];
+const splashPosition = splashWorld.structuralCenter(splashPart).add(new THREE.Vector3(splashPart.w / 2 + WEAPONS.mortar.terrainRadius - .1, 0, 0));
+assert.equal(splashWorld.structuralPartAt(splashPosition, .35), null, "a mortar near miss is outside direct projectile-contact tolerance");
+splashWorld.destroy(splashPosition, WEAPONS.mortar.terrainRadius, { structuralDamage: WEAPONS.mortar.structureDamage, structuralRadius: WEAPONS.mortar.terrainRadius });
+assert.equal(splashPart.health, 0, "mortar structural splash reaches and destroys a nearby tower section without a direct hit");
+splashWorld.dispose();
 const firstChunk = worldB.structures[0].platformChunks[0];
 const authoritativeChunk = structuralPartBounds("SAME-SEED", firstChunk.structuralId);
 assert.deepEqual(
@@ -804,22 +811,41 @@ const victim = {
   velocity: new THREE.Vector3()
 };
 const finalCenter = collapseWorld.structuralCenter(finalBase).clone();
-collapseWorld.destroy(finalCenter, 5.2, { eventId: `crush-final-${++crushHit}`, attackerId: "attacker", structuralDamage: 20, structuralRadius: .35 });
+const causalTerrainEventId = `crush-final-${++crushHit}`;
+collapseWorld.destroy(finalCenter, 5.2, { eventId: causalTerrainEventId, attackerId: "attacker", structuralDamage: 20, structuralRadius: .35 });
 collapseWorld.drainStructuralEvents();
 for (let frame = 0; frame < 14; frame++) collapseWorld.update(.1, [victim]);
-assert.ok(collapseWorld.drainStructuralEvents().some((event) => event.type === "crush" && event.player === victim), "a descending deck reports a fighter with no full-height escape gap as crushed");
+const crushEvents = collapseWorld.drainStructuralEvents();
+assert.ok(crushEvents.some((event) => event.type === "crush" && event.player === victim), "a descending deck reports a fighter with no full-height escape gap as crushed");
+assert.equal(crushEvents.find((event) => event.type === "crush")?.terrainEventId, causalTerrainEventId, "a crush report retains the exact authoritative terrain event that caused the collapse");
 collapseWorld.dispose();
 
 assert.match(mainSource, /authorityWeapon = WEAPONS\[weapon\.sourceWeaponId\] \|\| weapon[\s\S]*?reportTerrainHit\([\s\S]*?owner,[\s\S]*?authorityWeapon,/, "terrain hits and cluster children are reported under their authoritative source weapon");
+assert.match(mainSource, /const structuralRadius = radius > 0 \? radius : Math\.max\(\.35, weapon\.projectileRadius \|\| 0\)/, "terrain blasts use their full structural radius while zero-terrain utility impacts retain direct projectile tolerance");
+assert.match(mainSource, /splitProjectile\(shot\)[\s\S]*?radius: shot\.weapon\.radius, terrainRadius: shot\.weapon\.terrainRadius/, "cluster bomblets inherit the expanded canonical player and structural blast radii");
+assert.match(mainSource, /const impactWeapon = WEAPONS\[shot\.weapon\.sourceWeaponId\] \|\| shot\.weapon;[\s\S]*?playImpact\(impactWeapon,/, "cluster bomblet detonations use the canonical cluster impact sample instead of a missing child asset key");
+assert.match(mainSource, /impact\(position, shot\.weapon, shot\.owner, \{ size: Math\.min\(3\.6,/, "expanded explosions retain a bounded but larger visual shockwave scale");
 assert.match(mainSource, /fireHitscan\([\s\S]*?damageTerrain\(wall, weapon, player\)/, "hitscan and precision weapons route direct surface hits into structure damage");
 assert.match(mainSource, /fireFlame\([\s\S]*?damageTerrain\(surface, weapon, player\)/, "maintained flame routes surface contact into structure damage");
 assert.match(mainSource, /fireMelee\([\s\S]*?damageTerrain\(surface, weapon, player\)/, "melee weapons route direct surface contact into structure damage");
 assert.match(mainSource, /if \(worldHit\)[\s\S]*?terrainHit[\s\S]*?damageTerrain\(shot\.mesh\.position/, "physical projectiles route their exact impact point into structure damage");
 assert.match(mainSource, /applyNetworkTerrainDamage\(message\)[\s\S]*?eventId: message\.id/, "clients mutate online structures only from idempotent room broadcasts");
+assert.match(mainSource, /message\.type === "terrain_damage_batch"[\s\S]*?for \(const event of message\.events \|\| \[\]\) this\.applyNetworkTerrainDamage\(event\)/, "clients apply ordered batched terrain events through the existing idempotent structural path");
+assert.match(mainSource, /applyNetworkDamage\(message\) \{[\s\S]*?applyNetworkScores\(message\.scores\);[\s\S]*?reconcileAuthoritativeLife\(message\.health, !message\.killed\)/, "authoritative damage reconciles absolute life state even when an earlier client damage event was missed");
+assert.match(mainSource, /applyNetworkCrush\(message\) \{[\s\S]*?applyNetworkScores\(message\.scores\);[\s\S]*?reconcileAuthoritativeLife\(message\.health \?\? 0, false\)/, "collapse kills apply authoritative score credit before reconciling an already-stale victim");
+assert.match(mainSource, /replayNetworkFire\(message\) \{[\s\S]*?if \(!player \|\| !weapon \|\| !player\.alive\) return;/, "dead fighters cannot replay a stale fire event locally");
+assert.match(mainSource, /reportCrush\(target, event\.structureId, event\.terrainEventId\)/, "collapse reports carry the exact causal terrain event for unambiguous score attribution");
+assert.match(mainSource, /const roster = uniquePlayersById\(welcome\.players\)[\s\S]*?const ordered = uniquePlayersById\(message\.players\)/, "initial and changing rosters both collapse duplicate reconnect identities before creating fighters");
+assert.match(mainSource, /removeOwnedCombat\(player\)[\s\S]*?shot\.owner === player[\s\S]*?hazard\.owner === player[\s\S]*?decoy\.owner === player[\s\S]*?this\.removeOwnedCombat\(current\.player\)/, "roster removal clears every projectile, hazard, and decoy owned by the retired fighter");
+assert.match(mainSource, /frame\(time\)[\s\S]*?this\.update\(dt, rawDt\)[\s\S]*?update\(dt, realDt = dt\)[\s\S]*?updateRespawns\(realDt\)/, "death presentation and respawn timers follow real elapsed time even when simulation steps are frame-clamped");
+assert.match(multiplayerClientSource, /MAX_TERRAIN_HITS_PER_BATCH = 6[\s\S]*?this\.send\("terrain_hit_batch", \{ hits \}\)/, "clients cap and batch synchronized terrain proposals before WebSocket transmission");
+assert.match(multiplayerClientSource, /reportCrush\(player, structureId, terrainEventId\)[\s\S]*?terrainEventId/, "the multiplayer client transmits the causal collapse event token");
+assert.match(multiplayerWorkerSource, /handleTerrainHitBatch[\s\S]*?message\.hits\.slice\(0, MAX_TERRAIN_HITS_PER_BATCH\)[\s\S]*?handleTerrainHit\(socket, hit\)/, "the room revalidates every proposal in each bounded terrain batch");
 assert.match(multiplayerWorkerSource, /structuralState: Object\.fromEntries\(this\.structuralHealth\)[\s\S]*?handleTerrainHit[\s\S]*?structuralPartBounds/, "the room authority stores compact structural state and validates reported chunk bounds");
 assert.match(multiplayerWorkerSource, /structureDamageScale[\s\S]*?terrainShot\.structureDamageScale/, "partial charged shots retain the same structural damage scale at the room authority");
 assert.match(multiplayerWorkerSource, /fallingDrop[\s\S]*?1_650[\s\S]*?bounds\.baseY - settledDrop - fallingDrop/, "the room authority accepts the swept visible bounds of a support during its collapse window");
 assert.match(multiplayerWorkerSource, /handleCrush[\s\S]*?lastCrushEventId[\s\S]*?type: "crush"/, "the room authority deduplicates collapse kills and broadcasts their result");
+assert.match(multiplayerWorkerSource, /handleCrush[\s\S]*?candidate\.id === terrainEventId[\s\S]*?attackerEntry\.player\.score \+= 1/, "the room credits a crush to the exact validated collapse event rather than a newer same-structure hit");
 assert.equal(worldB.spawnPoints().length, 16, "the arena provides one spawn candidate for every possible combatant");
 const openingSpawns = worldB.spawnPoints().slice(0, 8);
 assert.equal(openingSpawns.filter((point) => point.y >= 60 && Math.hypot(point.x, point.z) < 20).length, 1, "only one opening fighter spawns on the central tower");
@@ -933,6 +959,27 @@ assert.deepEqual(
   [0, null, null, 0, 0, null],
   "respawning clears reload, burst, and charge state alongside the ammunition refill"
 );
+
+const staleLethalTarget = new Fighter(
+  worldScene,
+  { id: "stale-lethal-target", name: "Stale Target", color: 0xaa3355, accent: 0xff7799 },
+  DEFAULT_LOADOUT,
+  new THREE.Vector3(7, 0, 7),
+  true
+);
+staleLethalTarget.health = 100;
+assert.equal(staleLethalTarget.reconcileAuthoritativeLife(0, false), "died", "an authoritative lethal result kills a stale full-health client fighter");
+assert.equal(staleLethalTarget.alive, false, "authoritative death cannot leave a zero-health bot controller active");
+assert.ok(staleLethalTarget.deathTimer > 0 && staleLethalTarget.group.visible, "the reconciled death still plays the normal brief collapse presentation");
+const reconciledDeaths = staleLethalTarget.deaths;
+assert.equal(staleLethalTarget.reconcileAuthoritativeLife(0, false), "none", "duplicate death state is idempotent");
+assert.equal(staleLethalTarget.deaths, reconciledDeaths, "duplicate authoritative death cannot increment deaths twice");
+staleLethalTarget.updateDeath(1.5);
+assert.equal(staleLethalTarget.group.visible, false, "the reconciled dead fighter leaves the arena after its death presentation");
+const authoritativeRespawn = new THREE.Vector3(-9, 3, 11);
+assert.equal(staleLethalTarget.reconcileAuthoritativeLife(73, true, authoritativeRespawn), "respawned", "an authoritative living roster restores a missed respawn");
+assert.ok(staleLethalTarget.alive && staleLethalTarget.health === 73 && staleLethalTarget.position.equals(authoritativeRespawn), "roster reconciliation restores life, exact health, and spawn position together");
+staleLethalTarget.dispose();
 
 const meleeFighter = new Fighter(
   worldScene,

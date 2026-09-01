@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { WEAPONS, structuralPartBounds } from "../src/gameData.js";
 
 const origin = process.env.MULTIPLAYER_TEST_ORIGIN || "http://127.0.0.1:8787";
-const loadout = ["blaster", "charged_energy_rifle", "rocket_launcher", "cluster_grenade", "railgun"];
+const loadout = ["blaster", "charged_energy_rifle", "rocket_launcher", "cluster_grenade", "mortar"];
 const botCount = 15;
 const timeLimitMinutes = 7;
 
@@ -62,14 +62,18 @@ async function connect(roomCode, name, roomBotCount = botCount, requestedMinutes
   const url = connectionUrl(roomCode, name, roomBotCount, requestedMinutes, mode, resumeToken);
   const socket = new WebSocket(url);
   const messages = [];
+  const terrainBatches = [];
   const waiters = [];
   socket.addEventListener("message", ({ data }) => {
-    const message = JSON.parse(data);
-    messages.push(message);
-    for (const waiter of [...waiters]) {
-      if (!waiter.accept(message)) continue;
-      waiters.splice(waiters.indexOf(waiter), 1);
-      waiter.resolve(message);
+    const packet = JSON.parse(data);
+    if (packet.type === "terrain_damage_batch") terrainBatches.push(packet);
+    for (const message of packet.type === "terrain_damage_batch" ? packet.events || [] : [packet]) {
+      messages.push(message);
+      for (const waiter of [...waiters]) {
+        if (!waiter.accept(message)) continue;
+        waiters.splice(waiters.indexOf(waiter), 1);
+        waiter.resolve(message);
+      }
     }
   });
   const next = (accept, timeout = 4_000) => {
@@ -88,7 +92,26 @@ async function connect(roomCode, name, roomBotCount = botCount, requestedMinutes
   };
   const welcome = await next((message) => message.type === "welcome");
   socket.send(JSON.stringify({ type: "resume_ack", resumeToken: welcome.resumeToken }));
-  return { socket, next, welcome, messages };
+  return { socket, next, welcome, messages, terrainBatches };
+}
+
+async function resumeAttempt(roomCode, resumeToken, name = "Concurrent resume") {
+  const socket = new WebSocket(connectionUrl(roomCode, name, 0, timeLimitMinutes, "private", resumeToken));
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Timed out waiting for concurrent resume")), 4_000);
+    const fail = () => {
+      clearTimeout(timeout);
+      reject(new Error("Concurrent resume rejected"));
+    };
+    socket.addEventListener("error", fail, { once: true });
+    socket.addEventListener("close", fail, { once: true });
+    socket.addEventListener("message", ({ data }) => {
+      const message = JSON.parse(data);
+      if (message.type !== "welcome") return;
+      clearTimeout(timeout);
+      resolve({ socket, welcome: message });
+    });
+  });
 }
 
 async function expectConnectionRejected(roomCode, name, roomBotCount = 0, requestedMinutes = timeLimitMinutes, mode = "private") {
@@ -246,6 +269,37 @@ first.socket.send(JSON.stringify({
 const clusterDamage = await second.next((message) => message.type === "terrain_damage" && message.partId === clusterPartId);
 assert.equal(clusterDamage.structuralDamage, WEAPONS.cluster_grenade.structureDamage, "cluster bomblets are accepted under their authoritative parent weapon identity");
 
+await new Promise((resolve) => setTimeout(resolve, 320));
+const mortarPartId = "structure-1-platform-12";
+const mortarBounds = structuralPartBounds(first.welcome.seed, mortarPartId);
+const mortarPosition = {
+  x: mortarBounds.x + mortarBounds.w / 2 + WEAPONS.mortar.terrainRadius - .1,
+  y: (mortarBounds.baseY + mortarBounds.top) / 2,
+  z: mortarBounds.z
+};
+const mortarFlightTime = 4 / WEAPONS.mortar.projectileSpeed;
+const mortarOrigin = {
+  x: mortarPosition.x - 4,
+  y: mortarPosition.y - WEAPONS.mortar.arcLift * mortarFlightTime + .5 * WEAPONS.mortar.gravity * mortarFlightTime ** 2,
+  z: mortarPosition.z
+};
+first.socket.send(JSON.stringify({
+  type: "state",
+  players: [{ id: firstId, position: { ...mortarOrigin, y: mortarOrigin.y - 1.2 }, velocity: { x: 0, y: 0, z: 0 }, aim: { x: 1, y: 0, z: 0 }, slotIndex: 4, grounded: false }]
+}));
+await second.next((message) => message.type === "state" && message.players.some((player) => player.id === firstId && player.slotIndex === 4));
+const mortarShotId = fire(first, { playerId: firstId, weaponId: "mortar", slotIndex: 4, direction: { x: 1, y: 0, z: 0 } });
+await second.next((message) => message.type === "fire" && message.shotId === mortarShotId);
+await new Promise((resolve) => setTimeout(resolve, 80));
+first.socket.send(JSON.stringify({
+  type: "terrain_hit_batch",
+  hits: [{ shotId: mortarShotId, attackerId: firstId, weaponId: "mortar", position: mortarPosition, structureId: "structure-1", partId: mortarPartId }]
+}));
+const mortarDamage = await second.next((message) => message.type === "terrain_damage" && message.partId === mortarPartId);
+assert.equal(mortarDamage.structuralDamage, WEAPONS.mortar.structureDamage, "a live mortar near miss applies canonical structural damage inside its blast radius");
+assert.equal(mortarDamage.collapsed, true, "a live mortar near miss destroys the selected major deck section");
+assert.ok(second.terrainBatches.some((batch) => batch.events.some((event) => event.id === mortarDamage.id)), "live structural damage arrives through the ordered terrain batch channel");
+
 await new Promise((resolve) => setTimeout(resolve, 450));
 const rocketPosition = { x: 42, y: 2, z: -22 };
 const rocketOrigin = { x: rocketPosition.x - 4, y: rocketPosition.y - 1.2, z: rocketPosition.z };
@@ -263,7 +317,7 @@ first.socket.send(JSON.stringify({
   partId: "structure-1-pillar-1"
 }));
 const firstTerrainDamage = await second.next((message) => message.type === "terrain_damage" && message.weaponId === "rocket_launcher" && message.partId === "structure-1-pillar-1");
-assert.equal(firstTerrainDamage.radius, 5.2, "the room uses the weapon's canonical terrain radius");
+assert.equal(firstTerrainDamage.radius, WEAPONS.rocket_launcher.terrainRadius, "the room uses the weapon's canonical terrain radius");
 assert.equal(firstTerrainDamage.structuralDamage, 20, "the room uses the rocket's canonical one-shot structural damage");
 assert.equal(firstTerrainDamage.collapsed, true, "one accepted rocket destroys a major stand section");
 const terrainDamage = firstTerrainDamage;
@@ -289,10 +343,12 @@ second.socket.send(JSON.stringify({
   players: [{ id: secondId, position: { x: 42, y: 1, z: -22 }, velocity: { x: 0, y: 0, z: 0 }, aim: { x: -1, y: 0, z: 0 }, slotIndex: 0, grounded: true }]
 }));
 await first.next((message) => message.type === "state" && message.players.some((player) => player.id === secondId && player.position?.x === 42));
-second.socket.send(JSON.stringify({ type: "crush", playerId: secondId, structureId: "structure-1" }));
+second.socket.send(JSON.stringify({ type: "crush", playerId: secondId, structureId: "structure-1", terrainEventId: terrainDamage.id }));
 const crush = await first.next((message) => message.type === "crush" && message.targetId === secondId);
 assert.equal(crush.health, 0);
 assert.equal(crush.attackerId, firstId);
+assert.equal(crush.terrainEventId, terrainDamage.id, "the room attributes a collapse kill to the exact causal terrain event");
+assert.equal(crush.scores[firstId], 1, "a structure-collapse kill updates the attacker's authoritative score immediately");
 
 const lateJoin = await connect(firstAssignment.roomCode, "Charlie");
 assert.ok(lateJoin.welcome.terrainEvents.some((event) => event.id === terrainDamage.id), "late joiners receive authoritative terrain history");
@@ -362,8 +418,9 @@ privateGuest.socket.send(JSON.stringify({
 }));
 const privateCollapse = await privateReplacement.next((message) => message.type === "terrain_damage" && message.partId === privatePartId);
 assert.equal(privateCollapse.collapsed, true);
-privateGuest.socket.send(JSON.stringify({ type: "crush", playerId: privateBots[0].id, structureId: "structure-2" }));
-await privateReplacement.next((message) => message.type === "crush" && message.targetId === privateBots[0].id);
+privateGuest.socket.send(JSON.stringify({ type: "crush", playerId: privateBots[0].id, structureId: "structure-2", terrainEventId: privateCollapse.id }));
+const privateCrush = await privateReplacement.next((message) => message.type === "crush" && message.targetId === privateBots[0].id);
+assert.equal(privateCrush.scores[privateHostId], 1, "collapse credit is visible before the attacker reconnects");
 await closeSocketAndWait(privateGuest.socket);
 const rejoinedPrivateHost = await connect(privateCode, "Changed name cannot reset score", privateBotCount, timeLimitMinutes, "private", privateGuest.welcome.resumeToken);
 assert.equal(rejoinedPrivateHost.welcome.playerId, privateHostId, "a private-room player can deliberately leave and rejoin the active match");
@@ -373,7 +430,7 @@ assert.equal(rejoinedPrivateHost.welcome.players.find((player) => player.id === 
 await closeSocketAndWait(privateReplacement.socket);
 const hostLobbyReturn = rejoinedPrivateHost.next((message) => message.type === "lobby");
 for (const bot of privateBots.slice(1)) {
-  rejoinedPrivateHost.socket.send(JSON.stringify({ type: "crush", playerId: bot.id, structureId: "structure-2" }));
+  rejoinedPrivateHost.socket.send(JSON.stringify({ type: "crush", playerId: bot.id, structureId: "structure-2", terrainEventId: privateCollapse.id }));
   await rejoinedPrivateHost.next((message) => message.type === "crush" && message.targetId === bot.id);
 }
 const returnedHost = await hostLobbyReturn;
@@ -398,6 +455,19 @@ const resumedCapacityPlayer = await connect(capacityCode, "Reserved player retur
 assert.equal(resumedCapacityPlayer.welcome.players.filter((player) => !player.bot).length, 16, "a stored identity reserves one of the room's sixteen human slots");
 for (const participant of capacityPlayers) closeSocket(participant.socket);
 closeSocket(resumedCapacityPlayer.socket);
+
+const resumeRaceCode = `R-${Date.now().toString(36).slice(-8)}`;
+const resumeRaceSeed = await connect(resumeRaceCode, "Resume race", 0, timeLimitMinutes, "private");
+const resumeRaceResults = await Promise.allSettled(Array.from({ length: 3 }, (_, index) =>
+  resumeAttempt(resumeRaceCode, resumeRaceSeed.welcome.resumeToken, `Concurrent resume ${index + 1}`)
+));
+const acceptedResumes = resumeRaceResults.filter((result) => result.status === "fulfilled").map((result) => result.value);
+assert.equal(acceptedResumes.length, 1, "only one simultaneous socket can consume a reconnect identity");
+assert.equal(acceptedResumes[0].welcome.playerId, resumeRaceSeed.welcome.playerId, "the winning reconnect preserves the authoritative identity");
+assert.equal(new Set(acceptedResumes[0].welcome.players.map((player) => player.id)).size, acceptedResumes[0].welcome.players.length, "the winning roster contains no duplicate fighter identity");
+const resumeRaceStatus = await fetch(`${origin}/api/rooms/${resumeRaceCode}/status`).then((response) => response.json());
+assert.equal(resumeRaceStatus.activeHumans, 1, "a reconnect race leaves exactly one active human socket");
+closeSocket(acceptedResumes[0].socket);
 
 const recoveryAssignment = await assignment(timeLimitMinutes, firstAssignment.roomCode);
 assert.notEqual(recoveryAssignment.roomCode, firstAssignment.roomCode, "a timed-out Quick Play room is replaced on the retry");

@@ -1669,6 +1669,7 @@ export class ArenaWorld {
       structure,
       part,
       attackerId: part.failureAttackerId || "",
+      terrainEventId: part.failureTerrainEventId || "",
       phase: "warning",
       elapsed: 0,
       warningDuration: .52,
@@ -1696,11 +1697,12 @@ export class ArenaWorld {
     });
   }
 
-  queueStructuralFailure(part, attackerId = "", impactPosition = null) {
+  queueStructuralFailure(part, attackerId = "", impactPosition = null, terrainEventId = "") {
     if (!part || part.removed || part.failureQueued) return false;
     part.failureQueued = true;
     part.failureAttackerId = attackerId;
     part.failurePosition = impactPosition?.clone() || null;
+    part.failureTerrainEventId = terrainEventId;
     part.structure.pendingFailures.push(part);
     this.startNextStructuralFailure(part.structure);
     return true;
@@ -1833,6 +1835,7 @@ export class ArenaWorld {
         id: `${change.id}-${player.id}`,
         structureId: change.structure.id,
         attackerId: change.attackerId,
+        terrainEventId: change.terrainEventId,
         player,
         position: player.position.clone(),
         color: change.structure.color
@@ -2774,7 +2777,7 @@ export class ArenaWorld {
       structuralPart.health = Math.max(0, structuralPart.health - structuralDamage);
       const damageMix = .14 + (1 - structuralPart.health / structuralPart.maxHealth) * .46;
       this.setStructuralColor(structuralPart, new THREE.Color(structuralPart.visualColor).lerp(new THREE.Color(this.theme.danger), damageMix));
-      if (structuralPart.health === 0) this.queueStructuralFailure(structuralPart, context.attackerId, position);
+      if (structuralPart.health === 0) this.queueStructuralFailure(structuralPart, context.attackerId, position, context.eventId || "");
       removed += 1;
     }
     return removed;

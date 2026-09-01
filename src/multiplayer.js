@@ -8,6 +8,7 @@ import {
 import TEXT, { formatText } from "./playerText.js";
 
 const ROOM_SESSION_PREFIX = "master-blaster-room-session:";
+const MAX_TERRAIN_HITS_PER_BATCH = 6;
 
 function storedRoomSession(roomCode) {
   const normalized = normalizeRoomCode(roomCode);
@@ -45,6 +46,8 @@ export class MultiplayerClient extends EventTarget {
     this.options = null;
     this.lastStateAt = 0;
     this.heartbeatTimer = 0;
+    this.terrainHitFlushTimer = 0;
+    this.pendingTerrainHits = [];
     this.awaitingPongSince = 0;
     this.reconnectTask = null;
     this.reconnectNonce = 0;
@@ -76,6 +79,7 @@ export class MultiplayerClient extends EventTarget {
 
   async connectOnce({ mode, roomCode, name, loadout, botCount, difficulty, timeLimitMinutes }, excludeRoomCode = "", resumeToken = "", directRoomCode = "") {
     this.stopHeartbeat();
+    this.clearTerrainHits();
     const priorSocket = this.socket;
     this.socket = null;
     priorSocket?.close(1000, "Replacing connection");
@@ -283,7 +287,8 @@ export class MultiplayerClient extends EventTarget {
   }
 
   reportTerrainHit(attacker, weapon, position, radius, structureId = "", partId = "", shotId = "") {
-    return this.send("terrain_hit", {
+    if (!this.connected) return false;
+    this.pendingTerrainHits.push({
       shotId: shotId || attacker.networkShotId,
       attackerId: attacker.id,
       weaponId: weapon.id,
@@ -292,14 +297,36 @@ export class MultiplayerClient extends EventTarget {
       structureId,
       partId
     });
+    if (this.pendingTerrainHits.length >= MAX_TERRAIN_HITS_PER_BATCH) this.flushTerrainHits();
+    else if (!this.terrainHitFlushTimer) {
+      this.terrainHitFlushTimer = setTimeout(() => this.flushTerrainHits(), NETWORK_TICK_MS);
+      this.terrainHitFlushTimer?.unref?.();
+    }
+    return true;
+  }
+
+  flushTerrainHits() {
+    clearTimeout(this.terrainHitFlushTimer);
+    this.terrainHitFlushTimer = 0;
+    if (!this.pendingTerrainHits.length) return false;
+    const hits = this.pendingTerrainHits.splice(0, MAX_TERRAIN_HITS_PER_BATCH);
+    const sent = this.send("terrain_hit_batch", { hits });
+    if (this.pendingTerrainHits.length) this.terrainHitFlushTimer = setTimeout(() => this.flushTerrainHits(), 0);
+    return sent;
+  }
+
+  clearTerrainHits() {
+    clearTimeout(this.terrainHitFlushTimer);
+    this.terrainHitFlushTimer = 0;
+    this.pendingTerrainHits.length = 0;
   }
 
   reportTeleport(player, impact, shotId = "") {
     return this.send("teleport", { playerId: player.id, shotId, impact, position: player.position });
   }
 
-  reportCrush(player, structureId) {
-    return this.send("crush", { playerId: player.id, structureId });
+  reportCrush(player, structureId, terrainEventId) {
+    return this.send("crush", { playerId: player.id, structureId, terrainEventId });
   }
 
   reload(player) {
@@ -314,6 +341,7 @@ export class MultiplayerClient extends EventTarget {
     this.closedByClient = true;
     this.reconnectNonce += 1;
     this.stopHeartbeat();
+    this.clearTerrainHits();
     this.socket?.close(1000, "Leaving room");
     this.socket = null;
     this.welcome = null;

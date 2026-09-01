@@ -11,6 +11,7 @@ import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, c
 import { NeonRenderPipeline } from "./renderPipeline.js";
 import { combatMusicIntensity } from "./musicScore.js";
 import { MultiplayerClient } from "./multiplayer.js";
+import { uniquePlayersById } from "./multiplayerProtocol.js";
 import { createGrappleRopeGeometry, updateGrappleRopeGeometry } from "./grappleRope.js";
 import TEXT, { formatText } from "./playerText.js";
 
@@ -1203,19 +1204,18 @@ class BlasterBattle {
     if (!this.world || this.state !== "play") return;
     this.clearTransientNetworkCombat();
     this.syncOnlineRoster(welcome);
-    const localData = welcome.players?.find((player) => player.id === this.multiplayer?.playerId);
+    const localData = uniquePlayersById(welcome.players).find((player) => player.id === this.multiplayer?.playerId);
     const local = this.players.find((player) => player.id === this.multiplayer?.playerId);
     if (local && localData) {
       const authoritativePosition = localData.position
         ? new THREE.Vector3(localData.position.x, localData.position.y, localData.position.z)
         : local.position;
-      if (localData.alive !== false && !local.alive) local.respawn(authoritativePosition);
+      local.reconcileAuthoritativeLife(localData.health ?? local.health, localData.alive !== false, authoritativePosition);
       local.position.copy(authoritativePosition);
       if (localData.velocity) local.velocity.set(localData.velocity.x, localData.velocity.y, localData.velocity.z);
       if (localData.aim) local.aim.set(localData.aim.x, localData.aim.y, localData.aim.z).normalize();
       local.grounded = Boolean(localData.grounded);
       local.slotIndex = localData.slotIndex || 0;
-      local.health = localData.health ?? local.health;
       local.ammo = { ...local.ammo, ...localData.ammo };
       this.updateCamera(1);
     }
@@ -1236,6 +1236,21 @@ class BlasterBattle {
     this.hazards = [];
     this.decoys = [];
     this.effects = [];
+  }
+
+  removeOwnedCombat(player) {
+    for (let index = this.projectiles.length - 1; index >= 0; index--) {
+      const shot = this.projectiles[index];
+      if (shot.owner === player) this.removeProjectile(index);
+    }
+    for (let index = this.hazards.length - 1; index >= 0; index--) {
+      const hazard = this.hazards[index];
+      if (hazard.owner === player) this.removeHazard(index);
+    }
+    for (let index = this.decoys.length - 1; index >= 0; index--) {
+      const decoy = this.decoys[index];
+      if (decoy.owner === player) this.removeDecoy(decoy);
+    }
   }
 
   createOnlineFighter(data, position) {
@@ -1314,7 +1329,7 @@ class BlasterBattle {
     const playerLoadout = this.settings.loadout.length === 5 ? this.settings.loadout : DEFAULT_LOADOUT;
     const weaponIds = Object.keys(WEAPONS);
     if (welcome) {
-      const roster = [...welcome.players].sort((left, right) => Number(right.id === welcome.playerId) - Number(left.id === welcome.playerId));
+      const roster = uniquePlayersById(welcome.players).sort((left, right) => Number(right.id === welcome.playerId) - Number(left.id === welcome.playerId));
       this.players = roster.map((data, index) => {
         const spawn = data.position
           ? new THREE.Vector3(data.position.x, data.position.y, data.position.z)
@@ -1380,12 +1395,13 @@ class BlasterBattle {
     }
     this.networkEndsAt = message.endsAt || this.networkEndsAt;
     const prior = new Map(this.players.map((player, index) => [player.id, { player, score: this.scores[index] || 0 }]));
-    const ordered = [...message.players].sort((left, right) => Number(right.id === this.multiplayer.playerId) - Number(left.id === this.multiplayer.playerId));
+    const ordered = uniquePlayersById(message.players).sort((left, right) => Number(right.id === this.multiplayer.playerId) - Number(left.id === this.multiplayer.playerId));
     const desiredIds = new Set(ordered.map((player) => player.id));
     for (const [id, current] of prior) {
       if (desiredIds.has(id)) continue;
       this.sound.stopOwner(id);
       this.releaseGrapple(current.player, false, true);
+      this.removeOwnedCombat(current.player);
       current.player.dispose();
       this.networkTargets.delete(id);
     }
@@ -1402,8 +1418,10 @@ class BlasterBattle {
       }
       fighter.isBot = Boolean(data.bot);
       fighter.networkRemote = !this.controlsNetworkPlayer(fighter);
-      if (data.alive === false && fighter.alive) fighter.takeHit(100);
-      fighter.health = data.health ?? fighter.health;
+      const authoritativePosition = data.position
+        ? new THREE.Vector3(data.position.x, data.position.y, data.position.z)
+        : fighter.position;
+      fighter.reconcileAuthoritativeLife(data.health ?? fighter.health, data.alive !== false, authoritativePosition);
       fighter.ammo = { ...fighter.ammo, ...data.ammo };
       if (fighter.networkRemote) this.networkTargets.set(fighter.id, data);
       else this.networkTargets.delete(fighter.id);
@@ -1440,6 +1458,10 @@ class BlasterBattle {
       return;
     }
     if (message.type === "fire") return this.replayNetworkFire(message);
+    if (message.type === "terrain_damage_batch") {
+      for (const event of message.events || []) this.applyNetworkTerrainDamage(event);
+      return;
+    }
     if (message.type === "terrain_damage") return this.applyNetworkTerrainDamage(message);
     if (message.type === "reload") {
       const player = this.players.find((candidate) => candidate.id === message.playerId);
@@ -1461,7 +1483,7 @@ class BlasterBattle {
   replayNetworkFire(message) {
     const player = this.players.find((candidate) => candidate.id === message.playerId);
     const weapon = WEAPONS[message.weaponId];
-    if (!player || !weapon) return;
+    if (!player || !weapon || !player.alive) return;
     const slot = player.loadout.indexOf(weapon.id);
     if (slot < 0) return;
     if (message.direction) player.aim.set(message.direction.x, message.direction.y, message.direction.z).normalize();
@@ -1482,19 +1504,19 @@ class BlasterBattle {
   }
 
   applyNetworkDamage(message) {
+    this.applyNetworkScores(message.scores);
     const targetIndex = this.players.findIndex((player) => player.id === message.targetId);
     const attacker = this.players.find((player) => player.id === message.attackerId);
     const target = this.players[targetIndex];
     const weapon = WEAPONS[message.weaponId];
     if (!target || !weapon) return;
     const push = new THREE.Vector3(message.push?.x || 0, message.push?.y || 0, message.push?.z || 0);
-    const killed = target.takeHit(message.damage, push);
-    target.health = message.health;
-    applyWeaponStatus(target, weapon);
+    if (target.alive) target.takeHit(0, push);
+    const killed = target.reconcileAuthoritativeLife(message.health, !message.killed) === "died";
+    if (target.alive) applyWeaponStatus(target, weapon);
     this.combatMusicPulse = Math.max(this.combatMusicPulse, target === this.players[0] || attacker === this.players[0] ? .8 : .45);
     this.spawnImpact(target.position, target, weapon, attacker);
     this.showCombatFeedback(target, attacker, weapon, message.killed || killed);
-    this.applyNetworkScores(message.scores);
     if (message.killed || killed) {
       this.releaseGrapple(target);
       this.respawnTimers[targetIndex] = Math.max(0, (message.respawnAt - Date.now()) / 1000);
@@ -1511,16 +1533,15 @@ class BlasterBattle {
   }
 
   applyNetworkCrush(message) {
+    this.applyNetworkScores(message.scores);
     const targetIndex = this.players.findIndex((player) => player.id === message.targetId);
     const target = this.players[targetIndex];
     const attacker = this.players.find((player) => player.id === message.attackerId) || null;
-    if (!target || !target.alive) return;
-    const killed = target.takeHit(100);
-    target.health = message.health ?? 0;
+    if (!target) return;
+    const killed = target.reconcileAuthoritativeLife(message.health ?? 0, false) === "died";
     this.combatMusicPulse = 1;
     this.spawnImpact(target.position, target, STRUCTURAL_COLLAPSE, attacker);
     this.showCombatFeedback(target, attacker, STRUCTURAL_COLLAPSE, message.killed || killed);
-    this.applyNetworkScores(message.scores);
     if (message.killed || killed) {
       this.releaseGrapple(target);
       this.respawnTimers[targetIndex] = Math.max(0, (message.respawnAt - Date.now()) / 1000);
@@ -1772,7 +1793,7 @@ class BlasterBattle {
     const rawDt = Math.min(.25, this.timer.getDelta());
     const dt = Math.min(.033, rawDt);
     if (this.state === "play" && this.input.tapped("Escape")) this.togglePause();
-    if (this.state === "play" && !this.paused) this.update(dt);
+    if (this.state === "play" && !this.paused) this.update(dt, rawDt);
     this.renderScene();
     if (this.hideMatchLoadingAfterFrame && !this.arenaWarmup) {
       this.hideMatchLoadingAfterFrame = false;
@@ -1782,7 +1803,7 @@ class BlasterBattle {
     this.input.endFrame();
   }
 
-  update(dt) {
+  update(dt, realDt = dt) {
     if (this.awaitingAudioGesture) {
       this.updateAudio(dt);
       this.updateHud();
@@ -1838,7 +1859,7 @@ class BlasterBattle {
     this.processStructuralEvents();
     this.updateEffects(dt);
     this.combatVisuals?.update(dt);
-    this.updateRespawns(dt);
+    this.updateRespawns(realDt);
     this.updateAudio(dt);
     this.updateHud();
     if (!this.isOnlineMatch() && (this.matchTime <= 0 || Math.max(...this.scores) >= this.targetScore)) this.finishMatch();
@@ -2343,7 +2364,7 @@ class BlasterBattle {
     const radius = weapon?.terrainRadius || 0;
     const structuralDamage = weapon?.structureDamage || 0;
     if (!radius && !structuralDamage) return 0;
-    const structuralRadius = Math.max(.35, weapon.projectileRadius || 0);
+    const structuralRadius = radius > 0 ? radius : Math.max(.35, weapon.projectileRadius || 0);
     if (this.isOnlineMatch()) {
       let structuralPart = null;
       if (owner && this.controlsNetworkPlayer(owner)) {
@@ -2660,7 +2681,7 @@ class BlasterBattle {
       ...shot.weapon, id: `${shot.weapon.id}_bomblet`, type: "grenade", split: 0,
       sourceWeaponId: shot.weapon.id,
       damage: Math.max(14, shot.weapon.damage), projectileSpeed: 18,
-      radius: 2.8, terrainRadius: 2.2, fuse: .62, gravity: 15,
+      radius: shot.weapon.radius, terrainRadius: shot.weapon.terrainRadius, fuse: .62, gravity: 15,
       bounces: 1, bounceEnergy: .55, arcLift: 0, projectileRadius: .16
     };
     for (let i = 0; i < count; i++) {
@@ -2689,8 +2710,9 @@ class BlasterBattle {
     }
     if (shot.weapon.terrainRadius > 0 || shot.weapon.structureDamage > 0) this.damageTerrain(position, shot.weapon, shot.owner, shot.networkShotId);
     if (shot.weapon.hazard) this.spawnHazard(position, shot.owner, shot.weapon, shot.velocity, shot.networkShotId);
-    this.combatVisuals?.impact(position, shot.weapon, shot.owner, { size: Math.min(2.6, Math.max(1.35, shot.weapon.radius * .42)), explosive: true });
-    this.sound.playImpact(shot.weapon, this.audioSpatial(position, false, 1, shot.owner.id), 0, "explosive");
+    this.combatVisuals?.impact(position, shot.weapon, shot.owner, { size: Math.min(3.6, Math.max(1.35, shot.weapon.radius * .42)), explosive: true });
+    const impactWeapon = WEAPONS[shot.weapon.sourceWeaponId] || shot.weapon;
+    this.sound.playImpact(impactWeapon, this.audioSpatial(position, false, 1, shot.owner.id), 0, "explosive");
   }
 
   damageTarget(target, damage, push, attacker, weapon, context = {}) {
@@ -3054,7 +3076,7 @@ class BlasterBattle {
         const target = event.player;
         if (!target?.alive) continue;
         if (this.isOnlineMatch()) {
-          if (this.controlsNetworkPlayer(target)) this.multiplayer.reportCrush(target, event.structureId);
+          if (this.controlsNetworkPlayer(target)) this.multiplayer.reportCrush(target, event.structureId, event.terrainEventId);
         } else {
           this.damagePlayer(target, 100, new THREE.Vector3(), attacker, STRUCTURAL_COLLAPSE);
         }

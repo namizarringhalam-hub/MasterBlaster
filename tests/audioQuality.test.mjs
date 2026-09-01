@@ -307,14 +307,14 @@ for (const event of ["uiHover", "weaponSelect", "jump", "empty", "grappleMiss", 
 }
 assert.match(mainSource, /setListener\(this\.camera\.position/, "the audio listener follows the camera");
 assert.match(mainSource, /updateFighter\(player\.id,[\s\S]*?reloading: player\.reloadTimer > 0/, "fighter state transitions drive reload, landing, death, and respawn cues");
-assert.match(mainSource, /playImpact\(shot\.weapon, this\.audioSpatial\(position/, "explosions use listener-relative position and distance");
+assert.match(mainSource, /const impactWeapon = WEAPONS\[shot\.weapon\.sourceWeaponId\] \|\| shot\.weapon;[\s\S]*?playImpact\(impactWeapon, this\.audioSpatial\(position/, "explosions use canonical rendered impact samples with listener-relative position and distance");
 assert.match(mainSource, /playStructural\("warning"[\s\S]*?playStructural\("break"[\s\S]*?playStructural\("land"/, "tower failures use distinct spatial warning, fracture/fall, and landing cues");
 assert.match(mainSource, /Math\.cbrt\(Math\.max\(1, event\.mass[\s\S]*?event\.dropDistance/, "structural audio and effects scale from the actual broken mass and drop instead of the whole tower label");
 assert.ok((mainSource.match(/playImpact\([^\n]+"wall"\)/g) || []).length >= 4, "hitscan and projectile wall collisions request the authored wall-impact treatment");
 assert.match(mainSource, /combatMusicIntensity\(\{[\s\S]*?nearbyEnemies[\s\S]*?nearbyProjectiles[\s\S]*?nearbyHazards/, "real nearby combat telemetry drives adaptive music intensity");
 assert.match(mainSource, /startCountdown\(this\.seed, \.42\)/, "gameplay and the score share one authoritative audio-clock countdown");
 assert.match(mainSource, /resumeAudioAfterReload\(\)[\s\S]*?matchStartDelay > 0[\s\S]*?startCountdown\(this\.seed, \.42\)[\s\S]*?else this\.sound\.startMusic\("combat"/, "the first post-reload gesture restores the authored countdown before combat music instead of skipping the score");
-assert.match(mainSource, /update\(dt\) \{[\s\S]*?awaitingAudioGesture[\s\S]*?return;[\s\S]*?matchStartDelay > 0/, "a fresh match cannot consume its countdown before the browser receives an audio-unlocking gesture");
+assert.match(mainSource, /update\(dt, realDt = dt\) \{[\s\S]*?awaitingAudioGesture[\s\S]*?return;[\s\S]*?matchStartDelay > 0/, "a fresh match cannot consume its countdown before the browser receives an audio-unlocking gesture");
 assert.match(mainSource, /renderMain\(\)[\s\S]*?sound\.resume\(\)[\s\S]*?setMusicScene\("menu"\)[\s\S]*?startMusic\("menu"/, "the menu prepares and starts its score instead of waiting for a later screen");
 assert.match(mainSource, /resumeAudioAfterReload\(\)[\s\S]*?state !== "play"[\s\S]*?startMusic\("menu"/, "the first browser-permitted gesture releases the prepared menu score immediately");
 assert.match(mainSource, /selectNearestAudio\(\s*this\.hazards, local\.position, 4/, "the four nearest hazards receive tactical loop priority without sorting the full hazard list");

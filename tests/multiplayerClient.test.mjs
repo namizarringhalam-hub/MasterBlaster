@@ -133,6 +133,12 @@ try {
   assert.equal(portalPlayer.networkPositionDirty, false, "a successfully transmitted portal state clears its ordering marker");
   client.reportTeleport(portalPlayer, { x: 50, y: 1.2, z: 0 }, portalPlayer.networkShotId);
   assert.equal(activeSocket.sent.at(-1).type, "teleport", "a teleport-projectile displacement is proposed against its authoritative shot instead of masquerading as ordinary movement");
+  for (let index = 0; index < 6; index++) client.reportTerrainHit(
+    portalPlayer, { id: "cluster_grenade" }, { x: 20 + index, y: 2, z: 0 }, 3.2,
+    "structure-1", `structure-1-platform-${index + 1}`, portalPlayer.networkShotId
+  );
+  assert.equal(activeSocket.sent.at(-1).type, "terrain_hit_batch", "six synchronized cluster impacts share one bounded client packet");
+  assert.equal(activeSocket.sent.at(-1).hits.length, 6);
   client.close();
 
   const privateOptions = {

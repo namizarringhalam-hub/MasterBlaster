@@ -693,6 +693,28 @@ export class Fighter {
     return true;
   }
 
+  reconcileAuthoritativeLife(health, alive, respawnPosition = null) {
+    const nextHealth = clamp(Number.isFinite(health) ? health : this.health, 0, 100);
+    const shouldLive = alive !== false && nextHealth > 0;
+    if (!shouldLive) {
+      if (!this.alive) {
+        this.health = 0;
+        return "none";
+      }
+      this.takeHit(100);
+      this.health = 0;
+      return "died";
+    }
+    if (!this.alive) {
+      if (!respawnPosition) return "none";
+      this.respawn(respawnPosition);
+      this.health = nextHealth;
+      return "respawned";
+    }
+    this.health = nextHealth;
+    return "none";
+  }
+
   updateDeath(dt) {
     if (this.alive || this.deathTimer <= 0) return;
     this.deathTimer = Math.max(0, this.deathTimer - dt);
