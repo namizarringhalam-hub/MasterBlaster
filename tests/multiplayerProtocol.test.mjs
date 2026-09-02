@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { WEAPONS } from "../src/gameData.js";
+import { ARENA_SPAWN_POINTS, WEAPONS } from "../src/gameData.js";
 import {
   MULTIPLAYER_PROTOCOL_VERSION,
   MAX_CLIENT_MESSAGE_BYTES,
@@ -10,9 +10,12 @@ import {
   normalizeRoomCode,
   parseClientMessage,
   parseServerMessage,
+  advanceRespawnRetry,
+  respawnDisposition,
   sanitizeLoadout,
   sanitizePlayerName,
   sanitizeVector,
+  serverRemainingSeconds,
   socketUrl,
   squaredDistance,
   uniquePlayersById
@@ -32,6 +35,17 @@ assert.equal(clampMatchMinutes("invalid"), 3);
 assert.deepEqual(sanitizeVector({ x: 30, y: 40, z: 0 }, 10), { x: 6, y: 8, z: 0 });
 assert.equal(squaredDistance({ x: 1, y: 2, z: 3 }, { x: 4, y: 6, z: 3 }), 25);
 assert.equal(matchTimeRemaining(2_000, 1_250), 750);
+assert.equal(serverRemainingSeconds(1_800_000_005_000, 1_800_000_002_000), 3, "respawn timing is relative to the server and independent of the client wall clock");
+assert.equal(respawnDisposition(4, true, 4), "duplicate", "a replay for an already-living life is acknowledgement-only");
+assert.equal(respawnDisposition(4, false, 4), "apply", "the same canonical life revives a client that is still dead");
+assert.equal(respawnDisposition(4, true, 3), "stale");
+let retry = advanceRespawnRetry(undefined, 1);
+assert.equal(retry.shouldRequest, true);
+retry = advanceRespawnRetry(retry, 2.99);
+assert.equal(retry.shouldRecover, false);
+retry = advanceRespawnRetry(retry, .01);
+assert.equal(retry.shouldRecover, true, "four seconds without any respawn acknowledgement triggers in-place recovery");
+assert.equal(ARENA_SPAWN_POINTS.length, 16, "client and Worker share every authoritative arena spawn");
 assert.deepEqual(parseClientMessage('{"type":"ping"}'), { type: "ping" });
 assert.equal(parseClientMessage("bad"), null);
 const roomSnapshot = JSON.stringify({ type: "welcome", terrainEvents: ["x".repeat(MAX_CLIENT_MESSAGE_BYTES)] });

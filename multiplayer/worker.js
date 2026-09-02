@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { ARENA_PORTAL_COOLDOWN_SECONDS, DEFAULT_LOADOUT, WEAPONS, isArenaPortalTransition, structuralPartBounds, weaponFireMode, weaponUsesAmmo } from "../src/gameData.js";
+import { ARENA_PORTAL_COOLDOWN_SECONDS, ARENA_SPAWN_POINTS, DEFAULT_LOADOUT, WEAPONS, isArenaPortalTransition, structuralPartBounds, structuralTowerBlueprints, weaponFireMode, weaponUsesAmmo } from "../src/gameData.js";
 import TEXT, { formatText } from "../src/playerText.js";
 import { hitProposalLimit, lineBlockedByStructure, playerCapsuleIntersectsStructure, validateHitProposal, validateImpactProposal, weaponAuthorityStrategy } from "../src/combatAuthority.js";
 import {
@@ -28,6 +28,8 @@ const PRIVATE_MATCH_REJOIN_GRACE_MS = 60_000;
 const PERSISTENCE_WINDOW_MS = 250;
 const MAX_TERRAIN_HITS_PER_BATCH = 6;
 const MAX_ORDINARY_STATE_DISPLACEMENT = 96;
+const RESPAWN_SPAWN_TOLERANCE = 8;
+const RESPAWN_VERTICAL_TOLERANCE = 8;
 const RESUME_TOKEN_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const COLORS = [
   [0x129dba, 0x6ff6ff], [0xc82849, 0xff6b82], [0x6bad22, 0xb9ff55], [0x7847ca, 0xc793ff],
@@ -68,7 +70,10 @@ function publicPlayer(player) {
     slotIndex: player.slotIndex,
     grounded: player.grounded,
     ammo: player.ammo,
-    respawnAt: player.respawnAt || 0
+    respawnAt: player.respawnAt || 0,
+    lifeSequence: player.deaths || 0,
+    respawnId: player.respawnId || "",
+    respawnSpawnIndex: Number.isInteger(player.respawnSpawnIndex) ? player.respawnSpawnIndex : -1
   };
 }
 
@@ -79,7 +84,9 @@ function publicState(player) {
     velocity: player.velocity,
     aim: player.aim,
     slotIndex: player.slotIndex,
-    grounded: player.grounded
+    grounded: player.grounded,
+    lifeSequence: player.deaths || 0,
+    respawnId: player.respawnId || ""
   };
 }
 
@@ -91,7 +98,10 @@ function roomPlayer(id, name, loadout, colorIndex, bot = false) {
     health: 100, alive: true, score: 0, deaths: 0,
     position: { x: 0, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, aim: { x: 0, y: 0, z: 1 },
     slotIndex: 0, grounded: true, ammo: playerAmmo(loadout), reloadEndsAt: {},
-    lastFireAt: {}, lastPortalAt: 0, lastStateAt: 0, hasState: false, respawnAt: 0, joinedAt: Date.now()
+    lastFireAt: {}, lastPortalAt: 0, lastStateAt: 0, hasState: false, respawnAt: 0,
+    respawnId: "", respawnSpawnIndex: -1, respawnAcceptedAt: 0, respawnAmmo: null,
+    awaitingRespawnState: false, lifeStateCapable: false,
+    joinedAt: Date.now()
   };
 }
 
@@ -112,7 +122,46 @@ function resetRoomPlayer(player) {
   player.lastStateAt = 0;
   player.hasState = false;
   player.respawnAt = 0;
+  player.respawnId = "";
+  player.respawnSpawnIndex = -1;
+  player.respawnAcceptedAt = 0;
+  player.respawnAmmo = null;
+  player.awaitingRespawnState = false;
   return player;
+}
+
+function playerCanAct(player) {
+  return Boolean(player?.alive && !player.awaitingRespawnState);
+}
+
+function authoritativeSpawnPoint(index, seed, structuralHealth) {
+  const shared = ARENA_SPAWN_POINTS[index];
+  if (!shared) return null;
+  let matchedStructuralDeck = false;
+  let height = -Infinity;
+  for (const [towerIndex, tower] of structuralTowerBlueprints(seed).entries()) {
+    if (Math.abs(shared.y - tower.top) > .61) continue;
+    const structure = towerIndex + 1;
+    const columns = Math.max(3, Math.min(5, Math.round(tower.w / 7)));
+    const rows = Math.max(3, Math.min(5, Math.round(tower.d / 7)));
+    const width = tower.w / columns;
+    const depth = tower.d / rows;
+    const pillarHeight = tower.top / tower.segmentCount;
+    let pillarDrop = 0;
+    for (let part = 1; part <= tower.segmentCount; part++) {
+      if ((structuralHealth.get(`structure-${structure}-pillar-${part}`) ?? 1) <= 0) pillarDrop += pillarHeight;
+    }
+    for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
+      const x = tower.x - tower.w / 2 + width * (column + .5);
+      const z = tower.z - tower.d / 2 + depth * (row + .5);
+      if (Math.abs(shared.x - x) > width / 2 || Math.abs(shared.z - z) > depth / 2) continue;
+      matchedStructuralDeck = true;
+      const part = row * columns + column + 1;
+      const partId = `structure-${structure}-platform-${part}`;
+      if ((structuralHealth.get(partId) ?? 1) > 0) height = Math.max(height, tower.top - pillarDrop);
+    }
+  }
+  return { ...shared, y: matchedStructuralDeck ? Math.max(0, Number.isFinite(height) ? height : 0) : shared.y };
 }
 
 function safeBody(request) {
@@ -553,6 +602,10 @@ export class MatchRoom extends DurableObject {
       const humans = this.humanEntries().length;
       const loadout = resumed?.player.loadout || sanitizeLoadout(url.searchParams.get("loadout"), WEAPONS, DEFAULT_LOADOUT);
       const player = resumed ? structuredClone(resumed.player) : roomPlayer(id, sanitizePlayerName(url.searchParams.get("name")), loadout, humans);
+      player.lifeStateCapable = url.searchParams.get("lifeState") === "1";
+      player.respawnId ||= "";
+      player.respawnSpawnIndex = Number.isInteger(player.respawnSpawnIndex) ? player.respawnSpawnIndex : -1;
+      player.awaitingRespawnState = Boolean(player.awaitingRespawnState && player.lifeStateCapable);
       const priorResumeToken = resumed?.player.resumeToken || "";
       const supersededSockets = resumed
         ? [...new Set([resumed.socket, ...this.humanEntries().filter(([, active]) => active.id === id).map(([socket]) => socket)].filter(Boolean))]
@@ -610,9 +663,20 @@ export class MatchRoom extends DurableObject {
     }
   }
 
-  updatePlayerState(player, state, now) {
+  updatePlayerState(player, state, now, requireLifeState = false) {
     if (!player.alive) return null;
     const position = sanitizeVector(state.position);
+    if (requireLifeState && player.respawnId) {
+      if (Math.trunc(Number(state.lifeSequence)) !== player.deaths || state.respawnId !== player.respawnId) return null;
+      if (player.awaitingRespawnState) {
+        const spawn = authoritativeSpawnPoint(player.respawnSpawnIndex, this.meta.seed, this.structuralHealth);
+        const invalidSpawn = !spawn ||
+          Math.hypot(position.x - spawn.x, position.z - spawn.z) > RESPAWN_SPAWN_TOLERANCE ||
+          position.y < -1 || Math.abs(position.y - spawn.y) > RESPAWN_VERTICAL_TOLERANCE ||
+          playerCapsuleIntersectsStructure(position, this.meta.seed, this.structuralHealth);
+        if (invalidSpawn) return null;
+      }
+    }
     const elapsed = Math.min(1.5, Math.max(.05, (now - (player.lastStateAt || now)) / 1000));
     const movementBudget = Math.min(MAX_ORDINARY_STATE_DISPLACEMENT, 9 + 95 * elapsed);
     const portalTransition = player.hasState && isArenaPortalTransition(player.position, position);
@@ -631,19 +695,22 @@ export class MatchRoom extends DurableObject {
     if (portalTransition) player.lastPortalAt = now;
     player.lastStateAt = now;
     player.hasState = true;
+    if (requireLifeState) player.awaitingRespawnState = false;
     return publicState(player);
   }
 
   async handleState(socket, message) {
     const now = Date.now();
+    const session = socket.deserializeAttachment();
     const requested = Array.isArray(message.players) ? message.players.slice(0, MAX_MATCH_PLAYERS) : [];
     const changed = [];
     let botsChanged = false;
     for (const state of this.authorizedPlayers(socket, requested)) {
       const entry = this.playerById(state.id);
       if (!entry) continue;
+      const update = this.updatePlayerState(entry.player, state, now, Boolean(session.lifeStateCapable));
+      if (!update) continue;
       for (const weaponId of entry.player.loadout) this.applyLazyReload(entry.player, weaponId, now);
-      const update = this.updatePlayerState(entry.player, state, now);
       if (update) changed.push(update);
       if (update && entry.player.bot) botsChanged = true;
       if (entry.socket) entry.socket.serializeAttachment(entry.player);
@@ -662,7 +729,7 @@ export class MatchRoom extends DurableObject {
 
   async handleFire(socket, message) {
     const entry = this.authorizedActor(socket, message.playerId);
-    if (!entry?.player.alive) return;
+    if (!playerCanAct(entry?.player)) return;
     const player = entry.player;
     const weapon = WEAPONS[message.weaponId];
     const slotIndex = Math.trunc(finiteNumber(message.slotIndex, -1, 0, 4));
@@ -716,7 +783,7 @@ export class MatchRoom extends DurableObject {
   async handleReload(socket, message) {
     const entry = this.authorizedActor(socket, message.playerId);
     const weapon = WEAPONS[message.weaponId];
-    if (!entry || !weapon || !weaponUsesAmmo(weapon) || !entry.player.loadout.includes(weapon.id)) return;
+    if (!entry || !playerCanAct(entry.player) || !weapon || !weaponUsesAmmo(weapon) || !entry.player.loadout.includes(weapon.id)) return;
     const player = entry.player;
     if (player.ammo[weapon.id] >= weapon.ammo || player.reloadEndsAt[weapon.id]) return;
     player.reloadEndsAt[weapon.id] = Date.now() + weapon.reload * 1000;
@@ -756,6 +823,11 @@ export class MatchRoom extends DurableObject {
       target.alive = false;
       target.deaths += 1;
       target.respawnAt = now + 2_800;
+      target.respawnId = "";
+      target.respawnSpawnIndex = -1;
+      target.respawnAcceptedAt = 0;
+      target.respawnAmmo = null;
+      target.awaitingRespawnState = false;
       if (target.id !== attacker.id) attacker.score += 1;
     }
     if (targetEntry.socket) targetEntry.socket.serializeAttachment(target);
@@ -767,7 +839,7 @@ export class MatchRoom extends DurableObject {
     this.broadcast({
       type: "damage", attackerId: attacker.id, targetId: target.id, weaponId: weapon.id,
       damage, health: target.health, killed, push: validation.push, respawnAt: target.respawnAt,
-      scores: Object.fromEntries(this.allPlayers().map((player) => [player.id, player.score])), serverTime: now
+      lifeSequence: target.deaths, scores: Object.fromEntries(this.allPlayers().map((player) => [player.id, player.score])), serverTime: now
     });
     return killed;
   }
@@ -775,12 +847,12 @@ export class MatchRoom extends DurableObject {
   async handleHit(socket, message) {
     const attackerEntry = this.authorizedActor(socket, message.attackerId);
     const weapon = WEAPONS[message.weaponId];
-    if (!attackerEntry?.player.alive || !weapon) return;
+    if (!playerCanAct(attackerEntry?.player) || !weapon) return;
     const attacker = attackerEntry.player;
     if (!attacker.loadout.includes(weapon.id)) return;
     const now = Date.now();
     const requestedTarget = this.playerById(message.targetId);
-    if (!requestedTarget?.player.alive) return;
+    if (!playerCanAct(requestedTarget?.player)) return;
     const candidate = this.recentValidShot(attacker, requestedTarget.player, weapon, message, now);
     if (!candidate) return;
     if (candidate.validation.strategy === "explosive" && message.phase !== "hazard") {
@@ -788,7 +860,7 @@ export class MatchRoom extends DurableObject {
       candidate.shot.resolvedExplosion = true;
       candidate.shot.hits = Object.create(null);
       for (const target of this.allPlayers()) {
-        if (!target.alive) continue;
+        if (!playerCanAct(target)) continue;
         const entry = this.playerById(target.id);
         const validation = validateHitProposal({
           shot: candidate.shot, attacker, target, weapon, impact: candidate.impact,
@@ -806,7 +878,7 @@ export class MatchRoom extends DurableObject {
   async handleTeleport(socket, message) {
     const entry = this.authorizedActor(socket, message.playerId);
     const weapon = WEAPONS.teleport_projectile;
-    if (!entry?.player.alive || !entry.player.loadout.includes(weapon.id)) return;
+    if (!playerCanAct(entry?.player) || !entry.player.loadout.includes(weapon.id)) return;
     const now = Date.now();
     const history = this.recentFires.get(entry.player.id) || [];
     const shot = [...history].reverse().find((candidate) => candidate.id === message.shotId && candidate.weaponId === weapon.id && !candidate.teleported);
@@ -854,7 +926,7 @@ export class MatchRoom extends DurableObject {
     const attackerEntry = this.authorizedActor(socket, message.attackerId);
     const weapon = WEAPONS[message.weaponId];
     const canonicalStructuralDamage = weapon?.structureDamage || weapon?.terrainRadius || 0;
-    if (!attackerEntry?.player.alive || (!weapon?.terrainRadius && !canonicalStructuralDamage) || !attackerEntry.player.loadout.includes(weapon.id)) return;
+    if (!playerCanAct(attackerEntry?.player) || (!weapon?.terrainRadius && !canonicalStructuralDamage) || !attackerEntry.player.loadout.includes(weapon.id)) return;
     const position = sanitizeVector(message.position);
     if (Math.abs(position.x) > 120 || Math.abs(position.z) > 120 || position.y < -2 || position.y > 100) return;
     const now = Date.now();
@@ -923,7 +995,7 @@ export class MatchRoom extends DurableObject {
 
   async handleCrush(socket, message) {
     const targetEntry = this.authorizedActor(socket, message.playerId);
-    if (!targetEntry?.player.alive) return;
+    if (!playerCanAct(targetEntry?.player)) return;
     const structureId = String(message.structureId || "");
     const terrainEventId = String(message.terrainEventId || "");
     const now = Date.now();
@@ -943,6 +1015,11 @@ export class MatchRoom extends DurableObject {
     target.alive = false;
     target.deaths += 1;
     target.respawnAt = now + 2_800;
+    target.respawnId = "";
+    target.respawnSpawnIndex = -1;
+    target.respawnAcceptedAt = 0;
+    target.respawnAmmo = null;
+    target.awaitingRespawnState = false;
     if (attackerEntry?.player && attackerEntry.player.id !== target.id) attackerEntry.player.score += 1;
     if (targetEntry.socket) targetEntry.socket.serializeAttachment(target);
     if (attackerEntry?.socket) attackerEntry.socket.serializeAttachment(attackerEntry.player);
@@ -958,25 +1035,77 @@ export class MatchRoom extends DurableObject {
       health: 0,
       killed: true,
       respawnAt: target.respawnAt,
+      lifeSequence: target.deaths,
       scores: Object.fromEntries(this.allPlayers().map((player) => [player.id, player.score])),
       serverTime: now
     });
     await this.checkMatchEnd(now);
   }
 
+  sendToSocket(socket, message) {
+    try { socket.send(JSON.stringify(message)); }
+    catch { socket.close(1011, TEXT.errors.deliveryFailed); }
+  }
+
+  respawnMessage(player) {
+    return {
+      type: "respawn",
+      playerId: player.id,
+      lifeSequence: player.deaths,
+      respawnId: player.respawnId,
+      spawnIndex: player.respawnSpawnIndex,
+      respawnSpawnIndex: player.respawnSpawnIndex,
+      ammo: structuredClone(player.respawnAmmo || player.ammo),
+      serverTime: player.respawnAcceptedAt || Date.now()
+    };
+  }
+
   async handleRespawn(socket, message) {
     const entry = this.authorizedActor(socket, message.playerId);
-    if (!entry || entry.player.alive || Date.now() < entry.player.respawnAt) return;
+    if (!entry) return;
     const player = entry.player;
+    const requester = socket.deserializeAttachment();
+    const hasLifeSequence = Number.isFinite(Number(message.lifeSequence));
+    const requestedLifeSequence = hasLifeSequence ? Math.trunc(Number(message.lifeSequence)) : player.deaths;
+    if (requester.lifeStateCapable && !hasLifeSequence || requestedLifeSequence !== player.deaths) return;
+    const now = Date.now();
+    if (player.alive) {
+      if (player.respawnId) {
+        this.sendToSocket(socket, this.respawnMessage(player));
+        console.log(JSON.stringify({ event: "respawn_replayed", roomCode: this.meta?.roomCode, playerId: player.id, lifeSequence: player.deaths }));
+      }
+      return;
+    }
+    if (now < player.respawnAt) {
+      this.sendToSocket(socket, {
+        type: "respawn_pending",
+        playerId: player.id,
+        lifeSequence: player.deaths,
+        respawnAt: player.respawnAt,
+        serverTime: now
+      });
+      return;
+    }
     player.health = 100;
     player.alive = true;
     player.respawnAt = 0;
     player.ammo = playerAmmo(player.loadout);
     player.reloadEndsAt = {};
     player.hasState = false;
+    player.respawnId = crypto.randomUUID();
+    const rosterIndex = Math.max(0, this.allPlayers().findIndex((candidate) => candidate.id === player.id));
+    player.respawnSpawnIndex = (player.deaths * 5 + rosterIndex) % ARENA_SPAWN_POINTS.length;
+    player.respawnAcceptedAt = now;
+    player.respawnAmmo = structuredClone(player.ammo);
+    player.awaitingRespawnState = Boolean(requester.lifeStateCapable);
     if (entry.socket) entry.socket.serializeAttachment(player);
-    if (player.bot) this.schedulePersistence({ bots: true });
-    this.broadcast({ type: "respawn", playerId: player.id, spawnIndex: (player.deaths * 5 + this.allPlayers().indexOf(player)) % MAX_MATCH_PLAYERS, ammo: player.ammo, serverTime: Date.now() });
+    const resumeChanged = this.syncResumePlayer(player);
+    await Promise.all([
+      player.bot ? this.persistBots() : Promise.resolve(),
+      resumeChanged ? this.persistResumeSessions() : Promise.resolve()
+    ]);
+    this.broadcast(this.respawnMessage(player));
+    console.log(JSON.stringify({ event: "respawn_accepted", roomCode: this.meta?.roomCode, playerId: player.id, lifeSequence: player.deaths, respawnId: player.respawnId, spawnIndex: player.respawnSpawnIndex }));
   }
 
   async handleResumeAck(socket, message) {

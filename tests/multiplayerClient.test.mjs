@@ -123,13 +123,23 @@ try {
   const resumeUrl = new URL(FakeWebSocket.instances[2].url);
   assert.equal(resumeUrl.pathname, "/api/rooms/ROOM-B/connect");
   assert.equal(resumeUrl.searchParams.get("resumeToken"), welcomeMessage.resumeToken);
+  assert.equal(resumeUrl.searchParams.get("lifeState"), "1", "new clients opt into authoritative lifecycle state without changing protocol v1");
   const portalPlayer = {
     id: client.playerId, position: { x: 0, y: 66.35, z: -10 }, velocity: { x: 0, y: 5, z: 0 },
-    aim: { x: 1, y: 0, z: 0 }, slotIndex: 0, grounded: false, networkPositionDirty: true
+    aim: { x: 1, y: 0, z: 0 }, slotIndex: 0, grounded: false, networkPositionDirty: true,
+    networkLifeSequence: 6, networkRespawnId: "34343434-3434-4434-8434-343434343434"
   };
   const activeSocket = FakeWebSocket.instances[2];
   client.fire(portalPlayer, { id: "blaster" }, portalPlayer.aim, true);
   assert.deepEqual(activeSocket.sent.slice(-2).map(({ type }) => type), ["state", "fire"], "a portal frame sends its authoritative state before a shot can use a stale server origin");
+  assert.deepEqual(
+    activeSocket.sent.at(-2).players[0],
+    {
+      id: portalPlayer.id, position: portalPlayer.position, velocity: portalPlayer.velocity, aim: portalPlayer.aim,
+      slotIndex: 0, grounded: false, lifeSequence: 6, respawnId: portalPlayer.networkRespawnId
+    },
+    "capable state carries the exact accepted life identifiers"
+  );
   assert.equal(portalPlayer.networkPositionDirty, false, "a successfully transmitted portal state clears its ordering marker");
   client.reportTeleport(portalPlayer, { x: 50, y: 1.2, z: 0 }, portalPlayer.networkShotId);
   assert.equal(activeSocket.sent.at(-1).type, "teleport", "a teleport-projectile displacement is proposed against its authoritative shot instead of masquerading as ordinary movement");
@@ -139,6 +149,8 @@ try {
   );
   assert.equal(activeSocket.sent.at(-1).type, "terrain_hit_batch", "six synchronized cluster impacts share one bounded client packet");
   assert.equal(activeSocket.sent.at(-1).hits.length, 6);
+  client.requestRespawn(portalPlayer.id, portalPlayer.networkLifeSequence);
+  assert.deepEqual(activeSocket.sent.at(-1), { type: "respawn", playerId: portalPlayer.id, lifeSequence: 6 });
   client.close();
 
   const privateOptions = {

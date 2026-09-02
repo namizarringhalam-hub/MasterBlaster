@@ -91,6 +91,38 @@ export function matchTimeRemaining(endsAt, now = Date.now()) {
   return Math.max(0, finiteNumber(endsAt, now) - now);
 }
 
+export function serverRemainingSeconds(endsAt, serverTime) {
+  return Math.max(0, (finiteNumber(endsAt) - finiteNumber(serverTime)) / 1000);
+}
+
+export function respawnDisposition(currentLifeSequence, alive, receivedLifeSequence) {
+  const current = Math.max(0, Math.trunc(finiteNumber(currentLifeSequence)));
+  const received = Math.max(0, Math.trunc(finiteNumber(receivedLifeSequence, current)));
+  if (received < current) return "stale";
+  if (alive && received === current) return "duplicate";
+  return "apply";
+}
+
+export function advanceRespawnRetry(request = {}, elapsedSeconds = 0) {
+  const elapsed = Math.max(0, finiteNumber(elapsedSeconds));
+  const next = {
+    retryIn: Math.max(0, finiteNumber(request.retryIn) - elapsed),
+    silence: Math.max(0, finiteNumber(request.silence) + elapsed),
+    recoveryStarted: Boolean(request.recoveryStarted),
+    shouldRequest: false,
+    shouldRecover: false
+  };
+  if (next.retryIn === 0) {
+    next.retryIn = 1;
+    next.shouldRequest = true;
+  }
+  if (next.silence >= 4 && !next.recoveryStarted) {
+    next.recoveryStarted = true;
+    next.shouldRecover = true;
+  }
+  return next;
+}
+
 export function squaredDistance(left, right) {
   const x = (left?.x || 0) - (right?.x || 0);
   const y = (left?.y || 0) - (right?.y || 0);

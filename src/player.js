@@ -180,6 +180,9 @@ export class Fighter {
     this.ledgeContact = null;
     this.alive = true;
     this.deaths = 0;
+    this.networkLifeSequence = 0;
+    this.networkRespawnId = "";
+    this.networkRespawnSpawnIndex = -1;
     this.botThink = 0;
     this.botDodge = 1;
     this.botTarget = null;

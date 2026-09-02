@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { structuralPartBounds, WEAPONS } from "../../src/gameData.js";
+import { ARENA_SPAWN_POINTS, DEFAULT_LOADOUT, structuralPartBounds, WEAPONS } from "../../src/gameData.js";
 
 describe("MatchRoom durable authority", () => {
   it("applies mortar damage to a structure inside its canonical blast radius", async () => {
@@ -397,6 +397,183 @@ describe("MatchRoom durable authority", () => {
       expect(restored?.deaths).toBe(3);
       expect(restored?.ammo?.mortar).toBe(0);
       expect(room.recentFires.has(retired.id)).toBe(false);
+    });
+  });
+
+  it("makes capable bot-host respawns idempotent and rejects stale post-respawn state", async () => {
+    const stub = env.MATCH_ROOMS.getByName("RESPAWN-HANDSHAKE-BOT");
+    let accepted;
+    await runInDurableObject(stub, async (room) => {
+      await room.ready;
+      room.meta = {
+        roomCode: "RESPAWN-HANDSHAKE-BOT", seed: "RESPAWN", mode: "private", phase: "playing",
+        configuredBotCount: 1, targetSize: 1, targetScore: 10, endsAt: Date.now() + 60_000, ended: false
+      };
+      await room.reconcileBots();
+      const bot = room.bots.get("bot-1");
+      Object.assign(bot, {
+        alive: false, health: 0, deaths: 3, score: 4, respawnAt: Date.now() + 5_000,
+        respawnId: "", respawnSpawnIndex: -1, respawnAcceptedAt: 0, respawnAmmo: null,
+        awaitingRespawnState: false, hasState: true, position: { x: 42, y: 2, z: -37 }
+      });
+      room.botHostId = () => "host-player";
+      const sent = [];
+      const host = {
+        deserializeAttachment: () => ({ id: "host-player", lifeStateCapable: true }),
+        send: (value) => sent.push(JSON.parse(value)), close: () => {}
+      };
+      const intruder = {
+        deserializeAttachment: () => ({ id: "intruder", lifeStateCapable: true }),
+        send: (value) => sent.push(JSON.parse(value)), close: () => {}
+      };
+      const broadcasts = [];
+      room.broadcast = (message) => broadcasts.push(structuredClone(message));
+
+      await room.handleRespawn(host, { playerId: bot.id, lifeSequence: 3 });
+      expect(sent.at(-1)).toMatchObject({ type: "respawn_pending", playerId: bot.id, lifeSequence: 3 });
+      expect(sent.at(-1).respawnAt).toBe(bot.respawnAt);
+      expect(bot.alive).toBe(false);
+
+      bot.respawnAt = Date.now() - 1;
+      await room.handleRespawn(intruder, { playerId: bot.id, lifeSequence: 3 });
+      expect(bot.alive).toBe(false);
+      expect(broadcasts).toHaveLength(0);
+      await room.handleRespawn(host, { playerId: bot.id, lifeSequence: 2 });
+      expect(bot.alive).toBe(false);
+      await room.handleRespawn(host, { playerId: bot.id, lifeSequence: 3 });
+      expect(bot.alive).toBe(true);
+      expect(bot.awaitingRespawnState).toBe(true);
+      expect(bot.respawnId).toMatch(/^[0-9a-f-]{36}$/i);
+      expect(broadcasts).toHaveLength(1);
+      accepted = structuredClone(broadcasts[0]);
+      const acceptedAmmo = bot.ammo[bot.loadout[0]];
+      await room.handleFire(host, {
+        playerId: bot.id, weaponId: bot.loadout[0], slotIndex: 0,
+        shotId: crypto.randomUUID(), direction: { x: 1, y: 0, z: 0 }
+      });
+      expect(bot.ammo[bot.loadout[0]]).toBe(acceptedAmmo);
+      expect(broadcasts).toHaveLength(1);
+
+      bot.health = 63;
+      bot.ammo[bot.loadout[0]] = 2;
+      bot.position = { x: 17, y: 4, z: 19 };
+      await room.handleRespawn(host, { playerId: bot.id, lifeSequence: 3 });
+      expect(sent.at(-1)).toEqual(accepted);
+      expect(broadcasts).toHaveLength(1);
+      expect(bot.health).toBe(63);
+      expect(bot.ammo[bot.loadout[0]]).toBe(2);
+      expect(bot.position).toEqual({ x: 17, y: 4, z: 19 });
+
+      const spawn = ARENA_SPAWN_POINTS[accepted.respawnSpawnIndex];
+      const state = {
+        position: { x: spawn.x, y: spawn.y, z: spawn.z }, velocity: { x: 0, y: 0, z: 0 },
+        aim: { x: 1, y: 0, z: 0 }, slotIndex: 0, grounded: true
+      };
+      expect(room.updatePlayerState(bot, state, Date.now(), true)).toBeNull();
+      expect(room.updatePlayerState(bot, { ...state, lifeSequence: 2, respawnId: accepted.respawnId }, Date.now(), true)).toBeNull();
+      expect(room.updatePlayerState(bot, { ...state, lifeSequence: 3, respawnId: crypto.randomUUID() }, Date.now(), true)).toBeNull();
+      expect(room.updatePlayerState(bot, {
+        ...state, lifeSequence: 3, respawnId: accepted.respawnId,
+        position: { ...state.position, x: state.position.x + 8.01 }
+      }, Date.now(), true)).toBeNull();
+      expect(room.updatePlayerState(bot, {
+        ...state, lifeSequence: 3, respawnId: accepted.respawnId,
+        position: { ...state.position, y: state.position.y + 8.01 }
+      }, Date.now(), true)).toBeNull();
+      expect(room.updatePlayerState(bot, {
+        ...state, lifeSequence: 3, respawnId: accepted.respawnId,
+        position: { ...state.position, y: -1.01 }
+      }, Date.now(), true)).toBeNull();
+      const elevated = {
+        ...structuredClone(bot), id: "elevated-respawn", hasState: false, awaitingRespawnState: true,
+        respawnSpawnIndex: 0, position: { x: 10, y: 66, z: 0 }
+      };
+      const elevatedState = {
+        ...state, lifeSequence: 3, respawnId: accepted.respawnId,
+        position: { x: 10, y: 0, z: 0 }
+      };
+      expect(room.updatePlayerState(elevated, elevatedState, Date.now(), true)).toBeNull();
+      expect(room.updatePlayerState(elevated, { ...elevatedState, position: { x: 10, y: 66, z: 0 } }, Date.now(), true)?.position.y).toBe(66);
+      room.structuralHealth.set("structure-1-pillar-1", 0);
+      const lowered = {
+        ...structuredClone(bot), id: "lowered-respawn", hasState: false, awaitingRespawnState: true,
+        respawnSpawnIndex: 5, position: { x: 50, y: 31, z: -22 }
+      };
+      const loweredY = 31 - 31 / 6;
+      expect(room.updatePlayerState(lowered, {
+        ...state, lifeSequence: 3, respawnId: accepted.respawnId,
+        position: { x: 50, y: loweredY, z: -22 }
+      }, Date.now(), true)?.position.y).toBeCloseTo(loweredY);
+      room.structuralHealth.delete("structure-1-pillar-1");
+      expect(bot.hasState).toBe(false);
+      const valid = room.updatePlayerState(bot, { ...state, lifeSequence: 3, respawnId: accepted.respawnId }, Date.now(), true);
+      expect(valid).toMatchObject({ id: bot.id, lifeSequence: 3, respawnId: accepted.respawnId });
+      expect(bot.awaitingRespawnState).toBe(false);
+      expect(bot.position).toEqual(state.position);
+      await room.persistBots();
+    });
+    await evictDurableObject(stub);
+    await runInDurableObject(stub, async (room) => {
+      await room.ready;
+      const restored = room.bots.get("bot-1");
+      expect(restored).toMatchObject({
+        alive: true, deaths: 3, respawnId: accepted.respawnId,
+        respawnSpawnIndex: accepted.respawnSpawnIndex, awaitingRespawnState: false
+      });
+      expect(restored.position.x).toBe(ARENA_SPAWN_POINTS[accepted.respawnSpawnIndex].x);
+    });
+  });
+
+  it("keeps legacy respawns compatible while persisting capable human resume lifecycle", async () => {
+    const legacyStub = env.MATCH_ROOMS.getByName("RESPAWN-LEGACY");
+    await runInDurableObject(legacyStub, async (room) => {
+      await room.ready;
+      room.meta = { roomCode: "RESPAWN-LEGACY", seed: "LEGACY", mode: "private", phase: "playing", configuredBotCount: 1, targetSize: 1, ended: false };
+      await room.reconcileBots();
+      const bot = room.bots.get("bot-1");
+      Object.assign(bot, { alive: false, health: 0, deaths: 1, respawnAt: Date.now() - 1, respawnId: "", respawnSpawnIndex: -1 });
+      room.botHostId = () => "legacy-host";
+      const sent = [];
+      const socket = { deserializeAttachment: () => ({ id: "legacy-host", lifeStateCapable: false }), send: (value) => sent.push(JSON.parse(value)), close: () => {} };
+      room.broadcast = (message) => sent.push(structuredClone(message));
+      await room.handleRespawn(socket, { playerId: bot.id });
+      expect(sent.at(-1).type).toBe("respawn");
+      expect(bot.awaitingRespawnState).toBe(false);
+      expect(room.updatePlayerState(bot, {
+        position: { x: 31, y: 2, z: -14 }, velocity: { x: 0, y: 0, z: 0 },
+        aim: { x: 0, y: 0, z: 1 }, slotIndex: 0, grounded: true
+      }, Date.now(), false)?.position).toEqual({ x: 31, y: 2, z: -14 });
+    });
+
+    const resumeStub = env.MATCH_ROOMS.getByName("RESPAWN-HUMAN-RESUME");
+    const token = "12121212-1212-4212-8212-121212121212";
+    let respawnId;
+    await runInDurableObject(resumeStub, async (room) => {
+      await room.ready;
+      room.meta = { roomCode: "RESPAWN-HUMAN-RESUME", phase: "playing", ended: false };
+      const player = {
+        id: "human-respawn", bot: false, alive: false, health: 0, score: 5, deaths: 2,
+        respawnAt: Date.now() - 1, loadout: [...DEFAULT_LOADOUT],
+        ammo: {}, reloadEndsAt: {}, position: { x: 3, y: 2, z: 1 }, hasState: true
+      };
+      room.resumeSessions.set(token, { player: structuredClone(player), expiresAt: Date.now() + 45_000 });
+      const attachment = { ...player, lifeStateCapable: true };
+      const playerSocket = { serializeAttachment: (value) => Object.assign(attachment, structuredClone(value)) };
+      const requester = { deserializeAttachment: () => attachment, send: () => {}, close: () => {} };
+      room.authorizedActor = () => ({ player, socket: playerSocket });
+      room.allPlayers = () => [player];
+      room.broadcast = () => {};
+      await room.handleRespawn(requester, { playerId: player.id, lifeSequence: 2 });
+      respawnId = player.respawnId;
+      expect(attachment.respawnId).toBe(respawnId);
+      expect(room.resumeSessions.get(token)?.player).toMatchObject({
+        alive: true, deaths: 2, respawnId, respawnSpawnIndex: player.respawnSpawnIndex, awaitingRespawnState: true
+      });
+    });
+    await evictDurableObject(resumeStub);
+    await runInDurableObject(resumeStub, async (room) => {
+      await room.ready;
+      expect(room.resumeSessions.get(token)?.player).toMatchObject({ alive: true, deaths: 2, respawnId, awaitingRespawnState: true });
     });
   });
 });

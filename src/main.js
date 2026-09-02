@@ -11,7 +11,7 @@ import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, c
 import { NeonRenderPipeline } from "./renderPipeline.js";
 import { combatMusicIntensity } from "./musicScore.js";
 import { MultiplayerClient } from "./multiplayer.js";
-import { uniquePlayersById } from "./multiplayerProtocol.js";
+import { advanceRespawnRetry, respawnDisposition, serverRemainingSeconds, uniquePlayersById } from "./multiplayerProtocol.js";
 import { createGrappleRopeGeometry, updateGrappleRopeGeometry } from "./grappleRope.js";
 import TEXT, { formatText } from "./playerText.js";
 
@@ -243,7 +243,7 @@ class BlasterBattle {
     this.networkTargets = new Map();
     this.networkEndsAt = 0;
     this.networkRecovering = false;
-    this.networkRespawnRequests = new Set();
+    this.networkRespawnRequests = new Map();
     this.botPlanTimer = 0;
     this.botPlanPending = false;
     this.botPlanner = null;
@@ -1253,6 +1253,15 @@ class BlasterBattle {
     }
   }
 
+  authoritativeNetworkPosition(data, fallbackIndex = 0, current = null) {
+    if (data?.position) return new THREE.Vector3(data.position.x, data.position.y, data.position.z);
+    const spawns = this.world.spawnPoints();
+    if (Number.isInteger(data?.respawnSpawnIndex) && data.respawnSpawnIndex >= 0) {
+      return spawns[data.respawnSpawnIndex % spawns.length].clone();
+    }
+    return current?.clone() || spawns[fallbackIndex % spawns.length].clone();
+  }
+
   createOnlineFighter(data, position) {
     const fighter = new Fighter(this.scene, {
       id: data.id,
@@ -1264,6 +1273,9 @@ class BlasterBattle {
     fighter.health = alive ? data.health ?? 100 : 100;
     fighter.slotIndex = data.slotIndex || 0;
     fighter.ammo = { ...fighter.ammo, ...data.ammo };
+    fighter.networkLifeSequence = Math.max(0, Math.trunc(Number(data.lifeSequence) || 0));
+    fighter.networkRespawnId = String(data.respawnId || "");
+    fighter.networkRespawnSpawnIndex = Number.isInteger(data.respawnSpawnIndex) ? data.respawnSpawnIndex : -1;
     fighter.networkRemote = !this.controlsNetworkPlayer(fighter);
     if (data.aim) fighter.aim.set(data.aim.x, data.aim.y, data.aim.z).normalize();
     if (data.velocity) fighter.velocity.set(data.velocity.x, data.velocity.y, data.velocity.z);
@@ -1328,17 +1340,17 @@ class BlasterBattle {
     const spawns = this.world.spawnPoints();
     const playerLoadout = this.settings.loadout.length === 5 ? this.settings.loadout : DEFAULT_LOADOUT;
     const weaponIds = Object.keys(WEAPONS);
+    let onlineRoster = null;
     if (welcome) {
       const roster = uniquePlayersById(welcome.players).sort((left, right) => Number(right.id === welcome.playerId) - Number(left.id === welcome.playerId));
-      this.players = roster.map((data, index) => {
-        const spawn = data.position
-          ? new THREE.Vector3(data.position.x, data.position.y, data.position.z)
-          : spawns[index % spawns.length];
+      onlineRoster = roster;
+      this.players = onlineRoster.map((data, index) => {
+        const spawn = this.authoritativeNetworkPosition(data, index);
         const fighter = this.createOnlineFighter(data, spawn);
         if (fighter.networkRemote) this.networkTargets.set(fighter.id, data);
         return fighter;
       });
-      this.scores = roster.map((player) => player.score || 0);
+      this.scores = onlineRoster.map((player) => player.score || 0);
     } else {
       this.players = [new Fighter(this.scene, { id: "p1", name: this.settings.displayName, ...PLAYER_COLORS[0] }, playerLoadout, spawns[0])];
       for (let index = 0; index < clampBotCount(this.settings.botCount); index++) {
@@ -1350,7 +1362,9 @@ class BlasterBattle {
       this.scores = this.players.map(() => 0);
     }
     this.players[0].aim.set(-this.players[0].position.x, -3.5, -this.players[0].position.z).normalize();
-    this.respawnTimers = this.players.map(() => 0);
+    this.respawnTimers = onlineRoster
+      ? onlineRoster.map((player) => player.respawnAt ? serverRemainingSeconds(player.respawnAt, welcome.serverTime) : 0)
+      : this.players.map(() => 0);
     this.cameraYaw = Math.atan2(this.players[0].aim.x, this.players[0].aim.z);
     this.cameraPitch = this.players[0].position.y > 50 ? -.38 : -.08;
     this.updateCamera(1);
@@ -1405,30 +1419,33 @@ class BlasterBattle {
       current.player.dispose();
       this.networkTargets.delete(id);
     }
-    const spawns = this.world.spawnPoints();
     let rosterChanged = ordered.length !== this.players.length;
     this.players = ordered.map((data, index) => {
       let fighter = prior.get(data.id)?.player;
       if (!fighter) {
-        const spawn = data.position
-          ? new THREE.Vector3(data.position.x, data.position.y, data.position.z)
-          : spawns[index % spawns.length];
+        const spawn = this.authoritativeNetworkPosition(data, index);
         fighter = this.createOnlineFighter(data, spawn);
         rosterChanged = true;
       }
       fighter.isBot = Boolean(data.bot);
       fighter.networkRemote = !this.controlsNetworkPlayer(fighter);
-      const authoritativePosition = data.position
-        ? new THREE.Vector3(data.position.x, data.position.y, data.position.z)
-        : fighter.position;
+      const priorLifeSequence = fighter.networkLifeSequence || 0;
+      const lifeSequence = Math.max(0, Math.trunc(Number(data.lifeSequence) || 0));
+      const lifeAdvanced = lifeSequence > priorLifeSequence;
+      const authoritativePosition = this.authoritativeNetworkPosition(data, index, fighter.position);
+      if (data.alive !== false && fighter.alive && lifeAdvanced) fighter.respawn(authoritativePosition);
       fighter.reconcileAuthoritativeLife(data.health ?? fighter.health, data.alive !== false, authoritativePosition);
+      fighter.networkLifeSequence = lifeSequence;
+      fighter.networkRespawnId = String(data.respawnId || "");
+      fighter.networkRespawnSpawnIndex = Number.isInteger(data.respawnSpawnIndex) ? data.respawnSpawnIndex : -1;
       fighter.ammo = { ...fighter.ammo, ...data.ammo };
+      if (data.alive !== false || lifeAdvanced) this.networkRespawnRequests.delete(fighter.id);
       if (fighter.networkRemote) this.networkTargets.set(fighter.id, data);
       else this.networkTargets.delete(fighter.id);
       return fighter;
     });
     this.scores = ordered.map((data) => data.score ?? prior.get(data.id)?.score ?? 0);
-    this.respawnTimers = ordered.map((data) => data.respawnAt ? Math.max(0, (data.respawnAt - Date.now()) / 1000) : 0);
+    this.respawnTimers = ordered.map((data) => data.respawnAt ? serverRemainingSeconds(data.respawnAt, message.serverTime) : 0);
     if (rosterChanged && this.state === "play") this.renderHud();
   }
 
@@ -1451,6 +1468,17 @@ class BlasterBattle {
       for (const data of message.players || []) {
         const player = this.players.find((candidate) => candidate.id === data.id);
         if (!player || this.controlsNetworkPlayer(player)) continue;
+        const lifeSequence = Number.isFinite(Number(data.lifeSequence)) ? Math.trunc(Number(data.lifeSequence)) : player.networkLifeSequence;
+        if (lifeSequence < player.networkLifeSequence) continue;
+        const reconcilesLife = Boolean(data.respawnId) && (!player.alive || lifeSequence > player.networkLifeSequence);
+        if (reconcilesLife && data.position) {
+          this.releaseGrapple(player, false, true);
+          player.respawn(new THREE.Vector3(data.position.x, data.position.y, data.position.z));
+          const playerIndex = this.players.indexOf(player);
+          if (playerIndex >= 0) this.respawnTimers[playerIndex] = 0;
+        }
+        player.networkLifeSequence = lifeSequence;
+        player.networkRespawnId = String(data.respawnId || player.networkRespawnId || "");
         this.networkTargets.set(player.id, data);
         if (data.ammo) player.ammo = { ...player.ammo, ...data.ammo };
       }
@@ -1473,6 +1501,7 @@ class BlasterBattle {
     }
     if (message.type === "damage") return this.applyNetworkDamage(message);
     if (message.type === "crush") return this.applyNetworkCrush(message);
+    if (message.type === "respawn_pending") return this.applyNetworkRespawnPending(message);
     if (message.type === "respawn") return this.applyNetworkRespawn(message);
     if (message.type === "match_end") {
       this.applyNetworkScores(message.scores);
@@ -1510,16 +1539,22 @@ class BlasterBattle {
     const target = this.players[targetIndex];
     const weapon = WEAPONS[message.weaponId];
     if (!target || !weapon) return;
+    const lifeSequence = Number.isFinite(Number(message.lifeSequence)) ? Math.trunc(Number(message.lifeSequence)) : target.networkLifeSequence;
+    if (lifeSequence < target.networkLifeSequence || (message.killed && !target.alive && lifeSequence <= target.networkLifeSequence) || (message.killed && target.networkRespawnId && lifeSequence <= target.networkLifeSequence)) return;
     const push = new THREE.Vector3(message.push?.x || 0, message.push?.y || 0, message.push?.z || 0);
     if (target.alive) target.takeHit(0, push);
     const killed = target.reconcileAuthoritativeLife(message.health, !message.killed) === "died";
+    target.networkLifeSequence = lifeSequence;
     if (target.alive) applyWeaponStatus(target, weapon);
     this.combatMusicPulse = Math.max(this.combatMusicPulse, target === this.players[0] || attacker === this.players[0] ? .8 : .45);
     this.spawnImpact(target.position, target, weapon, attacker);
     this.showCombatFeedback(target, attacker, weapon, message.killed || killed);
     if (message.killed || killed) {
+      target.networkRespawnId = "";
+      target.networkRespawnSpawnIndex = -1;
+      this.networkRespawnRequests.delete(target.id);
       this.releaseGrapple(target);
-      this.respawnTimers[targetIndex] = Math.max(0, (message.respawnAt - Date.now()) / 1000);
+      this.respawnTimers[targetIndex] = serverRemainingSeconds(message.respawnAt, message.serverTime);
     }
   }
 
@@ -1538,26 +1573,53 @@ class BlasterBattle {
     const target = this.players[targetIndex];
     const attacker = this.players.find((player) => player.id === message.attackerId) || null;
     if (!target) return;
+    const lifeSequence = Number.isFinite(Number(message.lifeSequence)) ? Math.trunc(Number(message.lifeSequence)) : target.networkLifeSequence;
+    if (lifeSequence < target.networkLifeSequence || (!target.alive && lifeSequence <= target.networkLifeSequence) || (target.networkRespawnId && lifeSequence <= target.networkLifeSequence)) return;
     const killed = target.reconcileAuthoritativeLife(message.health ?? 0, false) === "died";
+    target.networkLifeSequence = lifeSequence;
+    target.networkRespawnId = "";
+    target.networkRespawnSpawnIndex = -1;
     this.combatMusicPulse = 1;
     this.spawnImpact(target.position, target, STRUCTURAL_COLLAPSE, attacker);
     this.showCombatFeedback(target, attacker, STRUCTURAL_COLLAPSE, message.killed || killed);
     if (message.killed || killed) {
+      this.networkRespawnRequests.delete(target.id);
       this.releaseGrapple(target);
-      this.respawnTimers[targetIndex] = Math.max(0, (message.respawnAt - Date.now()) / 1000);
+      this.respawnTimers[targetIndex] = serverRemainingSeconds(message.respawnAt, message.serverTime);
     }
+  }
+
+  applyNetworkRespawnPending(message) {
+    const index = this.players.findIndex((player) => player.id === message.playerId);
+    const player = this.players[index];
+    if (!player || player.alive || !this.controlsNetworkPlayer(player)) return;
+    const lifeSequence = Math.trunc(Number(message.lifeSequence));
+    if (!Number.isFinite(lifeSequence) || lifeSequence < player.networkLifeSequence) return;
+    player.networkLifeSequence = lifeSequence;
+    this.respawnTimers[index] = serverRemainingSeconds(message.respawnAt, message.serverTime);
+    this.networkRespawnRequests.set(player.id, { retryIn: 0, silence: 0, recoveryStarted: false });
   }
 
   applyNetworkRespawn(message) {
     const index = this.players.findIndex((player) => player.id === message.playerId);
     const player = this.players[index];
     if (!player) return;
-    this.releaseGrapple(player, false, true);
-    const spawns = this.world.spawnPoints();
-    player.respawn(spawns[message.spawnIndex % spawns.length]);
-    player.ammo = { ...player.ammo, ...message.ammo };
+    const lifeSequence = Number.isFinite(Number(message.lifeSequence)) ? Math.trunc(Number(message.lifeSequence)) : player.networkLifeSequence;
+    const disposition = respawnDisposition(player.networkLifeSequence, player.alive, lifeSequence);
+    if (disposition === "stale") return;
+    player.networkLifeSequence = lifeSequence;
+    player.networkRespawnId = String(message.respawnId || player.networkRespawnId || "");
+    const spawnIndex = Number.isInteger(message.respawnSpawnIndex) ? message.respawnSpawnIndex : message.spawnIndex;
+    player.networkRespawnSpawnIndex = Number.isInteger(spawnIndex) ? spawnIndex : player.networkRespawnSpawnIndex;
     this.respawnTimers[index] = 0;
     this.networkRespawnRequests.delete(player.id);
+    if (disposition === "duplicate") return;
+    this.releaseGrapple(player, false, true);
+    const spawns = this.world.spawnPoints();
+    const safeSpawnIndex = Number.isInteger(spawnIndex) && spawnIndex >= 0 ? spawnIndex % spawns.length : 0;
+    player.respawn(spawns[safeSpawnIndex]);
+    player.ammo = { ...player.ammo, ...message.ammo };
+    player.networkPositionDirty = true;
     if (index === 0) {
       this.updateCamera(1);
     }
@@ -1852,7 +1914,7 @@ class BlasterBattle {
       else if (player.isBot) this.updateBot(player, dt);
     }
     for (const player of this.players) this.updateBurst(player, dt);
-    if (this.isOnlineMatch()) this.multiplayer.sendState(this.players.filter((player) => this.controlsNetworkPlayer(player)));
+    if (this.isOnlineMatch()) this.multiplayer.sendState(this.players.filter((player) => player.alive && this.controlsNetworkPlayer(player)));
     this.updateProjectiles(dt);
     this.updateHazards(dt);
     this.updateDecoys(dt);
@@ -3143,11 +3205,15 @@ class BlasterBattle {
       player.updateDeath(dt);
       if (this.isOnlineMatch()) {
         this.respawnTimers[index] = Math.max(0, (this.respawnTimers[index] || 0) - dt);
-        if (this.respawnTimers[index] === 0 && this.controlsNetworkPlayer(player) && !this.networkRespawnRequests.has(player.id)) {
-          this.networkRespawnRequests.add(player.id);
-          this.multiplayer.requestRespawn(player.id);
-          setTimeout(() => this.networkRespawnRequests.delete(player.id), 1000);
+        if (this.respawnTimers[index] > 0 || !this.controlsNetworkPlayer(player)) continue;
+        const request = advanceRespawnRetry(this.networkRespawnRequests.get(player.id), dt);
+        if (request.shouldRequest) {
+          this.multiplayer.requestRespawn(player.id, player.networkLifeSequence);
         }
+        if (request.shouldRecover) {
+          void this.multiplayer.recover(TEXT.errors.connectionDescription);
+        }
+        this.networkRespawnRequests.set(player.id, request);
         continue;
       }
       if (this.respawnTimers[index] <= 0) continue;

@@ -112,6 +112,7 @@ export class MultiplayerClient extends EventTarget {
       botCount,
       difficulty,
       timeLimitMinutes,
+      lifeState: 1,
       resumeToken
     });
     let socket;
@@ -225,6 +226,10 @@ export class MultiplayerClient extends EventTarget {
     return this.reconnectTask;
   }
 
+  recover(reason = TEXT.errors.connectionDescription) {
+    return this.reconnect({ code: 4002, reason });
+  }
+
   send(type, payload = {}) {
     if (!this.connected) return false;
     try {
@@ -250,7 +255,9 @@ export class MultiplayerClient extends EventTarget {
         velocity: player.velocity,
         aim: player.aim,
         slotIndex: player.slotIndex,
-        grounded: player.grounded
+        grounded: player.grounded,
+        lifeSequence: player.networkLifeSequence || 0,
+        respawnId: player.networkRespawnId || ""
       }))
     });
     if (sent) for (const player of players) player.networkPositionDirty = false;
@@ -333,8 +340,8 @@ export class MultiplayerClient extends EventTarget {
     return this.send("reload", { playerId: player.id, weaponId: player.weapon.id });
   }
 
-  requestRespawn(playerId) {
-    return this.send("respawn", { playerId });
+  requestRespawn(playerId, lifeSequence = 0) {
+    return this.send("respawn", { playerId, lifeSequence });
   }
 
   close() {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { WEAPONS, structuralPartBounds } from "../src/gameData.js";
+import { ARENA_SPAWN_POINTS, WEAPONS, structuralPartBounds } from "../src/gameData.js";
 
 const origin = process.env.MULTIPLAYER_TEST_ORIGIN || "http://127.0.0.1:8787";
 const loadout = ["blaster", "charged_energy_rifle", "rocket_launcher", "cluster_grenade", "mortar"];
@@ -54,6 +54,7 @@ function connectionUrl(roomCode, name, roomBotCount, requestedMinutes, mode, res
   url.searchParams.set("botCount", String(roomBotCount));
   url.searchParams.set("difficulty", "veteran");
   url.searchParams.set("timeLimitMinutes", String(requestedMinutes));
+  url.searchParams.set("lifeState", "1");
   if (resumeToken) url.searchParams.set("resumeToken", resumeToken);
   return url;
 }
@@ -114,6 +115,16 @@ async function resumeAttempt(roomCode, resumeToken, name = "Concurrent resume") 
   });
 }
 
+async function waitForMessageCount(client, accept, count, timeout = 4_000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const matches = client.messages.filter(accept);
+    if (matches.length >= count) return matches.at(-1);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`Timed out waiting for message count ${count}; found ${client.messages.filter(accept).length}`);
+}
+
 async function expectConnectionRejected(roomCode, name, roomBotCount = 0, requestedMinutes = timeLimitMinutes, mode = "private") {
   const socket = new WebSocket(connectionUrl(roomCode, name, roomBotCount, requestedMinutes, mode));
   await new Promise((resolve, reject) => {
@@ -140,7 +151,7 @@ let first = await connect(firstAssignment.roomCode, "Alpha", botCount, 30);
 assert.equal(first.welcome.endsAt - first.welcome.startsAt, timeLimitMinutes * 60_000, "the matchmaker reservation overrides a manipulated WebSocket duration");
 const secondAssignment = await assignment();
 assert.equal(secondAssignment.roomCode, firstAssignment.roomCode);
-const second = await connect(firstAssignment.roomCode, "Bravo");
+let second = await connect(firstAssignment.roomCode, "Bravo");
 assert.equal(first.welcome.players.length, 16);
 assert.equal(second.welcome.players.length, 16);
 assert.equal(second.welcome.botHostId, first.welcome.playerId);
@@ -349,6 +360,107 @@ assert.equal(crush.health, 0);
 assert.equal(crush.attackerId, firstId);
 assert.equal(crush.terrainEventId, terrainDamage.id, "the room attributes a collapse kill to the exact causal terrain event");
 assert.equal(crush.scores[firstId], 1, "a structure-collapse kill updates the attacker's authoritative score immediately");
+assert.equal(crush.lifeSequence, 1);
+
+second.socket.send(JSON.stringify({ type: "respawn", playerId: secondId, lifeSequence: crush.lifeSequence }));
+const pendingRespawn = await second.next((message) => message.type === "respawn_pending" && message.playerId === secondId);
+assert.equal(pendingRespawn.lifeSequence, crush.lifeSequence);
+assert.ok(pendingRespawn.respawnAt > pendingRespawn.serverTime, "an early request receives server-relative pending timing");
+await new Promise((resolve) => setTimeout(resolve, pendingRespawn.respawnAt - pendingRespawn.serverTime + 40));
+second.socket.send(JSON.stringify({ type: "respawn", playerId: secondId, lifeSequence: crush.lifeSequence }));
+const acceptedRespawn = await waitForMessageCount(first, (message) => message.type === "respawn" && message.playerId === secondId, 1);
+await waitForMessageCount(second, (message) => message.type === "respawn" && message.playerId === secondId, 1);
+assert.equal(acceptedRespawn.lifeSequence, crush.lifeSequence);
+assert.match(acceptedRespawn.respawnId, /^[0-9a-f-]{36}$/i);
+const observerRespawnCount = first.messages.filter((message) => message.type === "respawn" && message.playerId === secondId).length;
+
+// Deliberately discard the first completion locally and request it again.
+second.socket.send(JSON.stringify({ type: "respawn", playerId: secondId, lifeSequence: crush.lifeSequence }));
+const replayedRespawn = await waitForMessageCount(second, (message) => message.type === "respawn" && message.playerId === secondId, 2);
+assert.deepEqual(replayedRespawn, acceptedRespawn, "a lost completion is replayed identically without a second life mutation");
+await new Promise((resolve) => setTimeout(resolve, 150));
+assert.equal(first.messages.filter((message) => message.type === "respawn" && message.playerId === secondId).length, observerRespawnCount, "a retry is requester-only and never rebroadcast globally");
+
+const secondStateCount = first.messages.filter((message) => message.type === "state" && message.players.some((player) => player.id === secondId)).length;
+second.socket.send(JSON.stringify({
+  type: "state",
+  players: [{ id: secondId, position: { x: 42, y: 1, z: -22 }, velocity: { x: 0, y: 0, z: 0 }, aim: { x: -1, y: 0, z: 0 }, slotIndex: 0, grounded: true }]
+}));
+await new Promise((resolve) => setTimeout(resolve, 150));
+assert.equal(first.messages.filter((message) => message.type === "state" && message.players.some((player) => player.id === secondId)).length, secondStateCount, "the stale death-position packet cannot establish the new life");
+const firstSpawn = ARENA_SPAWN_POINTS[acceptedRespawn.respawnSpawnIndex];
+second.socket.send(JSON.stringify({
+  type: "state",
+  players: [{
+    id: secondId, position: { ...firstSpawn, y: 230 }, velocity: { x: 0, y: 0, z: 0 }, aim: { x: -1, y: 0, z: 0 }, slotIndex: 0, grounded: false,
+    lifeSequence: acceptedRespawn.lifeSequence, respawnId: acceptedRespawn.respawnId
+  }]
+}));
+await new Promise((resolve) => setTimeout(resolve, 150));
+assert.equal(first.messages.filter((message) => message.type === "state" && message.players.some((player) => player.id === secondId)).length, secondStateCount, "the lifecycle ID cannot authorize a vertical sky teleport at the spawn X/Z");
+second.socket.send(JSON.stringify({
+  type: "state",
+  players: [{
+    id: secondId, position: { ...firstSpawn, y: 0 }, velocity: { x: 0, y: 0, z: 0 }, aim: { x: -1, y: 0, z: 0 }, slotIndex: 0, grounded: true,
+    lifeSequence: acceptedRespawn.lifeSequence, respawnId: acceptedRespawn.respawnId
+  }]
+}));
+await new Promise((resolve) => setTimeout(resolve, 150));
+assert.equal(first.messages.filter((message) => message.type === "state" && message.players.some((player) => player.id === secondId)).length, secondStateCount, "an elevated canonical spawn cannot claim ground level with a valid lifecycle ID");
+second.socket.send(JSON.stringify({
+  type: "state",
+  players: [{
+    id: secondId, position: firstSpawn, velocity: { x: 0, y: 0, z: 0 }, aim: { x: -1, y: 0, z: 0 }, slotIndex: 0, grounded: true,
+    lifeSequence: acceptedRespawn.lifeSequence, respawnId: acceptedRespawn.respawnId
+  }]
+}));
+await waitForMessageCount(first, (message) => message.type === "state" && message.players.some((player) => player.id === secondId && player.respawnId === acceptedRespawn.respawnId), 1);
+
+const midpoint = {
+  x: (firstSpawn.x + mortarPosition.x) / 2,
+  y: (firstSpawn.y + mortarPosition.y) / 2,
+  z: (firstSpawn.z + mortarPosition.z) / 2
+};
+await new Promise((resolve) => setTimeout(resolve, 700));
+for (const position of [midpoint, mortarPosition]) {
+  second.socket.send(JSON.stringify({
+    type: "state",
+    players: [{
+      id: secondId, position, velocity: { x: 0, y: 0, z: 0 }, aim: { x: -1, y: 0, z: 0 }, slotIndex: 0, grounded: true,
+      lifeSequence: acceptedRespawn.lifeSequence, respawnId: acceptedRespawn.respawnId
+    }]
+  }));
+  await new Promise((resolve) => setTimeout(resolve, 700));
+}
+second.socket.send(JSON.stringify({ type: "crush", playerId: secondId, structureId: "structure-1", terrainEventId: mortarDamage.id }));
+const secondCrush = await first.next((message) => message.type === "crush" && message.targetId === secondId && message.lifeSequence === 2);
+const secondResumeToken = second.welcome.resumeToken;
+await new Promise((resolve) => setTimeout(resolve, Math.max(0, secondCrush.respawnAt - secondCrush.serverTime + 40)));
+await closeSocketAndWait(second.socket);
+second = await connect(firstAssignment.roomCode, "Bravo zero reconnect", botCount, timeLimitMinutes, "quick", secondResumeToken);
+const reconnectedDead = second.welcome.players.find((player) => player.id === secondId);
+assert.equal(reconnectedDead.alive, false);
+assert.equal(reconnectedDead.lifeSequence, 2, "reconnect at zero restores the same dead authoritative life");
+second.socket.send(JSON.stringify({ type: "respawn", playerId: secondId, lifeSequence: reconnectedDead.lifeSequence }));
+const reconnectRespawn = await second.next((message) => message.type === "respawn" && message.playerId === secondId && message.lifeSequence === 2);
+const reconnectSpawn = ARENA_SPAWN_POINTS[reconnectRespawn.respawnSpawnIndex];
+second.socket.send(JSON.stringify({
+  type: "state",
+  players: [{
+    id: secondId, position: reconnectSpawn, velocity: { x: 0, y: 0, z: 0 }, aim: { x: -1, y: 0, z: 0 }, slotIndex: 0, grounded: true,
+    lifeSequence: reconnectRespawn.lifeSequence, respawnId: reconnectRespawn.respawnId
+  }]
+}));
+await first.next((message) => message.type === "state" && message.players.some((player) => player.id === secondId && player.respawnId === reconnectRespawn.respawnId));
+
+first.socket.send(JSON.stringify({
+  type: "state",
+  players: [{ id: botId, position: rocketPosition, velocity: { x: 0, y: 0, z: 0 }, aim: { x: -1, y: 0, z: 0 }, slotIndex: 0, grounded: true, lifeSequence: 0, respawnId: "" }]
+}));
+await second.next((message) => message.type === "state" && message.players.some((player) => player.id === botId && player.position?.x === rocketPosition.x));
+first.socket.send(JSON.stringify({ type: "crush", playerId: botId, structureId: "structure-1", terrainEventId: terrainDamage.id }));
+const botCrush = await second.next((message) => message.type === "crush" && message.targetId === botId);
+assert.equal(botCrush.lifeSequence, 1, "the 16-fighter room persists an independently advancing bot life");
 
 const lateJoin = await connect(firstAssignment.roomCode, "Charlie");
 assert.ok(lateJoin.welcome.terrainEvents.some((event) => event.id === terrainDamage.id), "late joiners receive authoritative terrain history");
@@ -357,6 +469,23 @@ assert.equal(lateJoin.welcome.structuralState["structure-1-platform-1"], 6.2, "l
 assert.equal(lateJoin.welcome.structuralState[fallingPartId], 6.2, "late joiners retain damage applied while a support was visibly collapsing");
 closeSocket(lateJoin.socket);
 await closeSocketAndWait(first.socket);
+const migratedBotHostRoster = await second.next((message) => message.type === "roster" && message.botHostId === secondId);
+const migratedDeadBot = migratedBotHostRoster.players.find((player) => player.id === botId);
+assert.equal(migratedDeadBot?.alive, false, "bot death lifecycle survives migration to the next human host");
+second.socket.send(JSON.stringify({ type: "respawn", playerId: botId, lifeSequence: migratedDeadBot.lifeSequence }));
+const migratedBotPending = await second.next((message) => message.type === "respawn_pending" && message.playerId === botId);
+await new Promise((resolve) => setTimeout(resolve, migratedBotPending.respawnAt - migratedBotPending.serverTime + 40));
+second.socket.send(JSON.stringify({ type: "respawn", playerId: botId, lifeSequence: migratedDeadBot.lifeSequence }));
+const migratedBotRespawn = await second.next((message) => message.type === "respawn" && message.playerId === botId);
+const migratedBotSpawn = ARENA_SPAWN_POINTS[migratedBotRespawn.respawnSpawnIndex];
+second.socket.send(JSON.stringify({
+  type: "state",
+  players: [{
+    id: botId, position: migratedBotSpawn, velocity: { x: 0, y: 0, z: 0 }, aim: { x: 1, y: 0, z: 0 }, slotIndex: 0, grounded: true,
+    lifeSequence: migratedBotRespawn.lifeSequence, respawnId: migratedBotRespawn.respawnId
+  }]
+}));
+await second.next((message) => message.type === "state" && message.players.some((player) => player.id === botId && player.respawnId === migratedBotRespawn.respawnId));
 const resumedFirst = await connect(firstAssignment.roomCode, "Alpha reconnect", botCount, timeLimitMinutes, "quick", first.welcome.resumeToken);
 assert.equal(resumedFirst.welcome.playerId, firstId, "a dropped player resumes the same authoritative identity");
 assert.notEqual(resumedFirst.welcome.resumeToken, first.welcome.resumeToken, "a successful resume rotates the reconnect credential");

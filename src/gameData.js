@@ -249,6 +249,25 @@ const SEEDED_STRUCTURAL_SITES = [
   [84, -72], [-18, 62], [18, -62], [-67, -6], [67, 6]
 ];
 
+export const ARENA_SPAWN_POINTS = Object.freeze([
+  Object.freeze({ x: 10, y: 66, z: 0 }),
+  Object.freeze({ x: -60, y: 15, z: -48 }),
+  Object.freeze({ x: 61, y: 15, z: 49 }),
+  Object.freeze({ x: 54, y: 31, z: 33 }),
+  Object.freeze({ x: -53, y: 47, z: -27 }),
+  Object.freeze({ x: 50, y: 31, z: -22 }),
+  Object.freeze({ x: -50, y: 47, z: 30 }),
+  Object.freeze({ x: -14, y: 15, z: -14 }),
+  Object.freeze({ x: 88, y: 0, z: 88 }),
+  Object.freeze({ x: -88, y: 0, z: 88 }),
+  Object.freeze({ x: 88, y: 0, z: -88 }),
+  Object.freeze({ x: -88, y: 0, z: -88 }),
+  Object.freeze({ x: 88, y: 0, z: 0 }),
+  Object.freeze({ x: -88, y: 0, z: 0 }),
+  Object.freeze({ x: 0, y: 0, z: 88 }),
+  Object.freeze({ x: 0, y: 0, z: -88 })
+]);
+
 export const ARENA_PORTAL_PAIRS = Object.freeze([
   Object.freeze([Object.freeze({ x: -96, y: 0, z: 0 }), Object.freeze({ x: 0, y: 66, z: -10 })]),
   Object.freeze([Object.freeze({ x: 96, y: 0, z: 0 }), Object.freeze({ x: 0, y: 66, z: 10 })])
