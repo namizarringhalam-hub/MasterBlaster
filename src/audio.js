@@ -93,6 +93,7 @@ export class SoundBoard {
     this.musicSamples = {};
     this.musicSamplePromise = null;
     this.musicPrefetchPromise = null;
+    this.musicFileData = new Map();
     this.musicAbortController = null;
     this.musicPrefetchAbortController = null;
     this.musicSamplesReady = false;
@@ -196,7 +197,17 @@ export class SoundBoard {
   _hydrateAudioAssets() {
     if (!this.context || !this.audioAssetData || this.disposed) return false;
     const { sampleRate, entries } = this.audioAssetData;
-    this.sampleBank = Object.fromEntries(entries.map(([name, data]) => [name, this._audioBufferFromMono(data, sampleRate)]));
+    const bank = this.sampleBank = {};
+    for (const [name, data] of entries) {
+      Object.defineProperty(bank, name, {
+        configurable: true, enumerable: true,
+        get: () => {
+          const buffer = this._audioBufferFromMono(data, sampleRate);
+          Object.defineProperty(bank, name, { value: buffer, writable: true, configurable: true, enumerable: true });
+          return buffer;
+        }
+      });
+    }
     this.audioAssetData = null;
     const pending = this.pendingSampleCue;
     this.pendingSampleCue = null;
@@ -324,6 +335,7 @@ export class SoundBoard {
   }
 
   prefetchMusic() {
+    if (this.musicSamplePromise) return this.musicSamplePromise;
     if (this.musicPrefetchPromise || typeof fetch !== "function") return this.musicPrefetchPromise;
     const connection = typeof navigator !== "undefined" ? navigator.connection : null;
     if (connection?.saveData || /(^|-)2g$/.test(connection?.effectiveType || "")) return null;
@@ -331,20 +343,31 @@ export class SoundBoard {
     const files = Object.entries(MUSIC_SAMPLE_MANIFEST).flatMap(([role, asset]) => asset.files.map((file) => ({ ...file, critical: criticalRoles.has(role) })));
     const abortController = typeof AbortController === "function" ? new AbortController() : null;
     this.musicPrefetchAbortController = abortController;
-    const fetchFile = async (file) => {
-      const separator = file.url.includes("?") ? "&" : "?";
-      const response = await fetch(`${file.url}${separator}bank=${MUSIC_ASSET_REVISION}`, { cache: "force-cache", signal: abortController?.signal });
-      if (response.ok) await response.arrayBuffer();
-    };
+    const fetchFile = (file) => this._musicFileData(file, { signal: abortController?.signal });
     const waitForIdle = () => new Promise((resolve) => {
       if (typeof requestIdleCallback === "function") requestIdleCallback(resolve, { timeout: 1800 });
       else setTimeout(resolve, 250);
     });
     this.musicPrefetchPromise = Promise.allSettled(files.filter((file) => file.critical).map(fetchFile))
       .then(waitForIdle)
-      .then(() => this.disposed ? [] : Promise.allSettled(files.filter((file) => !file.critical).map(fetchFile)))
+      .then(() => this.disposed || this.musicSamplePromise ? [] : Promise.allSettled(files.filter((file) => !file.critical).map(fetchFile)))
       .finally(() => { if (this.musicPrefetchAbortController === abortController) this.musicPrefetchAbortController = null; });
     return this.musicPrefetchPromise;
+  }
+
+  _musicFileData(file, { retry = false, signal } = {}) {
+    if (!retry && this.musicFileData.has(file.url)) return this.musicFileData.get(file.url);
+    const separator = file.url.includes("?") ? "&" : "?";
+    const pending = fetch(`${file.url}${separator}bank=${MUSIC_ASSET_REVISION}`, { cache: retry ? "reload" : "force-cache", signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+        return response.arrayBuffer();
+      }).catch((error) => {
+        if (this.musicFileData.get(file.url) === pending) this.musicFileData.delete(file.url);
+        throw error;
+      });
+    this.musicFileData.set(file.url, pending);
+    return pending;
   }
 
   _loadMusicSamples(force = false) {
@@ -360,10 +383,9 @@ export class SoundBoard {
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
           if (!loadIsActive()) throw new Error("Audio load cancelled");
-          const separator = file.url.includes("?") ? "&" : "?";
-          const response = await fetch(`${file.url}${separator}bank=${MUSIC_ASSET_REVISION}`, { cache: attempt ? "reload" : "default", signal: abortController?.signal });
-          if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-          const buffer = await context.decodeAudioData(await response.arrayBuffer());
+          const data = await this._musicFileData(file, { retry: attempt > 0, signal: abortController?.signal });
+          const buffer = await context.decodeAudioData(data);
+          this.musicFileData.delete(file.url);
           if (!loadIsActive()) throw new Error("Audio load cancelled");
           return { buffer, rootMidi: file.rootMidi ?? null, trim: file.trim ?? 1 };
         } catch (error) {
@@ -394,6 +416,7 @@ export class SoundBoard {
         return this.musicSamples;
       }
       const recordedFallbacks = { fieldSnare: "battleDrum", cymbal: "fieldSnare", celloSpic: "celloTrem", celloTrem: "hornSustain", hornStaccato: "hornSustain", hornSustain: "celloTrem", tromboneBuzz: "hornSustain" };
+      this.musicFileData.clear();
       for (const name of Object.keys(MUSIC_SAMPLE_MANIFEST)) if (!this.musicSamples[name]?.length && this.musicSamples[recordedFallbacks[name]]?.length) this.musicSamples[name] = this.musicSamples[recordedFallbacks[name]];
       const decodedRoles = Object.values(this.musicSamples).filter((entries) => Array.isArray(entries) && entries.length).length;
       this.musicSamplesReady = decodedRoles > 0;
@@ -484,7 +507,7 @@ export class SoundBoard {
     if (!position) return { gain: clamp(input?.volume ?? 1, 0, 1.5), pan: clamp(input?.pan ?? fallbackPan, -1, 1), occluded: Boolean(input?.occluded), distanceRatio: 0 };
     const maxDistance = input.maxDistance || 180;
     const spatial = spatialMix(this.listenerPosition, [position.x || 0, position.y || 0, position.z || 0], this.listenerForward, maxDistance);
-    return { gain: spatial.gain * clamp(input.volume ?? 1, 0, 1.5), pan: spatial.pan, occluded: Boolean(input.occluded), distanceRatio: clamp(spatial.distance / maxDistance) };
+    return { gain: spatial.gain * clamp(input.volume ?? 1, 0, 1.5), pan: spatial.pan, occluded: Boolean(input.occluded ?? this.occlusionTest?.(position)), distanceRatio: clamp(spatial.distance / maxDistance) };
   }
 
   _allow(key, interval = 0) {
@@ -1247,6 +1270,7 @@ export class SoundBoard {
 
   dispose() {
     this.disposed = true;
+    this.musicFileData.clear();
     this.musicAbortController?.abort();
     this.musicPrefetchAbortController?.abort();
     this.musicAbortController = null;

@@ -38,6 +38,13 @@ function manifest() {
 }
 
 export default defineConfig({
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: { groups: [{ name: "three", test: /node_modules[\\/]three[\\/]/ }] }
+      }
+    }
+  },
   plugins: [{
     name: "master-blaster-player-text",
     transformIndexHtml: { order: "pre", handler: renderPlayerText },

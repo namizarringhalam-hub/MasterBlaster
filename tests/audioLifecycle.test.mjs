@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { MUSIC_SAMPLE_MANIFEST } from "../src/musicScore.js";
 import { readFile } from "node:fs/promises";
 import { SoundBoard, weaponAudioProfile } from "../src/audio.js";
 import { WEAPONS } from "../src/gameData.js";
@@ -34,6 +35,20 @@ for (const id of ["minigun", "gravity_beam", "flamethrower", "chainsaw", "charge
 for (const name of ["battleDrum", "celloSpic", "hornStaccato", "cymbal"]) sound.musicSamples[name] = [{ buffer: { duration: 1 }, rootMidi: ["celloSpic", "hornStaccato"].includes(name) ? 38 : null, trim: 1 }];
 sound.musicSamplesReady = true;
 sound.musicScene = "menu";
+let occlusionQueries = 0;
+sound.occlusionTest = () => { occlusionQueries++; return true; };
+const remoteSpatial = { position: { x: 8, y: 2, z: 12 }, volume: .34 };
+for (let frame = 0; frame < 60; frame++) for (let fighter = 0; fighter < 16; fighter++) {
+  sound.updateFighter(`idle-${fighter}`, { ...remoteSpatial, alive: true, grounded: true, speed: 0 });
+  sound.updateProjectileLoop(`inactive-${fighter}`, WEAPONS.rocket_launcher, false, remoteSpatial);
+  sound.updateHazardLoop(`inactive-${fighter}`, WEAPONS.napalm_launcher, false, remoteSpatial);
+}
+assert.equal(occlusionQueries, 0, "idle fighters and inactive loops never scan sound occlusion");
+assert.deepEqual(sound._mix(remoteSpatial), sound._mix({ ...remoteSpatial, occluded: true }), "lazy occlusion preserves the exact authored spatial mix");
+assert.equal(occlusionQueries, 1, "an audible remote request evaluates its current world occlusion once");
+sound._mix({ ...remoteSpatial, local: true });
+sound._mix({ ...remoteSpatial, occluded: false });
+assert.equal(occlusionQueries, 1, "local sounds and explicit occlusion overrides need no world probe");
 const voicesBeforeAccent = sound.activeVoices.size;
 assert.equal(sound.accentMenuAction(.94, true), true, "a peak menu action immediately schedules a recorded musical accent");
 
@@ -76,8 +91,10 @@ assert.doesNotMatch(mixerSource, /createProceduralAudioAssets|createWeaponAudioA
 assert.match(audioSource, /new Worker\(new URL\("\.\/audioAssets\.worker\.js"/, "the complete PCM bank is prepared in a dedicated module worker");
 
 const workers = [];
+let hydratedBuffers = 0;
 const hydrationContext = {
   createBuffer(_channels, length, sampleRate) {
+    hydratedBuffers++;
     const data = new Float32Array(length);
     return { duration: length / sampleRate, getChannelData: () => data };
   }
@@ -96,7 +113,14 @@ prepared.context = hydrationContext;
 await prepared.audioAssetPromise;
 assert.equal(workers[0].request.sampleRate, 48000, "the production worker prepares assets at the production sample rate");
 assert.equal(workers[0].request.weapons.length, Object.keys(WEAPONS).length, "the worker receives all forty-seven weapon identities");
-assert.ok(prepared.sampleBank.heavyUi && prepared.audioAssetData === null, "hydration releases transferred PCM after creating AudioBuffers");
+assert.equal(hydratedBuffers, 0, "worker delivery does not copy the whole PCM bank on the main thread");
+assert.equal(typeof Object.getOwnPropertyDescriptor(prepared.sampleBank, "heavyUi").get, "function", "unused authored PCM waits for first use");
+const firstBuffer = prepared.sampleBank.heavyUi;
+assert.deepEqual(firstBuffer.getChannelData(0), new Float32Array(4800).fill(.2), "first-use hydration preserves every authored sample bit");
+assert.equal(prepared.sampleBank.heavyUi, firstBuffer, "repeat playback reuses the same native audio buffer");
+assert.equal(hydratedBuffers, 1, "each sample is copied exactly once");
+assert.equal(Object.getOwnPropertyDescriptor(prepared.sampleBank, "heavyUi").get, undefined, "hydrated samples release their raw-PCM closure");
+assert.equal(prepared.audioAssetData, null, "the original transferred bank container is released");
 prepared.dispose();
 
 const cancelled = new SoundBoard();
@@ -155,6 +179,32 @@ await decodePromise;
 assert.equal(fetchSignal.aborted, true, "dispose aborts every in-flight recorded-music request");
 assert.deepEqual(decoding.musicSamples, {}, "a late recorded-music decode cannot repopulate state after dispose");
 assert.equal(decoding.musicAbortController, null, "dispose releases the music abort controller");
+globalThis.fetch = originalFetch;
+
+// Prefetch and playback overlap during the first user gesture. Share the bytes
+// until decode consumes them, without retaining a second copy of the orchestra.
+const downloadCounts = new Map();
+let releaseDownloads;
+const downloadGate = new Promise((resolve) => { releaseDownloads = resolve; });
+globalThis.fetch = async (url) => {
+  downloadCounts.set(url, (downloadCounts.get(url) || 0) + 1);
+  await downloadGate;
+  return { ok: true, arrayBuffer: async () => new ArrayBuffer(8) };
+};
+const sharedMusic = new SoundBoard();
+const prefetch = sharedMusic.prefetchMusic();
+sharedMusic.context = { currentTime: 0, decodeAudioData: async () => ({ duration: 1 }), close() {} };
+const playbackLoad = sharedMusic._loadMusicSamples();
+releaseDownloads();
+await Promise.all([prefetch, playbackLoad]);
+const fileCount = Object.values(MUSIC_SAMPLE_MANIFEST).reduce((count, role) => count + role.files.length, 0);
+assert.equal(downloadCounts.size, fileCount, "every original recorded take is loaded");
+assert.ok([...downloadCounts.values()].every((count) => count === 1), "prefetch and playback download each recording exactly once");
+assert.equal(Object.values(sharedMusic.musicSamples).reduce((count, samples) => count + samples.length, 0), fileCount, "every original take and root zone survives decode");
+assert.equal(sharedMusic.musicFileData.size, 0, "decoded music releases temporary download bytes");
+await sharedMusic.prefetchMusic();
+assert.ok([...downloadCounts.values()].every((count) => count === 1), "late prefetch cannot redownload already decoded recordings");
+sharedMusic.dispose();
 globalThis.fetch = originalFetch;
 
 for (let cycle = 0; cycle < 100; cycle++) {

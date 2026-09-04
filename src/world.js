@@ -1946,10 +1946,9 @@ export class ArenaWorld {
       const previousPlatformTops = platformEntries.map((entry) => entry.part.top);
       const carriedPlayers = new Set();
       for (const entry of change.movingParts) {
-        this.moveStructuralPart(entry.part, entry.startBaseY - change.dropDistance * eased);
         const lean = Math.sin(progress * Math.PI) * (change.major ? .012 : .007);
         entry.part.visualRotation = new THREE.Euler(lean * .7, 0, -lean);
-        this.updateStructuralVisual(entry.part);
+        this.moveStructuralPart(entry.part, entry.startBaseY - change.dropDistance * eased);
       }
       if (change.structure.anchor && change.structure.platformChunks.length) {
         change.structure.anchor.point.y = Math.max(...change.structure.platformChunks.map((platform) => platform.top)) + .6;

@@ -24,6 +24,7 @@ const [mainSource, bootSource, renderPipelineSource, worldSource, serviceWorkerS
 ]);
 assert.doesNotMatch(mainSource, /serviceWorker\.register/, "the renderer does not own service-worker startup");
 assert.match(bootSource, /serviceWorker\.register\("\/sw\.js"/, "the lightweight shell starts immutable caching without waiting for the engine");
+assert.match(bootSource, /"serviceWorker" in navigator && window\.isSecureContext/, "immutable caching runs on secure production and loopback test origins only");
 assert.deepEqual(topScoreIndices([2, 7, 7, 4, 9]), [4, 1, 2], "the HUD ranks the top three scores with stable tie ordering");
 assert.match(mainSource, /\[0, 1, 2\]\.map[\s\S]*data-leader-row/, "the top-right HUD renders three leaderboard rows");
 assert.match(mainSource, /dialog-lead[^]*?<button class="launch primary" data-action="start">\$\{TEXT\.setup\.start\}<\/button>[^]*?<div class="setup-form">/, "every setup sheet puts one editable start action above its controls");
@@ -181,7 +182,7 @@ assert.match(mainSource, /if \(this\.paused\) \{[\s\S]*?clearTouchActions\(this\
 assert.match(mainSource, /pointercancel", cancel/, "cancelled action touches cannot replay queued actions");
 assert.match(serviceWorkerSource, /pathname\.startsWith\("\/assets\/"\)/, "content-hashed engine assets use the local immutable cache");
 assert.match(serviceWorkerSource, /pathname\.startsWith\("\/audio\/"\).*searchParams\.has\("bank"\)/s, "only versioned audio enters the immutable cache");
-assert.match(serviceWorkerSource, /cache\.match\(event\.request\)[\s\S]*if \(cached\) return cached/, "repeat sessions read immutable assets without revalidation");
+assert.match(serviceWorkerSource, /cache\.match\(request\)[\s\S]*if \(cached && isAssetResponse\(request, cached\)\) return \{ response: cached \}/, "repeat sessions read validated immutable assets without revalidation");
 assert.doesNotMatch(serviceWorkerSource, /index\.html|navigate\(/, "HTML and navigation requests stay network-managed so new releases cannot go stale");
 assert.match(serviceWorkerSource, /clients\.claim/, "the cache takes control without forcing a disruptive refresh");
 

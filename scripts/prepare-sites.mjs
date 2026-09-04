@@ -16,15 +16,15 @@ await writeFile(
   async fetch(request, env) {
     const url = new URL(request.url);
     let response = await env.ASSETS.fetch(request);
-    if (response.status === 404) {
+    if (response.status === 404 && (url.pathname === "/" || request.mode === "navigate")) {
       url.pathname = "/index.html";
       response = await env.ASSETS.fetch(new Request(url, request));
     }
     const headers = new Headers(response.headers);
-    const pathname = new URL(response.url || request.url).pathname;
-    if (pathname.startsWith("/assets/")) headers.set("cache-control", "public, max-age=31536000, immutable");
+    const pathname = new URL(request.url).pathname;
+    if (!response.ok || headers.get("content-type")?.includes("text/html") || pathname === "/sw.js") headers.set("cache-control", "public, max-age=0, must-revalidate");
+    else if (pathname.startsWith("/assets/")) headers.set("cache-control", "public, max-age=31536000, immutable");
     else if (pathname.startsWith("/audio/") && new URL(request.url).searchParams.has("bank")) headers.set("cache-control", "public, max-age=31536000, immutable");
-    else if (headers.get("content-type")?.includes("text/html")) headers.set("cache-control", "public, max-age=0, must-revalidate");
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   }
 };

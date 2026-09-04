@@ -58,6 +58,21 @@ const cssGzipSizes = await Promise.all(cssAssets.map(async (name) => gzipSync(aw
 assert.ok(Math.max(...cssGzipSizes) < 12 * 1024, "the complete visual treatment stays below a 12 KiB compressed CSS budget");
 const assetResponse = await worker.fetch(new Request(`https://example.test${entryPath}`), { ASSETS: clientAssets });
 assert.match(assetResponse.headers.get("cache-control"), /max-age=31536000, immutable/, "hashed engine assets remain local across fresh-renderer match reloads");
+assert.ok(jsAssets.some((name) => name.startsWith("three-")), "the rendering library has its own reusable versioned chunk");
+assert.doesNotMatch(deployedHtml, /modulepreload[^>]*three-/, "the rendering library remains deferred behind the lightweight menu shell");
+const redirectedAsset = await worker.fetch(new Request(`https://example.test${entryPath}`), { ASSETS: {
+  async fetch() {
+    const response = new Response("export {}", { headers: { "content-type": "text/javascript" } });
+    Object.defineProperty(response, "url", { value: "https://assets.internal/storage-object" });
+    return response;
+  }
+} });
+assert.match(redirectedAsset.headers.get("cache-control"), /immutable/, "asset cache policy uses the public request path even when storage reports an internal response URL");
+const missingAsset = await worker.fetch(new Request("https://example.test/assets/missing-release.js"), { ASSETS: clientAssets });
+assert.equal(missingAsset.status, 404, "missing engine chunks never become successful HTML fallbacks");
+assert.doesNotMatch(missingAsset.headers.get("cache-control"), /immutable/, "missing release assets remain repairable");
+const serviceWorker = await worker.fetch(new Request("https://example.test/sw.js"), { ASSETS: clientAssets });
+assert.match(serviceWorker.headers.get("cache-control"), /max-age=0/, "the service worker checks for cache-policy updates");
 
 const audioNames = await readdir("dist/client/audio/music");
 const audioBytes = (await Promise.all(audioNames.map((name) => readFile(join("dist/client/audio/music", name))))).reduce((sum, bytes) => sum + bytes.length, 0);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import * as THREE from "three/webgpu";
 import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
-import { WEAPONS } from "../src/gameData.js";
+import { WEAPONS, projectileStepCount } from "../src/gameData.js";
 import { Fighter } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
 
@@ -126,6 +126,80 @@ secondRocket.traverse((child) => { if (child.isMesh) secondRocketGeometries.push
 assert.deepEqual(secondRocketGeometries, rocketGeometries, "repeat shots reuse immutable GPU geometry while retaining separate materials");
 
 const mainSource = fs.readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
+const audioSelectors = mainSource.slice(mainSource.indexOf("function projectileNeedsLoop("), mainSource.indexOf("function setText("));
+const updateMethod = mainSource.slice(mainSource.indexOf("\n  updateProjectiles(dt) {"), mainSource.indexOf("\n  findProjectileTarget("));
+const updateProjectiles = new Function("projectileStepCount", `${audioSelectors}; return ({${updateMethod}}).updateProjectiles;`)(projectileStepCount);
+let spatialQueries = 0, projectileVisualUpdates = 0;
+const activeLoops = [];
+const shots = Array.from({ length: 112 }, (_, index) => ({
+  audioId: `shot-${index}`, weapon: WEAPONS.rocket_launcher, owner: { id: "owner" },
+  mesh: new THREE.Object3D(),
+  velocity: new THREE.Vector3(1, 0, 0), previousPosition: new THREE.Vector3(),
+  radius: .25, age: 0, life: 100
+}));
+for (let index = 0; index < shots.length; index++) shots[index].mesh.position.set(index, 30, 0);
+updateProjectiles.call({
+  players: [{ position: new THREE.Vector3(0, 30, 0) }], projectiles: shots,
+  nearestAudioDistances: new Float64Array(6), nearestAudioIds: [], audibleProjectileIds: new Set(),
+  sound: { updateProjectileLoop(id, weapon, active) { if (active) activeLoops.push(id); } },
+  audioSpatial() { spatialQueries++; return {}; }, world: { projectileHit: () => false }, findProjectileTarget: () => null,
+  combatVisuals: { updateProjectile() { projectileVisualUpdates++; } }
+}, 1 / 60);
+assert.equal(spatialQueries, 6, "112 projectiles request only the nearest six spatial audio calculations");
+assert.deepEqual(activeLoops.sort(), Array.from({ length: 6 }, (_, index) => `shot-${index}`), "the audible projectile identities are unchanged");
+assert.equal(projectileVisualUpdates, 112, "every projectile keeps its full visual update");
+shots.forEach((shot, index) => {
+  assert.ok(Math.abs(shot.mesh.position.x - index - 1 / 60) < 1e-10, "all projectile movement remains simulated");
+  assert.equal(shot.age, 1 / 60);
+});
+
+const fireballA = visuals.createProjectile({ color: 0x12ccff }, WEAPONS.fireball, .36);
+fireballA.position.set(1, 2, 3);
+const assertFireballUploads = (count) => {
+  visuals.updateFireballs();
+  for (const layer of visuals.fireballLayerList) {
+    assert.equal(layer.count, count, "all seven authored Fireball layers remain drawn");
+    assert.equal(layer.instanceMatrix.count, 4096, "the maximum effect capacity is not reduced");
+    if (count) {
+      assert.deepEqual(layer.instanceMatrix.updateRanges, [{ start: 0, count: count * 16 }]);
+      assert.deepEqual(layer.instanceColor.updateRanges, [{ start: 0, count: count * 3 }]);
+    }
+  }
+};
+assertFireballUploads(1);
+const firstFireballMatrices = visuals.fireballLayerList.map((layer) => Array.from(layer.instanceMatrix.array.slice(0, 16)));
+const fireballB = visuals.createProjectile({ color: 0xff1234 }, WEAPONS.fireball, .36);
+fireballB.position.set(4, 5, 6);
+assertFireballUploads(2);
+assert.deepEqual(visuals.fireballLayerList.map((layer) => Array.from(layer.instanceMatrix.array.slice(0, 16))), firstFireballMatrices, "growing the active prefix preserves the original complete effect");
+visuals.removeProjectile({ mesh: fireballA });
+assertFireballUploads(1);
+const cinderColor = new THREE.Color();
+visuals.fireballLayers.cinder.getColorAt(0, cinderColor);
+assert.deepEqual(cinderColor.toArray(), fireballB.userData.combatVisual.ownerColor.toArray().map(Math.fround), "compaction uploads the surviving owner's exact float32 color");
+visuals.removeProjectile({ mesh: fireballB });
+assertFireballUploads(0);
+
+const fallingPart = world.structuralParts.find((part) => part.structuralKind === "pillar" && part.structure.major);
+assert.ok(world.queueStructuralFailure(fallingPart, "collapse-owner"));
+const collapse = world.structuralChanges.at(-1);
+world.updateStructuralChanges(collapse.warningDuration, []);
+assert.equal(collapse.phase, "falling");
+const updateStructuralVisual = world.updateStructuralVisual;
+const visualUpdates = new Map();
+world.updateStructuralVisual = function(part) {
+  visualUpdates.set(part, (visualUpdates.get(part) || 0) + 1);
+  return updateStructuralVisual.call(this, part);
+};
+world.updateStructuralChanges(collapse.fallDuration * .25, []);
+for (const { part } of collapse.movingParts) {
+  assert.equal(visualUpdates.get(part), 1, "falling structure visuals are updated exactly once per frame");
+  const matrices = part.instanceVisuals.map(({ mesh, index }) => Array.from(mesh.instanceMatrix.array.slice(index * 16, index * 16 + 16)));
+  // Replaying the former extra pass must not change the rendered output.
+  updateStructuralVisual.call(world, part);
+  assert.deepEqual(part.instanceVisuals.map(({ mesh, index }) => Array.from(mesh.instanceMatrix.array.slice(index * 16, index * 16 + 16))), matrices);
+}
+world.updateStructuralVisual = updateStructuralVisual;
 const worldSource = fs.readFileSync(new URL("../src/world.js", import.meta.url), "utf8");
 const playerSource = fs.readFileSync(new URL("../src/player.js", import.meta.url), "utf8");
 const pipelineSource = fs.readFileSync(new URL("../src/renderPipeline.js", import.meta.url), "utf8");

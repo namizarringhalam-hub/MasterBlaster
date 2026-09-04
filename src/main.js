@@ -199,6 +199,7 @@ class BlasterBattle {
     this.hazardOffset = new THREE.Vector3();
     this.hazardPush = new THREE.Vector3();
     this.sound = new SoundBoard();
+    this.sound.occlusionTest = (position) => Boolean(this.world?.ropeBlocked?.(this.camera.position, position));
     this.sound.setVolume(this.settings.volume);
     this.sound.setMix({ music: this.settings.musicVolume, effects: this.settings.effectsVolume, ambience: this.settings.ambienceVolume });
     this.sound.setDynamicRange(this.settings.dynamicRange);
@@ -1793,10 +1794,7 @@ class BlasterBattle {
   }
 
   audioSpatial(position, local = false, volume = 1, ownerId = "") {
-    return {
-      position, local, volume, ownerId,
-      occluded: Boolean(!local && this.world?.ropeBlocked?.(this.camera.position, position))
-    };
+    return { position, local, volume, ownerId };
   }
 
   updateAudio(dt) {
@@ -1847,7 +1845,11 @@ class BlasterBattle {
       this.hazards, local.position, 4, null,
       this.nearestAudioDistances, this.nearestAudioIds, this.audibleHazardIds
     );
-    for (const hazard of this.hazards) this.sound.updateHazardLoop(hazard.audioId, hazard.weapon, audibleHazards.has(hazard.audioId), this.audioSpatial(hazard.mesh.position, false, .72, hazard.audioId));
+    for (const hazard of this.hazards) {
+      const audible = audibleHazards.has(hazard.audioId);
+      this.sound.updateHazardLoop(hazard.audioId, hazard.weapon, audible,
+        audible ? this.audioSpatial(hazard.mesh.position, false, .72, hazard.audioId) : undefined);
+    }
   }
 
   frame(time) {
@@ -2574,9 +2576,10 @@ class BlasterBattle {
     );
     for (let index = this.projectiles.length - 1; index >= 0; index--) {
       const shot = this.projectiles[index];
-      this.sound.updateProjectileLoop(shot.audioId, shot.weapon, audibleProjectiles.has(shot.audioId), {
+      const audible = audibleProjectiles.has(shot.audioId);
+      this.sound.updateProjectileLoop(shot.audioId, shot.weapon, audible, audible ? {
         ...this.audioSpatial(shot.mesh.position, false, .72, shot.owner.id), speed: shot.velocity.length()
-      });
+      } : undefined);
       shot.age += dt;
       shot.life -= dt;
       const explosive = Boolean(shot.weapon.radius);
@@ -3266,7 +3269,8 @@ class BlasterBattle {
     this.hud.slots.forEach((slot, index) => {
       const weapon = WEAPONS[player.loadout[index]];
       slot.classList.toggle("selected", index === player.slotIndex);
-      slot.setAttribute("aria-pressed", String(index === player.slotIndex));
+      const selected = String(index === player.slotIndex);
+      if (slot.getAttribute("aria-pressed") !== selected) slot.setAttribute("aria-pressed", selected);
       const category = WEAPON_CATEGORY_SLUG_BY_ID[weapon.id];
       if (slot.dataset.category !== category) slot.dataset.category = category;
       setStyle(slot, "--weapon", WEAPON_CSS_COLOR_BY_ID[weapon.id]);

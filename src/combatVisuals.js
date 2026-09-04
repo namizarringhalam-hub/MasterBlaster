@@ -889,7 +889,16 @@ export class CombatVisuals {
     }
     for (const layer of this.fireballLayerList) layer.count = index;
     this.fireballCount = index;
-    this.markUpdated(...this.fireballLayerList);
+    for (const layer of this.fireballLayerList) {
+      // Only the drawn prefix changed. Keep full capacity and identical effects
+      // without uploading thousands of unused instances for a single shot.
+      layer.instanceMatrix.clearUpdateRanges();
+      layer.instanceMatrix.addUpdateRange(0, index * 16);
+      layer.instanceMatrix.needsUpdate = true;
+      layer.instanceColor.clearUpdateRanges();
+      layer.instanceColor.addUpdateRange(0, index * 3);
+      layer.instanceColor.needsUpdate = true;
+    }
   }
 
   updateFlashes(dt) {
