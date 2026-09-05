@@ -31,6 +31,9 @@ assert.match(mainSource, /dialog-lead[^]*?<button class="launch primary" data-ac
 assert.doesNotMatch(mainSource, /FIND MATCH|CREATE ROOM|START TRAINING/, "setup actions no longer change labels by mode");
 assert.match(mainSource, /reticleAim\(player, this\.camera\.position, this\.camera\.getWorldDirection/, "weapons fire through the visible camera's exact center ray");
 assert.match(mainSource, /remembered = this\.settings\.matchSettings\[mode\][\s\S]*?botCount = remembered\.botCount[\s\S]*?botDifficulty = remembered\.botDifficulty/, "each setup mode restores its own saved bot settings");
+assert.doesNotMatch(mainSource, /trainingPassive|updateTrainingBot/, "training controls do not replace the normal bot AI with an always-passive path");
+assert.equal(mainSource.match(/\$\{this\.trainingControlsMarkup\(\)\}/g).length, 2, "training controls appear in setup and pause");
+assert.match(mainSource, /for \(const player of this\.players\) if \(player\.trainingStandStill && player\.alive\) this\.lockTrainingBot\(player\)/, "stationary targets are re-locked after effects and respawns");
 assert.doesNotMatch(mainSource, /EffectComposer|UnrealBloomPass|composer\.render/, "the game avoids unstable post-processing framebuffers");
 assert.match(mainSource, /new THREE\.WebGPURenderer/, "the game uses Three.js's WebGPU renderer");
 assert.match(mainSource, /await this\.renderer\.init\(\)/, "WebGPU initializes before environment generation");
@@ -243,7 +246,7 @@ const migratedPrivateSettings = loadSettings();
 assert.equal(migratedPrivateSettings.matchSettings.private.botCount, 0, "the former one-bot private default migrates to zero once");
 assert.deepEqual(persistedMatchSettings.matchSettings.quick, { botCount: 15, botDifficulty: "veteran", seed: "QUICK-15", timeLimitMinutes: 12 }, "Quick Play remembers its last device-local count, difficulty, seed, and time limit");
 assert.deepEqual(persistedMatchSettings.matchSettings.private, { botCount: 4, botDifficulty: "rookie", seed: "ROOM42", timeLimitMinutes: 8 }, "Private Room keeps an independent setup profile including its time limit");
-assert.deepEqual(persistedMatchSettings.matchSettings.training, { botCount: 9, botDifficulty: "normal", seed: "PRACTICE", timeLimitMinutes: 5 }, "Training keeps an independent setup profile including its time limit");
+assert.deepEqual(persistedMatchSettings.matchSettings.training, { botCount: 9, botDifficulty: "normal", seed: "PRACTICE", timeLimitMinutes: 5, botsStandStill: false, botsDontAttack: false }, "Training keeps an independent setup profile with both bot controls off by default");
 assert.equal(clampMatchMinutes(45), 30, "saved time limits cannot exceed the supported thirty-minute match length");
 assert.match(mainSource, /id="time-limit" type="number" min="1" max="30"[\s\S]*?timeLimitInput\.value = String\(this\.timeLimitMinutes\)[\s\S]*?timeLimitMinutes: this\.timeLimitMinutes/, "every setup exposes, visibly normalizes, and saves a one-to-thirty-minute match limit");
 assert.match(mainSource, /queueMatchStart[\s\S]*?timeLimitMinutes: this\.timeLimitMinutes[\s\S]*?resumePendingMatch[\s\S]*?clampMatchMinutes\(saved\.timeLimitMinutes\)/, "fresh-session loading preserves the selected time limit");
@@ -837,7 +840,7 @@ assert.match(mainSource, /applyNetworkCrush\(message\) \{[\s\S]*?applyNetworkSco
 assert.match(mainSource, /replayNetworkFire\(message\) \{[\s\S]*?if \(!player \|\| !weapon \|\| !player\.alive\) return;/, "dead fighters cannot replay a stale fire event locally");
 assert.match(mainSource, /reportCrush\(target, event\.structureId, event\.terrainEventId\)/, "collapse reports carry the exact causal terrain event for unambiguous score attribution");
 assert.match(mainSource, /const roster = uniquePlayersById\(welcome\.players\)[\s\S]*?const ordered = uniquePlayersById\(message\.players\)/, "initial and changing rosters both collapse duplicate reconnect identities before creating fighters");
-assert.match(mainSource, /removeOwnedCombat\(player\)[\s\S]*?shot\.owner === player[\s\S]*?hazard\.owner === player[\s\S]*?decoy\.owner === player[\s\S]*?this\.removeOwnedCombat\(current\.player\)/, "roster removal clears every projectile, hazard, and decoy owned by the retired fighter");
+assert.match(mainSource, /removeOwnedCombat\(player, silent = false\)[\s\S]*?shot\.owner === player[\s\S]*?hazard\.owner === player[\s\S]*?decoy\.owner === player[\s\S]*?this\.removeOwnedCombat\(current\.player\)/, "roster removal clears every projectile, hazard, and decoy owned by the retired fighter");
 assert.match(mainSource, /frame\(time\)[\s\S]*?this\.update\(dt, rawDt\)[\s\S]*?update\(dt, realDt = dt\)[\s\S]*?updateRespawns\(realDt\)/, "death presentation and respawn timers follow real elapsed time even when simulation steps are frame-clamped");
 assert.match(mainSource, /sendState\(this\.players\.filter\(\(player\) => player\.alive && this\.controlsNetworkPlayer\(player\)\)\)/, "locally dead fighters never transmit a stale death position into a newly accepted life");
 assert.match(mainSource, /authoritativeNetworkPosition\(data[\s\S]*?data\.respawnSpawnIndex[\s\S]*?spawns\[data\.respawnSpawnIndex/, "roster and reconnect recovery use the authoritative respawn spawn while server position is not established");

@@ -249,6 +249,14 @@ export const PLAYER_TEXT = {
     quality: { low: "LOW", medium: "MEDIUM", high: "HIGH" }
   },
 
+  trainingControls: {
+    title: "Training bots",
+    botsStandStill: "Bots stand still",
+    botsDontAttack: "Bots don’t attack",
+    on: "ON",
+    off: "OFF"
+  },
+
   pause: {
     section: "SIMULATION PAUSED",
     title: "Take a breath.",

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training controls live regression</title>
+<link rel="stylesheet" href="/src/styles.css">
+<div id="app"><canvas id="game-canvas"></canvas><div id="ui-root"></div></div>
+<div id="match-loading" hidden><span data-match-seed></span><span data-match-kind></span></div>
+<aside style="position:fixed;z-index:100;left:8px;top:8px;max-width:95vw;background:#07111dee;padding:8px;font:12px monospace;pointer-events:auto">
+  <button id="run">Run real 16-fighter regression</button><pre id="results" style="max-height:40vh;overflow:auto;white-space:pre-wrap">Ready</pre>
+</aside>
+<script type="module">
+// Development-only harness. All movement, combat, rendering, audio and respawn
+// run through the real game. Metrics are visible DOM, not production debug hooks.
+import * as THREE from "three/webgpu";
+import { WEAPONS } from "../src/gameData.js";
+performance.mark("blaster-shell-visible");
+const { gameReady } = await import("../src/main.js");
+const game = await gameReady, output = document.querySelector("#results");
+const errors = [], results = [];
+addEventListener("error", event => errors.push(event.message));
+addEventListener("unhandledrejection", event => errors.push(String(event.reason)));
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+let sample = null;
+const frame = game.frame.bind(game);
+game.frame = time => {
+  const before = game.players.filter(p => p.isBot).map(p => ({ p, alive: p.alive, position: p.position.clone(), aim: p.aim.clone(), ammo: { ...p.ammo } }));
+  frame(time);
+  if (!sample || game.paused) return;
+  sample.frames++;
+  for (const { p, alive, position, aim, ammo } of before) {
+    if (!alive || !p.alive) continue;
+    sample.travel += p.position.distanceTo(position);
+    sample.aim += p.aim.distanceTo(aim);
+    for (const id of Object.keys(ammo)) sample.rounds += Math.max(0, ammo[id] - p.ammo[id]);
+  }
+};
+function report(value) { results.push(value); output.textContent = JSON.stringify({ results, errors }, null, 2); }
+document.querySelector("#run").onclick = async event => {
+  event.target.disabled = true;
+  game.mode = "training";
+  game.settings.botCount = 15;
+  game.timeLimitMinutes = 10;
+  game.targetScore = 10000;
+  game.settings.matchSettings.training.botsStandStill = false;
+  game.settings.matchSettings.training.botsDontAttack = false;
+  game.freshSessionReady = true;
+  game.sound.resume();
+  await game.startMatch();
+  await sleep(6000);
+  for (const [still, passive] of [[false, false], [false, true], [true, false], [true, true]]) {
+    game.setTrainingBotOption("botsStandStill", still);
+    const ownedBefore = game.projectiles.length + game.hazards.length + game.decoys.length;
+    game.setTrainingBotOption("botsDontAttack", passive);
+    const ownedAfter = game.projectiles.length + game.hazards.length + game.decoys.length;
+    sample = { still, passive, frames: 0, travel: 0, aim: 0, rounds: 0, ownedBefore, ownedAfter };
+    await sleep(6500);
+    const result = sample; sample = null;
+    result.pass = result.frames > 60 && (still ? result.travel < .001 : result.travel > 1) && (passive ? result.rounds === 0 : result.rounds > 0);
+    report(result);
+  }
+  const bot = game.players.find(p => p.isBot && p.alive), oldAnchor = bot.trainingAnchor.clone();
+  game.damagePlayer(bot, 10000, new THREE.Vector3(), game.players[0], WEAPONS.machine_gun);
+  const died = !bot.alive;
+  await sleep(4500);
+  report({ test: "stationary death and respawn", died, alive: bot.alive,
+    anchorError: bot.position.distanceTo(bot.trainingAnchor), movedToSpawn: bot.position.distanceTo(oldAnchor),
+    pass: died && bot.alive && bot.position.distanceTo(bot.trainingAnchor) < .001 });
+  game.togglePause();
+  report({ complete: true, pass: results.every(r => r.pass), fighters: game.players.length, quality: game.settings.graphics, errors: errors.length });
+};
+</script></html>

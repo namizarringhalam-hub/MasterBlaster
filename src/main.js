@@ -544,6 +544,7 @@ class BlasterBattle {
             <label>${TEXT.setup.labels.botCount}<input id="bot-count" type="number" min="${minimumBots}" max="15" step="1" value="${clampBotCount(this.settings.botCount, minimumBots)}"></label>
             <label>${TEXT.setup.labels.timeLimit}<input id="time-limit" type="number" min="1" max="30" step="1" value="${this.timeLimitMinutes}"></label>
           </div>
+          ${this.trainingControlsMarkup()}
           <section class="loadout-builder">
             <div><h2>${TEXT.setup.loadout.title}</h2><span data-loadout-count>${formatText(TEXT.setup.loadout.selected, { count: this.settings.loadout.length })}</span></div>
             <p class="loadout-help">${TEXT.setup.loadout.help}</p>
@@ -791,6 +792,15 @@ class BlasterBattle {
       if (button.dataset.presetDefault) return this.toggleDefaultPreset(Number(button.dataset.presetDefault));
       if (button.dataset.presetClear) return this.clearPreset(Number(button.dataset.presetClear));
       if (button.dataset.weaponSlot) return this.players[0]?.switchSlot(Number(button.dataset.weaponSlot));
+      if (button.dataset.trainingToggle) {
+        const option = button.dataset.trainingToggle;
+        this.setTrainingBotOption(option, !this.settings.matchSettings.training[option]);
+        const enabled = this.settings.matchSettings.training[option] === true;
+        button.setAttribute("aria-pressed", String(enabled));
+        button.classList.toggle("primary", enabled);
+        button.querySelector("[data-toggle-state]").textContent = enabled ? TEXT.trainingControls.on : TEXT.trainingControls.off;
+        return;
+      }
       if (button.dataset.action === "copy-room") {
         navigator.clipboard?.writeText(this.seed);
         const status = ui.querySelector("[data-lobby-status]");
@@ -1029,6 +1039,7 @@ class BlasterBattle {
     this.timeLimitMinutes = clampMatchMinutes(timeLimitInput?.value);
     if (timeLimitInput) timeLimitInput.value = String(this.timeLimitMinutes);
     this.settings.matchSettings[this.mode] = {
+      ...this.settings.matchSettings[this.mode],
       seed: this.seed,
       botDifficulty: this.botDifficulty,
       botCount: this.settings.botCount,
@@ -1239,14 +1250,14 @@ class BlasterBattle {
     this.effects = [];
   }
 
-  removeOwnedCombat(player) {
+  removeOwnedCombat(player, silent = false) {
     for (let index = this.projectiles.length - 1; index >= 0; index--) {
       const shot = this.projectiles[index];
       if (shot.owner === player) this.removeProjectile(index);
     }
     for (let index = this.hazards.length - 1; index >= 0; index--) {
       const hazard = this.hazards[index];
-      if (hazard.owner === player) this.removeHazard(index);
+      if (hazard.owner === player) this.removeHazard(index, silent);
     }
     for (let index = this.decoys.length - 1; index >= 0; index--) {
       const decoy = this.decoys[index];
@@ -1362,6 +1373,7 @@ class BlasterBattle {
       }
       this.scores = this.players.map(() => 0);
     }
+    for (const player of this.players) this.applyTrainingBotControls(player);
     this.players[0].aim.set(-this.players[0].position.x, -3.5, -this.players[0].position.z).normalize();
     this.respawnTimers = onlineRoster
       ? onlineRoster.map((player) => player.respawnAt ? serverRemainingSeconds(player.respawnAt, welcome.serverTime) : 0)
@@ -1783,6 +1795,7 @@ class BlasterBattle {
         <section class="dialog pause-dialog" aria-labelledby="pause-title">
           <p>${TEXT.pause.section}</p><h1 id="pause-title">${TEXT.pause.title}</h1>
           <button class="primary" data-action="pause" autofocus>${TEXT.pause.resume}</button>
+          ${this.trainingControlsMarkup()}
           <button data-action="rematch">${TEXT.pause.restart}</button>
           <button data-screen="main">${TEXT.pause.mainMenu}</button>
         </section>`, { kind: "pause", cancel: "resume" });
@@ -1924,6 +1937,7 @@ class BlasterBattle {
     this.updateEffects(dt);
     this.combatVisuals?.update(dt);
     this.updateRespawns(realDt);
+    for (const player of this.players) if (player.trainingStandStill && player.alive) this.lockTrainingBot(player);
     this.updateAudio(dt);
     this.updateHud();
     if (!this.isOnlineMatch() && (this.matchTime <= 0 || Math.max(...this.scores) >= this.targetScore)) this.finishMatch();
@@ -2086,10 +2100,19 @@ class BlasterBattle {
       const probe = bot.botProbe.copy(bot.position).addScaledVector(move, 2.8 / Math.sqrt(move.lengthSq()));
       if (this.world.surfaceHeightAt(probe, bot.position.y + 2) < bot.position.y - 1.5) move.multiplyScalar(-.75);
     }
-    bot.update(dt, move, forward, { jump: Math.random() < dt * .45 }, this.world);
-    if (!bot.grapple && distance > 22 && Math.random() < dt * .35) this.toggleGrapple(bot);
-    if (bot.grapple && (distance < 11 || Math.random() < dt * .18)) this.releaseGrapple(bot, true);
-    this.updateGrapple(bot, dt);
+    if (bot.trainingStandStill) { this.lockTrainingBot(bot); move.set(0, 0, 0); }
+    bot.update(dt, move, forward, { jump: !bot.trainingStandStill && Math.random() < dt * .45 }, this.world);
+    if (bot.trainingStandStill) this.lockTrainingBot(bot);
+    else {
+      if (!bot.grapple && distance > 22 && Math.random() < dt * .35) this.toggleGrapple(bot);
+      if (bot.grapple && (distance < 11 || Math.random() < dt * .18)) this.releaseGrapple(bot, true);
+      this.updateGrapple(bot, dt);
+    }
+    if (bot.trainingDontAttack) {
+      this.cancelCharge(bot);
+      this.sound.updateWeaponLoop(bot.id, bot.weapon, false);
+      return;
+    }
     const difficulty = this.botDifficulty === "veteran" ? 1.45 : this.botDifficulty === "rookie" ? .58 : 1;
     let wantsFire = Math.random() < botFireChance(distance, visible, bot.weapon) * difficulty;
     if (bot.weapon.type === "wall") {
@@ -2132,6 +2155,47 @@ class BlasterBattle {
     const listener = this.players[0];
     const distanceScale = Math.max(.12, 1 - bot.position.distanceTo(listener.position) / 110) * .36;
     this.sound.updateWeaponLoop(bot.id, bot.weapon, bot.weapon.maintained && bot.attackTimer > 0, this.audioSpatial(bot.position, false, distanceScale, bot.id));
+  }
+
+  trainingControlsMarkup() {
+    if (this.mode !== "training") return "";
+    return `<section class="settings-grid" role="group" aria-label="${TEXT.trainingControls.title}">${["botsStandStill", "botsDontAttack"].map((option) => {
+      const enabled = this.settings.matchSettings.training[option] === true;
+      return `<button type="button" class="${enabled ? "primary" : ""}" data-training-toggle="${option}" aria-pressed="${enabled}">${TEXT.trainingControls[option]}<output data-toggle-state aria-hidden="true">${enabled ? TEXT.trainingControls.on : TEXT.trainingControls.off}</output></button>`;
+    }).join("")}</section>`;
+  }
+
+  setTrainingBotOption(option, enabled) {
+    if (this.mode !== "training" || !["botsStandStill", "botsDontAttack"].includes(option)) return;
+    this.settings.matchSettings.training[option] = enabled === true;
+    for (const player of this.players) this.applyTrainingBotControls(player);
+    saveSettings(this.settings);
+  }
+
+  applyTrainingBotControls(bot) {
+    const training = this.mode === "training" && bot.isBot;
+    const still = training && this.settings.matchSettings.training.botsStandStill === true;
+    const passive = training && this.settings.matchSettings.training.botsDontAttack === true;
+    if (still && !bot.trainingStandStill) bot.trainingAnchor = bot.position.clone();
+    if (!still) bot.trainingAnchor = null;
+    bot.trainingStandStill = still;
+    if (passive && !bot.trainingDontAttack) {
+      bot.pendingBurst = null;
+      bot.attackTimer = 0;
+      this.cancelCharge(bot);
+      this.sound.updateWeaponLoop(bot.id, bot.weapon, false);
+      this.removeOwnedCombat(bot, true);
+    }
+    bot.trainingDontAttack = passive;
+    if (still && bot.alive) this.lockTrainingBot(bot);
+  }
+
+  lockTrainingBot(bot) {
+    if (!bot.trainingAnchor) bot.trainingAnchor = bot.position.clone();
+    if (bot.grapple) this.releaseGrapple(bot, false, true);
+    bot.position.copy(bot.trainingAnchor);
+    bot.velocity.set(0, 0, 0);
+    bot.grounded = true;
   }
 
   mouseAim(target = new THREE.Vector3()) {
@@ -2207,6 +2271,7 @@ class BlasterBattle {
   }
 
   tryFire(player, triggerTap = false, replicate = true) {
+    if (player.trainingDontAttack) return;
     const weapon = player.weapon;
     const fireMode = weaponFireMode(weapon);
     const usesAmmo = weaponUsesAmmo(weapon);
@@ -2255,6 +2320,7 @@ class BlasterBattle {
   }
 
   beginBurst(player, weapon, replicate = true) {
+    if (player.trainingDontAttack) return;
     const rounds = Math.min(weapon.burstCount, player.ammo[weapon.id]);
     if (!rounds) return this.beginReload(player);
     player.attackTimer = weapon.cooldown;
@@ -2266,6 +2332,10 @@ class BlasterBattle {
   }
 
   updateBurst(player, dt) {
+    if (player.trainingDontAttack) {
+      player.pendingBurst = null;
+      return;
+    }
     const burst = player.pendingBurst;
     if (!burst || !player.alive || player.weapon.id !== burst.weaponId) return;
     burst.timer -= dt;
@@ -2278,6 +2348,7 @@ class BlasterBattle {
   }
 
   fireBurstRound(player, weapon) {
+    if (player.trainingDontAttack) return;
     player.recoil(weapon.recoil * .46);
     const listener = this.players[0];
     const distanceScale = player === listener ? 1 : Math.max(.18, 1 - player.position.distanceTo(listener.position) / 110) * .42;
@@ -2288,6 +2359,7 @@ class BlasterBattle {
   }
 
   updateCharge(player, wantsFire, dt) {
+    if (player.trainingDontAttack) return this.cancelCharge(player);
     const weapon = player.weapon;
     if (!weapon.chargeTime || !player.alive) return this.cancelCharge(player);
     if (!wantsFire) return this.releaseCharge(player);
@@ -2306,6 +2378,7 @@ class BlasterBattle {
   }
 
   releaseCharge(player) {
+    if (player.trainingDontAttack) return this.cancelCharge(player);
     const weapon = WEAPONS[player.chargingWeaponId];
     if (!weapon) return;
     const ratio = clamp(player.chargeTimer / weapon.chargeTime, 0, 1);
@@ -3223,6 +3296,7 @@ class BlasterBattle {
       this.respawnTimers[index] -= dt;
       if (this.respawnTimers[index] <= 0) {
         player.respawn(safestSpawn(this.world.spawnPoints(), this.players, player));
+        if (player.trainingStandStill) player.trainingAnchor = player.position.clone();
         if (index === 0) {
           this.updateCamera(1);
         }
@@ -3432,11 +3506,11 @@ class BlasterBattle {
     this.projectiles.splice(index, 1);
   }
 
-  removeHazard(index) {
+  removeHazard(index, silent = false) {
     const hazard = this.hazards[index];
     if (!hazard) return;
     this.sound.updateHazardLoop(hazard.audioId, hazard.weapon, false);
-    this.sound.play("hazardEnd", hazard.weapon, this.audioSpatial(hazard.mesh.position, false, .48, hazard.audioId));
+    if (!silent) this.sound.play("hazardEnd", hazard.weapon, this.audioSpatial(hazard.mesh.position, false, .48, hazard.audioId));
     this.removeObject(hazard.mesh);
     this.hazards.splice(index, 1);
   }
