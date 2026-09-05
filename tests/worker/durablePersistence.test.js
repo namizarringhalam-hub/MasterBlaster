@@ -1,9 +1,100 @@
 import { env } from "cloudflare:workers";
 import { evictDurableObject, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { ARENA_SPAWN_POINTS, DEFAULT_LOADOUT, structuralPartBounds, WEAPONS } from "../../src/gameData.js";
+import { ARENA_SPAWN_POINTS, DEFAULT_LOADOUT, structuralPartBounds, structuralTowerBlueprints, WEAPONS } from "../../src/gameData.js";
 
 describe("MatchRoom durable authority", () => {
+  it("keeps legacy arenas isolated until all active and reserved identities drain", async () => {
+    const stub = env.MATCH_ROOMS.getByName("ARENA-BRIDGE");
+    await runInDurableObject(stub, async (room) => {
+      await room.ready;
+      room.meta = { roomCode: "ARENA-BRIDGE", seed: "BRIDGE", mode: "private", phase: "lobby", ended: false };
+      await room.ctx.storage.put("meta", room.meta);
+      const request = () => new Request("https://room.internal/api/rooms/ARENA-BRIDGE/connect?v=1&arenaRevision=2&mode=private", { headers: { upgrade: "websocket" } });
+      const originalCount = room.effectiveHumanCount;
+      room.effectiveHumanCount = () => 1;
+      expect((await room.fetch(request())).status).toBe(426);
+      expect(room.meta.arenaRevision).toBeUndefined();
+      room.effectiveHumanCount = originalCount;
+      room.resumeSessions.set("aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa", { player: { id: "reserved" }, expiresAt: Date.now() + 10_000 });
+      expect((await room.fetch(request())).status).toBe(426);
+      expect(room.meta.arenaRevision).toBeUndefined();
+      room.resumeSessions.clear();
+      room.structuralHealth.set("structure-1-pillar-1", 0);
+      room.structuralFailures.set("structure-1-pillar-1", Date.now());
+      room.terrainEvents.push({ partId: "structure-1-pillar-1" });
+      const accepted = await room.fetch(request());
+      expect(accepted.status).toBe(101);
+      accepted.webSocket.accept();
+      expect(room.meta.arenaRevision).toBe(2);
+      expect(room.structuralHealth.size).toBe(0);
+      expect(room.structuralFailures.size).toBe(0);
+      expect(room.terrainEvents).toEqual([]);
+      expect((await room.fetch(new Request("https://room.internal/api/rooms/ARENA-BRIDGE/connect?v=1&mode=private", { headers: { upgrade: "websocket" } }))).status).toBe(426);
+      accepted.webSocket.close(1000, "test complete");
+    });
+  });
+
+  it("authorizes every corner pillar section, rejects invented parts, and persists demolition", async () => {
+    const stub = env.MATCH_ROOMS.getByName("CORNER-PILLAR-AUTHORITY");
+    await runInDurableObject(stub, async (room) => {
+      await room.ready;
+      room.meta = { roomCode: "CORNER-PILLAR-AUTHORITY", seed: "CORNER-QA", phase: "playing", ended: false, arenaRevision: 2 };
+      await room.ctx.storage.put("meta", room.meta);
+      const player = { id: "corner-bot", bot: true, alive: true, loadout: ["machine_gun", "rocket_launcher"], position: { x: 0, y: 0, z: 0 } };
+      room.bots.set(player.id, player);
+      const socket = { deserializeAttachment: () => ({ id: player.id }) };
+      const report = async (structureId, partId, position, weaponId = "rocket_launcher") => {
+        const shot = {
+          id: crypto.randomUUID(), playerId: player.id, weaponId, firedAt: Date.now(),
+          origin: { ...position }, direction: { x: 1, y: 0, z: 0 },
+          hits: {}, hitPositions: [], damageScale: 1, structureDamageScale: 1,
+          strategy: weaponId === "machine_gun" ? "ray" : "explosive"
+        };
+        room.recentFires.set(player.id, [shot]);
+        await room.handleTerrainHit(socket, { shotId: shot.id, attackerId: player.id, weaponId, position, structureId, partId });
+      };
+      for (const [index, tower] of structuralTowerBlueprints(room.meta.seed).entries()) {
+        if (!tower.landmarkIndex) continue;
+        const structureId = `structure-${index + 1}`;
+        let previousStart = 0;
+        // Top-down includes IDs 9–12, which the old hard-coded validator rejected.
+        for (let part = tower.segmentCount; part >= 1; part--) {
+          const partId = `${structureId}-pillar-${part}`;
+          const bounds = structuralPartBounds(room.meta.seed, partId);
+          const position = { x: tower.x + 3.5, y: (bounds.baseY + bounds.top) / 2, z: tower.z };
+          await report(structureId, partId, position, "machine_gun");
+          expect(room.structuralHealth.get(partId)).toBe(8 - WEAPONS.machine_gun.structureDamage);
+          await report(structureId, partId, position);
+          expect(room.structuralHealth.get(partId)).toBe(0);
+          expect(room.terrainEvents.at(-1)).toMatchObject({ partId, collapsed: true, attackerId: player.id });
+          const collapseStartsAt = room.terrainEvents.at(-1).collapseStartsAt;
+          expect(collapseStartsAt).toBeGreaterThanOrEqual(previousStart + 1_650);
+          previousStart = collapseStartsAt;
+          await report(structureId, partId, position);
+          expect(room.terrainEvents.at(-1).collapsed).toBe(false);
+          expect(room.terrainEvents.at(-1).collapseStartsAt).toBe(collapseStartsAt);
+        }
+        for (const partId of [`${structureId}-platform-1`, `${structureId}-pillar-${tower.segmentCount + 1}`, `${structureId}-pillar-0`, "structure-21-pillar-1"]) {
+          await report(partId.split("-").slice(0, 2).join("-"), partId, { x: tower.x, y: tower.top, z: tower.z });
+          expect(room.structuralHealth.has(partId)).toBe(false);
+          expect(room.terrainEvents.at(-1).partId).toBe("");
+        }
+      }
+      expect(room.structuralHealth.size).toBe(39);
+      if (room.persistenceTask) await room.persistenceTask;
+    });
+    await evictDurableObject(stub);
+    await runInDurableObject(stub, async (room) => {
+      await room.ready;
+      expect(room.structuralHealth.size).toBe(39);
+      expect([...room.structuralHealth.values()].every((health) => health === 0)).toBe(true);
+      expect(room.structuralFailures.size).toBe(39);
+      expect(Object.keys(room.rosterMessage("welcome").structuralState)).toHaveLength(39);
+      expect(room.rosterMessage("welcome").structuralFailures).toEqual(Object.fromEntries(room.structuralFailures));
+    });
+  });
+
   it("applies mortar damage to a structure inside its canonical blast radius", async () => {
     const stub = env.MATCH_ROOMS.getByName("MORTAR-STRUCTURE-SPLASH");
     await runInDurableObject(stub, async (room) => {

@@ -610,13 +610,13 @@ for (const portal of undersideWorld.portals) {
   assert.ok(remote.position.equals(exit), "every large portal displacement snaps to its authoritative exit in the BLAST-01 layout");
 }
 undersideWorld.dispose();
-assert.equal(worldB.structures.length, 16, "the arena makes six major towers and ten seeded routes structural");
+assert.equal(worldB.structures.length, 20, "six major towers, ten seeded routes, and four corner landmarks are structural");
 assert.equal(worldB.structures.slice(0, 6).filter((structure) => structure.major).length, 6, "all six outer tower floors and stands use the major destruction model");
 assert.deepEqual(worldB.structures.slice(0, 6).map(({ x, z }) => [x, z]), [[42, -22], [-42, 30], [-52, -48], [53, 49], [54, 33], [-53, -27]], "the structural major towers cover every non-central tower floor");
 assert.ok(worldB.structures.slice(0, 6).every((structure) => structure.platformChunks.length >= 12 && structure.platformChunks.every((chunk) => chunk.maxHealth === 8) && structure.segments.every((segment) => segment.maxHealth === 8)), "large tower decks use sturdy but one-rocket structural chunks and segmented stands");
 assert.ok(worldB.platforms.filter((platform) => !platform.structuralKind && platform.x === 0 && platform.z === 0).some((platform) => platform.top === 15), "the middle lower tower floor remains indestructible");
 assert.ok(worldB.platforms.filter((platform) => !platform.structuralKind && platform.x === 0 && platform.z === 0).some((platform) => platform.top === 66), "the middle upper tower floor remains indestructible");
-assert.ok(new Set(worldB.structures.map((structure) => structure.platformChunks[0].top)).size >= 4, "structural platforms create varied combat elevations");
+assert.ok(new Set(worldB.structures.flatMap((structure) => structure.platformChunks.map((part) => part.top))).size >= 4, "structural platforms create varied combat elevations");
 assert.ok(WEAPONS.rocket_launcher.structureDamage >= 8, "one canonical rocket destroys any outer deck or stand section");
 assert.ok(Object.values(WEAPONS).filter((weapon) => weapon.structureDamage > 0).length >= 35, "most combat weapons can damage tower structures");
 assert.equal(WEAPONS.temporary_wall.structureDamage, 0, "pure utility projectiles cannot damage towers");
@@ -637,7 +637,7 @@ assert.deepEqual(
 const seamNeighbor = worldB.structures[0].platformChunks.find((chunk) => chunk.deckRow === firstChunk.deckRow && chunk.deckColumn === firstChunk.deckColumn + 1);
 const seamPoint = new THREE.Vector3(firstChunk.x + firstChunk.w / 2, firstChunk.top, firstChunk.z);
 assert.equal(worldB.structuralPartAt(seamPoint, .01).structuralId, [firstChunk.structuralId, seamNeighbor.structuralId].sort()[0], "deck seams use a stable part-id tie break on every client");
-assert.ok(worldB.structures.every((structure) => structure.segments.length >= 3 && structure.segments.length <= 8), "every destructible pillar is composed of a bounded number of sections");
+assert.ok(worldB.structures.every((structure) => structure.segments.length >= 3 && structure.segments.length <= 12), "every destructible pillar is composed of a bounded number of sections");
 assert.equal(worldB.debrisMesh.count, 128, "all collapsing structures share one bounded mixed-scale debris instance pool");
 assert.equal(worldB.debrisMesh.castShadow, false, "temporary structural scrap cannot multiply shadow rendering cost");
 assert.equal(worldB.dustMesh.count, 128, "soft structural smoke shares one bounded instanced volume pool");

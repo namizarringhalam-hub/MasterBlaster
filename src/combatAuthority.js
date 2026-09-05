@@ -48,42 +48,48 @@ function segmentIntersectsBounds(start, end, bounds) {
   return maximum > .001 && minimum < .985;
 }
 
-export function lineBlockedByStructure(start, end, seed, structuralHealth = new Map()) {
-  const towers = structuralTowerBlueprints(seed);
+function* standingStructuralBounds(seed, structuralHealth, arenaRevision, structuralFailures, now) {
+  const towers = structuralTowerBlueprints(seed, undefined, arenaRevision);
   for (let towerIndex = 0; towerIndex < towers.length; towerIndex++) {
     const tower = towers[towerIndex];
     const structureId = `structure-${towerIndex + 1}`;
     const columns = Math.max(3, Math.min(5, Math.round(tower.w / 7)));
     const rows = Math.max(3, Math.min(5, Math.round(tower.d / 7)));
-    for (const [kind, count] of [["pillar", tower.segmentCount], ["platform", columns * rows]]) {
+    let pillarDrop = 0;
+    let fallingDrop = 0;
+    for (const [kind, count] of [["pillar", tower.segmentCount], ["platform", tower.landmarkIndex ? 0 : columns * rows]]) {
       for (let part = 1; part <= count; part++) {
         const partId = `${structureId}-${kind}-${part}`;
-        if ((structuralHealth.get(partId) ?? 1) <= 0) continue;
-        const bounds = structuralPartBounds(seed, partId);
-        if (bounds && segmentIntersectsBounds(start, end, bounds)) return true;
+        const failed = (structuralHealth.get(partId) ?? 1) <= 0;
+        const failedAt = structuralFailures?.get(partId) || 0;
+        if (failed && (!tower.landmarkIndex || !failedAt || now >= failedAt + 520)) {
+          if (kind === "pillar") {
+            if (failedAt && now - failedAt < 1_650) fallingDrop += tower.top / tower.segmentCount;
+            else pillarDrop += tower.top / tower.segmentCount;
+          }
+          continue;
+        }
+        const bounds = structuralPartBounds(seed, partId, towers);
+        bounds.baseY -= pillarDrop + fallingDrop;
+        bounds.top -= pillarDrop;
+        yield bounds;
       }
     }
+  }
+}
+
+export function lineBlockedByStructure(start, end, seed, structuralHealth = new Map(), arenaRevision = 2, structuralFailures, now = Date.now()) {
+  for (const bounds of standingStructuralBounds(seed, structuralHealth, arenaRevision, structuralFailures, now)) {
+    if (segmentIntersectsBounds(start, end, bounds)) return true;
   }
   return false;
 }
 
-export function playerCapsuleIntersectsStructure(position, seed, structuralHealth = new Map()) {
-  const towers = structuralTowerBlueprints(seed);
-  for (let towerIndex = 0; towerIndex < towers.length; towerIndex++) {
-    const tower = towers[towerIndex];
-    const structureId = `structure-${towerIndex + 1}`;
-    const columns = Math.max(3, Math.min(5, Math.round(tower.w / 7)));
-    const rows = Math.max(3, Math.min(5, Math.round(tower.d / 7)));
-    for (const [kind, count] of [["pillar", tower.segmentCount], ["platform", columns * rows]]) {
-      for (let part = 1; part <= count; part++) {
-        const partId = `${structureId}-${kind}-${part}`;
-        if ((structuralHealth.get(partId) ?? 1) <= 0) continue;
-        const bounds = structuralPartBounds(seed, partId);
-        if (bounds && Math.abs(position.x - bounds.x) < bounds.w / 2 + PLAYER_RADIUS &&
-          Math.abs(position.z - bounds.z) < bounds.d / 2 + PLAYER_RADIUS &&
-          position.y < bounds.top && position.y + 2.25 > bounds.baseY) return true;
-      }
-    }
+export function playerCapsuleIntersectsStructure(position, seed, structuralHealth = new Map(), arenaRevision = 2, structuralFailures, now = Date.now()) {
+  for (const bounds of standingStructuralBounds(seed, structuralHealth, arenaRevision, structuralFailures, now)) {
+    if (Math.abs(position.x - bounds.x) < bounds.w / 2 + PLAYER_RADIUS &&
+      Math.abs(position.z - bounds.z) < bounds.d / 2 + PLAYER_RADIUS &&
+      position.y < bounds.top && position.y + 2.25 > bounds.baseY) return true;
   }
   return false;
 }
@@ -167,7 +173,7 @@ export function validateImpactProposal({ shot, weapon, impact, now = Date.now() 
   return distance <= Math.min(maximumRange, possibleTravel) && followsAuthoritativeProjectilePath(shot, impact, weapon, ageMs);
 }
 
-export function validateHitProposal({ shot, attacker, target, weapon, impact, phase = "impact", now = Date.now(), seed = "", structuralHealth = new Map() }) {
+export function validateHitProposal({ shot, attacker, target, weapon, impact, phase = "impact", now = Date.now(), seed = "", structuralHealth = new Map(), arenaRevision = 2, structuralFailures }) {
   if (!shot || !attacker?.alive || !target?.alive || !(weapon?.damage > 0) || shot.playerId !== attacker.id || shot.weaponId !== weapon.id) return null;
   const ageMs = now - shot.firedAt;
   if (ageMs < 0 || ageMs > shotLifetimeMs(weapon)) return null;
@@ -184,7 +190,7 @@ export function validateHitProposal({ shot, attacker, target, weapon, impact, ph
     const allowedRange = strategy === "melee" || strategy === "cone"
       ? (weapon.reach || 3) + PLAYER_RADIUS
       : (weapon.maxUsefulRange || 240) + PLAYER_RADIUS;
-    if (distance > allowedRange || lineBlockedByStructure(origin, targetCenter, seed, structuralHealth)) return null;
+    if (distance > allowedRange || lineBlockedByStructure(origin, targetCenter, seed, structuralHealth, arenaRevision, structuralFailures, now)) return null;
     const angularRadius = Math.asin(Math.min(.95, PLAYER_RADIUS / Math.max(PLAYER_RADIUS, distance)));
     const allowedAngle = strategy === "melee"
       ? Math.acos(Math.max(-1, Math.min(1, 1 - (weapon.arc || .3))))
@@ -201,7 +207,7 @@ export function validateHitProposal({ shot, attacker, target, weapon, impact, ph
     const priorPositions = shot.hitPositions || [];
     const from = priorPositions.at(-1) || origin;
     const maximumDistance = priorPositions.length ? 14 + PLAYER_RADIUS : (weapon.reach || 34) + PLAYER_RADIUS;
-    if (length(subtract(targetCenter, from)) > maximumDistance || lineBlockedByStructure(from, targetCenter, seed, structuralHealth)) return null;
+    if (length(subtract(targetCenter, from)) > maximumDistance || lineBlockedByStructure(from, targetCenter, seed, structuralHealth, arenaRevision, structuralFailures, now)) return null;
     if (!priorPositions.length && dot(direction, normalize(offset)) <= .45) return null;
     const jump = priorPositions.length;
     return { damage: Math.max(1, Math.ceil(canonicalDamage * .72 ** jump)), push: canonicalPush(weapon, from, targetCenter, .72 ** jump), strategy };
@@ -217,7 +223,7 @@ export function validateHitProposal({ shot, attacker, target, weapon, impact, ph
   }
 
   const radius = weapon.radius || 0;
-  if (targetDistance > radius + PLAYER_RADIUS || lineBlockedByStructure(impact, targetCenter, seed, structuralHealth)) return null;
+  if (targetDistance > radius + PLAYER_RADIUS || lineBlockedByStructure(impact, targetCenter, seed, structuralHealth, arenaRevision, structuralFailures, now)) return null;
   const factor = Math.max(0, 1 - Math.max(0, targetDistance - PLAYER_RADIUS) / Math.max(.01, radius));
   if (phase === "hazard" && weapon.hazard) {
     const perTick = weapon.hazard === "napalm" ? 4 * (.35 + factor * .65)

@@ -188,6 +188,7 @@ export const PLAYER_TEXT = {
     methodNotAllowed: "Method not allowed",
     websocketRequired: "WebSocket upgrade required",
     unsupportedProtocol: "Unsupported multiplayer protocol",
+    arenaVersionMismatch: "This room is still using an older arena. Let that session finish, then refresh, or use a new room code.",
     roomFull: "Room is full or complete",
     notFound: "Not found",
     rendererSection: "RENDERER ERROR",

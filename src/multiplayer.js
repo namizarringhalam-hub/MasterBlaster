@@ -1,5 +1,6 @@
 import {
   MULTIPLAYER_PROTOCOL_VERSION,
+  ARENA_REVISION,
   NETWORK_TICK_MS,
   normalizeRoomCode,
   parseServerMessage,
@@ -90,7 +91,7 @@ export class MultiplayerClient extends EventTarget {
         response = await fetch(new URL("/api/quick", origin), {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ botCount, difficulty, timeLimitMinutes, excludeRoomCode })
+          body: JSON.stringify({ botCount, difficulty, timeLimitMinutes, excludeRoomCode, arenaRevision: ARENA_REVISION })
         });
       } catch {
         throw new Error(TEXT.errors.couldNotConnect);
@@ -104,6 +105,10 @@ export class MultiplayerClient extends EventTarget {
     roomCode = directRoomCode || roomCode;
     this.roomCode = normalizeRoomCode(roomCode);
     if (!this.roomCode) throw new Error(TEXT.errors.invalidRoomCode);
+    if (mode === "private") {
+      const status = await fetch(new URL(`/api/rooms/${this.roomCode}/status`, origin)).then((response) => response.ok ? response.json() : null).catch(() => null);
+      if (status?.initialized && status.humans > 0 && (status.arenaRevision || 1) !== ARENA_REVISION) throw new Error(TEXT.errors.arenaVersionMismatch);
+    }
     const url = socketUrl(origin, this.roomCode, {
       v: MULTIPLAYER_PROTOCOL_VERSION,
       name,
@@ -113,6 +118,7 @@ export class MultiplayerClient extends EventTarget {
       difficulty,
       timeLimitMinutes,
       lifeState: 1,
+      arenaRevision: ARENA_REVISION,
       resumeToken
     });
     let socket;

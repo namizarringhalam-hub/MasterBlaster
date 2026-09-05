@@ -38,7 +38,7 @@ async function assignment(requestedMinutes = timeLimitMinutes, excludeRoomCode =
   const response = await fetch(`${origin}/api/quick`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ botCount, difficulty: "veteran", timeLimitMinutes: requestedMinutes, excludeRoomCode })
+    body: JSON.stringify({ botCount, difficulty: "veteran", timeLimitMinutes: requestedMinutes, excludeRoomCode, arenaRevision: 2 })
   });
   assert.equal(response.status, 200);
   return response.json();
@@ -55,6 +55,7 @@ function connectionUrl(roomCode, name, roomBotCount, requestedMinutes, mode, res
   url.searchParams.set("difficulty", "veteran");
   url.searchParams.set("timeLimitMinutes", String(requestedMinutes));
   url.searchParams.set("lifeState", "1");
+  url.searchParams.set("arenaRevision", "2");
   if (resumeToken) url.searchParams.set("resumeToken", resumeToken);
   return url;
 }
@@ -602,4 +603,45 @@ const recoveryAssignment = await assignment(timeLimitMinutes, firstAssignment.ro
 assert.notEqual(recoveryAssignment.roomCode, firstAssignment.roomCode, "a timed-out Quick Play room is replaced on the retry");
 assert.equal((await assignment()).roomCode, recoveryAssignment.roomCode, "an abandoned canonical room is replaced by the recovery room");
 console.log("Quick recovery, session resume, coalesced state, and persistent private-lobby lifecycle passed.");
+
+// Isolated room: real paid shots, two observing clients and fourteen bots.
+const cornerCode = `C-${Date.now().toString(36).slice(-8)}`;
+const cornerHost = await connect(cornerCode, "Corner QA host", 14, 7, "private");
+const cornerGuest = await connect(cornerCode, "Corner QA observer", 14, 7, "private");
+cornerHost.socket.send(JSON.stringify({ type: "lobby_start" }));
+const cornerStart = await cornerGuest.next((message) => message.type === "match_start");
+assert.equal(cornerStart.players.length, 16);
+assert.equal(cornerStart.arenaRevision, 2);
+let cornerPosition = null;
+let nextCornerFireAt = 0;
+for (const partId of ["structure-17-pillar-7", "structure-18-pillar-9", "structure-19-pillar-12", "structure-20-pillar-11", "structure-17-pillar-1", "structure-18-pillar-1", "structure-19-pillar-1", "structure-20-pillar-1"]) {
+  const bounds = structuralPartBounds(cornerStart.seed, partId);
+  const impact = { x: bounds.x + bounds.w / 2, y: (bounds.baseY + bounds.top) / 2, z: bounds.z };
+  const destination = { x: impact.x + 4, y: impact.y - 1.2, z: impact.z };
+  const distance = cornerPosition ? Math.hypot(destination.x - cornerPosition.x, destination.y - cornerPosition.y, destination.z - cornerPosition.z) : 0;
+  const steps = Math.max(1, Math.ceil(distance / 10));
+  const previous = cornerPosition || destination;
+  for (let step = 1; step <= steps; step++) {
+    const position = Object.fromEntries(["x", "y", "z"].map((axis) => [axis, previous[axis] + (destination[axis] - previous[axis]) * step / steps]));
+    cornerHost.socket.send(JSON.stringify({ type: "state", players: [{ id: cornerHost.welcome.playerId, position, velocity: { x: 0, y: 0, z: 0 }, aim: { x: -1, y: 0, z: 0 }, slotIndex: 2, grounded: false }] }));
+    await cornerGuest.next((message) => message.type === "state" && message.players.some((player) => player.id === cornerHost.welcome.playerId && player.position.x === position.x && player.position.y === position.y && player.position.z === position.z));
+  }
+  cornerPosition = destination;
+  await new Promise((resolve) => setTimeout(resolve, Math.max(0, nextCornerFireAt - Date.now())));
+  const shotId = fire(cornerHost, { playerId: cornerHost.welcome.playerId, weaponId: "rocket_launcher", slotIndex: 2, direction: { x: -1, y: 0, z: 0 } });
+  const paid = await cornerGuest.next((message) => message.type === "fire" && message.shotId === shotId);
+  nextCornerFireAt = Math.max(paid.reloadCompleteAt || 0, paid.serverTime + WEAPONS.rocket_launcher.cooldown * 1000) + 80;
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  cornerHost.socket.send(JSON.stringify({ type: "terrain_hit", shotId, attackerId: cornerHost.welcome.playerId, weaponId: "rocket_launcher", position: impact, structureId: partId.split("-").slice(0, 2).join("-"), partId }));
+  const damage = await cornerGuest.next((message) => message.type === "terrain_damage" && message.partId === partId && message.collapsed);
+  assert.equal(damage.structuralHealth, 0);
+}
+await closeSocketAndWait(cornerGuest.socket);
+const cornerResume = await connect(cornerCode, "Corner QA resume", 14, 7, "private", cornerGuest.welcome.resumeToken);
+assert.equal(cornerResume.welcome.playerId, cornerGuest.welcome.playerId);
+assert.equal(Object.keys(cornerResume.welcome.structuralState).length, 8);
+assert.ok(Object.values(cornerResume.welcome.structuralState).every((health) => health === 0));
+closeSocket(cornerResume.socket);
+closeSocket(cornerHost.socket);
+console.log("All four corner pillars: high/base destruction, paid ammunition and reconnect state passed in a 16-fighter live room.");
 process.exit(0);

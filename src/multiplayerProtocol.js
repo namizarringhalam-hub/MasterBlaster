@@ -1,6 +1,7 @@
 import TEXT from "./playerText.js";
 
 export const MULTIPLAYER_PROTOCOL_VERSION = 1;
+export const ARENA_REVISION = 2;
 export const MAX_MATCH_PLAYERS = 16;
 export const MATCH_DURATION_MS = 180_000;
 export const MATCH_TARGET_SCORE = 10;

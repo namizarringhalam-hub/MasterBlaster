@@ -32,7 +32,7 @@ const coverStart = { x: 30, y: 2.1, z: -22 };
 const coverEnd = { x: 50, y: 2.1, z: -22 };
 assert.equal(lineBlockedByStructure(coverStart, coverEnd, coverSeed), true, "an intact structural pillar blocks combat sightlines");
 const destroyedCover = new Map([["structure-1-pillar-1", 0]]);
-assert.equal(lineBlockedByStructure(coverStart, coverEnd, coverSeed, destroyedCover), false, "authoritatively destroyed cover opens the same sightline");
+assert.equal(lineBlockedByStructure(coverStart, coverEnd, coverSeed, destroyedCover), true, "surviving upper pillars settle into the destroyed base's space");
 const embeddedAttacker = player("embedded-attacker", 30, 0, -22);
 const embeddedTarget = player("embedded-target", 42, 0, -22);
 const embeddedShot = {

@@ -288,7 +288,7 @@ export function isArenaPortalTransition(previous, candidate, entryAllowance = AR
   return false;
 }
 
-export function structuralTowerBlueprints(seed, random = seededRandom(seedFromText(seed))) {
+export function structuralTowerBlueprints(seed, random = seededRandom(seedFromText(seed)), arenaRevision = 2) {
   const towers = MAJOR_STRUCTURAL_TOWERS.map(([x, top, z, w, d, thickness]) => ({
     x, z, top, w, d, thickness, segmentCount: Math.ceil(top / 6), pillarWidth: 8.4, major: true
   }));
@@ -300,13 +300,17 @@ export function structuralTowerBlueprints(seed, random = seededRandom(seedFromTe
       thickness: 1.15, segmentCount, pillarWidth: 4.2 + (segmentCount % 2) * .7, major: false
     });
   });
+  // Append the corner landmarks: never renumber existing persisted part IDs.
+  if (arenaRevision >= 2) [[-72, -66, 40], [72, 66, 54], [70, -62, 72], [-68, 66, 62]].forEach(([x, z, top], index) => {
+    towers.push({ x, z, top, w: 7, d: 7, thickness: 0, segmentCount: Math.ceil(top / 6), pillarWidth: 7, major: true, landmarkIndex: index + 1 });
+  });
   return towers;
 }
 
-export function structuralPartBounds(seed, partId) {
+export function structuralPartBounds(seed, partId, towers = structuralTowerBlueprints(seed)) {
   const match = /^structure-(\d+)-(pillar|platform)-(\d+)$/.exec(String(partId || ""));
   if (!match) return null;
-  const tower = structuralTowerBlueprints(seed)[Number(match[1]) - 1];
+  const tower = towers[Number(match[1]) - 1];
   if (!tower) return null;
   const partIndex = Number(match[3]) - 1;
   if (match[2] === "pillar") {
@@ -314,6 +318,7 @@ export function structuralPartBounds(seed, partId) {
     const h = tower.top / tower.segmentCount;
     return { x: tower.x, z: tower.z, baseY: partIndex * h, top: (partIndex + 1) * h, w: tower.pillarWidth, d: tower.pillarWidth };
   }
+  if (tower.landmarkIndex) return null;
   const columns = Math.max(3, Math.min(5, Math.round(tower.w / 7)));
   const rows = Math.max(3, Math.min(5, Math.round(tower.d / 7)));
   if (partIndex < 0 || partIndex >= columns * rows) return null;

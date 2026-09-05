@@ -335,15 +335,12 @@ export class ArenaWorld {
     this.addPlatform(-30, 47, 14, 5, 48, 1, 0x35566d);
     this.addPlatform(0, 66, 28, 5, 30, 1, 0x35566d);
 
-    const towers = [
-      [0, 0, 70], [-72, -66, 40], [72, 66, 54], [70, -62, 72], [-68, 66, 62]
-    ].map(([x, z, h]) => this.addBox(x, z, 7, 7, h, 0x1d344b, false, true));
-    towers.forEach((tower, index) => this.addLandmark(tower, index));
+    this.addLandmark(this.addBox(0, 0, 7, 7, 70, 0x1d344b, false, true), 0);
 
     // Seeded structural towers fill the mid-field with destructible vertical routes.
     for (const tower of structuralBlueprints.slice(6)) this.addStructuralTower(
       tower.x, tower.z, tower.segmentCount, tower.w, tower.d,
-      { top: tower.top, platformThickness: tower.thickness, pillarWidth: tower.pillarWidth }
+      { top: tower.top, platformThickness: tower.thickness, pillarWidth: tower.pillarWidth, major: tower.major, landmarkIndex: tower.landmarkIndex }
     );
     this.batchStructuralGeometry();
 
@@ -910,6 +907,7 @@ export class ArenaWorld {
       { object: core, x: .18, y: central ? .7 : .48, z: .1 }
     );
     this.pulsers.push({ object: glow, base: central ? 3 : 6, amplitude: .055, speed: central ? 1.8 : 2.25, phase: index });
+    return root;
   }
 
   addCentralTowerArchitecture(tower) {
@@ -1683,7 +1681,7 @@ export class ArenaWorld {
     };
     structure.activeChange = change;
     this.structuralChanges.push(change);
-    this.frameStructureEvents.push({
+    change.warningEvent = {
       type: "warning",
       id: change.id,
       structureId: structure.id,
@@ -1694,15 +1692,20 @@ export class ArenaWorld {
       mass: part.w * part.d * part.h,
       dropDistance: change.dropDistance,
       bounds: { x: part.x, z: part.z, w: part.w, d: part.d, h: part.h }
-    });
+    };
+    if (!part.failureStartsAt) {
+      this.frameStructureEvents.push(change.warningEvent);
+      change.warningEvent = null;
+    }
   }
 
-  queueStructuralFailure(part, attackerId = "", impactPosition = null, terrainEventId = "") {
+  queueStructuralFailure(part, attackerId = "", impactPosition = null, terrainEventId = "", startsAt = 0) {
     if (!part || part.removed || part.failureQueued) return false;
     part.failureQueued = true;
     part.failureAttackerId = attackerId;
     part.failurePosition = impactPosition?.clone() || null;
     part.failureTerrainEventId = terrainEventId;
+    part.failureStartsAt = part.structure.landmark ? startsAt : 0;
     part.structure.pendingFailures.push(part);
     this.startNextStructuralFailure(part.structure);
     return true;
@@ -1745,6 +1748,29 @@ export class ArenaWorld {
     structure.anchor = null;
   }
 
+  syncStructuralLandmark(structure, height) {
+    if (!structure.landmark) return;
+    const support = structure.segments.at(-1);
+    if (!support) {
+      this.removeStructuralAnchor(structure);
+      if (height !== undefined) {
+        structure.landmark.position.y = height;
+        structure.landmark.updateMatrix();
+        return;
+      }
+      structure.landmark.visible = false;
+      this.rotors = this.rotors.filter(({ object }) => object.parent !== structure.landmark);
+      this.pulsers = this.pulsers.filter(({ object }) => object.parent !== structure.landmark);
+      return;
+    }
+    structure.landmark.position.y = height ?? support.top + .55;
+    structure.landmark.updateMatrix();
+    if (structure.anchor) {
+      structure.anchor.point.y = structure.landmark.position.y;
+      this.updateStructuralAnchor(structure.anchor);
+    }
+  }
+
   beginStructuralFall(change) {
     const { structure, part } = change;
     const breakPosition = change.impactPosition.clone();
@@ -1752,9 +1778,11 @@ export class ArenaWorld {
     part.visualRotation = null;
     this.updateStructuralVisual(part);
     const debrisCount = part.structuralKind === "platform" ? 18 : (structure.major ? 30 : 18);
-    change.fragmentDebris = this.spawnStructuralDebris(breakPosition, structure.color, debrisCount, part, change.id);
-    this.spawnStructuralDust(breakPosition, structure.color, change.major ? 24 : 14, part, change.id);
-    this.frameStructureEvents.push({
+    if (!change.silent) {
+      change.fragmentDebris = this.spawnStructuralDebris(breakPosition, structure.color, debrisCount, part, change.id);
+      this.spawnStructuralDust(breakPosition, structure.color, change.major ? 24 : 14, part, change.id);
+    }
+    if (!change.silent) this.frameStructureEvents.push({
       type: "break",
       id: change.id,
       structureId: structure.id,
@@ -1781,9 +1809,13 @@ export class ArenaWorld {
 
     const failedIndex = structure.segments.indexOf(part);
     const moving = failedIndex < 0 ? [] : structure.segments.slice(failedIndex + 1);
+    if (structure.landmark && failedIndex >= 0 && failedIndex === structure.segments.length - 1) {
+      change.landmarkFall = { startY: structure.landmark.position.y, endY: (structure.segments[failedIndex - 1]?.top || 0) + .55, final: failedIndex === 0 };
+    }
     moving.push(...structure.platformChunks.filter((platform) => !platform.removed));
     this.removeStructuralPart(part);
     if (failedIndex >= 0) structure.segments.splice(failedIndex, 1);
+    this.syncStructuralLandmark(structure, change.landmarkFall?.startY);
     for (const movingPart of moving) {
       movingPart.dynamic = true;
       this.dynamicObstacles.add(movingPart);
@@ -1796,7 +1828,7 @@ export class ArenaWorld {
     change.phase = "falling";
     change.elapsed = 0;
     change.fallDuration = THREE.MathUtils.clamp(Math.sqrt(2 * change.dropDistance / 18), .55, .86);
-    if (!change.movingParts.length) this.finishStructuralChange(change);
+    if (!change.movingParts.length && !change.landmarkFall) this.finishStructuralChange(change);
   }
 
   moveStructuralPart(part, baseY) {
@@ -1804,6 +1836,7 @@ export class ArenaWorld {
     part.top = baseY + part.h;
     this.updateStructuralVisual(part);
     this.syncBoostPadsForPart(part);
+    if (part === part.structure.segments.at(-1)) this.syncStructuralLandmark(part.structure);
   }
 
   updateStructuralCrush(change, players, previousPlatformTop, platform, carriedPlayers) {
@@ -1845,6 +1878,7 @@ export class ArenaWorld {
 
   finishStructuralChange(change) {
     const { structure } = change;
+    if (change.landmarkFall?.final) this.syncStructuralLandmark(structure);
     for (const entry of change.movingParts) {
       entry.part.dynamic = false;
       this.dynamicObstacles.delete(entry.part);
@@ -1861,10 +1895,11 @@ export class ArenaWorld {
   }
 
   landStructuralChange(change) {
+    if (change.silent) return;
     const platforms = change.movingParts.filter((entry) => entry.part.structuralKind === "platform").map((entry) => entry.part);
-    const platformTop = platforms.length ? Math.max(...platforms.map((platform) => platform.top)) : 0;
+    const platformTop = platforms.length ? Math.max(...platforms.map((platform) => platform.top)) : change.part.baseY;
     const position = new THREE.Vector3(change.structure.x, platformTop, change.structure.z);
-    const bounds = platforms.length ? change.structure.deckBounds : null;
+    const bounds = platforms.length ? change.structure.deckBounds : change.landmarkFall?.final ? change.part : null;
     if (bounds) this.spawnStructuralDust(position, change.structure.color, change.structure.major ? 34 : 16, bounds, `${change.id}:land`, true);
     this.frameStructureEvents.push({
       type: "land",
@@ -1880,10 +1915,42 @@ export class ArenaWorld {
     });
   }
 
-  updateStructuralChanges(dt, players) {
+  syncStructuralClock(serverTime) {
+    if (!Number.isFinite(serverTime)) return;
+    this.structuralServerTime = Math.max(this.structuralNow(), serverTime);
+    this.structuralClockAt = performance.now();
+  }
+
+  structuralNow() {
+    return this.structuralServerTime ? this.structuralServerTime + performance.now() - this.structuralClockAt : 0;
+  }
+
+  updateStructuralChanges(dt, players, serverTime = this.structuralNow()) {
+    // A backgrounded/paused client may miss several complete server slots.
+    // Catch their transforms up in this frame without replaying old explosions.
+    const overdue = () => this.structuralChanges.some((change) => change.part.failureStartsAt && serverTime >= change.part.failureStartsAt + 1_650);
+    if (!this.advancingStructuralClock && overdue()) {
+      this.advancingStructuralClock = true;
+      try {
+        for (let step = 0; step < 120 && overdue(); step++) this.updateStructuralChanges(0, [], serverTime);
+      } finally {
+        this.advancingStructuralClock = false;
+      }
+    }
     for (const change of [...this.structuralChanges]) {
       const { part } = change;
-      change.elapsed += dt;
+      change.silent = Boolean(this.recoveringStructuralState);
+      if (part.failureStartsAt) {
+        const age = (serverTime - part.failureStartsAt) / 1000;
+        if (age < 0) continue;
+        change.silent ||= age >= 1.65;
+        const offset = change.phase === "warning" ? 0 : change.warningDuration + (change.phase === "settling" ? change.fallDuration : 0);
+        change.elapsed = Math.max(0, age - offset);
+      } else change.elapsed += dt;
+      if (change.warningEvent) {
+        if (!change.silent) this.frameStructureEvents.push(change.warningEvent);
+        change.warningEvent = null;
+      }
       if (change.phase === "warning") {
         const progress = Math.min(1, change.elapsed / change.warningDuration);
         const pulse = .5 + Math.sin(this.time * 17 + seedFromText(part.structuralId) * .01) * .5;
@@ -1936,6 +2003,7 @@ export class ArenaWorld {
           entry.part.visualRotation = new THREE.Euler(bounce * .012, 0, -bounce * .018);
           this.updateStructuralVisual(entry.part);
         }
+        if (change.landmarkFall) this.syncStructuralLandmark(change.structure, change.landmarkFall.endY + bounce);
         if (progress >= 1) this.finishStructuralChange(change);
         continue;
       }
@@ -1949,6 +2017,12 @@ export class ArenaWorld {
         const lean = Math.sin(progress * Math.PI) * (change.major ? .012 : .007);
         entry.part.visualRotation = new THREE.Euler(lean * .7, 0, -lean);
         this.moveStructuralPart(entry.part, entry.startBaseY - change.dropDistance * eased);
+      }
+      if (change.landmarkFall) {
+        // The final crown becomes noninteractive immediately, but visibly falls
+        // into the existing breakup/dust effect instead of popping out.
+        if (change.landmarkFall.final) change.structure.landmark.scale.setScalar(1 - progress ** 4);
+        this.syncStructuralLandmark(change.structure, change.landmarkFall.startY + (change.landmarkFall.endY - change.landmarkFall.startY) * eased);
       }
       if (change.structure.anchor && change.structure.platformChunks.length) {
         change.structure.anchor.point.y = Math.max(...change.structure.platformChunks.map((platform) => platform.top)) + .6;
@@ -1980,7 +2054,12 @@ export class ArenaWorld {
     this.drainStructuralEvents();
   }
 
-  applyStructuralState(state = {}) {
+  applyStructuralState(state = {}, { structuralFailures = {}, serverTime } = {}) {
+    this.syncStructuralClock(serverTime);
+    this.recoveringStructuralState = true;
+    // Preserve in-flight canonical changes on an in-place reconnect. Missing
+    // changes are merged by part ID; a fresh world replays only the transforms.
+    const scheduled = [];
     const failedIds = new Set();
     for (const [partId, health] of Object.entries(state)) {
       const part = this.structuralPartById(partId);
@@ -1988,7 +2067,10 @@ export class ArenaWorld {
       part.health = THREE.MathUtils.clamp(health, 0, part.maxHealth);
       const damageMix = .14 + (1 - part.health / part.maxHealth) * .46;
       this.setStructuralColor(part, new THREE.Color(part.visualColor).lerp(new THREE.Color(this.theme.danger), damageMix));
-      if (part.health === 0) failedIds.add(partId);
+      if (part.health === 0) {
+        if (part.structure.landmark && structuralFailures[partId]) scheduled.push(part);
+        else failedIds.add(partId);
+      }
     }
 
     // A room snapshot is history, not a new explosion. Rebuild its settled
@@ -2016,16 +2098,29 @@ export class ArenaWorld {
         Math.abs(structure.x - platform.x) <= platform.w / 2 &&
         Math.abs(structure.z - platform.z) <= platform.d / 2
       );
-      if (!anchorSupported) this.removeStructuralAnchor(structure);
+      if (structure.landmark) {
+        if (!structure.activeChange) this.syncStructuralLandmark(structure);
+      } else if (!anchorSupported) this.removeStructuralAnchor(structure);
     }
-    this.clearStructuralTransients();
+    scheduled.sort((left, right) => structuralFailures[left.structuralId] - structuralFailures[right.structuralId]);
+    for (const part of scheduled) this.queueStructuralFailure(part, "", null, "", structuralFailures[part.structuralId]);
+    // At most three phase transitions per section. Advance historical changes
+    // to the server clock, never replay their audio, particles or crush damage.
+    for (let step = 0; this.structuralChanges.length && step < 120; step++) {
+      const phases = this.structuralChanges.map((change) => `${change.id}:${change.phase}`).join();
+      this.updateStructuralChanges(0, [], serverTime ?? this.structuralNow());
+      if (phases === this.structuralChanges.map((change) => `${change.id}:${change.phase}`).join()) break;
+    }
+    this.clearStructuralTransients(true);
+    this.recoveringStructuralState = false;
     this.buildObstacleIndex();
   }
 
-  clearStructuralTransients() {
-    this.structuralChanges.length = 0;
+  clearStructuralTransients(preserveScheduled = false) {
+    this.structuralChanges = preserveScheduled ? this.structuralChanges.filter((change) => change.part.failureStartsAt) : [];
     this.frameStructureEvents.length = 0;
     for (const structure of this.structures) {
+      if (preserveScheduled && structure.activeChange?.part.failureStartsAt) continue;
       structure.activeChange = null;
       structure.pendingFailures.length = 0;
     }
@@ -2066,7 +2161,7 @@ export class ArenaWorld {
     };
     this.structures.push(structure);
     for (let index = 0; index < segmentCount; index++) {
-      const segment = this.addBox(x, z, pillarWidth, pillarWidth, segmentHeight, 0x172b3c, false, false, index * segmentHeight);
+      const segment = this.addBox(x, z, pillarWidth, pillarWidth, segmentHeight, options.landmarkIndex ? 0x1d344b : 0x172b3c, false, false, index * segmentHeight);
       Object.assign(segment, {
         structure, structuralId: `${structure.id}-pillar-${index + 1}`,
         structuralKind: "pillar", health: pillarHealth, maxHealth: pillarHealth
@@ -2074,6 +2169,11 @@ export class ArenaWorld {
       segment.mesh.name = `${structure.id} pillar segment ${index + 1}`;
       structure.segments.push(segment);
       this.structuralParts.push(segment);
+    }
+    if (options.landmarkIndex) {
+      structure.landmark = this.addLandmark({ x, z, top }, options.landmarkIndex);
+      structure.anchor = this.addStructuralAnchor(x, top + .55, z);
+      return structure;
     }
     const columns = THREE.MathUtils.clamp(Math.round(platformWidth / 7), 3, 5);
     const rows = THREE.MathUtils.clamp(Math.round(platformDepth / 7), 3, 5);
@@ -2759,7 +2859,10 @@ export class ArenaWorld {
       structuralPart.health = Math.max(0, structuralPart.health - structuralDamage);
       const damageMix = .14 + (1 - structuralPart.health / structuralPart.maxHealth) * .46;
       this.setStructuralColor(structuralPart, new THREE.Color(structuralPart.visualColor).lerp(new THREE.Color(this.theme.danger), damageMix));
-      if (structuralPart.health === 0) this.queueStructuralFailure(structuralPart, context.attackerId, position, context.eventId || "");
+      if (structuralPart.health === 0) {
+        this.syncStructuralClock(context.serverTime);
+        this.queueStructuralFailure(structuralPart, context.attackerId, position, context.eventId || "", context.collapseStartsAt || 0);
+      }
       removed += 1;
     }
     return removed;

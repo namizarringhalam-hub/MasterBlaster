@@ -1221,7 +1221,7 @@ class BlasterBattle {
       this.updateCamera(1);
     }
     if (welcome.structuralState) {
-      this.world.applyStructuralState(welcome.structuralState);
+      this.world.applyStructuralState(welcome.structuralState, welcome);
       for (const event of welcome.terrainEvents || []) if (event.id) this.world.appliedTerrainEvents.add(event.id);
     }
   }
@@ -1323,7 +1323,7 @@ class BlasterBattle {
     this.renderPipeline.setHighLoadMode(fighterCount >= 13);
     this.world = new ArenaWorld(this.scene, this.seed);
     if (welcome?.structuralState) {
-      this.world.applyStructuralState(welcome.structuralState);
+      this.world.applyStructuralState(welcome.structuralState, welcome);
     } else {
       for (const event of welcome?.terrainEvents || []) {
         this.world.destroy(
@@ -1333,7 +1333,7 @@ class BlasterBattle {
         );
       }
     }
-    if (welcome?.terrainEvents?.length || welcome?.structuralState) this.world.settleStructuralChanges();
+    if (!welcome?.structuralState && welcome?.terrainEvents?.length) this.world.settleStructuralChanges();
     this.combatVisuals = new CombatVisuals(this.scene, {
       reducedMotion: this.settings.reducedMotion,
       quality: this.graphics.combatQuality
@@ -1564,7 +1564,7 @@ class BlasterBattle {
     this.world.destroy(
       new THREE.Vector3(message.position.x, message.position.y, message.position.z),
       message.radius,
-      { eventId: message.id, attackerId: message.attackerId, partId: message.partId, structuralDamage: message.structuralDamage }
+      { eventId: message.id, attackerId: message.attackerId, partId: message.partId, structuralDamage: message.structuralDamage, collapseStartsAt: message.collapseStartsAt, serverTime: message.serverTime }
     );
   }
 

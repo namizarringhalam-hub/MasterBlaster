@@ -6,6 +6,7 @@ import {
   MATCH_TARGET_SCORE,
   MAX_MATCH_PLAYERS,
   MULTIPLAYER_PROTOCOL_VERSION,
+  ARENA_REVISION,
   NETWORK_TICK_MS,
   clampMatchMinutes,
   finiteNumber,
@@ -134,12 +135,13 @@ function playerCanAct(player) {
   return Boolean(player?.alive && !player.awaitingRespawnState);
 }
 
-function authoritativeSpawnPoint(index, seed, structuralHealth) {
+function authoritativeSpawnPoint(index, seed, structuralHealth, arenaRevision) {
   const shared = ARENA_SPAWN_POINTS[index];
   if (!shared) return null;
   let matchedStructuralDeck = false;
   let height = -Infinity;
-  for (const [towerIndex, tower] of structuralTowerBlueprints(seed).entries()) {
+  for (const [towerIndex, tower] of structuralTowerBlueprints(seed, undefined, arenaRevision).entries()) {
+    if (tower.landmarkIndex) continue;
     if (Math.abs(shared.y - tower.top) > .61) continue;
     const structure = towerIndex + 1;
     const columns = Math.max(3, Math.min(5, Math.round(tower.w / 7)));
@@ -172,11 +174,13 @@ export class Matchmaker extends DurableObject {
   async fetch(request) {
     if (request.method !== "POST") return json({ error: TEXT.errors.methodNotAllowed }, 405);
     const input = await safeBody(request);
+    const arenaRevision = Number(input.arenaRevision || 1);
+    if (![1, ARENA_REVISION].includes(arenaRevision)) return json({ error: TEXT.errors.unsupportedProtocol }, 426);
     const targetSize = Math.min(MAX_MATCH_PLAYERS, Math.max(2, Math.trunc(finiteNumber(input.botCount, 7, 1, 15)) + 1));
     const difficulty = DIFFICULTIES.has(input.difficulty) ? input.difficulty : "normal";
     const timeLimitMinutes = clampMatchMinutes(input.timeLimitMinutes);
     const excludeRoomCode = normalizeRoomCode(input.excludeRoomCode);
-    const key = `open:${targetSize}:${difficulty}:${timeLimitMinutes}`;
+    const key = `open:${targetSize}:${difficulty}:${timeLimitMinutes}${arenaRevision > 1 ? `:arena-${arenaRevision}` : ""}`;
     let roomCode = await this.ctx.storage.get(key);
     let preserveCanonical = false;
     if (roomCode) {
@@ -184,7 +188,7 @@ export class Matchmaker extends DurableObject {
       const status = await room.fetch("https://room.internal/status").then((response) => response.json()).catch(() => null);
       const joinable = !(
         !status || status.ended || (status.initialized && (status.activeHumans ?? status.humans) === 0) || status.humans >= status.capacity ||
-        status.targetSize !== targetSize || status.difficulty !== difficulty || status.timeLimitMinutes !== timeLimitMinutes
+        status.targetSize !== targetSize || status.difficulty !== difficulty || status.timeLimitMinutes !== timeLimitMinutes || (status.arenaRevision || 1) !== arenaRevision
       );
       if (roomCode === excludeRoomCode) {
         preserveCanonical = joinable;
@@ -199,10 +203,10 @@ export class Matchmaker extends DurableObject {
     const reserved = await room.fetch(`https://room.internal/rooms/${roomCode}/reserve`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ targetSize, difficulty, timeLimitMinutes })
+      body: JSON.stringify({ targetSize, difficulty, timeLimitMinutes, arenaRevision })
     });
     if (!reserved.ok) return json({ error: TEXT.errors.deliveryFailed }, 503);
-    return json({ roomCode, targetSize, difficulty, timeLimitMinutes });
+    return json({ roomCode, targetSize, difficulty, timeLimitMinutes, arenaRevision });
   }
 }
 
@@ -372,6 +376,7 @@ export class MatchRoom extends DurableObject {
     const timeLimitMinutes = this.reservation?.timeLimitMinutes ?? clampMatchMinutes(url.searchParams.get("timeLimitMinutes"));
     const difficulty = this.reservation?.difficulty ?? (DIFFICULTIES.has(url.searchParams.get("difficulty")) ? url.searchParams.get("difficulty") : "normal");
     this.meta = {
+      arenaRevision: this.reservation?.arenaRevision || Number(url.searchParams.get("arenaRevision") || 1),
       roomCode: normalizeRoomCode(url.pathname.split("/").filter(Boolean).at(-2), "ROOM"),
       seed: normalizeRoomCode(url.searchParams.get("seed"), normalizeRoomCode(url.pathname.split("/").filter(Boolean).at(-2), TEXT.loading.defaultSeed)),
       mode,
@@ -494,6 +499,7 @@ export class MatchRoom extends DurableObject {
       type,
       roomCode: this.meta.roomCode,
       seed: this.meta.seed,
+      arenaRevision: this.meta.arenaRevision || 1,
       serverTime: Date.now(),
       startsAt: this.meta.startedAt,
       endsAt: this.meta.endsAt,
@@ -507,7 +513,7 @@ export class MatchRoom extends DurableObject {
       timeLimitMinutes: this.meta.timeLimitMinutes,
       lastResult: this.meta.lastResult,
       players: this.allPlayers(excludedSocket).map(publicPlayer),
-      ...(["welcome", "match_start"].includes(type) ? { terrainEvents: this.terrainEvents, structuralState: Object.fromEntries(this.structuralHealth) } : {})
+      ...(["welcome", "match_start"].includes(type) ? { terrainEvents: this.terrainEvents, structuralState: Object.fromEntries(this.structuralHealth), structuralFailures: Object.fromEntries(this.structuralFailures) } : {})
     };
   }
 
@@ -559,6 +565,7 @@ export class MatchRoom extends DurableObject {
       if (this.meta && !this.meta.ended) return json({ ok: true, ...this.meta });
       const input = await safeBody(request);
       this.reservation = {
+        arenaRevision: Number(input.arenaRevision || 1),
         targetSize: Math.min(MAX_MATCH_PLAYERS, Math.max(2, Math.trunc(finiteNumber(input.targetSize, 8, 2, MAX_MATCH_PLAYERS)))),
         difficulty: DIFFICULTIES.has(input.difficulty) ? input.difficulty : "normal",
         timeLimitMinutes: clampMatchMinutes(input.timeLimitMinutes)
@@ -573,6 +580,7 @@ export class MatchRoom extends DurableObject {
         humans,
         activeHumans: new Set(this.humanEntries().map(([, player]) => player.id)).size,
         initialized: Boolean(this.meta),
+        arenaRevision: settings?.arenaRevision || 1,
         capacity: MAX_MATCH_PLAYERS,
         targetSize: settings?.targetSize || 0,
         difficulty: settings?.difficulty || "normal",
@@ -582,7 +590,18 @@ export class MatchRoom extends DurableObject {
     }
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: TEXT.errors.websocketRequired }, 426);
     if (Number(url.searchParams.get("v")) !== MULTIPLAYER_PROTOCOL_VERSION) return json({ error: TEXT.errors.unsupportedProtocol }, 426);
+    const arenaRevision = Number(url.searchParams.get("arenaRevision") || 1);
+    if (![1, ARENA_REVISION].includes(arenaRevision)) return json({ error: TEXT.errors.unsupportedProtocol }, 426);
     await this.initialize(url);
+    if ((this.meta.arenaRevision || 1) !== arenaRevision) {
+      // Existing sockets and reconnect reservations keep their arena until they drain.
+      if (this.effectiveHumanCount() > 0) return json({ error: TEXT.errors.unsupportedProtocol }, 426);
+      this.meta.arenaRevision = arenaRevision;
+      this.structuralHealth.clear();
+      this.structuralFailures.clear();
+      this.terrainEvents = [];
+      await this.persistRoom();
+    }
     const requestedResumeToken = String(url.searchParams.get("resumeToken") || "");
     const resumed = requestedResumeToken ? this.resumableSession(requestedResumeToken) : null;
     if (requestedResumeToken && !resumed) return json({ error: TEXT.errors.sessionExpired }, 409);
@@ -669,11 +688,11 @@ export class MatchRoom extends DurableObject {
     if (requireLifeState && player.respawnId) {
       if (Math.trunc(Number(state.lifeSequence)) !== player.deaths || state.respawnId !== player.respawnId) return null;
       if (player.awaitingRespawnState) {
-        const spawn = authoritativeSpawnPoint(player.respawnSpawnIndex, this.meta.seed, this.structuralHealth);
+        const spawn = authoritativeSpawnPoint(player.respawnSpawnIndex, this.meta.seed, this.structuralHealth, this.meta.arenaRevision || 1);
         const invalidSpawn = !spawn ||
           Math.hypot(position.x - spawn.x, position.z - spawn.z) > RESPAWN_SPAWN_TOLERANCE ||
           position.y < -1 || Math.abs(position.y - spawn.y) > RESPAWN_VERTICAL_TOLERANCE ||
-          playerCapsuleIntersectsStructure(position, this.meta.seed, this.structuralHealth);
+          playerCapsuleIntersectsStructure(position, this.meta.seed, this.structuralHealth, this.meta.arenaRevision || 1, this.structuralFailures, now);
         if (invalidSpawn) return null;
       }
     }
@@ -803,7 +822,7 @@ export class MatchRoom extends DurableObject {
       const impact = message.impact ? sanitizeVector(message.impact) : null;
       const validation = validateHitProposal({
         shot, attacker, target, weapon, impact, phase: message.phase,
-        now, seed: this.meta.seed, structuralHealth: this.structuralHealth
+        now, seed: this.meta.seed, structuralHealth: this.structuralHealth, arenaRevision: this.meta.arenaRevision || 1, structuralFailures: this.structuralFailures
       });
       if (!validation) return null;
       shot.hits[target.id] = prior + 1;
@@ -864,7 +883,7 @@ export class MatchRoom extends DurableObject {
         const entry = this.playerById(target.id);
         const validation = validateHitProposal({
           shot: candidate.shot, attacker, target, weapon, impact: candidate.impact,
-          phase: "impact", now, seed: this.meta.seed, structuralHealth: this.structuralHealth
+          phase: "impact", now, seed: this.meta.seed, structuralHealth: this.structuralHealth, arenaRevision: this.meta.arenaRevision || 1, structuralFailures: this.structuralFailures
         });
         if (!validation) continue;
         candidate.shot.hits[target.id] = 1;
@@ -892,8 +911,8 @@ export class MatchRoom extends DurableObject {
     };
     const position = sanitizeVector(message.position);
     if (squaredDistance(position, expected) > 4 ** 2 || Math.abs(position.x) > 120 || Math.abs(position.z) > 120 || position.y < -.5 || position.y > 100) return;
-    if (playerCapsuleIntersectsStructure(position, this.meta.seed, this.structuralHealth)) return;
-    if (lineBlockedByStructure(expected, position, this.meta.seed, this.structuralHealth)) return;
+    if (playerCapsuleIntersectsStructure(position, this.meta.seed, this.structuralHealth, this.meta.arenaRevision || 1, this.structuralFailures, now)) return;
+    if (lineBlockedByStructure(expected, position, this.meta.seed, this.structuralHealth, this.meta.arenaRevision || 1, this.structuralFailures, now)) return;
     shot.teleported = true;
     entry.player.position = position;
     entry.player.velocity = { x: 0, y: 2.5, z: 0 };
@@ -933,10 +952,11 @@ export class MatchRoom extends DurableObject {
     const terrainShot = this.recentValidTerrainShot(attackerEntry.player, weapon, position, message, now);
     if (!terrainShot) return;
     const structuralDamage = canonicalStructuralDamage * (terrainShot.structureDamageScale || 1);
-    const structureId = /^structure-(?:[1-9]|1[0-6])$/.test(String(message.structureId || "")) ? String(message.structureId) : "";
+    const structureId = /^structure-[1-9]\d*$/.test(String(message.structureId || "")) ? String(message.structureId) : "";
     const requestedPartId = String(message.partId || "");
-    let partId = structureId && new RegExp(`^${structureId}-(?:platform-[1-9]\\d*|pillar-[1-8])$`).test(requestedPartId) ? requestedPartId : "";
-    const bounds = structuralPartBounds(this.meta.seed, partId);
+    let partId = structureId && new RegExp(`^${structureId}-(?:platform|pillar)-[1-9]\\d*$`).test(requestedPartId) ? requestedPartId : "";
+    const towers = structuralTowerBlueprints(this.meta.seed, undefined, this.meta.arenaRevision || 1);
+    const bounds = structuralPartBounds(this.meta.seed, partId, towers);
     if (bounds) {
       const targetPillar = /-pillar-(\d+)$/.exec(partId);
       let settledDrop = 0;
@@ -944,9 +964,10 @@ export class MatchRoom extends DurableObject {
       for (const [failedId, health] of this.structuralHealth) {
         const failedPillar = new RegExp(`^${structureId}-pillar-(\\d+)$`).exec(failedId);
         if (health > 0 || !failedPillar || targetPillar && Number(failedPillar[1]) >= Number(targetPillar[1])) continue;
-        const failedBounds = structuralPartBounds(this.meta.seed, failedId);
+        const failedBounds = structuralPartBounds(this.meta.seed, failedId, towers);
         const height = failedBounds ? failedBounds.top - failedBounds.baseY : 0;
         const failedAt = this.structuralFailures.get(failedId) || 0;
+        if (towers[Number(structureId.slice(10)) - 1]?.landmarkIndex && failedAt && now < failedAt + 520) continue;
         if (failedAt && now - failedAt < 1_650) fallingDrop += height;
         else settledDrop += height;
       }
@@ -960,13 +981,19 @@ export class MatchRoom extends DurableObject {
     let structuralHealth = null;
     let collapsed = false;
     if (partId) {
-      const majorTower = /^structure-[1-6]-/.test(partId);
+      const majorTower = towers[Number(structureId.slice(10)) - 1]?.major;
       const maximumHealth = majorTower ? 8 : 6;
       const currentHealth = this.structuralHealth.get(partId) ?? maximumHealth;
       structuralHealth = Math.max(0, currentHealth - structuralDamage);
       collapsed = currentHealth > 0 && structuralHealth === 0;
       this.structuralHealth.set(partId, structuralHealth);
-      if (collapsed) this.structuralFailures.set(partId, now);
+      if (collapsed) {
+        let startsAt = now;
+        if (towers[Number(structureId.slice(10)) - 1]?.landmarkIndex) {
+          for (const [failedId, start] of this.structuralFailures) if (failedId.startsWith(`${structureId}-`)) startsAt = Math.max(startsAt, start + 1_650);
+        }
+        this.structuralFailures.set(partId, startsAt);
+      }
     }
     const event = {
       type: "terrain_damage",
@@ -980,6 +1007,7 @@ export class MatchRoom extends DurableObject {
       partId,
       structuralHealth,
       collapsed,
+      collapseStartsAt: partId ? this.structuralFailures.get(partId) || 0 : 0,
       serverTime: now
     };
     this.terrainEvents.push(event);
@@ -1245,7 +1273,7 @@ export default {
       status: 204,
       headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET,POST,OPTIONS", "access-control-allow-headers": "content-type" }
     });
-    if (url.pathname === "/api/health") return json({ ok: true, service: "master-blaster-multiplayer", protocol: MULTIPLAYER_PROTOCOL_VERSION });
+    if (url.pathname === "/api/health") return json({ ok: true, service: "master-blaster-multiplayer", protocol: MULTIPLAYER_PROTOCOL_VERSION, arenaRevision: ARENA_REVISION });
     if (url.pathname === "/api/quick" && request.method === "POST") {
       return env.MATCHMAKER.getByName("global").fetch(request);
     }

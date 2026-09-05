@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corner pillar visual regression</title>
+<style>body{margin:0;background:#07111d;color:white;font:14px system-ui}canvas{display:block}nav{position:fixed;inset:auto 0 0;background:#07111ded;padding:10px;display:flex;gap:8px;flex-wrap:wrap}button,select{min-height:40px}output{flex-basis:100%}</style>
+<canvas></canvas><nav>
+<label>Corner <select id="corner"><option value="16">Northwest</option><option value="17">Southeast</option><option value="18">Northeast</option><option value="19">Southwest</option></select></label>
+<label>Quality <select id="quality"><option>high</option><option>medium</option><option>low</option></select></label>
+<button id="base">Break base</button><button id="top">Break top</button><button id="all">Demolish corner</button><button id="last">Prepare final support</button><button id="reset">Reset arena</button><button id="pause">Pause simulation</button><button id="step">Advance 0.25 s</button><output>Loading actual arena renderer…</output></nav>
+<script type="module">
+import * as THREE from "three/webgpu";
+import { ArenaWorld } from "../src/world.js";
+import { NeonRenderPipeline } from "../src/renderPipeline.js";
+import { WEAPONS } from "../src/gameData.js";
+const errors = [];
+addEventListener('error', (event) => errors.push(event.message));
+addEventListener('unhandledrejection', (event) => errors.push(String(event.reason)));
+const originalError = console.error;
+console.error = (...args) => { errors.push(args.map(String).join(' ')); originalError(...args); };
+const renderer = new THREE.WebGPURenderer({ canvas: document.querySelector('canvas'), antialias: true, samples: 4 });
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.02;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x07111d);
+scene.fog = new THREE.FogExp2(0x07111d, .006);
+scene.add(new THREE.HemisphereLight(0x96d9ff, 0x10182a, 1.18));
+const light = new THREE.DirectionalLight(0xffffff, 1.78); light.position.set(-22, 40, 18); light.castShadow = true;
+light.shadow.mapSize.set(2048, 2048); light.shadow.bias = -.00018; light.shadow.normalBias = .035;
+Object.assign(light.shadow.camera, { left: -135, right: 135, top: 135, bottom: -135, near: 1, far: 260 }); scene.add(light);
+const rim = new THREE.DirectionalLight(0xff315f, .88); rim.position.set(22, 15, -25); scene.add(rim);
+const camera = new THREE.PerspectiveCamera(62, 1, .1, 520);
+await renderer.init();
+let pipeline = new NeonRenderPipeline(renderer, scene, camera);
+let world = new ArenaWorld(scene, "BLAST-01"), demolishing = false, paused = false, previous = performance.now(), frames = 0, sampleAt = previous, fps = 0;
+const selected = () => world.structures[Number(document.querySelector('#corner').value)];
+function frameCorner() {
+  const tower = selected(), height = tower.segments.at(-1)?.top || 20;
+  camera.position.set(tower.x + Math.sign(tower.x) * 18, height * .6 + 7, tower.z - Math.sign(tower.z) * Math.max(56, height * 1.2));
+  camera.lookAt(tower.x, height * .5, tower.z);
+}
+function resize() { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
+resize(); frameCorner();
+addEventListener('resize', resize);
+document.querySelector('#corner').onchange = () => { demolishing = false; frameCorner(); };
+document.querySelector('#quality').onchange = (event) => pipeline.setQuality(event.target.value);
+function hit(top = false) {
+  const tower = selected();
+  if (tower.activeChange || !tower.segments.length) return;
+  const part = top ? tower.segments.at(-1) : tower.segments[0];
+  const origin = new THREE.Vector3(part.x + 4.5, part.baseY + part.h / 2, part.z);
+  const point = world.grapplePoint(origin, new THREE.Vector3(-1, 0, 0));
+  world.destroy(point, 0, { structuralDamage: WEAPONS.rocket_launcher.structureDamage, attackerId: 'visual-qa' });
+}
+document.querySelector('#base').onclick = () => hit();
+document.querySelector('#top').onclick = () => hit(true);
+document.querySelector('#all').onclick = () => { demolishing = true; };
+document.querySelector('#last').onclick = () => {
+  demolishing = false;
+  world.applyStructuralState(Object.fromEntries(selected().segments.slice(0, -1).map((part) => [part.structuralId, 0])));
+  frameCorner();
+};
+document.querySelector('#reset').onclick = () => {
+  demolishing = false; pipeline.dispose(); renderer.setRenderTarget(null); world.dispose();
+  world = new ArenaWorld(scene, "BLAST-01");
+  pipeline = new NeonRenderPipeline(renderer, scene, camera, { quality: document.querySelector('#quality').value }); frameCorner();
+};
+document.querySelector('#pause').onclick = (event) => { paused = !paused; event.target.textContent = paused ? 'Resume simulation' : 'Pause simulation'; };
+document.querySelector('#step').onclick = () => world.update(.25, []);
+renderer.setAnimationLoop(() => {
+  const now = performance.now(), dt = Math.min(.05, (now - previous) / 1000); previous = now;
+  if (demolishing) hit();
+  if (!paused) world.update(dt, []); world.drainStructuralEvents(); pipeline.render();
+  if (++frames && now - sampleAt > 1000) { fps = Math.round(frames * 1000 / (now - sampleAt)); frames = 0; sampleAt = now; }
+  const tower = selected();
+  document.querySelector('output').textContent = `${tower.id} · ${tower.segments.length} sections · crown ${tower.landmark.visible ? tower.landmark.position.y.toFixed(2) : 'hidden'} · anchor ${tower.anchor?.point.y.toFixed(2) || 'none'} · ${tower.activeChange?.phase || 'settled'} · ${pipeline.profile} · ${fps} FPS · ${renderer.info.render.drawCalls} draws · ${errors.length} errors ${errors.at(-1) || ''}`;
+});
+addEventListener('pagehide', () => { renderer.setAnimationLoop(null); pipeline.dispose(); world.dispose(); renderer.dispose(); }, { once: true });
+</script></html>
