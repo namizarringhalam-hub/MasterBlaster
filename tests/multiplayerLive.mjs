@@ -630,7 +630,9 @@ for (const partId of ["structure-17-pillar-7", "structure-18-pillar-9", "structu
   await new Promise((resolve) => setTimeout(resolve, Math.max(0, nextCornerFireAt - Date.now())));
   const shotId = fire(cornerHost, { playerId: cornerHost.welcome.playerId, weaponId: "rocket_launcher", slotIndex: 2, direction: { x: -1, y: 0, z: 0 } });
   const paid = await cornerGuest.next((message) => message.type === "fire" && message.shotId === shotId);
-  nextCornerFireAt = Math.max(paid.reloadCompleteAt || 0, paid.serverTime + WEAPONS.rocket_launcher.cooldown * 1000) + 80;
+  // Server UTC may differ from this test runner's clock. Wait the remaining
+  // authoritative duration, not until a server timestamp on the local clock.
+  nextCornerFireAt = Date.now() + Math.max(0, (paid.reloadCompleteAt || 0) - paid.serverTime, WEAPONS.rocket_launcher.cooldown * 1000) + 80;
   await new Promise((resolve) => setTimeout(resolve, 80));
   cornerHost.socket.send(JSON.stringify({ type: "terrain_hit", shotId, attackerId: cornerHost.welcome.playerId, weaponId: "rocket_launcher", position: impact, structureId: partId.split("-").slice(0, 2).join("-"), partId }));
   const damage = await cornerGuest.next((message) => message.type === "terrain_damage" && message.partId === partId && message.collapsed);
