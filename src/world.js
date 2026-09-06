@@ -286,6 +286,8 @@ export class ArenaWorld {
     const [ground, groundNormal, groundRoughness] = surfaceTextures(`${seed}-ground`, 28);
     this.textures = [panel, ground, radialGlowTexture(), panelNormal, panelRoughness, groundNormal, groundRoughness];
     [this.panelTexture, this.groundTexture, this.glowTexture, this.panelNormal, this.panelRoughness, this.groundNormal, this.groundRoughness] = this.textures;
+    this.coverTextures = surfaceTextures(`${seed}-cover`, 4, true);
+    this.textures.push(...this.coverTextures);
     this.routeMaterials = this.districtColors.map((color) => new THREE.MeshBasicMaterial({
       color: new THREE.Color(color).multiplyScalar(1.65),
       transparent: true,
@@ -1477,6 +1479,7 @@ export class ArenaWorld {
     const marker = new THREE.Object3D();
     for (const entries of groups.values()) {
       const coverMaterial = entries[0].mesh.material.clone();
+      [coverMaterial.map, coverMaterial.normalMap, coverMaterial.roughnessMap] = this.coverTextures;
       coverMaterial.vertexColors = true;
       coverMaterial.envMap = this.scene.environment;
       coverMaterial.envMapIntensity = .24;

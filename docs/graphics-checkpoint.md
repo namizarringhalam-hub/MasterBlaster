@@ -1,11 +1,15 @@
 # Graphics overhaul checkpoint
 
-Updated: 2026-09-06, v100 interim release verified; pass13 startup investigation. IN PROGRESS.
+Updated: 2026-09-06, v100 remains live; pass14 cover-surface refinement. IN PROGRESS.
 
 ## Current handoff
 
+- Pass14: cover-only machined atlas replaces padded four-cell infill with two flat plates per axis, narrow seams, fine grain and visible recessed fasteners. Existing structural/ground texture hashes, mitered rim, collision, symbols and all weapons unchanged. Root-owned files: src/surfaceTextures.js, src/world.js, tests/graphics.test.mjs, this checkpoint. Full18+15 suite and build/hosting PASS after final inset20 revision. Not published.
+- Cover review86 ->91 ->93/100 FAIL. Padded appearance and cropped fasteners resolved. Next blocker: district symbols need restrained neutral housings/endcaps around current colored faces, with the same4instances and unchanged brightness. Eight native glancing-angle samples saved for independent stability review before geometry work. Ramanujan98/100 PASS covers only the atlas's bounded resource/lifecycle cost, not graphics or broadFPS.
+- Current browser gameTab is tab7, ordinary WebGPU High/Foundry/grazing1280x720DPR1; no reset/camera/stress loop running. Tenreset lifecycle completed with31textures/179programs/799attributes flat and0errors. Current helper saveCoverCanvas uses current gameTab; do not reuse old saveGraphicsCanvas. Strip data URLs before printing DOM snapshots, which otherwise include the entire native capture payload.
+- Bohr completed read-only startup audit:806nodes.getForRender calls are NOT806provenbuilds. InstancedMesh UUID is a cache-key discriminator. Bounded next experiment is merged ordinary fighter thruster pair, same two cones/pose/material/motion and one draw, removing per-fighter instance key/uploads. Needs exact vertex/normal/UV/worldbound, decoy and lifecycle tests plus WebGPU/WebGL shader measurements; NOT implemented yet.
 - Interim snapshot e42baf74e5a0108048963b688d4a6c5dd86ee08d committed and pushed origin/main and Sites source main, then deployed as v100. No Worker changes: existing backend deployment verified before client release. Full automated suite/build/Worker dry run/local AND production live lifecycle passed.
-- Local Vite still responds http://127.0.0.1:5173 (previous session77559). Temporary local Worker session65308 was deliberately stopped after passed tests, not an unexpected failure. Browser binding browser reused; tab4 disappeared during production rendered-match check (no cause established); recreated tab6 and now restored ordinary /tests/graphics.browser.html WebGPU High/Foundry/arena, paused16fighters, native1280x720DPR1. No review loops/tests/builds running. Do not count the interrupted production browser match as passed. Old saveGraphicsCanvas helper closes over tab3; don't reuse it: export the current gameTab's DOM capture href directly.
+- Local Vite still responds http://127.0.0.1:5173 (previous session77559). Temporary local Worker session65308 was deliberately stopped after passed tests. Earlier tab4 disappeared during production rendered-match check (no cause established); do not count that interrupted render observation as passed. Reused browser binding; tab7 now supersedes tab6.
 - User explicitly requested "deploy and then continue" after failing scores and no-release state were disclosed. v100 was published as that one-time interim release exception, not independent graphics approval. Future overhaul publication remains subject to the98 gate unless separately authorized. Continued work below is not part of v100.
 - v100 production verification: masterblaster.se HTML/main-DL97ntj6.js/three-BcuhlKCy.js exactly match tested bytes. Sites origin serves same current entrypoint and matching main/Three assets; wrapper HTML differs, so don't claim full HTML byte equality there. Health ok/protocol1/arenaRevision2. Production live suite exited0, including respawn/reconnect, reserved capacity, rematches, collapse credit, allfour corner pillars. Browser landing/setup/START checked, but render observation interrupted by missing tab.
 - Post-release changes (not included in v100): clearMatch resets stale hideMatchLoadingAfterFrame, and renderMain first dismisses ONLY an obsolete pending arena loader before that reset. Actual-method regressions first FAILED before each fix. Full sequence uses real clearMatch/renderMain/frame and PLAYER_TEXT; ensures exact-once menu dismissal/nooldarenamarks, boot-overlay preservation and upcomingnetworkoverlay preservation. QA exports startup measures/visibility/timestamps and optional traceStartup (all-call totals, top8details, first3framesonly, nestedtimingoverlaps), with executable wrapper semantics/bounds tests. Live Testloadertransitions passed onWebGPU. Final full suite18+15 at23:16, build/hostingcheck/diffcheckPASS. Current main-BTfUXIdI.js is NOT published; v100 archive remains unchanged.
@@ -39,15 +43,14 @@ Reuse retained agents, read-only critics; root owns edits/build/browser/Sites.
 
 ## Latest validation
 
-- Full npm test: 18 standalone scripts plus 15 Worker Vitest cases PASS after final pass12 mitered-cover/context-tag candidate (22:29 local run).
+- Full npm test:18 standalone scripts plus15 Worker cases PASS after final pass14 fastener correction (Worker phase23:36).
 - npm run build + hosting check PASS:
-  - main-DL97ntj6.js: 365.29 KB / 106.07 KB gzip.
+  - main-ByFw66SX.js:365.66 KB /106.21 KB gzip (unpublished).
   - three-BcuhlKCy.js: 924.80 KB / 254.69 KB gzip.
-  - index-BDTCJK4k.js: 18.08 KB / 8.00 KB gzip.
+  - index-CatZj9ax.js:18.08 KB /8.00 KB gzip.
 - git diff --check passes; only Windows LF/CRLF warnings.
 - No Worker changes or new production deployment. Existing test labels containing “AAA” are legacy output, not a quality claim.
-- Root-owned tracked changes: AGENTS.md, PLAYER_TEXT.js, package.json, package-lock.json; src/{combatVisuals,gameData,main,player,renderPipeline,world}.js; tests/{performance.test,smoke,weaponStress}.mjs.
-- New files: docs/graphics-checkpoint.md; scripts/{test,patch-three}.mjs; src/surfaceTextures.js; tests/{graphics.test,testRunner.test,threeLifecycle.test}.mjs; tests/graphics.browser.html.
+- Previous overhaul changes through v100 and post-release loader fix ee2a19d are already committed/pushed. Current pass14 files listed above; preserve any new unrelated work.
 - Preserve any new unrelated changes; inspect Git before editing.
 
 ## Saved implementation
@@ -77,13 +80,17 @@ Reuse retained agents, read-only critics; root owns edits/build/browser/Sites.
    - Guards exact 0.185.1/source, validates all targets before writes, idempotent. Patches installed source plus WebGPU and nodes bundles through postinstall/pretest/prebuild/predev. No dependency upgrade; lockfile only hasInstallScript change.
    - Real Three Geometries/Attributes/Info test failed two retained buffers before patch; ten cycles/both pass orders now release all raw/node/index attrs without duplicates.
 5. Medium transition input timeout: immediate Test weapon cache click timed out once. Bounded DOM/log check showed selected Medium/no errors/fallback and test NOT started. Retried once after settling, successful. 7.22 s untraced frame around transition; timeout root cause not proven. Do not blind-retry or claim a renderer/cache crash.
-6. Minor pending loader issue: clearMatch does not clear hideMatchLoadingAfterFrame; pre-first-frame menu transition can emit misleading metrics.
+6. Loader lifecycle issue resolved in ee2a19d after actual-method regressions and live transitions; allthree scoped98PASS. Preserve boot/newnetwork loader semantics when changing teardown.
 7. Pass12 preview command timeouts: immediate capture/click after a new view/tier occasionally timed out. Bounded DOM/log checks confirmed the preview recovered with noerrors and no duplicate loop running; retried only unstarted actions after settling. Selection and capture now separated across observations. No evidence of a crashed process; exact blocking cause remains unisolated. Independent review-wait timeout no longer depends on rAF.
 
 ## Live evidence
 
 Directory: C:/Users/namir/AppData/Local/Temp/master-blaster-graphics-review.
 
+- Pass14 matched FoundryHighgrazing1280x720 native PNG/JSON: pass14-before-foundry-high-grazing -> pass14-machined-foundry-high-grazing (91FAIL) -> pass14-machined-fasteners-foundry-high-grazing (93FAIL). No FPS/memory inference from unmatched retained render states. Covers add3shared256-square RGBA maps,786432basebytes/~1048572mipbytes, not a memory optimization.
+- pass14-machined-{foundry,solar,ion}-{high,medium,low}-underpass PNG/JSON: all9 static palette/tier combinations,0errors/nofallback,10worldtextures at4/8/16anisotropy. Before fastener relocation only. Final inset20 examples: pass14-fasteners-{foundry-high,solar-low,ion-medium}-underpass. Reviewer independently inspected5 earlier theme/tier images, found symbols/passages readable.
+- pass14-cover-ten-resets-high.json: final inset20 source, HighFoundrygrazing,10samples serial2..11;31textures/367geometries/799attrs10793672B/179programs/665UBOs/15RTs flat. Total185295147->185295707->185295896 thenexact;0errors/nofallback. NormaluntracedWebGPU; no CPU-heavy concurrentjobs. Ramanujan independentlyread, scoped98PASS.
+- pass14-fasteners-grazing-motion-{0..7}.png + pass14-fasteners-grazing-motion.json: native1280x720,HighFoundry,offset0..1.12m,4renderedframesapart,0errors/nofallback. Discrete glancing samples, NOT continuousvideo or wholecategoryapproval. Review pending at checkpoint write.
 - pass7-owned-reset-trace-3.json: exact leaked raw attributes before backport.
 - pass7-ten-resets-high.json: ten High 1280x720 resets, all 1120 attrs/12,449,728 B; flat total after bounded warmup.
 - pass8-combat-high-trimmed.json/png: fixed overview, active 16 fighters, High 1440x900 DPR1, 3600 frames median22.7/p9531.9/p9948/max919 ms.
@@ -124,7 +131,7 @@ Directory: C:/Users/namir/AppData/Local/Temp/master-blaster-graphics-review.
 
 ## Next unfinished steps (priority order)
 
-1. Finish additional-theme/all-tier cover readability checks; then sharpen the cover-only infill seam/grain without changing the now-correct mitered rim. Latest close-cover86FAIL; do not redo completed decoy subsystem work unless a new regression appears.
+1. Continue cover review from93FAIL: surface/crop fixes done and alltheme/tier readability checked. Review saved glancing sequence, then add restrained neutral symbol housings/endcaps with unchanged colored-face widths/positions/brightness and4instance ownership. Do not redo mitered rim or resolved padded texture. Full98category gate remains open.
 2. Startup attribution now exists (pass13). Next: investigate reducing repeated TSL node builds/cache misses and safe selected-pipeline preparation, preserving exact output, async lifetime/teardown safety and quality. Measure WebGPU separately. Don't repeat initial diagnostic discovery; no optimization to the51.9s issue implemented yet. No detached compileAsync race, clamping samples or lowerquality.
 3. Boost pad mechanical surface/emitter separation and soft upper plume termination, preserving behavior. All-tier/mobile artwork still needs coverage; WebGL has only static smoke evidence.
 4. Continuous camera motion stability remains unproven; pass11 contains eight discrete .16m offsets per view, four rendered frames apart, not video. MSAA4 already present; no blanket blur/fog/hiding cues.

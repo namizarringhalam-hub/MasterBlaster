@@ -56,6 +56,18 @@ for (const [seed, expected] of [
   maps.forEach(map => map.dispose());
 }
 
+const coverMaps = surfaceTextures("COVER-TEST", 4, true);
+const normalPixel = (x, y) => coverMaps[1].image.data[(y * 256 + x) * 4];
+assert.equal(normalPixel(2, 24), 127, "machined plate is flat two texels from a narrow seam, not broadly rounded");
+assert.equal(normalPixel(64, 24), 127, "cover has two large plates per axis, not a four-cell upholstered grid");
+assert.ok(Math.abs(normalPixel(128, 24) - 127) > 15, "the narrow inter-plate seam remains visibly recessed");
+for (const x of [20, 107, 148, 235]) for (const y of [20, 107, 148, 235]) {
+  assert.ok(coverMaps[0].image.data[(y * 256 + x) * 4] < 170, "recessed fasteners stay inside the visible cover UV crop");
+}
+assert.deepEqual(coverMaps.map(map => map.image.width), [256, 256, 256]);
+assert.deepEqual(coverMaps.map(map => map.colorSpace), [THREE.SRGBColorSpace, THREE.NoColorSpace, THREE.NoColorSpace]);
+coverMaps.forEach(map => map.dispose());
+
 const plate = structuralPanelGeometry();
 plate.computeBoundingBox();
 assert.deepEqual(plate.boundingBox.min.toArray(), [-.5, -.5, -.5]);
@@ -268,6 +280,7 @@ assert.equal(world.panelRoughness.colorSpace, THREE.NoColorSpace);
 for (const level of ["low", "medium", "high", "low", "high"]) {
   world.setGraphicsProfile(graphicsProfile(level), 8);
   assert.equal(world.panelTexture.anisotropy, Math.min(graphicsProfile(level).anisotropy, 8));
+  for (const texture of world.coverTextures) assert.equal(texture.anisotropy, Math.min(graphicsProfile(level).anisotropy, 8), "cover filtering follows every selected tier and device limit");
   assert.equal(world.structures.length, 20, "tier changes never alter structural/collision content");
 }
 const gripFighter = new Fighter(scene, { id: "grip-qa", name: "QA", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3(0, 15.01, 8));
@@ -436,6 +449,8 @@ for (const variant of [0, 1, 2, 3]) for (const weapon of Object.values(WEAPONS))
 }
 const outsideSprite = new THREE.Sprite();
 for (const batch of world.destructibleBatches) {
+  assert.ok(batch.material.map === world.coverTextures[0] && batch.material.normalMap === world.coverTextures[1] && batch.material.roughnessMap === world.coverTextures[2], "cover batches share one dedicated matched surface atlas");
+  assert.ok(batch.material.map !== world.panelTexture, "cover tuning cannot alter pillar and deck textures");
   batch.geometry.computeBoundingBox();
   assert.deepEqual(batch.geometry.boundingBox.min.toArray(), [-.5, -.5, -.5]);
   assert.deepEqual(batch.geometry.boundingBox.max.toArray(), [.5, .5, .5]);
@@ -466,11 +481,14 @@ const onSharedSpriteDispose = () => sharedSpriteDisposals++;
 outsideSprite.geometry.addEventListener("dispose", onSharedSpriteDispose);
 for (const arena of [world, new ArenaWorld(scene, "RESET-2"), new ArenaWorld(scene, "RESET-3")]) {
   let spriteMaterialsDisposed = 0, ownedGeometryDisposed = 0;
+  const coverDisposals = new Map(arena.coverTextures.map(texture => [texture, 0]));
+  for (const texture of arena.coverTextures) texture.addEventListener("dispose", () => coverDisposals.set(texture, coverDisposals.get(texture) + 1));
   arena.group.traverse(object => {
     if (object.isSprite) object.material.addEventListener("dispose", () => spriteMaterialsDisposed++);
     else if (object.geometry) object.geometry.addEventListener("dispose", () => ownedGeometryDisposed++);
   });
   arena.dispose();
+  assert.ok([...coverDisposals.values()].every(count => count === 1), "shared cover textures dispose exactly once per arena");
   assert.ok(scene.backgroundNode === arena.previousBackgroundNode, "teardown restores the previous sky expression without disposing Three's owned sky mesh");
   assert.equal(sharedSpriteDisposals, 0, "arena teardown must not destroy Three's shared Sprite quad used by the next arena");
   assert.ok(spriteMaterialsDisposed > 0, "owned sprite materials are still released");
