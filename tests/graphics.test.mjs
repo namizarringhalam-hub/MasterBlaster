@@ -1,16 +1,97 @@
 import assert from "node:assert/strict";
 import * as THREE from "three/webgpu";
+import { getCurrentStack, getNormalFromDepth, normalView, setCurrentStack, stack, uniform, vec2, vec4 } from "three/tsl";
+import WebGPUPipelineUtils from "../node_modules/three/src/renderers/webgpu/utils/WebGPUPipelineUtils.js";
 import { ArenaWorld, structuralPanelGeometry, structuralRouteGeometry } from "../src/world.js";
 import { Fighter } from "../src/player.js";
 import { graphicsProfile, swapStolenWeapon, WEAPONS } from "../src/gameData.js";
 import { CombatVisuals } from "../src/combatVisuals.js";
-import { NeonRenderPipeline } from "../src/renderPipeline.js";
+import { NeonRenderPipeline, recoverInvalidAONormals } from "../src/renderPipeline.js";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { surfaceTextures } from "../src/surfaceTextures.js";
 
 // Execute the fixture's actual wait helper with a stopped animation clock.
 const graphicsFixture = readFileSync(new URL("./graphics.browser.html", import.meta.url), "utf8");
+// Execute the exact capture block: later frame counters must not alter evidence.
+const captureSource = graphicsFixture.slice(graphicsFixture.indexOf("    const grapple = game.players[0]?.grapple;"), graphicsFixture.indexOf('    const link = select("canvas-capture");'));
+const captureFrame = new Function("game", "renderedFrames", "sceneSerial", "select", "ropeRenders", "ropeRendersBefore", "errorCount", `let canvasCapture; ${captureSource}; return canvasCapture;`);
+for (const renders of [0, 1]) {
+  const captureGame = { players: [{ grapple: { anchor: new THREE.Vector3(1, 2, 3), line: { geometry: { instanceCount: 1 }, material: { blending: THREE.NoBlending } } } }],
+    renderer: { info: { render: { drawCalls: 378, triangles: 169330 } } }, renderPipeline: { direct: false } };
+  const captured = captureFrame(captureGame, 8, 1, () => ({ value: "effects" }), 4 + renders, 4, 0);
+  captureGame.renderer.info.render.drawCalls = 1;
+  assert.equal(captured.draws, 378);
+  assert.equal(captured.rope.rendersThisFrame, renders, "a live grapple object alone cannot certify a rendered rope");
+  assert.equal(captured.rope.segments, 1);
+  captureGame.players = [];
+  assert.equal(captureFrame(captureGame, 9, 1, () => ({ value: "effects" }), 4, 4, 0).rope, null);
+}
+const hideAOObjectSource = graphicsFixture.slice(graphicsFixture.indexOf("function hideAOObjectForReview("), graphicsFixture.indexOf("const requestedAOOutput"));
+for (const hidden of [null, "grid", "route", "unknown"]) {
+  const hide = new Function("hiddenAOObject", `${hideAOObjectSource}; return hideAOObjectForReview;`)(hidden);
+  const objects = [{ type: "GridHelper", visible: true }, { name: "District route floor", visible: true }, { name: "Arena floor", visible: true }];
+  objects.forEach(hide);
+  assert.deepEqual(objects.map(object => object.visible), [hidden !== "grid", hidden !== "route", true], "QA visibility isolation changes only the requested object, never the ground");
+}
+const aoWrapperSource = graphicsFixture.slice(graphicsFixture.indexOf("function withAODiagnostics("), graphicsFixture.indexOf("// QA-only causal comparison"));
+const geometryNormalToken = {}, colorOutputToken = {};
+const makeAOWrapper = new Function("mrt", "normalViewGeometry", "output", "geometryAONormals", "aoOutput", "vec3", "vec4", "depthAONormals", "legacyAONormals", "normalView", "materialBlendAONormals", "THREE", "recoverAONormals", "singleSampleAO", "emulateCompatibilityAO", `${aoWrapperSource}; return withAODiagnostics;`);
+const wrapAONormals = makeAOWrapper(value => value, geometryNormalToken, colorOutputToken, true, "final");
+let aoOverrides = 0, aoBuildCalls = 0;
+const aoFixture = { ensure: wrapAONormals(function (value) {
+  aoBuildCalls++; this.aoPass = {};
+  this.scenePass ??= { setMRT(value) { aoOverrides++; assert.ok(value.normal === geometryNormalToken && value.output === colorOutputToken); } };
+  return value;
+}) };
+assert.equal(aoFixture.ensure(7), 7);
+assert.equal(aoFixture.ensure(8), 8);
+assert.equal(aoBuildCalls, 2); assert.equal(aoOverrides, 1, "QA normal comparison overrides only newly created AO scene passes");
+const noAOFixture = { ensure: wrapAONormals(function () { this.scenePass = { setMRT() { throw new Error("non-AO pass changed"); } }; }) };
+noAOFixture.ensure();
+const depthAOFixture = { ensure: makeAOWrapper(null, null, null, false, "final", null, null, true)(function () {
+  this.aoPass = { normalNode: {} }; this.scenePass = {};
+}) };
+depthAOFixture.ensure();
+assert.equal(depthAOFixture.aoPass.normalNode, null, "depth-normal diagnostic changes only the AO normal source");
+const legacyAOFixture = { ensure: makeAOWrapper(value => value, null, colorOutputToken, false, "final", null, null, false, true, normalView)(function () {
+  this.aoPass = {}; this.scenePass = { setMRT(value) { assert.ok(value.normal === normalView && value.output === colorOutputToken); } };
+}) };
+legacyAOFixture.ensure();
+let normalBlend;
+const materialBlendFixture = { ensure: makeAOWrapper(null, null, null, false, "final", null, null, false, false, null, true, THREE)(function () {
+  this.aoPass = {}; this.scenePass = { getMRT: () => ({ setBlendMode(name, blend) { assert.equal(name, "normal"); normalBlend = blend; } }) };
+}) };
+materialBlendFixture.ensure();
+assert.equal(normalBlend.blending, THREE.MaterialBlending);
+
+function assertCompatibleAONormals(root) {
+  root.traverse(object => {
+    for (const material of [].concat(object.material || [])) {
+      if (material.depthWrite || !material.colorWrite) continue;
+      assert.equal(material.transparent, true, "visible non-depth writers need alpha blending on compatibility GPUs");
+      assert.equal(material.premultipliedAlpha, false, "a premultiplied normal needs separate coverage handling");
+      assert.ok([THREE.NormalBlending, THREE.AdditiveBlending].includes(material.blending), "new blend modes need AO compatibility coverage");
+      const blend = WebGPUPipelineUtils.prototype._getBlending.call({}, material);
+      assert.equal(blend.color.srcFactor, "src-alpha");
+      assert.ok(["one", "one-minus-src-alpha"].includes(blend.color.dstFactor));
+      assert.equal(blend.color.operation, "add", "alpha zero preserves the destination normal in compatibility mode");
+    }
+  });
+}
+for (const mode of ["raw", "color"]) {
+  const rawToken = {}, colorToken = {};
+  const wrap = makeAOWrapper(() => { throw new Error("diagnostic changed material normals"); }, geometryNormalToken, colorOutputToken, false, mode,
+    value => value, value => value);
+  const target = { ensure: wrap(function () {
+    this.aoPass = { getTextureNode: () => ({ r: rawToken }) };
+    this.scenePass = { getTextureNode: () => colorToken };
+    this.pipeline = {};
+  }) };
+  target.ensure();
+  assert.ok(target.pipeline.outputNode === (mode === "raw" ? rawToken : colorToken));
+  assert.equal(target.pipeline.needsUpdate, true);
+}
 const waitSource = graphicsFixture.slice(graphicsFixture.indexOf("function waitForReviewFrame("), graphicsFixture.indexOf("const stillMove"));
 let timeoutCallback, frameCallback, cleared = 0, cancelled = 0, serial = 3;
 const makeWait = new Function("setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "getSerial",
@@ -92,12 +173,65 @@ const rendererStub = nativeWebGPU => ({
   getRenderObjectFunction: () => null, getPixelRatio: () => 1, getMRT: () => null,
   getClearColor: target => target.set(0), getClearAlpha: () => 1, getScissorTest: () => false
 });
+// Inspect the real TSL graph, including the lazy branch's real depth sampler.
+for (const alpha of [0, 1]) {
+  const previousStack = getCurrentStack(), shaderStack = stack();
+  try {
+    setCurrentStack(shaderStack);
+    const coord = vec2(.5), stored = vec4(.2, .3, .4, alpha);
+    const depth = { value: new THREE.DepthTexture(4, 4) }, inverse = uniform(new THREE.Matrix4());
+    const sample = recoverInvalidAONormals({ sample(uv) { assert.ok(uv === coord); return stored; } }, depth, inverse);
+    const result = sample.sample.shaderNode.jsFunc([coord]);
+    const conditions = shaderStack.nodes.filter(node => node.constructor.name === "ConditionalNode");
+    assert.equal(conditions.length, 1);
+    const condition = conditions[0], operator = condition.condNode.node;
+    assert.equal(operator.op, "<");
+    assert.equal(operator.bNode.value, .5);
+    assert.equal(operator.aNode.components, "w");
+    assert.ok(operator.aNode.node.node === stored, "test the stored normal's alpha, not scene opacity");
+    assert.equal(result.node.components, "xyz");
+    assert.ok(result.node.node === operator.aNode.node, "valid normals keep their exact material RGB");
+    assert.equal(condition.elseNode, null);
+    const invalidStack = stack(); setCurrentStack(invalidStack);
+    condition.ifNode.jsFunc();
+    const assign = invalidStack.nodes.find(node => node.isAssignNode);
+    assert.ok(assign.targetNode === result);
+    assert.ok(assign.sourceNode.node.shaderNode === getNormalFromDepth.shaderNode);
+    assert.deepEqual(assign.sourceNode.node.rawInputs, [coord, depth.value, inverse]);
+    depth.value.dispose();
+  } finally { setCurrentStack(previousStack); }
+}
+for (const compatibilityMode of [undefined, false, true]) {
+  const renderer = rendererStub(true); renderer.backend.compatibilityMode = compatibilityMode;
+  renderer.samples = compatibilityMode === true ? 0 : 4;
+  const pipeline = new NeonRenderPipeline(renderer, new THREE.Scene(), new THREE.PerspectiveCamera());
+  assert.equal(pipeline.aoPass.normalNode === pipeline.scenePass.getTextureNode("normal"), compatibilityMode !== true,
+    "only actual compatibility mode installs conditional recovery");
+  assert.equal(renderer.samples, compatibilityMode === true ? 0 : 4, "normal recovery cannot change antialiasing");
+  assert.equal(pipeline.scenePass.options.samples, undefined, "product leaves sample selection to the renderer");
+  pipeline.dispose();
+}
 for (const nativeWebGPU of [true, false]) for (const quality of ["low", "medium", "high"]) {
   const pipeline = new NeonRenderPipeline(rendererStub(nativeWebGPU), new THREE.Scene(), new THREE.PerspectiveCamera(), { quality });
   assert.equal(Boolean(pipeline.pipeline), quality !== "low" && (!nativeWebGPU || quality === "high"));
   assert.equal(Boolean(pipeline.highLoadPipeline), nativeWebGPU && quality === "medium");
   assert.equal(Boolean(pipeline.aoPass), nativeWebGPU && quality === "high");
   pipeline.setQuality("high");
+  if (nativeWebGPU) {
+    assert.equal(pipeline.scenePass.getMRT().getBlendMode("normal").blending, THREE.NormalBlending,
+      "AO normals must preserve the opaque normal behind non-depth-writing decoration");
+    assert.equal(pipeline.scenePass.getMRT().getBlendMode("output").blending, THREE.MaterialBlending,
+      "scene color keeps the original per-material blend modes");
+    const makeNormal = pipeline.scenePass.getMRT().get("normal").node.shaderNode.jsFunc;
+    for (const depthWrite of [true, false]) for (const transparent of [true, false]) for (const opacity of [0, .11, 1]) {
+      const normal = makeNormal([], { material: { depthWrite, transparent, opacity } }).node;
+      assert.ok(normal.nodes[0] === normalView, "solid surface normal mapping is preserved");
+      assert.equal(normal.nodes[1].value, Number(depthWrite), "AO normal coverage follows depth writes, not opacity or color blend mode");
+    }
+    assert.deepEqual([pipeline.aoPass.resolutionScale, pipeline.aoPass.samples.value, pipeline.aoPass.radius.value,
+      pipeline.aoPass.thickness.value, pipeline.aoPass.distanceExponent.value, pipeline.aoPass.distanceFallOff.value],
+      [.5, 16, 1.6, 2.2, 1.35, .7], "depth-matched normals do not reduce AO quality");
+  }
   const full = pipeline.pipeline;
   pipeline.setQuality("medium");
   const balanced = pipeline.highLoadPipeline;
@@ -207,6 +341,7 @@ const effectGroups = [
 ];
 for (const quality of [.5, .75, 1]) {
   const effects = new CombatVisuals(new THREE.Scene(), { quality });
+  assertCompatibleAONormals(effects.group);
   const digest = createHash("sha256");
   const start = new THREE.Vector3(1, 2, 3), end = new THREE.Vector3(5, 6, 7), normal = new THREE.Vector3(0, 1, 0);
   const owner = { color: 0x129dba, accent: 0x6ff6ff, aim: normal, muzzlePoint: target => target.copy(start) };
@@ -252,6 +387,7 @@ emptyEffects.dispose();
 scene.environment = new THREE.Texture();
 const lightingEnvironment = scene.environment;
 const world = new ArenaWorld(scene, "GRAPHICS-QA");
+assertCompatibleAONormals(world.group);
 const coverLights = world.destructibles.map(obstacle => obstacle.mesh.children.find(child => child.isInstancedMesh));
 assert.equal(coverLights.length, 34);
 assert.equal(createHash("sha256").update(Buffer.concat(coverLights.map(mesh => Buffer.from(mesh.instanceMatrix.array.buffer)))).digest("hex"),
@@ -463,6 +599,7 @@ for (const weapon of Object.values(WEAPONS)) {
 }
 for (const variant of [0, 1, 2, 3]) for (const weapon of Object.values(WEAPONS)) {
   const fighter = new Fighter(scene, { id: `graphics-qa-${variant}`, name: "QA", color: 0x129dba, accent: 0x6ff6ff }, [weapon.id], new THREE.Vector3());
+  assertCompatibleAONormals(fighter.group);
   assert.equal(fighter.visor.name, "Segmented inset visor");
   assert.equal(fighter.helmet.name, "Helmet and recessed visor housing");
   assert.ok(fighter.helmet.material === fighter.darkMaterial, "housing uses the existing dark batch material");

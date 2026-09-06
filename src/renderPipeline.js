@@ -1,8 +1,26 @@
 import * as THREE from "three/webgpu";
-import { mrt, normalView, output, pass, vec3, vec4 } from "three/tsl";
+import { Fn, If, getNormalFromDepth, mrt, normalView, output, pass, uniform, vec3, vec4 } from "three/tsl";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import TEXT from "./playerText.js";
+
+// AO depth and normals must describe the same surface. Light overlays keep
+// their scene color, but cannot replace the normal of the solid beneath them.
+const aoNormal = Fn(([], builder) => vec4(normalView, builder.material.depthWrite ? 1 : 0));
+
+// Compatibility GPUs cannot blend MRT attachments independently. A NoBlending
+// overlay (Line2) marks its overwritten normal invalid; recover only those
+// pixels from the unchanged solid depth, preserving all valid material normals.
+export function recoverInvalidAONormals(normal, depth, inverseProjection) {
+  return { sample: Fn(([coord]) => {
+    const stored = normal.sample(coord).toVar();
+    const result = stored.rgb.toVar();
+    If(stored.a.lessThan(.5), () => {
+      result.assign(getNormalFromDepth(coord, depth.value, inverseProjection));
+    });
+    return result;
+  }) };
+}
 
 export class NeonRenderPipeline {
   constructor(renderer, scene, camera, { reducedMotion = false, coarsePointer = false, quality = "high" } = {}) {
@@ -50,7 +68,8 @@ export class NeonRenderPipeline {
       return;
     }
     const scenePass = this.scenePass = pass(scene, camera);
-    scenePass.setMRT(mrt({ output, normal: normalView }));
+    scenePass.setMRT(mrt({ output, normal: aoNormal() })
+      .setBlendMode("normal", new THREE.BlendMode(THREE.NormalBlending)));
 
     const sceneColor = scenePass.getTextureNode("output");
     const bloomPass = bloom(
@@ -64,7 +83,9 @@ export class NeonRenderPipeline {
 
     const normal = scenePass.getTextureNode("normal");
     const depth = scenePass.getTextureNode("depth");
-    const aoPass = ao(depth, normal, camera);
+    const aoNormals = renderer.backend.compatibilityMode === true
+      ? recoverInvalidAONormals(normal, depth, uniform(camera.projectionMatrixInverse)) : normal;
+    const aoPass = ao(depth, aoNormals, camera);
     this.aoPass = aoPass;
     aoPass.resolutionScale = .5;
     aoPass.radius.value = 1.6;

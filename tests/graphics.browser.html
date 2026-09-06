@@ -9,10 +9,10 @@
 <nav style="position:fixed;z-index:100;inset:auto 0 0;background:#07111def;padding:8px;display:flex;gap:8px;flex-wrap:wrap;font:12px monospace">
 <label>Tier <select id="tier"><option>high</option><option>medium</option><option>low</option></select></label>
 <label>Theme <select id="seed"><option>BLAST-01</option><option>SOLAR-01</option><option>ION-01</option></select></label>
-<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>weapon</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option></select></label>
+<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>weapon</option><option>effects</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option></select></label>
 <label>Weapon <select id="weapon"></select></label>
 <label>Pose <select id="pose"><option>aim</option><option>reload</option><option>fire</option></select></label>
-<button id="burst">Fire / impact</button><button id="destroy">Collapse tower</button>
+<button id="burst">Fire / impact</button><button id="destroy">Collapse tower</button><button id="grapple">Toggle grapple</button>
 <button id="inspect-surface">Inspect footing material</button>
 <button id="stress">Run 16-fighter stress</button><button id="reset">Reset scene</button>
 <button id="reset-ten">Test ten resets</button>
@@ -31,8 +31,58 @@
 // Development-only visual review surface; it uses the production controller,
 // assets and renderer. No test instrumentation is included in the client build.
 import * as THREE from "three/webgpu";
+import { mrt, normalView, normalViewGeometry, output, uniform, vec3, vec4 } from "three/tsl";
 import { WEAPONS, MAP_THEMES, seedFromText } from "../src/gameData.js";
 import { Fighter } from "../src/player.js";
+import { NeonRenderPipeline, recoverInvalidAONormals } from "../src/renderPipeline.js";
+const geometryAONormals = new URLSearchParams(location.search).has("geometryAONormals");
+const legacyAONormals = new URLSearchParams(location.search).has("legacyAONormals");
+const materialBlendAONormals = new URLSearchParams(location.search).has("materialBlendAONormals");
+const recoverAONormals = new URLSearchParams(location.search).has("recoverAONormals");
+const singleSampleAO = new URLSearchParams(location.search).has("singleSampleAO");
+const emulateCompatibilityAO = new URLSearchParams(location.search).has("emulateCompatibilityAO");
+// Negative diagnostic: pinned Three's depth reconstruction cannot compile
+// with multisampled depth. A DIRECT SAFETY result is never a valid AO capture.
+const depthAONormals = new URLSearchParams(location.search).has("depthAONormals");
+const hiddenAOObject = new URLSearchParams(location.search).get("hideAOObject");
+function hideAOObjectForReview(child) {
+  if ((hiddenAOObject === "grid" && child.type === "GridHelper") ||
+      (hiddenAOObject === "route" && child.name === "District route floor")) child.visible = false;
+}
+const requestedAOOutput = new URLSearchParams(location.search).get("aoOutput");
+const aoOutput = ["raw", "color", "coverage"].includes(requestedAOOutput) ? requestedAOOutput : "final";
+function withAODiagnostics(build) {
+  return function (...args) {
+    // Exercise the actual product branch and pinned backend policy on a core
+    // GPU. This does not certify a physical compatibility device.
+    if (emulateCompatibilityAO && this.renderer.backend.isWebGPUBackend) {
+      this.renderer.backend.compatibilityMode = true;
+      this.renderer._samples = 0;
+    }
+    const previousPass = this.scenePass;
+    const result = build.apply(this, args);
+    if (this.aoPass && this.scenePass !== previousPass) {
+      if (legacyAONormals) this.scenePass.setMRT(mrt({ output, normal: normalView }));
+      if (geometryAONormals) this.scenePass.setMRT(mrt({ output, normal: normalViewGeometry }));
+      if (depthAONormals) this.aoPass.normalNode = null;
+      // Exercise compatibility-style target blending, not a hardware emulator.
+      if (materialBlendAONormals) this.scenePass.getMRT().setBlendMode("normal", new THREE.BlendMode(THREE.MaterialBlending));
+      if (singleSampleAO || recoverAONormals) this.scenePass.options.samples = 0; // QA compatibility path only.
+      if (recoverAONormals) {
+        this.aoPass.normalNode = recoverInvalidAONormals(this.scenePass.getTextureNode("normal"), this.scenePass.getTextureNode("depth"), uniform(this.camera.projectionMatrixInverse));
+      }
+      if (aoOutput !== "final") {
+        this.pipeline.outputNode = aoOutput === "coverage" ? vec4(vec3(this.scenePass.getTextureNode("normal").a), 1)
+          : aoOutput === "raw" ? vec4(vec3(this.aoPass.getTextureNode().r), 1)
+          : this.scenePass.getTextureNode("output");
+        this.pipeline.needsUpdate = true;
+      }
+    }
+    return result;
+  };
+}
+// QA-only causal comparison: keep surface shading and every AO setting intact.
+if (legacyAONormals || geometryAONormals || depthAONormals || materialBlendAONormals || recoverAONormals || singleSampleAO || emulateCompatibilityAO || aoOutput !== "final") NeonRenderPipeline.prototype.ensureQualityPipeline = withAODiagnostics(NeonRenderPipeline.prototype.ensureQualityPipeline);
 performance.mark("blaster-shell-visible");
 const errors = [];
 const visibilityEvents = [];
@@ -48,6 +98,22 @@ addEventListener("error", e => recordError(e.message));
 addEventListener("unhandledrejection", e => recordError(String(e.reason)));
 const { gameReady } = await import("../src/main.js");
 const game = await gameReady, metrics = document.querySelector("#metrics");
+let ropeShader = null, ropeRender = null;
+if (new URLSearchParams(location.search).has("traceRopeShader")) {
+  const createPipeline = game.renderer.backend.createRenderPipeline.bind(game.renderer.backend);
+  game.renderer.backend.createRenderPipeline = (renderObject, promises) => {
+    const result = createPipeline(renderObject, promises);
+    if (renderObject.material.isLine2NodeMaterial) {
+      ropeShader = renderObject.getNodeBuilderState().fragmentShader;
+      ropeRender = { depthWrite: renderObject.material.depthWrite, colorWrite: renderObject.material.colorWrite,
+        sampleCount: renderObject.context.sampleCount, textureNames: renderObject.context.textures?.map(texture => ({ name: texture.name, format: texture.format })),
+        normalBlend: renderObject.context.mrt?.getBlendMode("normal").blending,
+        positions: Array.from(renderObject.geometry.attributes.instanceStart.data.array.slice(0, 6)),
+        worldMatrix: renderObject.object.matrixWorld.toArray() };
+    }
+    return result;
+  };
+}
 // Paired control reproduces the previous full-capacity drawing with identical
 // live effects, shaders, materials and simulation. Never included in production.
 const fullEffectCapacity = new URLSearchParams(location.search).has("fullEffects");
@@ -177,6 +243,7 @@ let loaderReview = null;
 let cameraOffset = 0;
 let renderedFrames = 0;
 let captureCanvas = false;
+let canvasCapture = null, ropeRenders = 0;
 let settleUntil = sampleAt + 5000;
 let surface = null;
 function resetSamples(settleMs = 5000) { frames = []; slowFrames = []; previousCpu = {}; sampleAt = previous = performance.now(); settleUntil = sampleAt + settleMs; }
@@ -219,7 +286,7 @@ function setView() {
   settlePose();
   hero.rig.visible = true;
   const poses = { arena: [[70, 47, 98], [0, 25, 0]], grazing: [[3, 1.8, 65], [0, 4, -40]],
-    fighter: [[3.7, 17.1, 3.3], [0, 16.35, 8]], weapon: [[1.8, 16.9, 6.1], [.4, 16.4, 8.7]],
+    fighter: [[3.7, 17.1, 3.3], [0, 16.35, 8]], weapon: [[1.8, 16.9, 6.1], [.4, 16.4, 8.7]], effects: [[7, 19, 17], [0, 16, 8]],
     underpass: [[12, 3, 37], [0, 13, -10]], collapse: [[-49, 22, -29], [-72, 17, -66]] };
   const coverDistrict = ["cover-capacitor", "cover-shield", "cover-vent", "cover-reactor"].indexOf(view);
   if (coverDistrict >= 0) {
@@ -247,6 +314,7 @@ async function reset() {
   game.applyGraphicsSettings(); game.freshSessionReady = true;
   await game.startMatch(); game.paused = true; game.awaitingAudioGesture = false;
   game.scene.traverse(child => {
+    hideAOObjectForReview(child);
     for (const [key, attribute] of Object.entries(child.geometry?.attributes || {})) {
       attributeOwners.set(attribute.array, `${child.name || child.type}/${key}`);
     }
@@ -414,9 +482,18 @@ select("burst").onclick = () => {
   resetSamples(0);
   const hero = game.players[0], weapon = hero.weapon;
   game.sound.resume(); hero.aim.set(0, 0, -1); hero.attackTimer = 0; hero.ammo[weapon.id] = weapon.ammo;
-  game.tryFire(hero, true); game.combatVisuals.impact(new THREE.Vector3(0, 16, 2), weapon, hero, { explosive: Boolean(weapon.radius), size: 2 });
+  game.tryFire(hero, true); game.combatVisuals.impact(new THREE.Vector3(0, 16, 11), weapon, hero, { explosive: Boolean(weapon.radius), size: 2 });
+  captureCanvas = true; // Save the first rendered effect frame, not an expired burst.
 };
 select("destroy").onclick = () => game.world.queueStructuralFailure(game.world.structures[16].segments[0], game.players[0].id);
+select("grapple").onclick = () => {
+  // Aim at the existing high central structure, so the rope clears the body.
+  game.camera.lookAt(0, 30, 0);
+  game.toggleGrapple(game.players[0]);
+  const line = game.players[0].grapple?.line;
+  if (line) line.onAfterRender = () => { ropeRenders++; };
+  game.updateCamera(); captureCanvas = true;
+};
 select("inspect-surface").onclick = () => {
   const ray = new THREE.Raycaster(game.players[0].position.clone().add(new THREE.Vector3(0, .4, 0)), new THREE.Vector3(0, -1, 0));
   ray.camera = game.camera;
@@ -451,12 +528,19 @@ game.frame = time => {
     game.combatVisuals.update(Math.min(interval / 1000, .033));
     game.processStructuralEvents();
   }
+  const ropeRendersBefore = ropeRenders;
   frame(time);
   if (startupCalls) startupTrace.push({ timeMs: now, durationMs: performance.now() - now, calls: startupCalls });
   startupCalls = null;
   renderedFrames++;
   if (captureCanvas) {
     captureCanvas = false;
+    const grapple = game.players[0]?.grapple;
+    canvasCapture = { renderedFrames, sceneSerial, view: select("view").value,
+      draws: game.renderer.info.render.drawCalls, triangles: game.renderer.info.render.triangles,
+      rope: grapple ? { anchor: grapple.anchor.toArray(), segments: grapple.line.geometry.instanceCount,
+        rendersThisFrame: ropeRenders - ropeRendersBefore, blending: grapple.line.material.blending } : null,
+      errorCount, directFallback: game.renderPipeline.direct };
     const link = select("canvas-capture");
     link.href = document.querySelector("#game-canvas").toDataURL("image/png");
     link.hidden = false;
@@ -468,9 +552,25 @@ game.frame = time => {
   sampleAt = now;
   const sorted = [...frames].sort((a,b) => a-b), percentile = p => +(sorted[Math.floor((sorted.length-1)*p)] || 0).toFixed(2);
   stats = { tier: game.settings.graphics, profile: game.renderPipeline.profile, directFallback: game.renderPipeline.direct, theme: game.world?.theme.id,
+    compatibilityMode: game.renderer.backend.compatibilityMode ?? null, samples: game.renderer.samples,
     settling: now < settleUntil, visibility: document.visibilityState, focused: document.hasFocus(),
     viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
     stress, sceneSerial, fullEffectCapacity, followCamera: select("follow-camera").checked, view: select("view").value, pose: select("pose").value, fighters: game.players.length, surface,
+    aoNormals: depthAONormals ? "depth" : geometryAONormals ? "geometry" : legacyAONormals ? "legacy-material" : "depth-matched-material", aoOutput, hiddenAOObject,
+    aoNormalBlending: game.renderPipeline.scenePass?.getMRT()?.getBlendMode("normal").blending ?? null,
+    materialBlendAONormals,
+    recoverAONormals, singleSampleAO, emulateCompatibilityAO, aoSceneSamples: game.renderPipeline.scenePass?.renderTarget.samples ?? null,
+    aoRecoveryApplied: Boolean(game.renderPipeline.aoPass && game.renderPipeline.aoPass.normalNode !== null &&
+      game.renderPipeline.aoPass.normalNode !== game.renderPipeline.scenePass.getTextureNode("normal")),
+    ropeShader, ropeRender, canvasCapture,
+    grapple: game.players[0]?.grapple ? { anchor: game.players[0].grapple.anchor.toArray(), blending: game.players[0].grapple.line.material.blending } : null,
+    aoGeometryApplied: game.renderPipeline.scenePass?.getMRT()?.outputNodes.normal === normalViewGeometry,
+    aoDepthNormalsApplied: Boolean(game.renderPipeline.aoPass && game.renderPipeline.aoPass.normalNode === null),
+    aoSettings: game.renderPipeline.aoPass ? {
+      resolutionScale: game.renderPipeline.aoPass.resolutionScale, samples: game.renderPipeline.aoPass.samples.value,
+      radius: game.renderPipeline.aoPass.radius.value, thickness: game.renderPipeline.aoPass.thickness.value,
+      distanceExponent: game.renderPipeline.aoPass.distanceExponent.value, distanceFallOff: game.renderPipeline.aoPass.distanceFallOff.value
+    } : null,
     resetReview, cacheReview, cameraReview, decoyReview, decoyPipelines, loaderReview,
     compiles: compiles.map(s => ({ pending: s.completed === null, durationMs: +( (s.completed ?? now) - s.started).toFixed(1) })),
     frames: frames.length, medianMs: percentile(.5), p95Ms: percentile(.95), p99Ms: percentile(.99), maxMs: percentile(1),
