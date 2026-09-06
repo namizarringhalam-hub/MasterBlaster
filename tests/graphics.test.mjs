@@ -118,6 +118,12 @@ for (let i = 0; i < 20; i++) assert.equal(tracedTarget.draw(i), i + 4, "timing p
 assert.equal(startupCalls["test.draw"].calls, 20, "startup totals include calls beyond the old twelve-pipeline sample");
 assert.equal(startupCalls["test.draw"].totalMs, 20);
 assert.equal(startupCalls["test.draw"].slowest.length, 8, "startup detail retention stays bounded");
+const shaderTarget = { object: { name: "Fighter thruster pair" }, material: { type: "MeshBasicMaterial" }, build() { return this.object; } };
+traceMethod(shaderTarget, "build", "nodeBuilder");
+assert.ok(shaderTarget.build() === shaderTarget.object);
+assert.equal(startupCalls["nodeBuilder.build"].calls, 1, "actual shader builds are counted separately from cache lookups");
+assert.equal(startupCalls["nodeBuilder.build"].slowest[0].object, "Fighter thruster pair");
+assert.equal(startupCalls["nodeBuilder.build"].slowest[0].material, "MeshBasicMaterial");
 const expectedFailure = new Error("original failure");
 tracedTarget.fail = () => { throw expectedFailure; };
 traceMethod(tracedTarget, "fail", "test");

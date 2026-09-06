@@ -220,8 +220,8 @@ function traceStartupMethod(target, name, prefix) {
       const record = startupCalls[`${prefix}.${name}`] ||= { calls: 0, totalMs: 0, maxMs: 0, slowest: [] };
       record.calls++; record.totalMs += ms; record.maxMs = Math.max(record.maxMs, ms);
       if (record.slowest.length < 8 || ms > record.slowest.at(-1).ms) {
-        const object = args[0]?.object;
-        record.slowest.push({ ms, object: object?.name || object?.type, material: args[0]?.material?.type,
+        const object = args[0]?.object || this.object;
+        record.slowest.push({ ms, object: object?.name || object?.type, material: (args[0]?.material || this.material)?.type,
           stage: args[0]?.stage, shaderLength: args[0]?.code?.length, parameter: name === "getProgramParameter" ? args[1] : undefined });
         record.slowest.sort((a, b) => b.ms - a.ms); record.slowest.length = Math.min(8, record.slowest.length);
       }
@@ -230,6 +230,12 @@ function traceStartupMethod(target, name, prefix) {
 }
 if (traceStartup) {
   traceStartupMethod(game.renderer._nodes, "getForRender", "nodes");
+  const createBuilder = game.renderer._nodes._createNodeBuilder;
+  game.renderer._nodes._createNodeBuilder = function (...args) {
+    const builder = createBuilder.apply(this, args);
+    traceStartupMethod(builder, "build", "nodeBuilder");
+    return builder;
+  };
   for (const name of ["createProgram", "createRenderPipeline", "draw"]) traceStartupMethod(game.renderer.backend, name, "backend");
   if (game.renderer.backend.gl) for (const name of ["compileShader", "linkProgram", "getProgramParameter", "drawArrays", "drawElements", "drawArraysInstanced", "drawElementsInstanced"]) {
     traceStartupMethod(game.renderer.backend.gl, name, "gl");
