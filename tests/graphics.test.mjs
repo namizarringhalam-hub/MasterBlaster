@@ -27,6 +27,26 @@ const interruptedWait = waitReview(3, () => false);
 serial = 4; frameCallback();
 await assert.rejects(interruptedWait, /scene change/);
 
+const traceSource = graphicsFixture.slice(graphicsFixture.indexOf("function traceStartupMethod("), graphicsFixture.indexOf("if (traceStartup) {"));
+let traceClock = 0;
+const startupCalls = {};
+const traceMethod = new Function("performance", "startupCalls", `${traceSource}; return traceStartupMethod;`)({ now: () => ++traceClock }, startupCalls);
+const tracedTarget = { offset: 4, draw(value) { return this.offset + value; } };
+traceMethod(tracedTarget, "draw", "test");
+for (let i = 0; i < 20; i++) assert.equal(tracedTarget.draw(i), i + 4, "timing preserves receiver, arguments and return values");
+assert.equal(startupCalls["test.draw"].calls, 20, "startup totals include calls beyond the old twelve-pipeline sample");
+assert.equal(startupCalls["test.draw"].totalMs, 20);
+assert.equal(startupCalls["test.draw"].slowest.length, 8, "startup detail retention stays bounded");
+const expectedFailure = new Error("original failure");
+tracedTarget.fail = () => { throw expectedFailure; };
+traceMethod(tracedTarget, "fail", "test");
+assert.throws(() => tracedTarget.fail(), error => error === expectedFailure, "instrumentation cannot swallow rendering errors");
+assert.equal(startupCalls["test.fail"].calls, 1);
+const inactiveTrace = new Function("performance", "startupCalls", `${traceSource}; return traceStartupMethod;`)({ now() { throw new Error("inactive timing"); } }, null);
+const inactiveTarget = { draw: value => value };
+inactiveTrace(inactiveTarget, "draw", "test");
+assert.equal(inactiveTarget.draw(7), 7, "timing stops after the bounded startup capture");
+
 for (const [seed, expected] of [
   ["GRAPHICS-QA-structure", ["3fcaf9d84ec4401241287fef3d3288259e9493dd3171fc3d3bd7ccf8cec086ec", "39cdd4e5bbe8932bb96e6b805f99647f9c5723cf63edace962550765be1769f5", "183e544aca3ae4ebc7b6ada691287b7adfd03daeab38bd51a0c6056b5153a381"]],
   ["FOUNDRY111-ground", ["8464cd7f25660d46d3c91713d3f67e7a41d2a473a713646b75f8c02a6c5ec38b", "39cdd4e5bbe8932bb96e6b805f99647f9c5723cf63edace962550765be1769f5", "0ad986808bd82a92fd56401c5747bee252f9a867a786b82e462f4839fd7ca2bf"]]

@@ -17,6 +17,7 @@
 <button id="stress">Run 16-fighter stress</button><button id="reset">Reset scene</button>
 <button id="reset-ten">Test ten resets</button>
 <button id="reset-decoys">Test ten decoy resets</button>
+<button id="loader-transitions">Test loader transitions</button>
 <button id="cache-cycle">Test weapon cache</button>
 <button id="decoy-cycle">Test separated decoys</button>
 <button id="decoy-tiers">Test cross-tier decoys</button>
@@ -34,6 +35,13 @@ import { WEAPONS, MAP_THEMES, seedFromText } from "../src/gameData.js";
 import { Fighter } from "../src/player.js";
 performance.mark("blaster-shell-visible");
 const errors = [];
+const visibilityEvents = [];
+function recordVisibility(event) {
+  visibilityEvents.push({ timeMs: performance.now(), event: event.type, visibility: document.visibilityState, focused: document.hasFocus() });
+  if (visibilityEvents.length > 64) visibilityEvents.shift();
+}
+recordVisibility({ type: "initial" });
+for (const type of ["visibilitychange", "focus", "blur", "pageshow", "pagehide"]) addEventListener(type, recordVisibility);
 let errorCount = 0;
 function recordError(message) { errorCount++; if (!errors.includes(message) && errors.length < 20) errors.push(message); }
 addEventListener("error", e => recordError(e.message));
@@ -131,10 +139,41 @@ if (traceFrames) {
     }
   };
 }
+// Startup-only timings include every call, not just the first twelve pipelines.
+// Nested backend/GL totals overlap: never sum them as independent CPU time.
+const traceStartup = new URLSearchParams(location.search).has("traceStartup");
+const startupTrace = [];
+let startupCalls = null;
+function traceStartupMethod(target, name, prefix) {
+  const method = target[name];
+  target[name] = function (...args) {
+    if (!startupCalls) return method.apply(this, args);
+    const started = performance.now();
+    try { return method.apply(this, args); } finally {
+      const ms = performance.now() - started;
+      const record = startupCalls[`${prefix}.${name}`] ||= { calls: 0, totalMs: 0, maxMs: 0, slowest: [] };
+      record.calls++; record.totalMs += ms; record.maxMs = Math.max(record.maxMs, ms);
+      if (record.slowest.length < 8 || ms > record.slowest.at(-1).ms) {
+        const object = args[0]?.object;
+        record.slowest.push({ ms, object: object?.name || object?.type, material: args[0]?.material?.type,
+          stage: args[0]?.stage, shaderLength: args[0]?.code?.length, parameter: name === "getProgramParameter" ? args[1] : undefined });
+        record.slowest.sort((a, b) => b.ms - a.ms); record.slowest.length = Math.min(8, record.slowest.length);
+      }
+    }
+  };
+}
+if (traceStartup) {
+  traceStartupMethod(game.renderer._nodes, "getForRender", "nodes");
+  for (const name of ["createProgram", "createRenderPipeline", "draw"]) traceStartupMethod(game.renderer.backend, name, "backend");
+  if (game.renderer.backend.gl) for (const name of ["compileShader", "linkProgram", "getProgramParameter", "drawArrays", "drawElements", "drawArraysInstanced", "drawElementsInstanced"]) {
+    traceStartupMethod(game.renderer.backend.gl, name, "gl");
+  }
+}
 const resetReview = { running: false, samples: [], error: null };
 const cacheReview = { running: false, samples: [], error: null };
 const cameraReview = { running: false, samples: [], error: null };
 const decoyReview = { running: false, samples: [], error: null };
+let loaderReview = null;
 let cameraOffset = 0;
 let renderedFrames = 0;
 let captureCanvas = false;
@@ -218,6 +257,30 @@ select("seed").onchange = reset;
 select("weapon").onchange = () => { game.players[0].loadout[0] = select("weapon").value; game.players[0].updateWeaponModel(); settlePose(); };
 select("pose").onchange = settlePose;
 select("reset").onclick = reset;
+select("loader-transitions").onclick = async () => {
+  if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
+  resetReview.running = true; loaderReview = {};
+  try {
+    const overlay = document.querySelector("#match-loading");
+    const completed = performance.getEntriesByName("blaster-arena-first-render").length;
+    game.setMatchLoading(true); game.hideMatchLoadingAfterFrame = true;
+    game.renderMain();
+    if (!overlay.hidden || game.hideMatchLoadingAfterFrame) throw new Error("Obsolete arena loader obscures the menu");
+    const menuFrame = renderedFrames;
+    await waitForReviewFrame(sceneSerial, () => renderedFrames > menuFrame);
+    if (performance.getEntriesByName("blaster-arena-first-render").length !== completed) throw new Error("Menu frame completed obsolete arena timing");
+    loaderReview.menuDismissed = true;
+    game.setMatchLoading(true); game.renderMain();
+    if (overlay.hidden) throw new Error("Initial menu dismissed fresh boot loader");
+    loaderReview.bootPreserved = true;
+    await reset();
+    if (overlay.hidden || !game.hideMatchLoadingAfterFrame) throw new Error("New arena failed to preserve its loader until rendering");
+    await waitForReviewFrame(sceneSerial, () => !game.hideMatchLoadingAfterFrame);
+    if (!overlay.hidden) throw new Error("Rendered arena kept its loader");
+    loaderReview.newArenaCompleted = true;
+  } catch (error) { loaderReview.error = String(error); }
+  finally { resetReview.running = false; }
+};
 async function runResetReview(warmDecoy = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   resetReview.running = true; resetReview.samples = []; resetReview.error = null;
@@ -366,10 +429,11 @@ select("stress").onclick = () => {
 const frame = game.frame.bind(game);
 game.frame = time => {
   const now = performance.now(), interval = now - previous; previous = now;
+  startupCalls = traceStartup && startupTrace.length < 3 ? {} : null;
   if (!document.hidden && now >= settleUntil && interval > 0 && frames.length < 3600) {
     frames.push(interval);
     if (traceFrames && interval > 33.3) {
-      slowFrames.push({ frame: frames.length, intervalMs: interval, previousCpu });
+      slowFrames.push({ frame: frames.length, timeMs: now, intervalMs: interval, previousCpu });
       slowFrames.sort((a, b) => b.intervalMs - a.intervalMs);
       slowFrames.length = Math.min(slowFrames.length, 12);
     }
@@ -382,6 +446,8 @@ game.frame = time => {
     game.processStructuralEvents();
   }
   frame(time);
+  if (startupCalls) startupTrace.push({ timeMs: now, durationMs: performance.now() - now, calls: startupCalls });
+  startupCalls = null;
   renderedFrames++;
   if (captureCanvas) {
     captureCanvas = false;
@@ -399,11 +465,13 @@ game.frame = time => {
     settling: now < settleUntil, visibility: document.visibilityState, focused: document.hasFocus(),
     viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
     stress, sceneSerial, fullEffectCapacity, followCamera: select("follow-camera").checked, view: select("view").value, pose: select("pose").value, fighters: game.players.length, surface,
-    resetReview, cacheReview, cameraReview, decoyReview, decoyPipelines,
+    resetReview, cacheReview, cameraReview, decoyReview, decoyPipelines, loaderReview,
     compiles: compiles.map(s => ({ pending: s.completed === null, durationMs: +( (s.completed ?? now) - s.started).toFixed(1) })),
     frames: frames.length, medianMs: percentile(.5), p95Ms: percentile(.95), p99Ms: percentile(.99), maxMs: percentile(1),
     over33Ms: frames.filter(ms => ms > 33.3).length, over50Ms: frames.filter(ms => ms > 50).length,
-    traceFrames, slowFrames,
+    traceFrames, slowFrames, visibilityEvents, traceStartup, startupTrace,
+    startupMeasures: performance.getEntriesByType("measure").filter(entry => entry.name.startsWith("blaster-")).slice(-12)
+      .map(({ name, startTime, duration }) => ({ name, startTime, duration })),
     draws: game.renderer.info.render.drawCalls, triangles: game.renderer.info.render.triangles,
     effectInstances: Object.fromEntries(["flashOuter", "tracerOuter", "ringOuter", "sparkLayer", "bloodLayer"].map(name => [name, game.combatVisuals?.[name].count || 0])),
     ...game.renderer.info.memory, errors, errorCount,

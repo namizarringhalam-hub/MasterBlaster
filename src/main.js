@@ -428,6 +428,7 @@ class BlasterBattle {
   }
 
   clearMatch(preserveNetwork = false) {
+    this.hideMatchLoadingAfterFrame = false;
     clearTimeout(this.menuEnergyTimer);
     this.menuEnergyTimer = 0;
     this.input.releasePointer();
@@ -483,6 +484,7 @@ class BlasterBattle {
     this.menuLaunchTimer = 0;
     this.state = "menu";
     this.paused = false;
+    if (this.hideMatchLoadingAfterFrame) this.setMatchLoading(false);
     this.clearMatch();
     this.sound.resume();
     this.sound.setVolume(this.settings.volume);

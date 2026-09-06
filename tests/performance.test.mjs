@@ -6,6 +6,7 @@ import { WEAPONS, projectileStepCount } from "../src/gameData.js";
 import { Fighter } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { PLAYER_TEXT } from "../PLAYER_TEXT.js";
 
 const botScene = new THREE.Scene();
 const bot = new Fighter(
@@ -240,9 +241,37 @@ decoyHarness.removeDecoy(matchAnchor);
 decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
 trackDecoy(decoyHarness.decoys[0].mesh);
 decoyHarness.world = null;
+decoyHarness.hideMatchLoadingAfterFrame = true;
 decoyHarness.clearMatch(); decoyHarness.clearMatch();
+assert.equal(decoyHarness.hideMatchLoadingAfterFrame, false, "match teardown cancels stale first-frame loader completion");
+decoyHarness.hideMatchLoadingAfterFrame = true;
+decoyHarness.clearMatch(true);
+assert.equal(decoyHarness.hideMatchLoadingAfterFrame, false, "preserving reconnect identity cannot preserve a previous arena's loader completion");
 assert.equal(decoyHarness.decoyRenderAnchor, null);
 assert.ok([...decoyDisposals.values()].every(count => count === 1), "match teardown releases active and retained clones exactly once");
+const menuSource = mainSource.slice(mainSource.indexOf("\n  renderMain("), mainSource.indexOf("\n  renderSetup("));
+const menuMethod = new Function("ui", "TEXT", "menuAtmosphereMarkup", `return ({${menuSource}}).renderMain;`)({}, PLAYER_TEXT, () => "");
+const frameSource = mainSource.slice(mainSource.indexOf("\n  frame(time) {"), mainSource.indexOf("\n  update(dt, realDt = dt) {"));
+const menuMarks = [], loaderCalls = [];
+const frameMethod = new Function("performance", `return ({${frameSource}}).frame;`)({ mark: name => menuMarks.push(name), measure: name => menuMarks.push(name) });
+Object.assign(decoyHarness, { settings: {}, bindUi() {}, commitResize() {},
+  timer: { update() {}, getDelta: () => 1 / 60 }, renderScene: () => true,
+  loaderVisible: true, hideMatchLoadingAfterFrame: true,
+  setMatchLoading(visible) { this.loaderVisible = visible; loaderCalls.push(visible); } });
+Object.assign(decoyHarness.input, { tapped: () => false, endFrame() {} });
+for (const name of ["resume", "setVolume", "setMix", "setPaused", "setMusicScene", "startMusic"]) decoyHarness.sound[name] = () => {};
+menuMethod.call(decoyHarness);
+frameMethod.call(decoyHarness, 100);
+assert.equal(decoyHarness.loaderVisible, false, "returning to the menu dismisses the obsolete pending arena loader");
+assert.deepEqual(loaderCalls, [false]);
+assert.equal(menuMarks.length, 0, "a successful menu frame never completes the old arena timing");
+loaderCalls.length = 0; decoyHarness.loaderVisible = true;
+menuMethod.call(decoyHarness);
+assert.equal(decoyHarness.loaderVisible, true, "initial menu creation preserves the separate fresh-session boot overlay");
+assert.equal(loaderCalls.length, 0);
+decoyHarness.hideMatchLoadingAfterFrame = true;
+decoyHarness.clearMatch(true);
+assert.equal(decoyHarness.loaderVisible, true, "network-preserving teardown does not hide the next match's newly shown loader");
 decoyOwner.dispose();
 const audioSelectors = mainSource.slice(mainSource.indexOf("function projectileNeedsLoop("), mainSource.indexOf("function setText("));
 const updateMethod = mainSource.slice(mainSource.indexOf("\n  updateProjectiles(dt) {"), mainSource.indexOf("\n  findProjectileTarget("));
