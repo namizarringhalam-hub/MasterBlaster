@@ -38,7 +38,9 @@ assert.doesNotMatch(mainSource, /EffectComposer|UnrealBloomPass|composer\.render
 assert.match(mainSource, /new THREE\.WebGPURenderer/, "the game uses Three.js's WebGPU renderer");
 assert.match(mainSource, /await this\.renderer\.init\(\)/, "WebGPU initializes before environment generation");
 assert.match(mainSource, /this\.renderPipeline\.render\(\)/, "the game renders through the node-based HDR pipeline");
-assert.match(mainSource, /onSubmittedWorkDone\?\.\(\)[\s\S]*?renderer\.setSize[\s\S]*?resizeInFlight \|\| this\.pendingResize/, "WebGPU resize waits for submitted frames and suspends rendering before replacing HDR targets");
+assert.match(mainSource, /setDrawingBufferSize\(size.width, size.height, size.pixelRatio\)/, "resize changes dimensions and DPR in one public transaction");
+assert.match(mainSource, /frame\(time\) \{\s*this.commitResize\(\)/, "resize commits before the frame starts rendering");
+assert.doesNotMatch(mainSource, /onSubmittedWorkDone/, "resize does not rely on a private GPU queue synchronization workaround");
 assert.match(renderPipelineSource, /RenderPipeline[\s\S]*?bloom\([\s\S]*?ao\(/, "the HDR pipeline combines bloom with ambient grounding");
 assert.match(renderPipelineSource, /this\.direct = false[\s\S]*?if \(!nativeWebGPU\)[\s\S]*?bloom\([\s\S]*?renderer\.render\(this\.scene, this\.camera\)/, "pointer type cannot silently replace a selected graphics tier with direct rendering");
 assert.match(renderPipelineSource, /catch \(error\)[\s\S]*?degradeToDirect\(error\)/, "post-processing failures degrade to direct rendering");
@@ -219,7 +221,7 @@ globalThis.localStorage = {
 };
 const legacySettings = loadSettings();
 assert.equal(legacySettings.graphics, "high", "existing players migrate to High graphics without changing the current default appearance");
-assert.deepEqual(graphicsProfile("high", false, 3), { level: "high", pixelRatio: 1.65, combatQuality: 1 }, "High preserves the current desktop resolution and effect density");
+assert.deepEqual(graphicsProfile("high", false, 3), { level: "high", pixelRatio: 1.65, combatQuality: 1, shadowMapSize: 4096, anisotropy: 16, atmosphereCount: 220, combatLights: 4 }, "High preserves resolution/effect density while improving shadows and texture filtering");
 assert.ok(graphicsProfile("medium", false, 3).pixelRatio < 1.65 && graphicsProfile("medium", false, 3).combatQuality < 1, "Medium reduces resolution and effect density");
 assert.ok(graphicsProfile("low", false, 3).pixelRatio < graphicsProfile("medium", false, 3).pixelRatio && graphicsProfile("low", false, 3).combatQuality < graphicsProfile("medium", false, 3).combatQuality, "Low applies the lightest render profile");
 assert.deepEqual(legacySettings.loadout, savedSet, "legacy loadout-only settings migrate without changing weapon order");
@@ -348,9 +350,16 @@ for (const [id, weapon] of Object.entries(WEAPONS)) {
   });
   assert.ok(weaponMaterials.size >= 3 && weaponTriangles >= 80, `${id} retains a layered, fully modeled held-weapon silhouette after rigid batching`);
   assert.ok(model.weaponMuzzleDistance > .3, `${id} exposes a valid muzzle or strike origin`);
-  assert.equal(model.group.getObjectByProperty("castShadow", true), undefined, `${id} cannot create blocky per-fighter shadow-map patches`);
-  assert.equal(model.group.getObjectByName("Soft contact shadow"), undefined, `${id} has no transparent floor quad that can leak into WebGPU ambient occlusion`);
-  assert.equal(model.group.getObjectByProperty("isSprite", true), undefined, `${id} has no camera-facing sprite quad that can leak rectangular normals into WebGPU ambient occlusion`);
+  const casters = [];
+  model.group.traverse(child => { if (child.castShadow) casters.push(child.name); });
+  assert.deepEqual(casters, ["Fighter shadow proxy"], `${id} has exactly one smooth bounded shadow caster`);
+  const shadow = model.group.getObjectByName("Fighter shadow proxy");
+  assert.equal(shadow?.geometry.type, "CapsuleGeometry");
+  assert.equal(shadow?.material.colorWrite, false);
+  assert.equal(shadow?.material.depthWrite, false);
+  // Keep failures scalar: formatting an Object3D traverses the entire scene.
+  assert.ok(!model.group.getObjectByName("Soft contact shadow"), `${id} has no transparent floor quad that can leak into WebGPU ambient occlusion`);
+  assert.ok(!model.group.getObjectByProperty("isSprite", true), `${id} has no camera-facing sprite quad that can leak rectangular normals into WebGPU ambient occlusion`);
   assert.equal(model.group.getObjectByName("Identity beacon")?.geometry?.type, "OctahedronGeometry", `${id} keeps a real 3D identity beacon without a transparent quad`);
   if (id === "boomerang_blade") assert.equal(model.weaponSpinner?.geometry?.type, "TorusGeometry", "the equipped Boomerang reaches its authored spinning-disc bracer branch");
   model.dispose();
@@ -380,7 +389,7 @@ assert.equal(fireballVisual.children.filter((child) => child.geometry?.type === 
 assert.equal(presentationSignatures.size, 47, "all 47 weapons retain distinct audiovisual signatures");
 assert.match(mainSource, /data-weapon="\$\{id\}"[\s\S]*?weaponPreviewVariables\(weapon, WEAPON_INDEX_BY_ID\[id\]\)/, "every categorized menu card retains weapon-specific procedural preview variables");
 assert.ok(["boomerang_blade", "fireball", "plasma_cannon", "temporary_wall", "decoy_launcher", "black_hole_generator", "tornado_generator"].every((id) => stylesSource.includes(`data-weapon="${id}"`)), "signature and unusual weapons receive authored menu silhouettes beyond their generic type");
-assert.ok(presentationVisuals.tracers.length <= 128 && presentationVisuals.sparks.length <= 512 && presentationVisuals.rings.length <= 80, "the complete 47-weapon effects matrix remains fixed and sized for sixteen-player bursts");
+assert.ok(presentationVisuals.tracers.length <= 128 && presentationVisuals.sparks.length <= 512 && presentationVisuals.rings.length === 128, "the complete 47-weapon effects matrix preserves every core impact in a 112-hit sixteen-player volley");
 const meleeTraceCounts = { hammer: 2, energy_sword: 2, chainsaw: 2, spear: 1, punch_glove: 2, shock_baton: 4, knife: 1 };
 for (const [id, expectedSegments] of Object.entries(meleeTraceCounts)) {
   const before = presentationVisuals.cursors.tracer;
@@ -867,7 +876,7 @@ assert.ok(openingSpawns.every((spawn, index) => openingSpawns.slice(index + 1).e
 assert.ok(openingSpawns.every((spawn) => worldB.boostPads.every((pad) => spawn.distanceTo(pad.position) >= 4)), "opening fighters never start on an active boost pad");
 assert.ok(openingSpawns.every((spawn) => worldB.portals.every((portal) => spawn.distanceTo(portal.position) >= 4)), "opening fighters never start inside a portal");
 assert.equal(worldB.movers.length, 4, "the arena has moving aerial routes");
-assert.equal(worldB.group.getObjectByName("Animated atmospheric perimeter"), undefined, "no giant atmosphere shell can intersect the camera at the map edge");
+assert.ok(!worldB.group.getObjectByName("Animated atmospheric perimeter"), "no giant atmosphere shell can intersect the camera at the map edge");
 const skylineMatrix = new THREE.Matrix4();
 const skylinePosition = new THREE.Vector3();
 worldB.group.traverse((object) => {

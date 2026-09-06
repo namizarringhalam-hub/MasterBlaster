@@ -1,6 +1,7 @@
 import * as THREE from "three/webgpu";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { Line2 } from "three/addons/lines/webgpu/Line2.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { SoundBoard } from "./audio.js";
 import { CombatVisuals } from "./combatVisuals.js";
 import { ArenaWorld } from "./world.js";
@@ -215,6 +216,7 @@ class BlasterBattle {
     this.projectiles = [];
     this.hazards = [];
     this.decoys = [];
+    this.decoyRenderAnchor = null;
     this.effects = [];
     this.combatVisuals = null;
     this.respawnTimers = [];
@@ -235,7 +237,6 @@ class BlasterBattle {
     this.hideMatchLoadingAfterFrame = false;
     this.targetHealthTimer = 0;
     this.damageDirectionTimer = 0;
-    this.arenaWarmup = null;
     this.botTargets = new Map();
     this.multiplayer = null;
     this.onlineWelcome = null;
@@ -250,7 +251,6 @@ class BlasterBattle {
     this.botPlanner = null;
     this.animationStarted = false;
     this.pendingResize = null;
-    this.resizeInFlight = false;
     if (typeof Worker === "function") {
       try {
         this.botPlanner = new Worker(new URL("./botPlanner.worker.js", import.meta.url), { type: "module" });
@@ -267,10 +267,14 @@ class BlasterBattle {
 
   async init() {
     await this.renderer.init();
+    this.renderer.shadowMap.type = this.renderer.backend.isWebGPUBackend ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     this.capabilities[this.renderer.backend.isWebGPUBackend === true ? "webgpu renderer" : "webgl2 fallback"] = true;
     const environment = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = environment.fromScene(new RoomEnvironment(), .04).texture;
+    const room = new RoomEnvironment();
+    this.environmentTarget = environment.fromScene(room, .04);
+    this.scene.environment = this.environmentTarget.texture;
     this.scene.environmentIntensity = .82;
+    room.dispose();
     environment.dispose();
     this.rebuildRenderPipeline();
     const reportDeviceLost = this.renderer.onDeviceLost.bind(this.renderer);
@@ -323,10 +327,10 @@ class BlasterBattle {
 
   setupLights() {
     this.scene.add(new THREE.HemisphereLight(0x96d9ff, 0x10182a, 1.18));
-    const key = new THREE.DirectionalLight(0xffffff, 1.78);
+    const key = this.keyLight = new THREE.DirectionalLight(0xffffff, 1.78);
     key.position.set(-22, 40, 18);
     key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.mapSize.set(this.graphics.shadowMapSize, this.graphics.shadowMapSize);
     key.shadow.bias = -.00018;
     key.shadow.normalBias = .035;
     Object.assign(key.shadow.camera, { left: -135, right: 135, top: 135, bottom: -135, near: 1, far: 260 });
@@ -377,42 +381,39 @@ class BlasterBattle {
   }
 
   resize(immediate = false) {
-    const size = { width: Math.max(1, innerWidth), height: Math.max(1, innerHeight) };
+    const size = { width: Math.max(1, innerWidth), height: Math.max(1, innerHeight), pixelRatio: this.graphics.pixelRatio };
     this.camera.aspect = size.width / size.height;
     this.camera.updateProjectionMatrix();
-    if (immediate || !this.animationStarted || this.renderer.backend.isWebGPUBackend !== true) {
-      this.renderer.setSize(size.width, size.height, false);
-      return;
-    }
     this.pendingResize = size;
-    void this.commitResize();
+    if (immediate || !this.animationStarted) this.commitResize();
   }
 
-  async commitResize() {
-    if (this.resizeInFlight) return;
-    this.resizeInFlight = true;
-    try {
-      while (this.pendingResize) {
-        let size = this.pendingResize;
-        this.pendingResize = null;
-        await this.renderer.backend.device?.queue?.onSubmittedWorkDone?.();
-        if (this.pendingResize) {
-          size = this.pendingResize;
-          this.pendingResize = null;
-        }
-        this.renderer.setSize(size.width, size.height, false);
+  commitResize() {
+    if (this.pendingGraphics) {
+      this.pendingGraphics = false;
+      this.renderPipeline?.setQuality(this.graphics.level);
+      this.world?.setGraphicsProfile(this.graphics, this.renderer.getMaxAnisotropy());
+      this.combatVisuals?.setGraphicsProfile(this.graphics);
+      if (this.keyLight.shadow.mapSize.x !== this.graphics.shadowMapSize) {
+        this.keyLight.shadow.mapSize.set(this.graphics.shadowMapSize, this.graphics.shadowMapSize);
+        this.keyLight.shadow.map?.dispose();
+        this.keyLight.shadow.map = null;
       }
-    } finally {
-      this.resizeInFlight = false;
-      if (this.pendingResize) void this.commitResize();
     }
+    const size = this.pendingResize;
+    if (!size) return;
+    this.pendingResize = null;
+    // One public, frame-boundary transaction includes DPR. Avoid recreating
+    // attachments on same-size events or while a render pass is being encoded.
+    if (this.renderSize?.width === size.width && this.renderSize?.height === size.height && this.renderSize?.pixelRatio === size.pixelRatio) return;
+    this.renderer.setDrawingBufferSize(size.width, size.height, size.pixelRatio);
+    this.renderSize = size;
   }
 
   applyGraphicsSettings() {
     this.graphics = graphicsProfile(this.settings.graphics, this.coarsePointer, devicePixelRatio);
     this.settings.graphics = this.graphics.level;
-    this.renderer.setPixelRatio(this.graphics.pixelRatio);
-    this.renderPipeline?.setQuality(this.graphics.level);
+    this.pendingGraphics = true;
     this.resize();
   }
 
@@ -452,6 +453,8 @@ class BlasterBattle {
     }
     for (const hazard of this.hazards) this.removeObject(hazard.mesh);
     for (const decoy of this.decoys) this.removeObject(decoy.mesh);
+    this.removeObject(this.decoyRenderAnchor);
+    this.decoyRenderAnchor = null;
     for (const effect of this.effects) this.removeObject(effect.mesh);
     this.world = null;
     this.players = [];
@@ -681,9 +684,11 @@ class BlasterBattle {
           <h1>${TEXT.settings.title}</h1>
           <div class="settings-grid">
             <label>${TEXT.settings.labels.graphics}
-              <select data-setting="graphics">
+              <select data-setting="graphics" aria-describedby="graphics-description graphics-note">
                 ${["low", "medium", "high"].map((value) => `<option value="${value}" ${this.settings.graphics === value ? "selected" : ""}>${TEXT.settings.options.graphics[value]}</option>`).join("")}
               </select>
+              <p id="graphics-description" class="dialog-lead">${TEXT.settings.graphicsDescriptions[this.settings.graphics]}</p>
+              <small id="graphics-note">${TEXT.settings.graphicsDescriptions.note}</small>
             </label>
             <label>${TEXT.settings.labels.blood}
               <select data-setting="blood">
@@ -1050,6 +1055,7 @@ class BlasterBattle {
 
   captureSettingsPreferences() {
     this.settings.graphics = ui.querySelector('[data-setting="graphics"]').value;
+    ui.querySelector("#graphics-description").textContent = TEXT.settings.graphicsDescriptions[this.settings.graphics];
     this.settings.blood = ui.querySelector('[data-setting="blood"]').value;
     this.settings.shake = Number(ui.querySelector('[data-setting="shake"]').value);
     this.settings.volume = Number(ui.querySelector('[data-setting="volume"]').value);
@@ -1228,6 +1234,7 @@ class BlasterBattle {
       if (localData.aim) local.aim.set(localData.aim.x, localData.aim.y, localData.aim.z).normalize();
       local.grounded = Boolean(localData.grounded);
       local.slotIndex = localData.slotIndex || 0;
+      if (local.weaponModelId !== local.weapon.id) local.updateWeaponModel();
       local.ammo = { ...local.ammo, ...localData.ammo };
       this.updateCamera(1);
     }
@@ -1244,6 +1251,8 @@ class BlasterBattle {
       this.removeObject(hazard.mesh);
     }
     for (const decoy of this.decoys) this.removeObject(decoy.mesh);
+    this.removeObject(this.decoyRenderAnchor);
+    this.decoyRenderAnchor = null;
     for (const effect of this.effects) this.removeObject(effect.mesh);
     this.hazards = [];
     this.decoys = [];
@@ -1284,6 +1293,7 @@ class BlasterBattle {
     const alive = data.alive !== false;
     fighter.health = alive ? data.health ?? 100 : 100;
     fighter.slotIndex = data.slotIndex || 0;
+    if (fighter.weaponModelId !== fighter.weapon.id) fighter.updateWeaponModel();
     fighter.ammo = { ...fighter.ammo, ...data.ammo };
     fighter.networkLifeSequence = Math.max(0, Math.trunc(Number(data.lifeSequence) || 0));
     fighter.networkRespawnId = String(data.respawnId || "");
@@ -1333,6 +1343,7 @@ class BlasterBattle {
     // tier remains unchanged at maximum room capacity.
     this.renderPipeline.setHighLoadMode(fighterCount >= 13);
     this.world = new ArenaWorld(this.scene, this.seed);
+    this.world.setGraphicsProfile(this.graphics, this.renderer.getMaxAnisotropy());
     if (welcome?.structuralState) {
       this.world.applyStructuralState(welcome.structuralState, welcome);
     } else {
@@ -1349,6 +1360,7 @@ class BlasterBattle {
       reducedMotion: this.settings.reducedMotion,
       quality: this.graphics.combatQuality
     });
+    this.combatVisuals.setGraphicsProfile(this.graphics);
     const spawns = this.world.spawnPoints();
     const playerLoadout = this.settings.loadout.length === 5 ? this.settings.loadout : DEFAULT_LOADOUT;
     const weaponIds = Object.keys(WEAPONS);
@@ -1384,18 +1396,8 @@ class BlasterBattle {
     this.renderHud();
     this.scene.updateMatrixWorld(true);
     performance.mark?.("blaster-arena-build-complete");
-    try {
-      const compile = this.renderer.compileAsync?.(this.scene, this.camera);
-      const timeout = new Promise((resolve) => setTimeout(resolve, 2500));
-      this.arenaWarmup = compile ? Promise.race([Promise.resolve(compile), timeout]).catch((error) => console.warn("Arena shader warm-up skipped", error)).finally(() => {
-        this.arenaWarmup = null;
-        performance.mark?.("blaster-arena-gpu-ready");
-        performance.measure?.("blaster-arena-gpu-warmup", "blaster-arena-build-complete", "blaster-arena-gpu-ready");
-      }) : null;
-    } catch (error) {
-      this.arenaWarmup = null;
-      console.warn("Arena shader warm-up skipped", error);
-    }
+    // The selected pipeline compiles during its first normal render. A detached
+    // compileAsync walk can outlive teardown and recreate already-disposed data.
     this.sound.startAmbience(this.world.theme.id);
     this.sound.setMusicIntensity(.42);
     const countdown = this.sound.startCountdown(this.seed, .42);
@@ -1866,14 +1868,17 @@ class BlasterBattle {
   }
 
   frame(time) {
+    this.commitResize();
     this.timer.update(time);
     const rawDt = Math.min(.25, this.timer.getDelta());
     const dt = Math.min(.033, rawDt);
     if (this.state === "play" && this.input.tapped("Escape")) this.togglePause();
     if (this.state === "play" && !this.paused) this.update(dt, rawDt);
-    this.renderScene();
-    if (this.hideMatchLoadingAfterFrame && !this.arenaWarmup) {
+    const rendered = this.renderScene();
+    if (this.hideMatchLoadingAfterFrame && rendered) {
       this.hideMatchLoadingAfterFrame = false;
+      performance.mark?.("blaster-arena-first-frame");
+      performance.measure?.("blaster-arena-first-render", "blaster-arena-build-complete", "blaster-arena-first-frame");
       this.setMatchLoading(false);
     }
     if (this.state === "play" && !this.paused) this.updatePerformanceSample(rawDt);
@@ -3060,7 +3065,9 @@ class BlasterBattle {
   spawnDecoy(position, owner, weapon) {
     const mesh = owner.group.clone(true);
     const materials = [];
+    const thrusterSnapshots = [];
     mesh.traverse((child) => {
+      if (child.isInstancedMesh && child.name === "Fighter thruster pair") thrusterSnapshots.push(child);
       if (child.geometry) child.geometry = child.geometry.clone();
       if (!child.material) return;
       const source = Array.isArray(child.material) ? child.material : [child.material];
@@ -3079,6 +3086,36 @@ class BlasterBattle {
       child.material = Array.isArray(child.material) ? clones : clones[0];
       child.castShadow = false;
       child.receiveShadow = false;
+    });
+    // Decoys freeze the source pose. Bake the two thrusters into the same single
+    // draw so fresh instance-buffer identities cannot generate unique shaders.
+    for (const thrusters of thrusterSnapshots) {
+      const matrix = new THREE.Matrix4(), parts = [];
+      for (let index = 0; index < thrusters.count; index++) {
+        thrusters.getMatrixAt(index, matrix);
+        parts.push(thrusters.geometry.clone().applyMatrix4(matrix));
+      }
+      const snapshot = new THREE.Mesh().copy(thrusters, false);
+      snapshot.geometry = mergeGeometries(parts, false);
+      for (const part of parts) part.dispose();
+      thrusters.geometry.dispose();
+      const parent = thrusters.parent;
+      parent.remove(thrusters); parent.add(snapshot);
+    }
+    mesh.userData.decoyRendered = false;
+    mesh.userData.decoyPendingMeshes = 0;
+    mesh.userData.decoyRenderContext = null;
+    mesh.userData.decoyMixedContext = false;
+    mesh.traverse(child => {
+      if (!child.isMesh) return;
+      mesh.userData.decoyPendingMeshes++;
+      child.onAfterRender = () => {
+        const context = `${this.renderPipeline?.quality}:${Boolean(this.renderPipeline?.direct)}`;
+        if (mesh.userData.decoyRenderContext === null) mesh.userData.decoyRenderContext = context;
+        else if (mesh.userData.decoyRenderContext !== context) mesh.userData.decoyMixedContext = true;
+        mesh.userData.decoyRendered = --mesh.userData.decoyPendingMeshes === 0 && !mesh.userData.decoyMixedContext;
+        child.onAfterRender = THREE.Object3D.prototype.onAfterRender;
+      };
     });
     const feet = position.clone();
     feet.y = this.world.surfaceHeightAt(feet, position.y + 1);
@@ -3108,7 +3145,16 @@ class BlasterBattle {
     const index = this.decoys.indexOf(decoy);
     if (index < 0) return;
     decoy.alive = false;
-    this.removeObject(decoy.mesh);
+    // Keep the latest fully-rendered clone off-scene until match cleanup. Disposing
+    // the last decoy otherwise drops Three's transparent shader references and
+    // recompiles them on the next shot. Visible decoys still clone fresh poses
+    // and own their independently animated materials; retention is bounded to one.
+    const context = `${this.renderPipeline?.quality}:${Boolean(this.renderPipeline?.direct)}`;
+    if (decoy.mesh.userData.decoyRendered && decoy.mesh.userData.decoyRenderContext === context) {
+      this.removeObject(this.decoyRenderAnchor);
+      this.scene.remove(decoy.mesh);
+      this.decoyRenderAnchor = decoy.mesh;
+    } else this.removeObject(decoy.mesh);
     this.decoys.splice(index, 1);
   }
 
@@ -3493,9 +3539,10 @@ class BlasterBattle {
   }
 
   renderScene() {
-    if (this.resizeInFlight || this.pendingResize) return;
+    if (this.pendingResize) return false;
     if (this.state !== "play" || this.paused) this.updateCamera();
     this.renderPipeline.render();
+    return true;
   }
 
   removeProjectile(index) {

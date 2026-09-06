@@ -28,15 +28,18 @@ export class NeonRenderPipeline {
     this.highLoadScenePass = null;
     this.scenePass = null;
     this.aoPass = null;
+    this.pipeline = null;
+    this.bloomPass = null;
     const nativeWebGPU = renderer.backend.isWebGPUBackend === true;
     this.nativeWebGPU = nativeWebGPU;
     this.direct = false;
     this.profile = nativeWebGPU ? TEXT.performanceProfiles.webgpu : TEXT.performanceProfiles.webglBloom;
-    if (this.direct) {
-      this.setQuality(this.quality);
-      return;
-    }
+    this.setQuality(this.quality);
+  }
 
+  ensureQualityPipeline() {
+    if (this.pipeline || this.direct || this.quality === "low") return;
+    const { renderer, scene, camera, reducedMotion, nativeWebGPU } = this;
     this.pipeline = new THREE.RenderPipeline(renderer);
     if (!nativeWebGPU) {
       this.scenePass = pass(scene, camera);
@@ -44,7 +47,6 @@ export class NeonRenderPipeline {
       this.bloomPass = bloom(sceneColor, reducedMotion ? .16 : .28, .3, 1.08);
       this.bloomPass.resolutionScale = .34;
       this.pipeline.outputNode = sceneColor.add(this.bloomPass);
-      this.setQuality(this.quality);
       return;
     }
     const scenePass = this.scenePass = pass(scene, camera);
@@ -74,7 +76,6 @@ export class NeonRenderPipeline {
     const finalColor = sceneColor.mul(vec4(vec3(grounding), 1));
 
     this.pipeline.outputNode = finalColor.add(bloomPass);
-    this.setQuality(this.quality);
   }
 
   render() {
@@ -119,6 +120,7 @@ export class NeonRenderPipeline {
       return this.quality;
     }
     if (this.nativeWebGPU && this.quality === "medium") this.ensurePerformancePipeline();
+    else if (this.quality !== "low") this.ensureQualityPipeline();
     this.updateBloomQuality();
     const backend = this.nativeWebGPU ? TEXT.performanceProfiles.webgpu : TEXT.performanceProfiles.webgl;
     this.profile = this.quality === "low" ? `${backend} ${TEXT.performanceProfiles.lowDirect}`
@@ -149,6 +151,7 @@ export class NeonRenderPipeline {
     // A failed node pass can leave WebGPU bound to an offscreen target. Restore
     // the canvas and output state before the direct fallback draws its first frame.
     try {
+      if (this.renderer.getPixelRatio) this.rendererState.pixelRatio = this.renderer.getPixelRatio();
       THREE.RendererUtils.restoreRendererState(this.renderer, this.rendererState);
     } catch {
       try { this.renderer.setRenderTarget?.(null); } catch {}

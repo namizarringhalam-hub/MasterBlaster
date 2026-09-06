@@ -181,7 +181,13 @@ export function graphicsProfile(level = "high", coarsePointer = false, deviceSca
   const pixelCap = resolved === "low" ? 1 : resolved === "medium" ? 1.3 : 1.65;
   const combatQuality = resolved === "low" ? .5
     : resolved === "medium" ? .75 : 1;
-  return { level: resolved, pixelRatio: Math.min(Math.max(.5, Number(deviceScale) || 1), pixelCap), combatQuality };
+  return {
+    level: resolved, pixelRatio: Math.min(Math.max(.5, Number(deviceScale) || 1), pixelCap), combatQuality,
+    shadowMapSize: resolved === "high" ? 4096 : resolved === "medium" ? 2048 : 1024,
+    anisotropy: resolved === "high" ? 16 : resolved === "medium" ? 8 : 4,
+    atmosphereCount: resolved === "high" ? 220 : resolved === "medium" ? 150 : 80,
+    combatLights: resolved === "high" ? 4 : resolved === "medium" ? 2 : 1
+  };
 }
 
 function validLoadout(value) {

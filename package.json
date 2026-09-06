@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/patch-three.mjs",
+    "prebuild": "node scripts/patch-three.mjs",
+    "predev": "node scripts/patch-three.mjs",
+    "pretest": "node scripts/patch-three.mjs",
     "build": "vite build && node scripts/prepare-sites.mjs && node tests/hosting.mjs",
     "dev": "vite --host 127.0.0.1",
     "dev:multiplayer": "wrangler dev --port 8787",
@@ -12,7 +16,7 @@
     "test:worker": "vitest run",
     "test:multiplayer-live": "node tests/multiplayerLive.mjs",
     "start": "npm run build && node server.mjs",
-    "test": "node tests/playerText.test.mjs && node tests/smoke.mjs && node tests/cornerPillars.test.mjs && node tests/botBrain.test.mjs && node tests/trainingControls.test.mjs && node tests/performance.test.mjs && node tests/assetCache.test.mjs && node tests/audioLifecycle.test.mjs && node tests/audioAssets.test.mjs && node tests/audioQuality.test.mjs && node tests/musicScore.test.mjs && node tests/weaponStress.mjs && node tests/multiplayerProtocol.test.mjs && node tests/combatAuthority.test.mjs && node tests/multiplayerClient.test.mjs && npm run test:worker"
+    "test": "node scripts/test.mjs"
   },
   "dependencies": {
     "three": "0.185.1",

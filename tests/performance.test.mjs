@@ -5,6 +5,7 @@ import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
 import { WEAPONS, projectileStepCount } from "../src/gameData.js";
 import { Fighter } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 const botScene = new THREE.Scene();
 const bot = new Fighter(
@@ -126,6 +127,123 @@ secondRocket.traverse((child) => { if (child.isMesh) secondRocketGeometries.push
 assert.deepEqual(secondRocketGeometries, rocketGeometries, "repeat shots reuse immutable GPU geometry while retaining separate materials");
 
 const mainSource = fs.readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
+const decoyMethods = mainSource.slice(mainSource.indexOf("\n  spawnDecoy("), mainSource.indexOf("\n  damagePlayer("));
+const removeObjectMethod = mainSource.slice(mainSource.indexOf("\n  removeObject(object) {"), mainSource.indexOf("\n}\n\nconst game ="));
+const transientMethod = mainSource.slice(mainSource.indexOf("\n  clearTransientNetworkCombat() {"), mainSource.indexOf("\n  removeOwnedCombat("));
+const decoyHarness = new Function("THREE", "mergeGeometries", `return new (class {${decoyMethods}${removeObjectMethod}${transientMethod}})();`)(THREE, mergeGeometries);
+Object.assign(decoyHarness, { scene: new THREE.Scene(), world: { surfaceHeightAt: () => 0 },
+  decoys: [], projectiles: [], hazards: [], effects: [], decoyRenderAnchor: null, spawnBurst() {}, renderPipeline: { quality: "high", direct: false } });
+const decoyOwner = new Fighter(decoyHarness.scene, { id: "decoy-qa", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+const decoyDisposals = new Map();
+function trackDecoy(mesh) {
+  mesh.traverse(child => {
+    for (const resource of [child.geometry, ...(Array.isArray(child.material) ? child.material : [child.material])].filter(Boolean)) {
+      decoyDisposals.set(resource, 0);
+      resource.addEventListener("dispose", () => decoyDisposals.set(resource, decoyDisposals.get(resource) + 1));
+    }
+  });
+}
+decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
+const firstDecoy = decoyHarness.decoys[0]; trackDecoy(firstDecoy.mesh);
+const thrusterSnapshot = firstDecoy.mesh.getObjectByName("Fighter thruster pair");
+assert.ok(thrusterSnapshot.isMesh && !thrusterSnapshot.isInstancedMesh, "a frozen decoy pair uses one ordinary draw without per-clone instance bindings");
+assert.equal(thrusterSnapshot.geometry.index.count, decoyOwner.thrusterLights.geometry.index.count * 2);
+const thrusterMatrix = new THREE.Matrix4();
+for (let instance = 0; instance < 2; instance++) {
+  decoyOwner.thrusterLights.getMatrixAt(instance, thrusterMatrix);
+  const expected = decoyOwner.thrusterLights.geometry.clone().applyMatrix4(thrusterMatrix);
+  for (const name of ["position", "normal", "uv"]) {
+    const source = expected.attributes[name].array, actual = thrusterSnapshot.geometry.attributes[name].array;
+    assert.deepEqual(actual.slice(instance * source.length, (instance + 1) * source.length), source,
+      `decoy thruster ${instance} retains the exact ${name} data`);
+  }
+  expected.dispose();
+}
+thrusterSnapshot.onAfterRender();
+assert.equal(firstDecoy.mesh.userData.decoyRendered, false, "a partially visible decoy cannot retain incomplete shader coverage");
+assert.ok(thrusterSnapshot.onAfterRender === THREE.Object3D.prototype.onAfterRender, "render marker removes its own per-draw work after first use");
+firstDecoy.mesh.traverse(child => { if (child.isMesh) child.onAfterRender(); });
+assert.equal(firstDecoy.mesh.userData.decoyRendered, true);
+decoyHarness.removeDecoy(firstDecoy);
+assert.ok(decoyHarness.decoyRenderAnchor === firstDecoy.mesh, "one removed decoy retains its already-compiled renderer resources");
+assert.equal(firstDecoy.mesh.parent, null, "the render anchor cannot draw");
+assert.equal(decoyHarness.decoys.length, 0, "the render anchor cannot become a gameplay target");
+assert.ok([...decoyDisposals.values()].every(count => count === 0), "last removal keeps bounded shader references alive");
+for (let i = 0; i < 2; i++) decoyHarness.spawnDecoy(new THREE.Vector3(i + 2, 0, 0), decoyOwner, WEAPONS.decoy_launcher);
+const [decoyA, decoyB] = decoyHarness.decoys;
+decoyA.life = 8; decoyB.life = 10;
+decoyHarness.updateDecoys(.1);
+assert.notEqual(decoyA.materials[0].material.opacity, decoyB.materials[0].material.opacity, "overlapping holograms retain independent flicker");
+assert.ok(decoyA.materials.every(({ material }, i) => material !== decoyB.materials[i].material), "visible decoys never alias mutated materials");
+trackDecoy(decoyA.mesh); trackDecoy(decoyB.mesh);
+decoyHarness.removeDecoy(decoyA); decoyHarness.removeDecoy(decoyA);
+assert.ok(decoyHarness.decoyRenderAnchor === firstDecoy.mesh, "retention stays bounded to one clone");
+decoyB.mesh.traverse(child => { if (child.isMesh) child.onAfterRender(); });
+decoyHarness.removeDecoy(decoyB);
+assert.ok(decoyHarness.decoyRenderAnchor === decoyB.mesh, "the latest complete render owns the anchor so current-tier pipelines survive");
+decoyHarness.clearTransientNetworkCombat(); decoyHarness.clearTransientNetworkCombat();
+assert.equal(decoyHarness.decoyRenderAnchor, null);
+assert.ok([...decoyDisposals.values()].every(count => count === 1), "all owned decoy resources dispose exactly once on cleanup");
+decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
+decoyHarness.removeDecoy(decoyHarness.decoys[0]);
+assert.equal(decoyHarness.decoyRenderAnchor, null, "an offscreen/unrendered first decoy must not occupy the sole shader anchor");
+for (const scale of [.65, 1.8]) {
+  for (let instance = 0; instance < 2; instance++) {
+    thrusterMatrix.makeScale(1, scale, 1).setPosition(instance ? .2 : -.2, 1.02, -.49);
+    decoyOwner.thrusterLights.setMatrixAt(instance, thrusterMatrix);
+  }
+  decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
+  const snapshot = decoyHarness.decoys[0].mesh.getObjectByName("Fighter thruster pair");
+  for (let instance = 0; instance < 2; instance++) {
+    decoyOwner.thrusterLights.getMatrixAt(instance, thrusterMatrix);
+    const expected = decoyOwner.thrusterLights.geometry.clone().applyMatrix4(thrusterMatrix);
+    for (const name of ["position", "normal", "uv"]) {
+      const values = expected.attributes[name].array;
+      assert.deepEqual(snapshot.geometry.attributes[name].array.slice(instance * values.length, (instance + 1) * values.length), values);
+    }
+    expected.dispose();
+  }
+  const frozenPositions = snapshot.geometry.attributes.position.array.slice();
+  decoyOwner.thrusterLights.setMatrixAt(0, new THREE.Matrix4().makeScale(9, 9, 9));
+  assert.deepEqual(snapshot.geometry.attributes.position.array, frozenPositions, "later owner thrust cannot change an existing decoy pose");
+  decoyHarness.clearTransientNetworkCombat();
+}
+const clearMatchMethod = mainSource.slice(mainSource.indexOf("\n  clearMatch("), mainSource.indexOf("\n  renderMain("));
+decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
+const oldTierDecoy = decoyHarness.decoys[0];
+oldTierDecoy.mesh.traverse(child => { if (child.isMesh) child.onAfterRender(); });
+decoyHarness.renderPipeline.quality = "medium";
+decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
+const currentTierDecoy = decoyHarness.decoys[1];
+currentTierDecoy.mesh.traverse(child => { if (child.isMesh) child.onAfterRender(); });
+decoyHarness.removeDecoy(currentTierDecoy);
+decoyHarness.removeDecoy(oldTierDecoy);
+assert.ok(decoyHarness.decoyRenderAnchor === currentTierDecoy.mesh, "late offscreen old-tier expiry cannot evict the current-tier cache");
+decoyHarness.renderPipeline.quality = "high";
+decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
+const mixedTierDecoy = decoyHarness.decoys[0];
+mixedTierDecoy.mesh.getObjectByName("Fighter thruster pair").onAfterRender();
+decoyHarness.renderPipeline.quality = "medium";
+mixedTierDecoy.mesh.traverse(child => { if (child.isMesh) child.onAfterRender(); });
+assert.equal(mixedTierDecoy.mesh.userData.decoyRendered, false, "partial coverage from different render contexts cannot combine into a complete anchor");
+decoyHarness.removeDecoy(mixedTierDecoy);
+assert.ok(decoyHarness.decoyRenderAnchor === currentTierDecoy.mesh);
+decoyHarness.clearTransientNetworkCombat();
+decoyHarness.clearMatch = new Function("clearTouchActions", `return (class {${clearMatchMethod}}).prototype.clearMatch;`)(() => {});
+Object.assign(decoyHarness, { input: { releasePointer() {} }, touch: {}, hideNetworkReconnecting() {},
+  sound: { stopAll() {} }, players: [], botTargets: new Map(), networkTargets: new Map(), networkRespawnRequests: new Map() });
+decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
+const matchAnchor = decoyHarness.decoys[0]; trackDecoy(matchAnchor.mesh);
+matchAnchor.mesh.getObjectByName("Fighter thruster pair").onAfterRender();
+matchAnchor.mesh.traverse(child => { if (child.isMesh) child.onAfterRender(); });
+decoyHarness.removeDecoy(matchAnchor);
+decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
+trackDecoy(decoyHarness.decoys[0].mesh);
+decoyHarness.world = null;
+decoyHarness.clearMatch(); decoyHarness.clearMatch();
+assert.equal(decoyHarness.decoyRenderAnchor, null);
+assert.ok([...decoyDisposals.values()].every(count => count === 1), "match teardown releases active and retained clones exactly once");
+decoyOwner.dispose();
 const audioSelectors = mainSource.slice(mainSource.indexOf("function projectileNeedsLoop("), mainSource.indexOf("function setText("));
 const updateMethod = mainSource.slice(mainSource.indexOf("\n  updateProjectiles(dt) {"), mainSource.indexOf("\n  findProjectileTarget("));
 const updateProjectiles = new Function("projectileStepCount", `${audioSelectors}; return ({${updateMethod}}).updateProjectiles;`)(projectileStepCount);
@@ -205,7 +323,8 @@ const playerSource = fs.readFileSync(new URL("../src/player.js", import.meta.url
 const pipelineSource = fs.readFileSync(new URL("../src/renderPipeline.js", import.meta.url), "utf8");
 assert.match(mainSource, /selectNearestAudio\([\s\S]*?this\.projectiles, listener\.position, 6/, "projectile audio uses a bounded nearest-six selector");
 assert.match(mainSource, /new Worker\(new URL\("\.\/botPlanner\.worker\.js"[\s\S]*?updateBotPlanner\(dt\)/, "batched bot target planning runs off the render thread when workers are available");
-assert.match(mainSource, /renderer\.compileAsync\?\.\(this\.scene, this\.camera\)[\s\S]*?arenaWarmup/, "arena shaders and WebGPU pipelines warm behind the match loader");
+assert.doesNotMatch(mainSource, /renderer\.compileAsync/, "no unowned async compilation may recreate disposed match resources");
+assert.match(mainSource, /const rendered = this\.renderScene\(\);[\s\S]*?hideMatchLoadingAfterFrame && rendered/, "the loading screen stays until the selected pipeline submits its first frame");
 assert.match(mainSource, /dataset\.drawCalls[\s\S]*?dataset\.geometries[\s\S]*?dataset\.longTasks[\s\S]*?dataset\.budget/, "live frame telemetry exposes draw, memory, long-task, and performance-budget health");
 const projectileUpdateStart = mainSource.indexOf("\n  updateProjectiles(dt) {");
 assert.doesNotMatch(mainSource.slice(projectileUpdateStart, mainSource.indexOf("\n  bounceProjectile(", projectileUpdateStart)), /\.filter\(|\.sort\(/, "projectile simulation avoids full-list allocation and sorting every frame");

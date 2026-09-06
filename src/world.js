@@ -1,6 +1,8 @@
 import * as THREE from "three/webgpu";
-import { abs, color, fract, length, max, min, mix, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { abs, color, fract, length, max, min, mix, normalWorldGeometry, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
 import { ARENA_PORTAL_COOLDOWN_SECONDS, ARENA_PORTAL_PAIRS, ARENA_SPAWN_POINTS, MAP_THEMES, seededRandom, seedFromText, structuralTowerBlueprints } from "./gameData.js";
+import { surfaceTextures } from "./surfaceTextures.js";
 
 const TAU = Math.PI * 2;
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -14,69 +16,6 @@ const DISTRICT_PALETTES = {
   ion: [0x4dffc2, 0xff58dc, 0x6b9cff, 0xffcc58]
 };
 
-function proceduralPanelTexture(seed, repeat = 4) {
-  const size = 64;
-  const data = new Uint8Array(size * size * 4);
-  const random = seededRandom(seedFromText(`${seed}-panels-${repeat}`));
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const index = (y * size + x) * 4;
-      const seam = x % 16 < 1 || y % 16 < 1;
-      const bevel = x % 16 === 1 || y % 16 === 1;
-      const rivet = (x % 16 === 3 || x % 16 === 13) && (y % 16 === 3 || y % 16 === 13);
-      const grain = Math.floor(random() * 18);
-      const value = rivet ? 250 : seam ? 142 + grain : bevel ? 226 : 196 + grain;
-      data[index] = value;
-      data[index + 1] = value + (seam ? 4 : 0);
-      data[index + 2] = Math.min(255, value + 9);
-      data[index + 3] = 255;
-    }
-  }
-  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(repeat, repeat);
-  texture.magFilter = THREE.LinearFilter;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.anisotropy = 4;
-  texture.needsUpdate = true;
-  return texture;
-}
-
-function proceduralSurfaceDetail(seed, repeat = 4, normal = false) {
-  const size = 64;
-  const data = new Uint8Array(size * size * 4);
-  const random = seededRandom(seedFromText(`${seed}-${normal ? "normal" : "roughness"}-${repeat}`));
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const index = (y * size + x) * 4;
-      const cellX = x % 16;
-      const cellY = y % 16;
-      const seamX = cellX === 0;
-      const seamY = cellY === 0;
-      const bevelX = cellX === 1 || cellX === 15;
-      const bevelY = cellY === 1 || cellY === 15;
-      const rivet = (cellX === 3 || cellX === 13) && (cellY === 3 || cellY === 13);
-      if (normal) {
-        data[index] = seamX ? 96 : cellX === 1 ? 164 : cellX === 15 ? 112 : 128;
-        data[index + 1] = seamY ? 96 : cellY === 1 ? 164 : cellY === 15 ? 112 : 128;
-        data[index + 2] = rivet ? 226 : 255;
-      } else {
-        const value = rivet ? 92 : seamX || seamY ? 228 : bevelX || bevelY ? 142 : 166 + Math.floor(random() * 24);
-        data[index] = data[index + 1] = data[index + 2] = value;
-      }
-      data[index + 3] = 255;
-    }
-  }
-  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(repeat, repeat);
-  texture.magFilter = THREE.LinearFilter;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.anisotropy = 4;
-  texture.needsUpdate = true;
-  return texture;
-}
 
 function radialGlowTexture() {
   const size = 64;
@@ -94,6 +33,7 @@ function radialGlowTexture() {
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.magFilter = THREE.LinearFilter;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true;
   texture.needsUpdate = true;
   return texture;
 }
@@ -199,10 +139,95 @@ function box(w, h, d, color, x, y, z, emissive = 0) {
   return mesh;
 }
 
+// One inset plate per module face, with a machined perimeter. It remains one
+// instanced draw and stays inside the original collision envelope.
+export function structuralPanelGeometry(uvScale = 1) {
+  const geometry = new THREE.BoxGeometry(1, 1, 1, 3, 3, 3);
+  const { position, normal, uv: textureUV } = geometry.attributes;
+  const colors = new Float32Array(position.count * 3);
+  for (let i = 0; i < position.count; i++) {
+    const point = new THREE.Vector3().fromBufferAttribute(position, i);
+    const direction = new THREE.Vector3().fromBufferAttribute(normal, i);
+    const u = textureUV.getX(i), v = textureUV.getY(i);
+    const interior = u > .01 && u < .99 && v > .01 && v < .99;
+    for (const axis of ["x", "y", "z"]) if (Math.abs(point[axis]) < .49) point[axis] = Math.sign(point[axis]) * .445;
+    if (interior) point.addScaledVector(direction, -.012);
+    position.setXYZ(i, point.x, point.y, point.z);
+    const mapCoordinate = value => value < .01 ? 0 : value > .99 ? 1 : value < .5 ? .055 : .945;
+    textureUV.setXY(i, mapCoordinate(u) * uvScale, mapCoordinate(v) * uvScale);
+    const value = interior ? 1 : .38;
+    colors.set([value, value, value], i * 3);
+  }
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+export function structuralRouteGeometry() {
+  const pieces = [];
+  for (const side of [-1, 1]) {
+    pieces.push(new THREE.BoxGeometry(1, 1, .035).translate(0, 0, side * .4825));
+    pieces.push(new THREE.BoxGeometry(.035, 1, .93).translate(side * .4825, 0, 0));
+  }
+  const geometry = mergeGeometries(pieces);
+  pieces.forEach(piece => piece.dispose());
+  return geometry;
+}
+
+function coverPanelGeometry(panelColor) {
+  const template = new THREE.BoxGeometry(1, 1, 1);
+  const positions = [], textureUVs = [], colors = [];
+  const frameColor = new THREE.Color(0x182733);
+  const quad = (points, uvs, color, frame) => {
+    for (const i of [0, 1, 2, 0, 2, 3]) {
+      positions.push(points[i].x, points[i].y, points[i].z);
+      colors.push(color.r, color.g, color.b);
+      textureUVs.push(...uvs[i].map(value => frame ? .025 + value * .005 : value * .25));
+    }
+  };
+  for (let face = 0; face < 6; face++) {
+    const normal = new THREE.Vector3().fromBufferAttribute(template.attributes.normal, face * 4);
+    const order = [0, 2, 3, 1].map(index => face * 4 + index);
+    const outer = order.map(index => new THREE.Vector3().fromBufferAttribute(template.attributes.position, index));
+    const outerUV = order.map(index => [template.attributes.uv.getX(index), template.attributes.uv.getY(index)]);
+    const inner = outer.map(point => point.clone().multiplyScalar(.89).addScaledVector(normal, .043));
+    const innerUV = outerUV.map(uv => uv.map(value => .055 + value * .89));
+    // Each mitered strip is planar. A deformed 3x3 box grid instead leaves
+    // non-planar corner quads that split into conspicuous triangular patches.
+    for (let side = 0; side < 4; side++) {
+      const next = (side + 1) % 4;
+      quad([outer[side], outer[next], inner[next], inner[side]],
+        [outerUV[side], outerUV[next], innerUV[next], innerUV[side]], frameColor, true);
+    }
+    quad(inner, innerUV, panelColor, false);
+  }
+  template.dispose();
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(textureUVs, 2));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
 function segmentCircle(a, b, c, radius) {
   const ab = b.clone().sub(a);
   const t = THREE.MathUtils.clamp(c.clone().sub(a).dot(ab) / Math.max(.001, ab.lengthSq()), 0, 1);
   return a.clone().addScaledVector(ab, t).distanceTo(c) <= radius;
+}
+
+// Three owns and reuses the scene's background mesh. Retain just the three
+// theme expressions instead of rebuilding a background shader on every rematch.
+const skyBackgrounds = new Map();
+function skyBackground(theme) {
+  if (!skyBackgrounds.has(theme.id)) {
+    const horizon = new THREE.Color(theme.haze).offsetHSL(0, .04, .045);
+    const zenith = new THREE.Color(theme.haze).multiplyScalar(.18);
+    skyBackgrounds.set(theme.id, mix(color(horizon), color(zenith), normalWorldGeometry.y.max(0).pow(.65)));
+  }
+  return skyBackgrounds.get(theme.id);
 }
 
 export class ArenaWorld {
@@ -212,8 +237,10 @@ export class ArenaWorld {
     this.theme = MAP_THEMES[seedFromText(seed) % MAP_THEMES.length];
     this.districtColors = DISTRICT_PALETTES[this.theme.id] || DISTRICT_PALETTES.foundry;
     this.previousBackground = scene.background;
+    this.previousBackgroundNode = scene.backgroundNode;
     this.previousFog = scene.fog;
     scene.background = new THREE.Color(this.theme.haze).offsetHSL(0, .08, .035);
+    scene.backgroundNode = skyBackground(this.theme);
     scene.fog = new THREE.FogExp2(this.theme.haze, .0044);
     this.size = 112;
     this.height = 78;
@@ -255,15 +282,9 @@ export class ArenaWorld {
     this.collisionRay = new THREE.Ray();
     this.sweeperLocal = new THREE.Vector3();
     this.sweeperPush = new THREE.Vector3();
-    this.textures = [
-      proceduralPanelTexture(`${seed}-structure`, 4),
-      proceduralPanelTexture(`${seed}-ground`, 28),
-      radialGlowTexture(),
-      proceduralSurfaceDetail(`${seed}-structure`, 4, true),
-      proceduralSurfaceDetail(`${seed}-structure`, 4, false),
-      proceduralSurfaceDetail(`${seed}-ground`, 28, true),
-      proceduralSurfaceDetail(`${seed}-ground`, 28, false)
-    ];
+    const [panel, panelNormal, panelRoughness] = surfaceTextures(`${seed}-structure`, 4);
+    const [ground, groundNormal, groundRoughness] = surfaceTextures(`${seed}-ground`, 28);
+    this.textures = [panel, ground, radialGlowTexture(), panelNormal, panelRoughness, groundNormal, groundRoughness];
     [this.panelTexture, this.groundTexture, this.glowTexture, this.panelNormal, this.panelRoughness, this.groundNormal, this.groundRoughness] = this.textures;
     this.routeMaterials = this.districtColors.map((color) => new THREE.MeshBasicMaterial({
       color: new THREE.Color(color).multiplyScalar(1.65),
@@ -282,10 +303,27 @@ export class ArenaWorld {
       depthWrite: false,
       toneMapped: false
     }));
+    this.coverMarkMaterials = this.districtColors.map(color => {
+      const marking = material(color, color, 1, { roughness: .48, metalness: .38, emissiveIntensity: .3, envMapIntensity: .24 });
+      marking.vertexColors = true;
+      marking.envMap = scene.environment;
+      return marking;
+    });
     this.time = 0;
     scene.add(this.group);
     this.createDebrisPool();
     this.build();
+  }
+
+  setGraphicsProfile(profile, maxAnisotropy = 16) {
+    this.graphicsProfile = profile;
+    for (const texture of this.textures) {
+      const value = Math.min(profile.anisotropy, maxAnisotropy);
+      if (texture.anisotropy === value) continue;
+      texture.anisotropy = value;
+      texture.needsUpdate = true;
+    }
+    this.motes?.geometry.setDrawRange(0, profile.atmosphereCount);
   }
 
   build() {
@@ -988,14 +1026,22 @@ export class ArenaWorld {
     this.group.add(structure);
   }
 
+  setDeckSurface(surface, color) {
+    surface.color.setHex(0x162b3b);
+    surface.emissive.setHex(color);
+    surface.emissiveIntensity = .018;
+    surface.roughness = .88;
+    surface.metalness = .24;
+    // Three uses scene.environmentIntensity unless an explicit material envMap
+    // is supplied. Share the existing map; only matte deck reflections change.
+    surface.envMap = this.scene.environment;
+    surface.envMapIntensity = .24;
+  }
+
   decoratePlatform(platform) {
     const district = this.districtIndexAt(platform.x, platform.z);
     const color = this.districtColors[district];
-    platform.mesh.material.color.setHex(0x08131f).lerp(new THREE.Color(color), .065);
-    platform.mesh.material.emissive.setHex(color);
-    platform.mesh.material.emissiveIntensity = .025;
-    platform.mesh.material.roughness = .68;
-    platform.mesh.material.metalness = .24;
+    this.setDeckSurface(platform.mesh.material, color);
 
     const markings = new THREE.Mesh(routeMarkingGeometry(platform.w, platform.d, true), this.routeMaterials[district]);
     markings.name = "Traversal markings";
@@ -1344,7 +1390,7 @@ export class ArenaWorld {
     platform.mesh.add(cables, brackets);
   }
 
-  decorateBreakable(mesh, x, z) {
+  decorateBreakable(mesh, x, z, inset = false) {
     const district = this.districtIndexAt(x, z);
     const edges = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 32), this.lineMaterials[district]);
     edges.name = "Destructible silhouette";
@@ -1352,7 +1398,8 @@ export class ArenaWorld {
     mesh.add(edges);
 
     const { width, height, depth } = mesh.geometry.parameters;
-    const slats = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), this.routeMaterials[district], 4);
+    const slats = new THREE.InstancedMesh(inset ? structuralPanelGeometry() : new THREE.BoxGeometry(1, 1, 1),
+      inset ? this.coverMarkMaterials[district] : this.routeMaterials[district], 4);
     const marker = new THREE.Object3D();
     for (let index = 0; index < 4; index++) {
       const offset = (index - 1.5) / 4;
@@ -1373,6 +1420,13 @@ export class ArenaWorld {
         marker.rotation.set(0, 0, index % 2 ? Math.PI / 4 : -Math.PI / 4);
         marker.scale.set(.08, Math.min(width, height) * (.54 + index * .06), .025);
       }
+      // The recognizable district symbol sits in the recessed service face.
+      // A slightly wider machined strip separates its lit center from the body.
+      if (inset) {
+        marker.position.z -= depth * .012;
+        if (district === 2) marker.scale.y *= 1.7;
+        else marker.scale.x *= 1.7;
+      }
       marker.updateMatrix();
       slats.setMatrixAt(index, marker.matrix);
     }
@@ -1389,18 +1443,19 @@ export class ArenaWorld {
     mesh.material.normalMap = this.panelNormal;
     mesh.material.normalScale.set(.42, .42);
     mesh.material.roughnessMap = this.panelRoughness;
-    mesh.material.roughness = destructible ? .48 : .66;
+    mesh.material.roughness = destructible ? .72 : .82;
     mesh.material.metalness = destructible ? .38 : .31;
     if (destructible) {
       const source = new THREE.Color(color);
       mesh.material.color.lerp(new THREE.Color(this.theme.ground), .58);
       mesh.material.emissive.copy(source);
       mesh.material.emissiveIntensity = .075;
-      this.decorateBreakable(mesh, x, z);
+      this.decorateBreakable(mesh, x, z, true);
     } else {
       mesh.material.color.lerp(new THREE.Color(this.districtColorAt(x, z)), .12);
       if (anchor) this.decorateBreakable(mesh, x, z);
     }
+    mesh.material.color.lerp(new THREE.Color(0x122331), .34);
     mesh.material.needsUpdate = true;
     this.group.add(mesh);
     const obstacle = { x, z, w, d, h, baseY, top: baseY + h, mesh, destructible };
@@ -1421,7 +1476,14 @@ export class ArenaWorld {
     }
     const marker = new THREE.Object3D();
     for (const entries of groups.values()) {
-      const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), entries[0].mesh.material.clone(), entries.length);
+      const coverMaterial = entries[0].mesh.material.clone();
+      coverMaterial.vertexColors = true;
+      coverMaterial.envMap = this.scene.environment;
+      coverMaterial.envMapIntensity = .24;
+      coverMaterial.emissiveIntensity = .04;
+      const coverGeometry = coverPanelGeometry(coverMaterial.color);
+      coverMaterial.color.setHex(0xffffff);
+      const mesh = new THREE.InstancedMesh(coverGeometry, coverMaterial, entries.length);
       mesh.name = "Batched destructible arena bodies";
       mesh.castShadow = true;
       mesh.receiveShadow = true;
@@ -2183,6 +2245,7 @@ export class ArenaWorld {
       const chunkX = x - platformWidth / 2 + chunkWidth * (column + .5);
       const chunkZ = z - platformDepth / 2 + chunkDepth * (row + .5);
       const platform = this.addBox(chunkX, chunkZ, chunkWidth, chunkDepth, platformThickness, 0x203d55, false, false, top - platformThickness);
+      this.setDeckSurface(platform.mesh.material, colorValue);
       this.platforms.push(platform);
       Object.assign(platform, {
         structure, structuralId: `${structure.id}-platform-${row * columns + column + 1}`,
@@ -2266,7 +2329,7 @@ export class ArenaWorld {
     const segments = this.structures.flatMap((structure) => structure.segments);
     const platforms = this.structures.flatMap((structure) => structure.platformChunks);
     const anchors = this.structures.map((structure) => structure.anchor);
-    const segmentBatch = this.createStructuralBatch(new THREE.BoxGeometry(1, 1, 1), segments[0].mesh.material, segments.length, "Instanced destructible pillar modules");
+    const segmentBatch = this.createStructuralBatch(structuralPanelGeometry(.25), segments[0].mesh.material, segments.length, "Instanced destructible pillar modules");
     const seamMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, transparent: true, opacity: .58, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
     const segmentSeamBatch = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), seamMaterial, segments.length);
     segmentSeamBatch.name = "Instanced pillar section seams";
@@ -2282,7 +2345,7 @@ export class ArenaWorld {
     segmentRailBatch.receiveShadow = false;
     this.group.add(segmentRailBatch);
     this.structuralBatchMeshes.push(segmentRailBatch);
-    const platformBatch = this.createStructuralBatch(new THREE.BoxGeometry(1, 1, 1), platforms[0].mesh.material, platforms.length, "Instanced destructible platform decks");
+    const platformBatch = this.createStructuralBatch(structuralPanelGeometry(), platforms[0].mesh.material, platforms.length, "Instanced destructible platform decks");
     const topMaterial = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       vertexColors: true,
@@ -2292,7 +2355,7 @@ export class ArenaWorld {
       depthWrite: false,
       toneMapped: false
     });
-    const platformTopBatch = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), topMaterial, platforms.length * 2);
+    const platformTopBatch = new THREE.InstancedMesh(structuralRouteGeometry(), topMaterial, platforms.length * 2);
     platformTopBatch.name = "Instanced structural route illumination";
     platformTopBatch.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     platformTopBatch.castShadow = false;
@@ -2333,7 +2396,9 @@ export class ArenaWorld {
         index: index * 4 + corner,
         scale: new THREE.Vector3(.13, part.h * .84, .13),
         yOffset: 0,
-        offset: new THREE.Vector3(corner & 1 ? part.w * .42 : -part.w * .42, 0, corner & 2 ? part.d * .42 : -part.d * .42),
+        // Half of the existing 13 cm spine sits inside the body, half outside.
+        // This avoids coplanar trim without changing the gameplay envelope.
+        offset: new THREE.Vector3(corner & 1 ? part.w / 2 : -part.w / 2, 0, corner & 2 ? part.d / 2 : -part.d / 2),
         stress: true
       });
       this.group.remove(part.mesh);
@@ -2978,10 +3043,12 @@ export class ArenaWorld {
 
   dispose() {
     this.scene.background = this.previousBackground;
+    this.scene.backgroundNode = this.previousBackgroundNode;
     this.scene.fog = this.previousFog;
     this.scene.remove(this.group);
     this.group.traverse((child) => {
-      child.geometry?.dispose?.();
+      // Three owns one shared quad for every Sprite, including the next arena.
+      if (!child.isSprite) child.geometry?.dispose?.();
       child.material?.dispose?.();
     });
     for (const texture of this.textures) texture.dispose();

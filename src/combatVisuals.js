@@ -1,5 +1,6 @@
 import * as THREE from "three/webgpu";
 import { weaponPresentation } from "./weaponPresentation.js";
+import { seededRandom } from "./gameData.js";
 
 const clamp = THREE.MathUtils.clamp;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -327,6 +328,7 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
 
 function instancedLayer(geometry, capacity, opacity) {
   const mesh = new THREE.InstancedMesh(geometry, glowMaterial(opacity), capacity);
+  mesh.count = 0;
   mesh.updateMatrix();
   mesh.matrixAutoUpdate = false;
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -362,6 +364,8 @@ function bloodSplatGeometry() {
 /** Capped, pooled combat effects: fixed draw cost regardless of fire rate. */
 export class CombatVisuals {
   constructor(scene, { reducedMotion = false, quality = 1 } = {}) {
+    // Visual density must never advance the gameplay/AI random stream.
+    this.random = seededRandom(0x51f15e);
     this.scene = scene;
     this.reducedMotion = reducedMotion;
     this.quality = clamp(quality, .5, 1);
@@ -369,15 +373,15 @@ export class CombatVisuals {
     this.group.name = "Combat visuals";
     scene.add(this.group);
 
-    const flashCapacity = Math.round(64 * this.quality);
-    const tracerCapacity = Math.round(128 * this.quality);
-    const ringCapacity = Math.round(80 * this.quality);
-    const sparkCapacity = Math.round(512 * this.quality);
+    const flashCapacity = 64;
+    const tracerCapacity = 128;
+    const ringCapacity = 128;
+    const sparkCapacity = 512;
     this.flashes = slots(flashCapacity);
     this.tracers = slots(tracerCapacity);
     this.rings = slots(ringCapacity);
     this.sparks = slots(sparkCapacity);
-    const bloodCapacity = Math.round(48 * this.quality);
+    const bloodCapacity = 48;
     this.bloodDecals = slots(bloodCapacity);
     this.cursors = { flash: 0, tracer: 0, ring: 0, spark: 0, blood: 0 };
 
@@ -397,6 +401,7 @@ export class CombatVisuals {
       bloodCapacity
     );
     this.bloodLayer.name = "Pooled impact splatters";
+    this.bloodLayer.count = 0;
     this.bloodLayer.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.bloodLayer.frustumCulled = false;
     this.bloodLayer.renderOrder = 7;
@@ -671,13 +676,13 @@ export class CombatVisuals {
 
     const sparks = this.reducedMotion ? 2 : 4;
     for (let index = 0; index < sparks; index++) {
-      const fraction = .18 + (index + Math.random() * .45) / sparks * .78;
+      const fraction = .18 + (index + this.random() * .45) / sparks * .78;
       const spark = this.sparks[this.cursors.spark++ % this.sparks.length];
-      spark.life = spark.maxLife = .16 + Math.random() * .13;
+      spark.life = spark.maxLife = .16 + this.random() * .13;
       spark.position = (spark.position || new THREE.Vector3()).copy(origin).addScaledVector(forward, distance * fraction);
-      spark.position.addScaledVector(right, (Math.random() - .5) * distance * fraction * .18);
-      spark.position.addScaledVector(rise, (Math.random() - .35) * distance * fraction * .11);
-      spark.velocity = (spark.velocity || new THREE.Vector3()).copy(forward).multiplyScalar(2 + Math.random() * 3).addScaledVector(rise, 1.2 + Math.random() * 2.4);
+      spark.position.addScaledVector(right, (this.random() - .5) * distance * fraction * .18);
+      spark.position.addScaledVector(rise, (this.random() - .35) * distance * fraction * .11);
+      spark.velocity = (spark.velocity || new THREE.Vector3()).copy(forward).multiplyScalar(2 + this.random() * 3).addScaledVector(rise, 1.2 + this.random() * 2.4);
       spark.color = (spark.color || new THREE.Color()).copy(index % 3 ? new THREE.Color(weapon.color) : ownerTint);
       spark.size = .11 + fraction * .12;
       spark.family = "flame";
@@ -737,22 +742,22 @@ export class CombatVisuals {
         : family === "plasma" || family === "arc" ? 9
           : family === "precision" ? 5
             : 7;
-    for (let index = 0; index < count; index++) {
+    for (let index = 0; index < Math.ceil(count * this.quality); index++) {
       const spark = this.sparks[this.cursors.spark++ % this.sparks.length];
-      spark.life = spark.maxLife = (family === "plasma" || family === "gravity" || family === "freeze" ? .34 : family === "flame" ? .13 : .22) + Math.random() * (family === "flame" ? .14 : .24);
+      spark.life = spark.maxLife = (family === "plasma" || family === "gravity" || family === "freeze" ? .34 : family === "flame" ? .13 : .22) + this.random() * (family === "flame" ? .14 : .24);
       spark.position = (spark.position || new THREE.Vector3()).copy(position);
       spark.velocity = (spark.velocity || new THREE.Vector3()).set(
-        (Math.random() - .5) * (blastLike ? 14 : family === "precision" ? 2.5 : 7),
-        (family === "precision" ? .3 : 1.5) + Math.random() * (blastLike ? 10 : 5),
-        (Math.random() - .5) * (blastLike ? 14 : family === "precision" ? 2.5 : 7)
-      ).addScaledVector(ring.normal, family === "precision" ? 9 + Math.random() * 8 : 2 + Math.random() * 4);
+        (this.random() - .5) * (blastLike ? 14 : family === "precision" ? 2.5 : 7),
+        (family === "precision" ? .3 : 1.5) + this.random() * (blastLike ? 10 : 5),
+        (this.random() - .5) * (blastLike ? 14 : family === "precision" ? 2.5 : 7)
+      ).addScaledVector(ring.normal, family === "precision" ? 9 + this.random() * 8 : 2 + this.random() * 4);
       if (family === "gravity" || family === "implosion") {
-        const inwardDirection = new THREE.Vector3(Math.random() - .5, Math.random() - .5, Math.random() - .5).normalize();
-        spark.position.addScaledVector(inwardDirection, ring.size * (.65 + Math.random() * .5));
-        spark.velocity.copy(inwardDirection).multiplyScalar(-(5 + Math.random() * 7));
+        const inwardDirection = new THREE.Vector3(this.random() - .5, this.random() - .5, this.random() - .5).normalize();
+        spark.position.addScaledVector(inwardDirection, ring.size * (.65 + this.random() * .5));
+        spark.velocity.copy(inwardDirection).multiplyScalar(-(5 + this.random() * 7));
       }
       spark.color = (spark.color || new THREE.Color()).copy(index % 3 ? ring.weaponColor : ring.ownerColor);
-      spark.size = (blastLike ? .14 : family === "plasma" || family === "freeze" ? .11 : family === "flame" ? .09 : .075) + Math.random() * .09;
+      spark.size = (blastLike ? .14 : family === "plasma" || family === "freeze" ? .11 : family === "flame" ? .09 : .075) + this.random() * .09;
       spark.family = family;
       spark.gravity = family === "flame" ? -1.5 : ["plasma", "arc", "gravity", "implosion", "disrupt", "scan"].includes(family) ? 4 : 13;
     }
@@ -762,19 +767,19 @@ export class CombatVisuals {
     if (!position || count <= 0) return;
     const tint = this.color.set(color);
     const bias = this.normal.copy(direction?.lengthSq?.() ? direction : UP).normalize();
-    const amount = Math.min(this.sparks.length, this.reducedMotion ? Math.ceil(count * .45) : count);
+    const amount = Math.min(this.sparks.length, Math.ceil(count * this.quality * (this.reducedMotion ? .45 : 1)));
     for (let index = 0; index < amount; index++) {
       const spark = this.sparks[this.cursors.spark++ % this.sparks.length];
-      spark.life = spark.maxLife = (family === "blood" ? .42 : .3) + Math.random() * .32;
+      spark.life = spark.maxLife = (family === "blood" ? .42 : .3) + this.random() * .32;
       spark.position = (spark.position || new THREE.Vector3()).copy(position);
-      spark.position.add(this.offset.set((Math.random() - .5) * .18, (Math.random() - .5) * .2, (Math.random() - .5) * .18));
+      spark.position.add(this.offset.set((this.random() - .5) * .18, (this.random() - .5) * .2, (this.random() - .5) * .18));
       spark.velocity = (spark.velocity || new THREE.Vector3()).set(
-        (Math.random() - .5) * force,
-        1.4 + Math.random() * force * .62,
-        (Math.random() - .5) * force
-      ).addScaledVector(bias, force * (.32 + Math.random() * .72));
+        (this.random() - .5) * force,
+        1.4 + this.random() * force * .62,
+        (this.random() - .5) * force
+      ).addScaledVector(bias, force * (.32 + this.random() * .72));
       spark.color = (spark.color || new THREE.Color()).copy(family === "blood" ? BLOOD : tint).lerp(tint, family === "blood" ? .22 : .45);
-      spark.size = (family === "blood" ? .065 : .08) + Math.random() * (family === "blood" ? .09 : .11);
+      spark.size = (family === "blood" ? .065 : .08) + this.random() * (family === "blood" ? .09 : .11);
       spark.family = family;
       spark.gravity = family === "blood" ? 17 : 10;
     }
@@ -787,16 +792,25 @@ export class CombatVisuals {
     slot.position = (slot.position || new THREE.Vector3()).copy(position);
     slot.normal = (slot.normal || new THREE.Vector3()).copy(normal?.lengthSq?.() ? normal : FORWARD).normalize();
     slot.size = size;
-    slot.rotation = Math.random() * Math.PI * 2;
+    slot.rotation = this.random() * Math.PI * 2;
   }
 
   pulseLight(position, color, intensity, distance, life) {
-    const light = this.combatLights[this.combatLightCursor++ % this.combatLights.length];
+    const light = this.combatLights[this.combatLightCursor++ % (this.lightLimit || this.combatLights.length)];
     light.position.copy(position);
     light.color.copy(color);
     light.intensity = intensity;
     light.distance = distance;
     light.userData.life = life;
+  }
+
+  setGraphicsProfile(profile) {
+    this.quality = profile.combatQuality;
+    this.lightLimit = profile.combatLights;
+    for (let i = this.lightLimit; i < this.combatLights.length; i++) {
+      this.combatLights[i].intensity = 0;
+      this.combatLights[i].userData.life = 0;
+    }
   }
 
   update(dt) {
@@ -902,7 +916,8 @@ export class CombatVisuals {
   }
 
   updateFlashes(dt) {
-    let dirty = false;
+    // Preserve slot/blending order; trim only the unused draw tail (all pools).
+    let dirty = false, count = 0;
     for (let index = 0; index < this.flashes.length; index++) {
       const slot = this.flashes[index];
       slot.life -= dt;
@@ -916,6 +931,7 @@ export class CombatVisuals {
         continue;
       }
       slot.visible = true;
+      count = index + 1;
       dirty = true;
       const fade = clamp(slot.life / slot.maxLife, 0, 1);
       const flicker = .9 + Math.sin((1 - fade) * 18 + slot.profile.signature * 9) * .1;
@@ -931,11 +947,12 @@ export class CombatVisuals {
       const hotMix = slot.profile.delivery === "flame" || slot.profile.delivery === "melee" ? .28 : slot.profile.energy ? .76 : .58;
       this.flashInner.setColorAt(index, this.color.copy(slot.weaponColor).lerp(WHITE, hotMix).multiplyScalar(.78 + fade * .22));
     }
+    this.flashOuter.count = this.flashInner.count = count;
     if (dirty) this.markUpdated(this.flashOuter, this.flashInner);
   }
 
   updateTracers(dt) {
-    let dirty = false;
+    let dirty = false, count = 0;
     for (let index = 0; index < this.tracers.length; index++) {
       const slot = this.tracers[index];
       slot.life -= dt;
@@ -949,6 +966,7 @@ export class CombatVisuals {
         continue;
       }
       slot.visible = true;
+      count = index + 1;
       dirty = true;
       const fade = clamp(slot.life / slot.maxLife, 0, 1);
       this.direction.copy(slot.end).sub(slot.start);
@@ -973,11 +991,12 @@ export class CombatVisuals {
       const hotMix = flame ? .18 : melee ? .28 : slot.closeRapid ? .72 : slot.profile.payload === "gravity" ? .42 : slot.profile.precision ? .84 : slot.profile.energy ? .68 : .58;
       this.tracerInner.setColorAt(index, this.color.copy(slot.weaponColor).lerp(WHITE, hotMix).multiplyScalar(.74 + fade * .26));
     }
+    this.tracerOuter.count = this.tracerInner.count = count;
     if (dirty) this.markUpdated(this.tracerOuter, this.tracerInner);
   }
 
   updateRings(dt) {
-    let dirty = false;
+    let dirty = false, count = 0;
     for (let index = 0; index < this.rings.length; index++) {
       const slot = this.rings[index];
       slot.life -= dt;
@@ -991,6 +1010,7 @@ export class CombatVisuals {
         continue;
       }
       slot.visible = true;
+      count = index + 1;
       dirty = true;
       const progress = 1 - clamp(slot.life / slot.maxLife, 0, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
@@ -1098,11 +1118,12 @@ export class CombatVisuals {
             : .62;
       this.ringInner.setColorAt(index, this.color.copy(slot.weaponColor).lerp(WHITE, hotMix).multiplyScalar(.65 + fade * .35));
     }
+    this.ringOuter.count = this.ringInner.count = count;
     if (dirty) this.markUpdated(this.ringOuter, this.ringInner);
   }
 
   updateSparks(dt) {
-    let dirty = false;
+    let dirty = false, count = 0;
     for (let index = 0; index < this.sparks.length; index++) {
       const slot = this.sparks[index];
       slot.life -= dt;
@@ -1115,6 +1136,7 @@ export class CombatVisuals {
         continue;
       }
       slot.visible = true;
+      count = index + 1;
       dirty = true;
       const fade = clamp(slot.life / slot.maxLife, 0, 1);
       slot.velocity.y -= slot.gravity * dt;
@@ -1138,11 +1160,12 @@ export class CombatVisuals {
       this.sparkLayer.setMatrixAt(index, this.matrix);
       this.sparkLayer.setColorAt(index, this.color.copy(slot.color).multiplyScalar(.45 + fade * .55));
     }
+    this.sparkLayer.count = count;
     if (dirty) this.markUpdated(this.sparkLayer);
   }
 
   updateBlood(dt) {
-    let dirty = false;
+    let dirty = false, count = 0;
     for (let index = 0; index < this.bloodDecals.length; index++) {
       const slot = this.bloodDecals[index];
       slot.life -= dt;
@@ -1155,6 +1178,7 @@ export class CombatVisuals {
         continue;
       }
       slot.visible = true;
+      count = index + 1;
       dirty = true;
       const fade = clamp(slot.life / slot.maxLife, 0, 1);
       const progress = 1 - fade;
@@ -1167,6 +1191,7 @@ export class CombatVisuals {
       this.bloodLayer.setMatrixAt(index, this.matrix);
       this.bloodLayer.setColorAt(index, this.color.copy(BLOOD).multiplyScalar(.28 + fade * .72));
     }
+    this.bloodLayer.count = count;
     if (dirty) this.markUpdated(this.bloodLayer);
   }
 

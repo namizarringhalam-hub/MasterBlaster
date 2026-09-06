@@ -54,7 +54,7 @@ for (const quality of [.5, .75, 1]) {
   }
   blastVisuals.update(1 / 60);
   assert.equal(blastVisuals.cursors.ring, fighters.length * 7, `${quality} quality processes every mortar and six-child cluster impact in a synchronized 16-player volley`);
-  assert.equal(blastVisuals.rings.filter((ring) => ring.life > 0).length, Math.round(80 * quality), `${quality} quality keeps its entire fixed shockwave pool visible under explosive saturation`);
+  assert.equal(blastVisuals.rings.filter((ring) => ring.life > 0).length, fighters.length * 7, `${quality} quality preserves every one of the 112 critical impact cues without overwriting earlier hits`);
   assert.ok(Math.max(...blastVisuals.rings.map((ring) => ring.size || 0)) > 3, `${quality} quality preserves the enlarged mortar shockwave instead of covertly scaling it down`);
   assert.equal(blastVisuals.group.children.length, 10, `${quality} quality keeps the explosive volley inside the fixed render-group budget`);
   blastVisuals.dispose();
@@ -62,7 +62,7 @@ for (const quality of [.5, .75, 1]) {
 
 assert.equal(fighters.length, 16, "the stress matrix renders a full sixteen-fighter match");
 assert.equal(visuals.group.children.length, 10, "rapid effects, pooled splatters, response lights, and Fireballs stay in fixed render groups");
-assert.equal(visuals.group.getObjectByName("Momentum speed streaks"), undefined, "the local cone shower has been removed from the grapple presentation");
+assert.ok(!visuals.group.getObjectByName("Momentum speed streaks"), "the local cone shower has been removed from the grapple presentation");
 const speedPresentationCss = await readFile(new URL("../src/styles.css", import.meta.url), "utf8");
 const speedPresentationMain = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
 assert.match(speedPresentationCss, /backdrop-filter: blur\(var\(--environment-blur/, "grapple speed applies a peripheral speed-dependent environment blur");
@@ -70,7 +70,7 @@ assert.match(speedPresentationCss, /grapple-speed-pulse/, "outer speed lines hav
 assert.match(speedPresentationMain, /this\.graphics\.level !== "low"[\s\S]*?environment-blur/, "speed blur respects graphics quality and stays disabled on Low");
 assert.equal(visuals.flashes.length, 64, "sixteen-fighter muzzle flashes stay below the fixed pool capacity");
 assert.equal(visuals.tracers.length, 128, "sixteen-fighter rapid tracers stay below the fixed pool capacity");
-assert.equal(visuals.rings.length, 80, "sixteen-fighter impact rings stay below the fixed pool capacity");
+assert.equal(visuals.rings.length, 128, "sixteen-fighter impact rings retain the bounded 112-hit volley capacity");
 assert.equal(visuals.sparks.length, 512, "sixteen-fighter impact particles stay below the fixed pool capacity");
 assert.equal(WEAPONS.plasma_repeater.hitscan, true, "the Plasma Repeater cannot allocate unbounded live bolt groups");
 assert.ok(["napalm_launcher", "black_hole_generator", "tornado_generator"].every((id) => WEAPONS[id].maxActiveHazards === 2), "persistent zones are capped to two per owner and weapon");

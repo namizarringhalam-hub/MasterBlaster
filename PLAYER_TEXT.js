@@ -150,9 +150,15 @@ export const PLAYER_TEXT = {
       reducedMotion: "Reduce motion and flashes"
     },
     options: {
-      graphics: { low: "low", medium: "medium", high: "high" },
+      graphics: { low: "Low · Performance", medium: "Medium · Balanced", high: "High · Fidelity" },
       blood: { off: "off", reduced: "reduced", full: "full" },
       dynamicRange: { wide: "wide", standard: "standard", night: "night" }
+    },
+    graphicsDescriptions: {
+      low: "Full arena, models and combat cues. 1× resolution cap, 1K shadows, 4× texture filtering. Fewer decorative particles and lights; no bloom or ambient occlusion.",
+      medium: "Full arena, models and combat cues. 1.3× resolution cap, 2K shadows, 8× texture filtering and HDR bloom. Balanced decorative particles and lights.",
+      high: "Full arena, models and combat cues. 1.65× resolution cap, 4K shadows, up to 16× texture filtering, HDR bloom and WebGPU ambient occlusion. Full decorative effects.",
+      note: "Resolution and filtering respect your device limits. WebGL keeps the chosen tier with bloom on Medium/High; ambient occlusion requires WebGPU. Sound and gameplay are identical at every tier."
     },
     save: "SAVE SETTINGS"
   },

@@ -1,10 +1,16 @@
 import * as THREE from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { weaponUsesAmmo, WEAPONS } from "./gameData.js";
 import { weaponPresentation } from "./weaponPresentation.js";
 
 const clamp = THREE.MathUtils.clamp;
 export const PROJECTILE_SPAWN_OFFSET = .08;
+const roundedParts = new Map();
+
+function disposeGeometry(geometry) {
+  if (!geometry?.userData?.sharedFighterGeometry) geometry?.dispose();
+}
 
 function material(color, emissive = 0, options = {}) {
   return new THREE.MeshPhysicalMaterial({
@@ -23,6 +29,17 @@ function material(color, emissive = 0, options = {}) {
 }
 
 function part(geometry, mat, x, y, z, shadows = false) {
+  if (geometry.type === "BoxGeometry") {
+    const { width, height, depth } = geometry.parameters;
+    geometry.dispose();
+    const key = `${width}:${height}:${depth}`;
+    if (!roundedParts.has(key)) {
+      const rounded = new RoundedBoxGeometry(width, height, depth, 1, Math.min(.045, width * .14, height * .14, depth * .14));
+      rounded.userData.sharedFighterGeometry = true;
+      roundedParts.set(key, rounded);
+    }
+    geometry = roundedParts.get(key);
+  }
   const mesh = new THREE.Mesh(geometry, mat);
   mesh.position.set(x, y, z);
   mesh.castShadow = shadows;
@@ -47,7 +64,7 @@ function mergeStaticParts(mat, meshes) {
   });
   const geometry = mergeGeometries(transformed, false);
   for (const entry of transformed) entry.dispose();
-  for (const entry of new Set(meshes.map((mesh) => mesh.geometry))) entry.dispose();
+  for (const entry of new Set(meshes.map((mesh) => mesh.geometry))) disposeGeometry(entry);
   return new THREE.Mesh(geometry, mat);
 }
 
@@ -77,7 +94,7 @@ function mergeRigidMeshes(root, excludedRoots = []) {
     merged.receiveShadow = meshes.some((mesh) => mesh.receiveShadow);
     for (const mesh of meshes) {
       mesh.removeFromParent();
-      mesh.geometry.dispose();
+      disposeGeometry(mesh.geometry);
     }
     root.add(merged);
   }
@@ -95,25 +112,56 @@ function combineMaterialBatches(root, excludedRoots = []) {
   merged.receiveShadow = meshes.some((mesh) => mesh.receiveShadow);
   for (const mesh of meshes) {
     mesh.removeFromParent();
-    mesh.geometry.dispose();
+    disposeGeometry(mesh.geometry);
   }
   root.add(merged);
+}
+
+const armDown = new THREE.Vector3(0, -1, 0);
+const handRest = new THREE.Vector3(0, -.58, .05).normalize();
+const handLength = Math.hypot(.58, .05);
+const armDirection = new THREE.Vector3(), armBend = new THREE.Vector3(), armElbow = new THREE.Vector3();
+const handDirection = new THREE.Vector3(), palmNormal = new THREE.Vector3(), desiredPalm = new THREE.Vector3(), palmCross = new THREE.Vector3();
+const handRotation = new THREE.Quaternion(), palmTwist = new THREE.Quaternion();
+
+function alignArmGrip(upper, forearm, grip, forward) {
+  // Analytic two-link solve in rig space. Only existing joint rotations change;
+  // weapon transforms, projectile origins and the authored limb lengths do not.
+  armDirection.copy(grip).sub(upper.position);
+  const distance = THREE.MathUtils.clamp(armDirection.length(), .035, .55 + handLength - .001);
+  armDirection.normalize();
+  armBend.set(Math.sign(upper.position.x), -.75, -.2).projectOnPlane(armDirection).normalize();
+  const along = (.55 * .55 - handLength * handLength + distance * distance) / (2 * distance);
+  armElbow.copy(armDirection).multiplyScalar(along).addScaledVector(armBend, Math.sqrt(Math.max(0, .55 * .55 - along * along)));
+  upper.quaternion.setFromUnitVectors(armDown, palmNormal.copy(armElbow).normalize());
+  handDirection.copy(grip).sub(upper.position).sub(armElbow).normalize();
+  handRotation.setFromUnitVectors(handRest, handDirection);
+  palmNormal.set(0, 0, 1).applyQuaternion(handRotation).projectOnPlane(handDirection).normalize();
+  desiredPalm.copy(forward).projectOnPlane(handDirection);
+  if (desiredPalm.lengthSq() > .001) {
+    desiredPalm.normalize();
+    const turn = Math.atan2(handDirection.dot(palmCross.crossVectors(palmNormal, desiredPalm)), palmNormal.dot(desiredPalm));
+    handRotation.premultiply(palmTwist.setFromAxisAngle(handDirection, turn));
+  }
+  forearm.quaternion.copy(upper.quaternion).invert().multiply(handRotation);
 }
 
 function articulatedArm(dark, armor, accent, x) {
   const upper = new THREE.Group();
   upper.position.set(x, 1.67, 0);
-  const upperArmor = part(new THREE.BoxGeometry(.27, .55, .3), dark, 0, -.28, 0);
-  const upperStripe = part(new THREE.BoxGeometry(.285, .08, .32), accent, 0, -.19, .012, false);
+  const upperArmor = part(new THREE.CapsuleGeometry(.145, .27, 3, 8), dark, 0, -.28, 0);
+  const shoulderJoint = part(new THREE.SphereGeometry(.18, 10, 6), dark, 0, -.045, 0);
+  const upperStripe = part(new THREE.BoxGeometry(.21, .045, .055), accent, 0, -.19, .155, false);
   const forearm = new THREE.Group();
   forearm.position.y = -.55;
-  const bracer = part(new THREE.BoxGeometry(.34, .5, .38), armor, 0, -.24, .035);
+  const bracer = part(new THREE.CylinderGeometry(.18, .145, .5, 8), armor, 0, -.24, .035);
   bracer.scale.set(.92, 1, 1.06);
-  const wristLight = part(new THREE.BoxGeometry(.25, .075, .4), accent, 0, -.43, .04, false);
+  const wristLight = part(new THREE.BoxGeometry(.19, .045, .04), accent, 0, -.43, .22, false);
   const hand = part(new THREE.BoxGeometry(.25, .22, .29), dark, 0, -.58, .05);
   const knuckle = part(new THREE.BoxGeometry(.2, .055, .18), accent, 0, -.59, .19, false);
-  forearm.add(bracer, wristLight, hand, knuckle);
-  upper.add(upperArmor, upperStripe, forearm);
+  const elbowJoint = part(new THREE.SphereGeometry(.135, 10, 6), dark, 0, .015, 0);
+  forearm.add(bracer, mergeStaticParts(accent, [wristLight, knuckle]), mergeStaticParts(dark, [hand, elbowJoint]));
+  upper.add(mergeStaticParts(dark, [upperArmor, shoulderJoint]), upperStripe, forearm);
   return { upper, forearm, hand };
 }
 
@@ -127,7 +175,7 @@ function disposeChildren(group) {
     }
   });
   group.clear();
-  for (const geometry of geometries) geometry.dispose();
+  for (const geometry of geometries) disposeGeometry(geometry);
   for (const entry of materials) entry.dispose();
 }
 
@@ -139,6 +187,8 @@ export class Fighter {
     this.color = config.color;
     this.accent = config.accent;
     this.loadout = loadout;
+    this.weaponModels = new Map();
+    this.weaponModelId = null;
     this.isBot = isBot;
     this.group = this.createModel();
     this.position = this.group.position;
@@ -203,13 +253,14 @@ export class Fighter {
       sheen: .22, sheenColor: new THREE.Color(this.color).lerp(new THREE.Color(0xffffff), .28), sheenRoughness: .42
     });
     const accent = material(this.accent, this.accent, {
-      emissiveIntensity: 1.1, roughness: .14, metalness: .24, clearcoat: .82,
+      emissiveIntensity: .25, roughness: .42, metalness: .12, clearcoat: .25,
       iridescence: .34, iridescenceIOR: 1.32, iridescenceThicknessRange: [120, 340]
     });
     const dark = material(0x07101d, this.accent, { emissiveIntensity: .022, roughness: .4, metalness: .68, clearcoat: .32 });
     this.armorMaterial = armor;
     this.accentMaterial = accent;
     this.darkMaterial = dark;
+    accent.color.multiplyScalar(.38);
 
     this.rig = new THREE.Group();
     this.rig.scale.set(1.07, 1.04, 1.07);
@@ -219,7 +270,8 @@ export class Fighter {
     chest.scale.z = .76;
     const pelvis = part(new THREE.BoxGeometry(.72, .23, .45), armor, 0, .91, -.01);
     const spine = part(new THREE.BoxGeometry(.38, .56, .18), armor, 0, 1.38, -.37);
-    const breastplate = part(new THREE.BoxGeometry(.62, .42, .12), armor, 0, 1.51, .31);
+    const breastplate = part(new THREE.CylinderGeometry(.31, .38, .42, 6), armor, 0, 1.51, .31);
+    breastplate.scale.z = .22;
     breastplate.rotation.x = -.08;
     const sternum = part(new THREE.OctahedronGeometry(.13, 0), accent, 0, 1.51, .405, false);
     sternum.scale.set(.72, 1.3, .5);
@@ -234,8 +286,11 @@ export class Fighter {
           : new THREE.IcosahedronGeometry(.47, 1);
     const helmet = part(helmetGeometry, dark, 0, 2.08, 0);
     helmet.scale.set(1, .92, .94);
-    const visor = part(new THREE.BoxGeometry(.72, .16, .12), accent, 0, 2.1, .43, false);
-    this.helmet = helmet;
+    // Inset lenses sit behind a mechanical rim, instead of a solid luminous bar.
+    const visor = mergeStaticParts(accent, [-.225, 0, .225].map(x =>
+      part(new THREE.BoxGeometry(.195, .095, .035), accent, x, 0, 0, false)));
+    visor.position.set(0, 2.1, .469);
+    visor.name = "Segmented inset visor";
     this.visor = visor;
     const brow = part(new THREE.BoxGeometry(.78, .1, .16), armor, 0, 2.27, .3);
     brow.rotation.x = -.18;
@@ -283,6 +338,7 @@ export class Fighter {
     });
     this.thrusterMaterial = thrusterMaterial;
     this.thrusterLights = new THREE.InstancedMesh(new THREE.ConeGeometry(.105, .36, 6, 1, true), thrusterMaterial, 2);
+    this.thrusterLights.name = "Fighter thruster pair";
     this.thrusterTransform = new THREE.Object3D();
     this.thrusterScale = 1;
     for (let index = 0; index < 2; index++) {
@@ -294,10 +350,10 @@ export class Fighter {
     if (costumeVariant === 0) {
       leftShoulder.scale.set(1.3, .82, 1.22); rightShoulder.scale.copy(leftShoulder.scale);
       helmetCrest.scale.set(.94, 1.34, 1.12);
-      breastplate.scale.set(1.06, .94, 1.18);
+      breastplate.scale.set(1.06, .94, .22 * 1.18);
     } else if (costumeVariant === 1) {
       helmet.scale.set(.92, 1.02, .96);
-      breastplate.scale.set(.88, 1.18, 1.08);
+      breastplate.scale.set(.88, 1.18, .22 * 1.08);
       leftFin.scale.set(.66, 1.46, .66); rightFin.scale.copy(leftFin.scale);
     } else if (costumeVariant === 2) {
       brow.scale.set(1.22, .7, 1.14);
@@ -311,17 +367,35 @@ export class Fighter {
     }
     armor.roughness += costumeVariant * .025;
     armor.clearcoat = .68 - costumeVariant * .08;
+    const visorFrame = [
+      part(new THREE.BoxGeometry(.76, .055, .12), dark, 0, 2.185, .45),
+      part(new THREE.BoxGeometry(.76, .055, .12), dark, 0, 2.015, .45),
+      ...[-.354, .354].map(x => part(new THREE.BoxGeometry(.052, .17, .12), dark, x, 2.1, .45)),
+      ...[-.1125, .1125].map(x => part(new THREE.BoxGeometry(.027, .11, .09), dark, x, 2.1, .45))
+    ];
+    const helmetAssembly = mergeStaticParts(dark, [helmet, ...visorFrame]);
+    helmetAssembly.geometry.translate(0, -2.08, 0);
+    helmetAssembly.position.y = 2.08;
+    helmetAssembly.name = "Helmet and recessed visor housing";
+    this.helmet = helmetAssembly;
     const staticDark = mergeStaticParts(dark, [torso, spine, backpack]);
     const staticArmor = mergeStaticParts(armor, [chest, breastplate, pelvis, brow, helmetCrest, leftShoulder, rightShoulder]);
     const staticAccent = mergeStaticParts(accent, [sternum, chestLight, leftEar, rightEar, leftFin, rightFin, packLight]);
     this.rig.add(
-      staticDark, staticArmor, staticAccent, helmet, visor,
+      staticDark, staticArmor, staticAccent, helmetAssembly, visor,
       this.leftArm, this.rightArm, this.leftLeg, this.rightLeg,
       this.thrusterLights
     );
 
     this.weaponGroup = new THREE.Group();
     this.weaponGroup.position.set(.38, 1.4, .28);
+    this.weaponGrip = new THREE.Vector3();
+    this.weaponSupportGrip = new THREE.Vector3();
+    this.gripTarget = new THREE.Vector3();
+    this.gripForward = new THREE.Vector3();
+    this.supportGripProgress = 0;
+    this.supportArmStart = new THREE.Quaternion();
+    this.supportForearmStart = new THREE.Quaternion();
     this.rig.add(this.weaponGroup);
 
     const ringMaterial = new THREE.MeshBasicMaterial({
@@ -354,19 +428,70 @@ export class Fighter {
     this.identityBeacon.scale.set(.78, 1.32, .52);
     this.identityBeacon.renderOrder = 5;
     group.add(this.identityRing, this.freezeRing, this.identityBeacon);
+    const shadowProxy = part(new THREE.CapsuleGeometry(.4, 1.35, 3, 8), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }), 0, 1.1, 0, true);
+    shadowProxy.receiveShadow = false;
+    shadowProxy.name = "Fighter shadow proxy";
+    this.rig.add(shadowProxy);
     return group;
   }
 
   updateWeaponModel() {
-    disposeChildren(this.weaponGroup);
     const weapon = this.weapon;
+    const previous = this.weaponModels.get(this.weaponModelId);
+    if (previous) previous.group.add(...this.weaponGroup.children);
+    // Inactive models stay detached: decoys clone only the visible weapon.
+    for (const [id, model] of this.weaponModels) if (!this.loadout.includes(id)) {
+      disposeChildren(model.group);
+      this.weaponModels.delete(id);
+    }
+    this.weaponModelId = weapon.id;
+    const cached = this.weaponModels.get(weapon.id);
+    if (cached) {
+      this.weaponModels.delete(weapon.id);
+      this.weaponModels.set(weapon.id, cached);
+      this.weaponGroup.add(...cached.group.children);
+      Object.assign(this, cached.state);
+      this.weaponGrip.copy(cached.grip);
+      this.weaponSupportGrip.copy(cached.supportGrip);
+      this.weaponGlowMaterial.emissiveIntensity = .25;
+      if (this.weaponSpinner) this.weaponSpinner.quaternion.copy(cached.spinnerRotation);
+      if (this.weaponPiston) this.weaponPiston.position.copy(cached.pistonPosition);
+      return;
+    }
+    // Normally the five-slot loadout is the bound; retain that bound even if a
+    // diagnostic or future loadout supplies more than five distinct weapons.
+    if (this.weaponModels.size >= 5) {
+      const [id, model] = this.weaponModels.entries().next().value;
+      disposeChildren(model.group);
+      this.weaponModels.delete(id);
+    }
     const glow = material(weapon.color, weapon.color, {
-      emissiveIntensity: 1.18, roughness: .14, metalness: .38, clearcoat: .76,
+      emissiveIntensity: .25, roughness: .35, metalness: .32, clearcoat: .4,
       iridescence: .22, iridescenceIOR: 1.28, iridescenceThicknessRange: [90, 280]
     });
-    const identity = material(this.accent, this.accent, { emissiveIntensity: .92, roughness: .12, metalness: .34, clearcoat: .82, iridescence: .38 });
+    const identity = material(this.accent, this.accent, { emissiveIntensity: .25, roughness: .35, metalness: .22, clearcoat: .4, iridescence: .38 });
+    glow.color.multiplyScalar(.38);
+    identity.color.multiplyScalar(.38);
     const dark = material(0x091424, this.accent, { emissiveIntensity: .03, roughness: .28, metalness: .76, clearcoat: .48 });
     const presentation = weaponPresentation(weapon);
+    this.weaponGrip.set(.05, -.2, .11);
+    this.weaponSupportGrip.set(-.14, -.1, .32);
+    this.weaponHasSupportGrip = true;
+    if (weapon.type === "melee") {
+      this.weaponGrip.set(.06, -.01, .03);
+      this.weaponHasSupportGrip = ["hammer", "chainsaw"].includes(weapon.id);
+      if (weapon.id === "hammer") {
+        this.weaponGrip.set(.06, .04, .18);
+        this.weaponSupportGrip.set(-.055, .04, .12);
+      } else if (weapon.id === "chainsaw") {
+        this.weaponGrip.set(.06, -.07, .15);
+        this.weaponSupportGrip.set(-.18, -.04, .2);
+      }
+    } else if (weapon.type === "mine" || weapon.type === "remote") {
+      this.weaponGrip.set(.04, -.08, .2); this.weaponHasSupportGrip = false;
+    } else if (weapon.id === "fireball" || presentation.delivery === "disc") {
+      this.weaponGrip.set(.05, -.04, .28); this.weaponHasSupportGrip = false;
+    } else if (weapon.type === "flame") this.weaponGrip.set(.05, -.15, .13);
     this.weaponGlowMaterial = glow;
     this.weaponSpinner = null;
     this.weaponPiston = null;
@@ -427,6 +552,12 @@ export class Fighter {
       }
       mergeRigidMeshes(this.weaponGroup, [this.weaponSpinner, this.weaponPiston]);
       combineMaterialBatches(this.weaponGroup, [this.weaponSpinner, this.weaponPiston]);
+      this.weaponModels.set(weapon.id, {
+        group: new THREE.Group(), grip: this.weaponGrip.clone(), supportGrip: this.weaponSupportGrip.clone(),
+        spinnerRotation: this.weaponSpinner?.quaternion.clone(), pistonPosition: this.weaponPiston?.position.clone(),
+        state: { weaponGlowMaterial: this.weaponGlowMaterial, weaponSpinner: this.weaponSpinner, weaponPiston: this.weaponPiston,
+          weaponHasSupportGrip: this.weaponHasSupportGrip, weaponMuzzleDistance: this.weaponMuzzleDistance }
+      });
     };
     if (weapon.type === "mine" || weapon.type === "remote") {
       const body = part(new THREE.CylinderGeometry(.3, .36, .2, 10), dark, .04, .04, .2);
@@ -634,10 +765,12 @@ export class Fighter {
       this.weaponMuzzleDistance = 1.17;
     } else {
       const scale = weapon.type === "grenade" ? 1.15 : .82;
-      const barrel = part(new THREE.CylinderGeometry(.095 * scale, .135 * scale, .76 * scale, 9), glow, .05, .06, .69);
+      const barrel = part(new THREE.CylinderGeometry(.095 * scale, .135 * scale, .76 * scale, 9, 1, true), dark, .05, .06, .69);
       barrel.rotation.x = Math.PI / 2;
-      const muzzle = part(new THREE.TorusGeometry(.13 * scale, .035, 4, 10), identity, .05, .06, .98, false);
-      this.weaponGroup.add(barrel, muzzle);
+      const muzzleHousing = part(new THREE.TorusGeometry(.14 * scale, .037, 5, 12), dark, .05, .06, .98);
+      const muzzle = part(new THREE.TorusGeometry(.103 * scale, .012, 4, 12), identity, .05, .06, .994, false);
+      const emitter = part(new THREE.CircleGeometry(.082 * scale, 12), glow, .05, .06, .957, false);
+      this.weaponGroup.add(barrel, muzzleHousing, muzzle, emitter);
       if (weapon.type === "grenade") {
         const drum = part(new THREE.CylinderGeometry(.22, .22, .36, 10), dark, .05, -.12, .39);
         drum.rotation.z = Math.PI / 2;
@@ -758,7 +891,7 @@ export class Fighter {
     this.leftLeg.rotation.set(0, 0, 0);
     this.rightLeg.rotation.set(0, 0, 0);
     this.armorMaterial.emissiveIntensity = .16;
-    this.accentMaterial.emissiveIntensity = 1.25;
+    this.accentMaterial.emissiveIntensity = .25;
     this.darkMaterial.emissiveIntensity = .025;
     this.identityRing.material.opacity = .46;
     this.identityBeacon.material.opacity = .94;
@@ -781,6 +914,10 @@ export class Fighter {
 
   update(dt, move, look, actions, world) {
     if (!this.alive) return;
+    if (this.supportGripProgress === 0) {
+      this.supportArmStart.copy(this.leftArm.quaternion);
+      this.supportForearmStart.copy(this.leftForearm.quaternion);
+    }
     const wasGrounded = this.grounded;
     this.attackTimer = Math.max(0, this.attackTimer - dt);
     const reloading = this.reloadTimer > 0;
@@ -968,7 +1105,19 @@ export class Fighter {
     this.weaponGroup.position.y = THREE.MathUtils.damp(this.weaponGroup.position.y, 1.4 - landing * .11 + (this.grounded && moving && !grappled ? gait * .025 : 0), 20, dt);
     this.weaponGroup.position.z = THREE.MathUtils.damp(this.weaponGroup.position.z, .28 - this.recoilVisual * .46 + thrustMotion * .58, 24, dt);
     this.weaponGroup.scale.set(1 + this.recoilVisual * .04, 1 + this.recoilVisual * .04, 1 - this.recoilVisual * .08);
-    if (this.weaponGlowMaterial) this.weaponGlowMaterial.emissiveIntensity = 1.35 + this.chargeLevel * (2.4 + Math.sin(time * 2.4) * .55);
+    this.weaponGroup.updateMatrix();
+    this.gripForward.set(0, 0, 1).transformDirection(this.weaponGroup.matrix);
+    this.gripTarget.copy(this.weaponGrip).applyMatrix4(this.weaponGroup.matrix);
+    alignArmGrip(this.rightArm, this.rightForearm, this.gripTarget, this.gripForward);
+    if (this.weaponHasSupportGrip && !grappled && !reloadingPose) {
+      this.gripTarget.copy(this.weaponSupportGrip).applyMatrix4(this.weaponGroup.matrix);
+      alignArmGrip(this.leftArm, this.leftForearm, this.gripTarget, this.gripForward);
+      this.supportGripProgress = Math.min(1, this.supportGripProgress + dt / .16);
+      const t = this.supportGripProgress, blend = t * t * (3 - 2 * t);
+      this.leftArm.quaternion.slerp(this.supportArmStart, 1 - blend);
+      this.leftForearm.quaternion.slerp(this.supportForearmStart, 1 - blend);
+    } else this.supportGripProgress = 0;
+    if (this.weaponGlowMaterial) this.weaponGlowMaterial.emissiveIntensity = .25 + this.recoilVisual * .9 + this.chargeLevel * (2.4 + Math.sin(time * 2.4) * .55);
     if (this.weaponSpinner) this.weaponSpinner.rotation.z += dt * (this.attackTimer > 0 ? 32 : 5);
     if (this.weaponPiston) this.weaponPiston.position.z = THREE.MathUtils.damp(this.weaponPiston.position.z, attacking ? .42 * attackSwing : 0, 24, dt);
     const bob = this.grounded && moving && !grappled ? Math.abs(gait) * .075 : Math.sin(time * .45) * .018;
@@ -1003,7 +1152,7 @@ export class Fighter {
     const hit = this.hitTimer > 0;
     const hitFlash = hit ? .55 + hitWave * .95 : 0;
     this.armorMaterial.emissiveIntensity = .16 + hitFlash * 1.45;
-    this.accentMaterial.emissiveIntensity = 1.25 + hitFlash * 1.15;
+    this.accentMaterial.emissiveIntensity = .25 + hitFlash * 1.15;
     this.darkMaterial.emissiveIntensity = .025 + hitFlash * .44;
     const pulse = .5 + Math.sin(time * .55 + this.id.length) * .5;
     const frozen = this.slowTimer > 0;
@@ -1035,6 +1184,8 @@ export class Fighter {
 
   dispose() {
     this.scene.remove(this.group);
+    for (const model of this.weaponModels.values()) disposeChildren(model.group);
+    this.weaponModels.clear();
     const geometries = new Set();
     const materials = new Set();
     this.group.traverse((child) => {
@@ -1043,7 +1194,7 @@ export class Fighter {
         for (const entry of Array.isArray(child.material) ? child.material : [child.material]) materials.add(entry);
       }
     });
-    for (const geometry of geometries) geometry.dispose();
+    for (const geometry of geometries) disposeGeometry(geometry);
     for (const entry of materials) entry.dispose();
   }
 }

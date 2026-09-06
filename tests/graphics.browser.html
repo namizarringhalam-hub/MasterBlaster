@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Master Blaster graphics review</title><link rel="stylesheet" href="/src/styles.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,500;0,700;0,900;1,900&family=Inter:wght@400;600;700&display=swap">
+<div id="app"><canvas id="game-canvas"></canvas><div id="ui-root"></div></div>
+<div id="match-loading" hidden><span data-match-seed></span><span data-match-kind></span></div>
+<nav style="position:fixed;z-index:100;inset:auto 0 0;background:#07111def;padding:8px;display:flex;gap:8px;flex-wrap:wrap;font:12px monospace">
+<label>Tier <select id="tier"><option>high</option><option>medium</option><option>low</option></select></label>
+<label>Theme <select id="seed"><option>BLAST-01</option><option>SOLAR-01</option><option>ION-01</option></select></label>
+<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>weapon</option><option>underpass</option><option>collapse</option></select></label>
+<label>Weapon <select id="weapon"></select></label>
+<label>Pose <select id="pose"><option>aim</option><option>reload</option><option>fire</option></select></label>
+<button id="burst">Fire / impact</button><button id="destroy">Collapse tower</button>
+<button id="inspect-surface">Inspect footing material</button>
+<button id="stress">Run 16-fighter stress</button><button id="reset">Reset scene</button>
+<button id="reset-ten">Test ten resets</button>
+<button id="reset-decoys">Test ten decoy resets</button>
+<button id="cache-cycle">Test weapon cache</button>
+<button id="decoy-cycle">Test separated decoys</button>
+<button id="decoy-tiers">Test cross-tier decoys</button>
+<button id="decoy-overlap">Test overlapping tier decoys</button>
+<button id="camera-sequence">Capture moving-camera sequence</button><span id="camera-captures"></span>
+<button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
+<label><input id="follow-camera" type="checkbox" checked>Follow player camera</label>
+<output id="metrics" style="flex-basis:100%;min-width:0;max-height:100px;overflow:auto;white-space:pre-wrap">Loading actual game…</output>
+</nav>
+<script type="module">
+// Development-only visual review surface; it uses the production controller,
+// assets and renderer. No test instrumentation is included in the client build.
+import * as THREE from "three/webgpu";
+import { WEAPONS, MAP_THEMES, seedFromText } from "../src/gameData.js";
+import { Fighter } from "../src/player.js";
+performance.mark("blaster-shell-visible");
+const errors = [];
+let errorCount = 0;
+function recordError(message) { errorCount++; if (!errors.includes(message) && errors.length < 20) errors.push(message); }
+addEventListener("error", e => recordError(e.message));
+addEventListener("unhandledrejection", e => recordError(String(e.reason)));
+const { gameReady } = await import("../src/main.js");
+const game = await gameReady, metrics = document.querySelector("#metrics");
+// Paired control reproduces the previous full-capacity drawing with identical
+// live effects, shaders, materials and simulation. Never included in production.
+const fullEffectCapacity = new URLSearchParams(location.search).has("fullEffects");
+if (fullEffectCapacity) {
+  const renderScene = game.renderScene.bind(game);
+  game.renderScene = () => {
+    for (const name of ["flashOuter", "flashInner", "tracerOuter", "tracerInner", "ringOuter", "ringInner", "sparkLayer", "bloodLayer"]) {
+      const layer = game.combatVisuals?.[name];
+      if (layer) layer.count = layer.instanceMatrix.count;
+    }
+    return renderScene();
+  };
+}
+const bufferHistory = new Map();
+const attributeOwners = new WeakMap();
+let sceneSerial = 0;
+if (new URLSearchParams(location.search).has("traceBuffers") && game.renderer.backend.device) {
+  const device = game.renderer.backend.device, createBuffer = device.createBuffer.bind(device);
+  const createAttribute = game.renderer.backend.createAttribute.bind(game.renderer.backend);
+  let attributeContext = null;
+  game.renderer.backend.createAttribute = attribute => {
+    const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
+    attributeContext = { owner: attributeOwners.get(data.array), name: attribute.name, itemSize: attribute.itemSize, count: attribute.count };
+    try { return createAttribute(attribute); } finally { attributeContext = null; }
+  };
+  device.createBuffer = descriptor => {
+    const label = `qa-${bufferHistory.size + 1} ${descriptor.label || "unlabeled"}`;
+    const buffer = createBuffer({ ...descriptor, label }), destroy = buffer.destroy.bind(buffer);
+    const entry = { label, sceneSerial, attribute: attributeContext, size: descriptor.size, usage: descriptor.usage, created: new Error().stack, destroyed: null };
+    bufferHistory.set(label.split(" ")[0], entry);
+    buffer.destroy = () => { entry.destroyed = new Error().stack; return destroy(); };
+    return buffer;
+  };
+}
+const rendererError = game.renderer.onError.bind(game.renderer);
+game.renderer.onError = info => { recordError(String(info.message || info)); rendererError(info); };
+const cameraUpdate = game.updateCamera.bind(game);
+const select = id => document.querySelector(`#${id}`);
+const compile = game.renderer.compileAsync.bind(game.renderer), compiles = [];
+game.renderer.compileAsync = (...args) => {
+  const sample = { started: performance.now(), completed: null };
+  compiles.push(sample);
+  return compile(...args).finally(() => { sample.completed = performance.now(); });
+};
+select("weapon").innerHTML = Object.values(WEAPONS).map(w => `<option value="${w.id}">${w.name}</option>`).join("");
+select("seed").innerHTML = MAP_THEMES.map((theme, i) => {
+  let seed = theme.id.toUpperCase();
+  while (seedFromText(seed) % MAP_THEMES.length !== i) seed += "1";
+  return `<option value="${seed}">${theme.name}</option>`;
+}).join("");
+let stress = false, sampleAt = performance.now(), previous = sampleAt, frames = [], stats = {};
+const traceFrames = new URLSearchParams(location.search).has("traceFrames");
+let cpu = {}, previousCpu = {}, slowFrames = [], pipelineCreations = 0, decoyPipelines = [];
+if (traceFrames) for (const name of ["update", "renderScene", "updateBot", "updateProjectiles", "updateAudio", "updateHud", "updateRespawns", "processStructuralEvents"]) {
+  const method = game[name].bind(game);
+  game[name] = (...args) => {
+    const start = performance.now();
+    try { return method(...args); } finally { cpu[name] = (cpu[name] || 0) + performance.now() - start; }
+  };
+}
+if (traceFrames) {
+  const buildWeapon = Fighter.prototype.updateWeaponModel;
+  Fighter.prototype.updateWeaponModel = function (...args) {
+    const start = performance.now(), cached = this.weaponModels.has(this.weapon.id);
+    try { return buildWeapon.apply(this, args); } finally {
+      (cpu.weaponSelections ||= []).push({ weapon: this.weapon.id, cached, ms: performance.now() - start });
+    }
+  };
+  const createPipeline = game.renderer.backend.createRenderPipeline.bind(game.renderer.backend);
+  game.renderer.backend.createRenderPipeline = (renderObject, promises) => {
+    pipelineCreations++;
+    const start = performance.now(), object = renderObject.object;
+    let owner = null;
+    for (let parent = object; parent && !owner; parent = parent.parent) {
+      const fighter = game.players.find(player => player.group === parent);
+      if (fighter) owner = `fighter:${fighter.id}/${fighter.weapon.id}`;
+      const shot = game.projectiles.find(projectile => projectile.mesh === parent);
+      if (shot) owner = `projectile:${shot.weapon.id}`;
+      const decoy = game.decoys.find(decoy => decoy.mesh === parent);
+      if (decoy) owner = `decoy:${decoy.owner.id}/${decoy.weapon.id}`;
+    }
+    try { return createPipeline(renderObject, promises); } finally {
+      if (owner?.startsWith("decoy:") && decoyPipelines.length < 100) decoyPipelines.push({
+        sequence: pipelineCreations, object: object.name || object.type, owner, material: renderObject.material.type,
+        color: renderObject.material.color?.getHexString(), key: renderObject.getCacheKey(), ms: performance.now() - start });
+      const pipelines = cpu.pipelines ||= [];
+      if (pipelines.length < 12) pipelines.push({ object: object.name || object.type, owner,
+        material: renderObject.material.type, color: renderObject.material.color?.getHexString(), ms: performance.now() - start });
+    }
+  };
+}
+const resetReview = { running: false, samples: [], error: null };
+const cacheReview = { running: false, samples: [], error: null };
+const cameraReview = { running: false, samples: [], error: null };
+const decoyReview = { running: false, samples: [], error: null };
+let cameraOffset = 0;
+let renderedFrames = 0;
+let captureCanvas = false;
+let settleUntil = sampleAt + 5000;
+let surface = null;
+function resetSamples(settleMs = 5000) { frames = []; slowFrames = []; previousCpu = {}; sampleAt = previous = performance.now(); settleUntil = sampleAt + settleMs; }
+// A separate timer also terminates a review when a hidden window stops rAF.
+function waitForReviewFrame(serial, ready) {
+  return new Promise((resolve, reject) => {
+    let raf;
+    const finish = error => { clearTimeout(timer); cancelAnimationFrame(raf); error ? reject(error) : resolve(); };
+    const timer = setTimeout(() => finish(new Error("Review frame wait timed out after 20 seconds")), 20000);
+    const poll = () => {
+      if (sceneSerial !== serial) return finish(new Error("Review interrupted by scene change"));
+      if (ready()) return finish();
+      raf = requestAnimationFrame(poll);
+    };
+    poll();
+  });
+}
+const stillMove = new THREE.Vector3(), reviewAim = new THREE.Vector3(0, 0, -1);
+function settlePose() {
+  game.clearTransientNetworkCombat();
+  const hero = game.players[0];
+  hero.velocity.set(0, 0, 0);
+  hero.reloadTimer = 0; hero.reloadWeaponId = null; hero.attackTimer = 0; hero.recoilVisual = 0;
+  for (let i = 0; i < 60; i++) hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
+  if (select("pose").value === "reload") {
+    hero.ammo[hero.weapon.id] = Math.max(0, hero.weapon.ammo - 1); hero.reload();
+    for (let i = 0; i < 20; i++) hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
+  } else if (select("pose").value === "fire") {
+    hero.ammo[hero.weapon.id] = hero.weapon.ammo; game.tryFire(hero, true);
+    for (let i = 0; i < 3; i++) hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
+    game.clearTransientNetworkCombat(); // This selector captures the pose, not frozen projectile VFX.
+  }
+  hero.group.updateMatrixWorld(true);
+}
+function setView() {
+  resetSamples();
+  const hero = game.players[0];
+  const view = select("view").value;
+  hero.position.set(0, 15.01, 8); hero.group.rotation.y = Math.PI;
+  settlePose();
+  hero.rig.visible = true;
+  const poses = { arena: [[70, 47, 98], [0, 25, 0]], grazing: [[3, 1.8, 65], [0, 4, -40]],
+    fighter: [[3.7, 17.1, 3.3], [0, 16.35, 8]], weapon: [[1.8, 16.9, 6.1], [.4, 16.4, 8.7]],
+    underpass: [[12, 3, 37], [0, 13, -10]], collapse: [[-49, 22, -29], [-72, 17, -66]] };
+  game.updateCamera = () => {
+    if (stress && select("follow-camera").checked) return cameraUpdate();
+    const [position, target] = poses[view];
+    game.camera.position.fromArray(position); game.camera.position.x += cameraOffset;
+    game.camera.lookAt(target[0] + cameraOffset, target[1], target[2]);
+    game.camera.fov = 62; game.camera.updateProjectionMatrix();
+  };
+  game.updateCamera();
+}
+async function reset() {
+  sceneSerial++;
+  cameraOffset = 0;
+  stress = false; game.mode = "training"; game.seed = select("seed").value;
+  game.settings.botCount = 15; game.timeLimitMinutes = 30; game.targetScore = 10000;
+  game.settings.graphics = select("tier").value;
+  game.settings.matchSettings.training.botsStandStill = true;
+  game.settings.matchSettings.training.botsDontAttack = true;
+  game.applyGraphicsSettings(); game.freshSessionReady = true;
+  await game.startMatch(); game.paused = true; game.awaitingAudioGesture = false;
+  game.scene.traverse(child => {
+    for (const [key, attribute] of Object.entries(child.geometry?.attributes || {})) {
+      attributeOwners.set(attribute.array, `${child.name || child.type}/${key}`);
+    }
+    if (child.instanceColor) attributeOwners.set(child.instanceColor.array, `${child.name || child.type}/instanceColor`);
+    if (child.instanceMatrix) attributeOwners.set(child.instanceMatrix.array, `${child.name || child.type}/instanceMatrix`);
+  });
+  game.matchStartDelay = 0; game.players[0].loadout[0] = select("weapon").value; game.players[0].updateWeaponModel();
+  setView();
+}
+select("view").onchange = setView;
+select("capture-canvas").onclick = () => { captureCanvas = true; };
+select("tier").onchange = () => { game.settings.graphics = select("tier").value; game.applyGraphicsSettings(); resetSamples(); };
+select("seed").onchange = reset;
+select("weapon").onchange = () => { game.players[0].loadout[0] = select("weapon").value; game.players[0].updateWeaponModel(); settlePose(); };
+select("pose").onchange = settlePose;
+select("reset").onclick = reset;
+async function runResetReview(warmDecoy = false) {
+  if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
+  resetReview.running = true; resetReview.samples = []; resetReview.error = null;
+  try {
+    for (let i = 0; i < 10; i++) {
+      if (warmDecoy) {
+        const hero = game.players[0];
+        game.spawnDecoy(hero.position.clone().add(new THREE.Vector3(1.5, 0, 0)), hero, WEAPONS.decoy_launcher);
+        const readyFrame = renderedFrames + 30;
+        await waitForReviewFrame(sceneSerial, () => renderedFrames >= readyFrame);
+        game.removeDecoy(game.decoys.at(-1));
+        if (!game.decoyRenderAnchor) throw new Error("Decoy reset test did not warm a complete render anchor");
+      }
+      await reset();
+      const serial = sceneSerial;
+      await waitForReviewFrame(serial, () => stats.sceneSerial === serial && stats.frames >= 60);
+      resetReview.samples.push({ sceneSerial, warmDecoy, anchorRetained: Boolean(game.decoyRenderAnchor), programs: stats.programs, attributes: stats.attributes, attributesSize: stats.attributesSize,
+        geometries: stats.geometries, textures: stats.textures, renderTargets: stats.renderTargets,
+        uniformBuffers: stats.uniformBuffers, total: stats.total, errorCount, directFallback: stats.directFallback });
+    }
+  } catch (error) { resetReview.error = String(error); }
+  finally { resetReview.running = false; }
+}
+select("reset-ten").onclick = () => runResetReview();
+select("reset-decoys").onclick = () => runResetReview(true);
+select("cache-cycle").onclick = async () => {
+  if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
+  cacheReview.running = true; cacheReview.samples = []; cacheReview.error = null;
+  try {
+    await reset();
+    const serial = sceneSerial;
+    for (let cycle = 0; cycle < 2; cycle++) for (const slot of [0, 1, 2, 3, 4, 0]) {
+      const start = performance.now();
+      for (const player of game.players) player.switchSlot(slot);
+      const switchMs = performance.now() - start, readyFrame = renderedFrames + 30;
+      await waitForReviewFrame(serial, () => renderedFrames >= readyFrame);
+      const memory = game.renderer.info.memory;
+      cacheReview.samples.push({ cycle, slot, switchMs, fighters: game.players.length,
+        models: game.players.reduce((sum, player) => sum + player.weaponModels.size, 0),
+        attributes: memory.attributes, attributesSize: memory.attributesSize, programs: memory.programs,
+        geometries: memory.geometries, total: memory.total, errorCount, directFallback: game.renderPipeline.direct });
+    }
+  } catch (error) { cacheReview.error = String(error); }
+  finally { cacheReview.running = false; }
+};
+select("camera-sequence").onclick = async () => {
+  if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
+  cameraReview.running = true; cameraReview.samples = []; cameraReview.error = null;
+  select("camera-captures").replaceChildren();
+  const serial = sceneSerial;
+  try {
+    if (stress) throw new Error("Stop stress before deterministic camera capture");
+    for (let i = 0; i < 8; i++) {
+      // Small sideways movements expose sub-pixel coverage changes at near/far distances.
+      cameraOffset = i * .16; game.updateCamera();
+      const readyFrame = renderedFrames + 4;
+      await waitForReviewFrame(serial, () => renderedFrames >= readyFrame);
+      const link = document.createElement("a");
+      link.textContent = `Camera frame ${i}`; link.download = `camera-frame-${i}.png`;
+      link.href = document.querySelector("#game-canvas").toDataURL("image/png");
+      select("camera-captures").append(link, " ");
+      cameraReview.samples.push({ index: i, offset: cameraOffset, position: game.camera.position.toArray(),
+        tier: game.settings.graphics, view: select("view").value, theme: game.world.theme.id,
+        renderedFrames, errorCount, directFallback: game.renderPipeline.direct });
+    }
+  } catch (error) { cameraReview.error = String(error); }
+  finally { cameraOffset = 0; game.updateCamera(); cameraReview.running = false; }
+};
+async function runDecoyReview(crossTier = false, overlap = false) {
+  if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
+  decoyReview.running = true; decoyReview.samples = []; decoyReview.error = null;
+  decoyPipelines = [];
+  try {
+    if (overlap) select("tier").value = "high";
+    await reset();
+    const serial = sceneSerial, hero = game.players[0];
+    const weapon = Object.values(WEAPONS).find(weapon => weapon.decoyDuration);
+    const sample = async (cycle, phase) => {
+      const readyFrame = renderedFrames + 30;
+      await waitForReviewFrame(serial, () => renderedFrames >= readyFrame);
+      decoyReview.samples.push({ cycle, phase, tier: game.settings.graphics, active: game.decoys.length, retained: Boolean(game.decoyRenderAnchor),
+        anchorContext: game.decoyRenderAnchor?.userData.decoyRenderContext,
+        pipelineCreations, ...game.renderer.info.memory, errorCount, directFallback: game.renderPipeline.direct });
+    };
+    if (overlap) {
+      await sample(-1, "baseline");
+      game.spawnDecoy(hero.position.clone().add(new THREE.Vector3(1.5, 0, 0)), hero, weapon);
+      const old = game.decoys.at(-1);
+      await sample(0, "old-high-visible");
+      old.mesh.visible = false;
+      select("tier").value = "medium"; game.settings.graphics = "medium"; game.applyGraphicsSettings();
+      game.spawnDecoy(hero.position.clone().add(new THREE.Vector3(1.5, 0, 0)), hero, weapon);
+      const current = game.decoys.at(-1);
+      await sample(1, "new-medium-visible");
+      game.removeDecoy(current);
+      await sample(1, "medium-anchor");
+      game.removeDecoy(old);
+      await sample(0, "old-high-expired");
+      if (game.decoyRenderAnchor !== current.mesh) throw new Error("Old tier replaced the current anchor");
+      for (let cycle = 2; cycle < 4; cycle++) {
+        game.spawnDecoy(hero.position.clone().add(new THREE.Vector3(1.5, 0, 0)), hero, weapon);
+        await sample(cycle, "spawned");
+        game.removeDecoy(game.decoys[0]);
+        await sample(cycle, "removed");
+      }
+    } else for (const tier of crossTier ? ["high", "medium", "low", "medium", "high"] : [game.settings.graphics]) {
+      select("tier").value = tier; game.settings.graphics = tier; game.applyGraphicsSettings();
+      await sample(-1, "baseline");
+      for (let cycle = 0; cycle < 3; cycle++) {
+        game.spawnDecoy(hero.position.clone().add(new THREE.Vector3(1.5, 0, 0)), hero, weapon);
+        await sample(cycle, "spawned");
+        game.removeDecoy(game.decoys[0]);
+        await sample(cycle, "removed");
+      }
+    }
+    game.clearTransientNetworkCombat();
+    await sample(3, "cleanup");
+  } catch (error) { decoyReview.error = String(error); }
+  finally { decoyReview.running = false; }
+}
+select("decoy-cycle").onclick = () => runDecoyReview();
+select("decoy-tiers").onclick = () => runDecoyReview(true);
+select("decoy-overlap").onclick = () => runDecoyReview(false, true);
+select("burst").onclick = () => {
+  resetSamples(0);
+  const hero = game.players[0], weapon = hero.weapon;
+  game.sound.resume(); hero.aim.set(0, 0, -1); hero.attackTimer = 0; hero.ammo[weapon.id] = weapon.ammo;
+  game.tryFire(hero, true); game.combatVisuals.impact(new THREE.Vector3(0, 16, 2), weapon, hero, { explosive: Boolean(weapon.radius), size: 2 });
+};
+select("destroy").onclick = () => game.world.queueStructuralFailure(game.world.structures[16].segments[0], game.players[0].id);
+select("inspect-surface").onclick = () => {
+  const ray = new THREE.Raycaster(game.players[0].position.clone().add(new THREE.Vector3(0, .4, 0)), new THREE.Vector3(0, -1, 0));
+  ray.camera = game.camera;
+  surface = ray.intersectObject(game.world.group, true).filter(hit => hit.object.material?.visible !== false).slice(0, 3).map(hit => {
+    const m = hit.object.material;
+    return { name: hit.object.name, point: hit.point.toArray(), material: m.type, color: m.color?.getHexString(),
+      emissive: m.emissive?.getHexString(), emissiveIntensity: m.emissiveIntensity, roughness: m.roughness, metalness: m.metalness,
+      envMapIntensity: m.envMapIntensity, map: m.map?.name, roughnessMap: m.roughnessMap?.name, opacity: m.opacity };
+  });
+};
+select("stress").onclick = () => {
+  stress = !stress; game.paused = !stress; game.sound.resume();
+  game.setTrainingBotOption("botsStandStill", !stress); game.setTrainingBotOption("botsDontAttack", !stress);
+  game.players[0].rig.visible = true; resetSamples();
+};
+const frame = game.frame.bind(game);
+game.frame = time => {
+  const now = performance.now(), interval = now - previous; previous = now;
+  if (!document.hidden && now >= settleUntil && interval > 0 && frames.length < 3600) {
+    frames.push(interval);
+    if (traceFrames && interval > 33.3) {
+      slowFrames.push({ frame: frames.length, intervalMs: interval, previousCpu });
+      slowFrames.sort((a, b) => b.intervalMs - a.intervalMs);
+      slowFrames.length = Math.min(slowFrames.length, 12);
+    }
+  }
+  cpu = {};
+  const programsBefore = game.renderer.info.memory.programs;
+  if (!stress && game.world) {
+    game.world.update(Math.min(interval / 1000, .033), []);
+    game.combatVisuals.update(Math.min(interval / 1000, .033));
+    game.processStructuralEvents();
+  }
+  frame(time);
+  renderedFrames++;
+  if (captureCanvas) {
+    captureCanvas = false;
+    const link = select("canvas-capture");
+    link.href = document.querySelector("#game-canvas").toDataURL("image/png");
+    link.hidden = false;
+  }
+  if (traceFrames) previousCpu = { ...cpu, totalMs: performance.now() - now,
+    newPrograms: game.renderer.info.memory.programs - programsBefore,
+    draws: game.renderer.info.render.drawCalls, projectiles: game.projectiles.length, hazards: game.hazards.length };
+  if (now - sampleAt < 1000) return;
+  sampleAt = now;
+  const sorted = [...frames].sort((a,b) => a-b), percentile = p => +(sorted[Math.floor((sorted.length-1)*p)] || 0).toFixed(2);
+  stats = { tier: game.settings.graphics, profile: game.renderPipeline.profile, directFallback: game.renderPipeline.direct, theme: game.world?.theme.id,
+    settling: now < settleUntil, visibility: document.visibilityState, focused: document.hasFocus(),
+    viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
+    stress, sceneSerial, fullEffectCapacity, followCamera: select("follow-camera").checked, view: select("view").value, pose: select("pose").value, fighters: game.players.length, surface,
+    resetReview, cacheReview, cameraReview, decoyReview, decoyPipelines,
+    compiles: compiles.map(s => ({ pending: s.completed === null, durationMs: +( (s.completed ?? now) - s.started).toFixed(1) })),
+    frames: frames.length, medianMs: percentile(.5), p95Ms: percentile(.95), p99Ms: percentile(.99), maxMs: percentile(1),
+    over33Ms: frames.filter(ms => ms > 33.3).length, over50Ms: frames.filter(ms => ms > 50).length,
+    traceFrames, slowFrames,
+    draws: game.renderer.info.render.drawCalls, triangles: game.renderer.info.render.triangles,
+    effectInstances: Object.fromEntries(["flashOuter", "tracerOuter", "ringOuter", "sparkLayer", "bloodLayer"].map(name => [name, game.combatVisuals?.[name].count || 0])),
+    ...game.renderer.info.memory, errors, errorCount,
+    failedBuffers: errors.map(e => bufferHistory.get(e.match(/qa-\d+/)?.[0])).filter(Boolean),
+    retainedBuffers: [...bufferHistory.values()].filter(e => !e.destroyed && e.sceneSerial < sceneSerial),
+    gpu: game.renderer.backend.device?.adapterInfo || {}, worldTextures: game.world?.textures.map(t => ({ size: t.image.width, mipmaps: t.generateMipmaps, anisotropy: t.anisotropy })) };
+  metrics.textContent = JSON.stringify(stats);
+};
+await reset();
+</script></html>
