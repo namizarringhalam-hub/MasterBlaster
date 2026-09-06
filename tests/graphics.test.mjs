@@ -252,6 +252,30 @@ emptyEffects.dispose();
 scene.environment = new THREE.Texture();
 const lightingEnvironment = scene.environment;
 const world = new ArenaWorld(scene, "GRAPHICS-QA");
+const coverLights = world.destructibles.map(obstacle => obstacle.mesh.children.find(child => child.isInstancedMesh));
+assert.equal(coverLights.length, 34);
+assert.equal(createHash("sha256").update(Buffer.concat(coverLights.map(mesh => Buffer.from(mesh.instanceMatrix.array.buffer)))).digest("hex"),
+  "79e8a017067ce8ec1fed7ae87de457878322758c2d9d4c73c0128e90df5d8849", "symbol instances keep their authored positions, rotations and illuminated scale");
+for (const light of coverLights) {
+  const { position, normal, uv, color } = light.geometry.attributes;
+  assert.equal((light.geometry.index?.count ?? position.count) / 3, 20, "closed light housing uses ten planar quads within its existing draw");
+  assert.equal(light.count, 4);
+  assert.equal(light.material.color.getHex(), 0xffffff, "vertex colors separate neutral housing from colored diffuser");
+  assert.equal(light.material.emissiveIntensity, .3, "diffuser brightness is unchanged");
+  assert.ok(light.material.emissiveMap === world.coverLightMask, "one shared mask keeps the neutral bezel unlit");
+  const face = [];
+  for (let i = 0; i < position.count; i++) if (uv.getX(i) > .5) {
+    face.push(i);
+    assert.ok(Math.abs(position.getZ(i) - .488) < 1e-6);
+    assert.ok(Math.abs(normal.getZ(i) - 1) < 1e-6);
+    assert.ok(Math.abs(Math.abs(position.getX(i)) - .445) < 1e-6 && Math.abs(Math.abs(position.getY(i)) - .445) < 1e-6, "colored face retains its exact old local bounds");
+  }
+  assert.equal(face.length, 6, "only the inset front diffuser emits light");
+  for (let i = 0; i < position.count; i += 6) for (const axis of ["getX", "getY", "getZ"]) {
+    assert.equal(color[axis](i), color[axis](i + 5), "bezel and diffuser colors never interpolate across a triangle");
+    assert.ok(Math.abs(normal[axis](i) - normal[axis](i + 3)) < 1e-6, "light housing corners are planar without diagonal patches");
+  }
+}
 assert.ok(scene.backgroundNode?.isNode, "arena sky has a continuous horizon-to-zenith background");
 assert.equal(scene.fog.density, .0044, "sky treatment cannot hide content with extra fog");
 assert.ok(scene.environment === lightingEnvironment, "background must not replace the scene lighting environment");
@@ -270,6 +294,13 @@ assert.ok(centralDeck.mesh.material.envMap === scene.environment, "deck reflecti
 assert.equal(centralDeck.mesh.material.envMapIntensity, .24, "deck reflection tuning actually overrides scene intensity");
 assert.ok(world.structuralBatchMeshes.find(mesh => mesh.name === "Instanced destructible platform decks").material.envMap === scene.environment);
 for (const texture of world.textures) {
+  if (texture === world.coverLightMask) {
+    assert.deepEqual(Array.from(texture.image.data), [0, 0, 0, 255, 255, 255, 255, 255]);
+    assert.equal(texture.minFilter, THREE.NearestFilter);
+    assert.equal(texture.magFilter, THREE.NearestFilter);
+    assert.equal(texture.generateMipmaps, false, "constant per-face emission lookup must not average the unlit and lit texels");
+    continue;
+  }
   assert.ok(texture.generateMipmaps, "procedural filtered textures must generate their mip chain");
   assert.equal(texture.minFilter, THREE.LinearMipmapLinearFilter);
 }
@@ -481,8 +512,8 @@ const onSharedSpriteDispose = () => sharedSpriteDisposals++;
 outsideSprite.geometry.addEventListener("dispose", onSharedSpriteDispose);
 for (const arena of [world, new ArenaWorld(scene, "RESET-2"), new ArenaWorld(scene, "RESET-3")]) {
   let spriteMaterialsDisposed = 0, ownedGeometryDisposed = 0;
-  const coverDisposals = new Map(arena.coverTextures.map(texture => [texture, 0]));
-  for (const texture of arena.coverTextures) texture.addEventListener("dispose", () => coverDisposals.set(texture, coverDisposals.get(texture) + 1));
+  const coverDisposals = new Map([...arena.coverTextures, arena.coverLightMask].map(texture => [texture, 0]));
+  for (const texture of coverDisposals.keys()) texture.addEventListener("dispose", () => coverDisposals.set(texture, coverDisposals.get(texture) + 1));
   arena.group.traverse(object => {
     if (object.isSprite) object.material.addEventListener("dispose", () => spriteMaterialsDisposed++);
     else if (object.geometry) object.geometry.addEventListener("dispose", () => ownedGeometryDisposed++);

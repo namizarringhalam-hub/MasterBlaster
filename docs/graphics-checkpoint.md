@@ -1,9 +1,15 @@
 # Graphics overhaul checkpoint
 
-Updated: 2026-09-06, v100 remains live; pass14 cover-surface refinement. IN PROGRESS.
+Updated: 2026-09-07, v100 remains live; pass15 cover craft passed its bounded review. IN PROGRESS.
 
 ## Current handoff
 
+- Pass15: reviewed cover bodies/light-symbol craft now98/100 PASS from graphics_quality_reviewer, strictly supplied static/discrete-angle views. Bohr98PASS and Ramanujan98PASS for symbol geometry/resource extension. Fullcategory/overall stillwithheld; arena89FAIL remains. No additional ornament warranted. Do not re-open completed cover art without new evidence.
+- Current root-owned pass15 files: src/world.js, tests/graphics.test.mjs, tests/graphics.browser.html, this checkpoint. Closed20tri neutral symbol housings replace108tri subdivboxes inside unchanged4instance draws; exact34cover matrixhash and originalfrontdiffuser±.445/z.488 preserved. Shared2x1nearest/no-mipmap emissionmask suppresses bezel emission. The center emission remains.3, NOT the total old luminous area (old tinted bevels also emitted). Allweapons/audio/authority/collision unchanged. QA-only4familycamera views added.
+- Final full18+15 suite and build/hosting PASS afterQAviewaddition; main-C-U9KOby.js remainsunpublished. Both WebGL and WebGPU tenreset runs completed with flat resourcecounts, small bounded memorywarmup and0errors/nofallback. Browser tab7 restored ordinaryWebGPU High/Foundry/cover-capacitor1280x720; no testloop running. Last tenreset results saved before any more code changes.
+- Next urgent bounded diagnosis: High-only ground stippling is visible in pass15 family views and absent in matchedLow/WebGL. Critic independentlyconfirmed, causeNOTyetproven. Ramanujan sourceaudit: normalView feeds materialnormalmap perturbations intoGTAO; floorrepeat28 normalatlas has18% stronglyperturbedtexels. RawGTAO halfres16samples,5x5directionnoise,no denoise/temporalfiltering. QA-only A/B normalViewGeometry for AO input, with scene-color normalmapping/AOstrength/radius/thickness/samples/resolution unchanged, is next experiment. Do NOT turnoffAO orweakensettings asfix. Ifnoise persists, examine upstreamdepth/normal-aware denoise. No productAOchange yet.
+- Pass15 browser unresponsiveness: afterQA HMR oneDOMread timedout; boundedtab/log/status checks confirmedrecovery,0errors/noactiveloop; exactcauseunknown. WebGLinitialstartup also blockedqueries, thenrecovered andmeasured32094.6ms build->firstframe (untraced, can'tassignthatruntoTSLspecifically). Savedpass15-webgl-startup.json. Keep readiness checks separate from selection/capture and never restart an active load blindly. Startup remains a realbroaderblocker; no speedimprovementclaimed.
+- Pass14 surface-only commit b7f59a3 already pushedorigin/main, not deployed. The earlier93cover score below is superseded by pass15's bounded98 after actualnewgeometry andrequestedcoverage. Production remainsv100/e42baf7.
 - Pass14: cover-only machined atlas replaces padded four-cell infill with two flat plates per axis, narrow seams, fine grain and visible recessed fasteners. Existing structural/ground texture hashes, mitered rim, collision, symbols and all weapons unchanged. Root-owned files: src/surfaceTextures.js, src/world.js, tests/graphics.test.mjs, this checkpoint. Full18+15 suite and build/hosting PASS after final inset20 revision. Not published.
 - Cover review86 ->91 ->93/100 FAIL. Padded appearance and cropped fasteners resolved. Next blocker: district symbols need restrained neutral housings/endcaps around current colored faces, with the same4instances and unchanged brightness. Eight native glancing-angle samples saved for independent stability review before geometry work. Ramanujan98/100 PASS covers only the atlas's bounded resource/lifecycle cost, not graphics or broadFPS.
 - Current browser gameTab is tab7, ordinary WebGPU High/Foundry/grazing1280x720DPR1; no reset/camera/stress loop running. Tenreset lifecycle completed with31textures/179programs/799attributes flat and0errors. Current helper saveCoverCanvas uses current gameTab; do not reuse old saveGraphicsCanvas. Strip data URLs before printing DOM snapshots, which otherwise include the entire native capture payload.
@@ -43,11 +49,11 @@ Reuse retained agents, read-only critics; root owns edits/build/browser/Sites.
 
 ## Latest validation
 
-- Full npm test:18 standalone scripts plus15 Worker cases PASS after final pass14 fastener correction (Worker phase23:36).
+- Full npm test:18 standalone scripts plus15 Worker cases PASS after final pass15 housing andQAviews.
 - npm run build + hosting check PASS:
-  - main-ByFw66SX.js:365.66 KB /106.21 KB gzip (unpublished).
+  - main-C-U9KOby.js:366.62 KB /106.51 KB gzip (unpublished).
   - three-BcuhlKCy.js: 924.80 KB / 254.69 KB gzip.
-  - index-CatZj9ax.js:18.08 KB /8.00 KB gzip.
+  - index-CXxqoPac.js:18.08 KB /8.00 KB gzip.
 - git diff --check passes; only Windows LF/CRLF warnings.
 - No Worker changes or new production deployment. Existing test labels containing “AAA” are legacy output, not a quality claim.
 - Previous overhaul changes through v100 and post-release loader fix ee2a19d are already committed/pushed. Current pass14 files listed above; preserve any new unrelated work.
@@ -87,6 +93,10 @@ Reuse retained agents, read-only critics; root owns edits/build/browser/Sites.
 
 Directory: C:/Users/namir/AppData/Local/Temp/master-blaster-graphics-review.
 
+- Pass15 native evidence: pass15-bezel-foundry-{high,low}-{capacitor,shield,vent,reactor}; pass15-bezel-foundry-{high,medium,low}-grazing; pass15-bezel-{solar,ion}-{high,medium,low}-underpass, eachPNG/JSON. pass15-bezel-shield-motion-{0..7}.png +oneJSON =8discreteoffsetsamples. pass15-webgl-high-{capacitor,shield,vent,reactor} =nativeWebGL2Bloom allfourfamilies. Reviewer independentlyinspected matrix: no lostdiffusers,maskbleed,holes,observedalternatingoverlapartifacts; Lowreadabilityconfirmed. Actualcovercraft96->98PASS based onaddedrequiredcoverage, NOT wholearena/mobile/combatapproval.
+- pass15-bezel-ten-resets-{webgpu,webgl}.json: samefixedcover-capacitorview/High,10serials2..11each. WebGPU:100programs/278attrs8202236B/110geometries/32textures/15RT/200UBO, total181827760->181828033plateau. WebGL:98programs/sameattrs+geometry/29textures/14RT/198UBO,174128469->174128703plateau.0errors/nofallback. Not arena-wide/FPS comparisons with pass14grazingview. Bothcritics scoped98PASS.
+- pass15-webgl-startup.json: shell->engine224.7ms,build->firstframe32094.6ms, noerrors/fallback. Untracedwarmstate unknown; not a causalperformancecomparison.
+- Smallrear-coverorangeflare inpass14offset2/7 aligns withambertopglyph; reflection versusanimatedoverlap remainsunattributed. Not a confirmedcoverdefect. Broadfloorstipple is independentlyobserved, unlike thisunresolvedsmallflare.
 - Pass14 matched FoundryHighgrazing1280x720 native PNG/JSON: pass14-before-foundry-high-grazing -> pass14-machined-foundry-high-grazing (91FAIL) -> pass14-machined-fasteners-foundry-high-grazing (93FAIL). No FPS/memory inference from unmatched retained render states. Covers add3shared256-square RGBA maps,786432basebytes/~1048572mipbytes, not a memory optimization.
 - pass14-machined-{foundry,solar,ion}-{high,medium,low}-underpass PNG/JSON: all9 static palette/tier combinations,0errors/nofallback,10worldtextures at4/8/16anisotropy. Before fastener relocation only. Final inset20 examples: pass14-fasteners-{foundry-high,solar-low,ion-medium}-underpass. Reviewer independently inspected5 earlier theme/tier images, found symbols/passages readable.
 - pass14-cover-ten-resets-high.json: final inset20 source, HighFoundrygrazing,10samples serial2..11;31textures/367geometries/799attrs10793672B/179programs/665UBOs/15RTs flat. Total185295147->185295707->185295896 thenexact;0errors/nofallback. NormaluntracedWebGPU; no CPU-heavy concurrentjobs. Ramanujan independentlyread, scoped98PASS.
@@ -131,7 +141,7 @@ Directory: C:/Users/namir/AppData/Local/Temp/master-blaster-graphics-review.
 
 ## Next unfinished steps (priority order)
 
-1. Continue cover review from93FAIL: surface/crop fixes done and alltheme/tier readability checked. Review saved glancing sequence, then add restrained neutral symbol housings/endcaps with unchanged colored-face widths/positions/brightness and4instance ownership. Do not redo mitered rim or resolved padded texture. Full98category gate remains open.
+1. Covercraftbounded98PASS isdone. Isolate newlyexposedHigh-only floorstippling withQA-onlyAO geometricnormal A/B; keepactualcamera/seed andallqualityparameters unchanged. Thenfixactualcause, test andreview. Fullarena89FAIL/category98gate remainsopen; no continuousmotion/mobile/combatclaim from staticcovers.
 2. Startup attribution now exists (pass13). Next: investigate reducing repeated TSL node builds/cache misses and safe selected-pipeline preparation, preserving exact output, async lifetime/teardown safety and quality. Measure WebGPU separately. Don't repeat initial diagnostic discovery; no optimization to the51.9s issue implemented yet. No detached compileAsync race, clamping samples or lowerquality.
 3. Boost pad mechanical surface/emitter separation and soft upper plume termination, preserving behavior. All-tier/mobile artwork still needs coverage; WebGL has only static smoke evidence.
 4. Continuous camera motion stability remains unproven; pass11 contains eight discrete .16m offsets per view, four rendered frames apart, not video. MSAA4 already present; no blanket blur/fog/hiding cues.

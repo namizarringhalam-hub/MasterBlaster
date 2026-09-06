@@ -212,6 +212,36 @@ function coverPanelGeometry(panelColor) {
   return geometry;
 }
 
+function coverLightGeometry(diffuserColor, horizontal) {
+  const positions = [], colors = [], textureUVs = [];
+  const housingColor = new THREE.Color(0x182733), faceColor = new THREE.Color(diffuserColor);
+  const halfX = horizontal ? .5 : .64, halfY = horizontal ? .64 : .5;
+  const outer = [[-halfX, -halfY, .5], [halfX, -halfY, .5], [halfX, halfY, .5], [-halfX, halfY, .5]];
+  const inner = [[-.445, -.445, .488], [.445, -.445, .488], [.445, .445, .488], [-.445, .445, .488]];
+  const back = outer.map(([x, y]) => [x, y, -.5]);
+  const quad = (points, lit = false) => {
+    const color = lit ? faceColor : housingColor;
+    for (const i of [0, 1, 2, 0, 2, 3]) {
+      positions.push(...points[i]); colors.push(color.r, color.g, color.b);
+      // Constant lookup coordinates isolate the diffuser without another draw.
+      textureUVs.push(lit ? .75 : .25, .5);
+    }
+  };
+  for (let side = 0; side < 4; side++) {
+    const next = (side + 1) % 4;
+    quad([outer[side], outer[next], inner[next], inner[side]]);
+    quad([outer[next], outer[side], back[side], back[next]]);
+  }
+  quad([back[3], back[2], back[1], back[0]]);
+  quad(inner, true);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(textureUVs, 2));
+  geometry.computeVertexNormals(); geometry.computeBoundingSphere();
+  return geometry;
+}
+
 function segmentCircle(a, b, c, radius) {
   const ab = b.clone().sub(a);
   const t = THREE.MathUtils.clamp(c.clone().sub(a).dot(ab) / Math.max(.001, ab.lengthSq()), 0, 1);
@@ -288,6 +318,11 @@ export class ArenaWorld {
     [this.panelTexture, this.groundTexture, this.glowTexture, this.panelNormal, this.panelRoughness, this.groundNormal, this.groundRoughness] = this.textures;
     this.coverTextures = surfaceTextures(`${seed}-cover`, 4, true);
     this.textures.push(...this.coverTextures);
+    this.coverLightMask = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255, 255, 255, 255, 255]), 2, 1, THREE.RGBAFormat);
+    this.coverLightMask.name = "Cover diffuser emission mask";
+    this.coverLightMask.colorSpace = THREE.SRGBColorSpace;
+    this.coverLightMask.needsUpdate = true;
+    this.textures.push(this.coverLightMask);
     this.routeMaterials = this.districtColors.map((color) => new THREE.MeshBasicMaterial({
       color: new THREE.Color(color).multiplyScalar(1.65),
       transparent: true,
@@ -306,8 +341,9 @@ export class ArenaWorld {
       toneMapped: false
     }));
     this.coverMarkMaterials = this.districtColors.map(color => {
-      const marking = material(color, color, 1, { roughness: .48, metalness: .38, emissiveIntensity: .3, envMapIntensity: .24 });
+      const marking = material(0xffffff, color, 1, { roughness: .48, metalness: .38, emissiveIntensity: .3, envMapIntensity: .24 });
       marking.vertexColors = true;
+      marking.emissiveMap = this.coverLightMask;
       marking.envMap = scene.environment;
       return marking;
     });
@@ -1400,7 +1436,7 @@ export class ArenaWorld {
     mesh.add(edges);
 
     const { width, height, depth } = mesh.geometry.parameters;
-    const slats = new THREE.InstancedMesh(inset ? structuralPanelGeometry() : new THREE.BoxGeometry(1, 1, 1),
+    const slats = new THREE.InstancedMesh(inset ? coverLightGeometry(this.districtColors[district], district === 2) : new THREE.BoxGeometry(1, 1, 1),
       inset ? this.coverMarkMaterials[district] : this.routeMaterials[district], 4);
     const marker = new THREE.Object3D();
     for (let index = 0; index < 4; index++) {
