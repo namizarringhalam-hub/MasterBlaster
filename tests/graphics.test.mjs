@@ -848,6 +848,36 @@ await assert.rejects(elbowControl(shoulderTarget, () => assert.fail("shoulder ac
 await assert.rejects(elbowControl(shoulderTarget, () => assert.fail("invalid envelope route"), false, true), /shoulder-only/);
 const capAlignment = new Function("THREE", "game", "shoulderChamferGeometry", `${elbowControlSource}; return withShoulderCapAlignment;`)(THREE, shellGame, shoulderChamferGeometry);
 const capHeroBefore = shellGame.players[0];
+const capMaterialSplit = new Function("THREE", "game", "shoulderChamferGeometry", `${elbowControlSource}; return withCapMaterialSplit;`)(THREE, shellGame, shoulderChamferGeometry);
+{
+  const hero = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  shellGame.players[0] = hero;
+  const target = hero.rig.children[1], owned = target.geometry, material = target.material, intensity = material.emissiveIntensity;
+  await assert.rejects(capMaterialSplit(target, () => assert.fail("unreviewed cap shape")), /suffix/);
+  for (const fail of [false, true]) await capAlignment(target, async () => {
+    const chamfer = target.geometry, originalDispose = THREE.BufferGeometry.prototype.dispose, originalMaterialDispose = THREE.Material.prototype.dispose;
+    const geometries = new Map(), materials = new Map();
+    THREE.BufferGeometry.prototype.dispose = function () { geometries.set(this, (geometries.get(this) || 0) + 1); return originalDispose.call(this); };
+    THREE.Material.prototype.dispose = function () { materials.set(this, (materials.get(this) || 0) + 1); return originalMaterialDispose.call(this); };
+    try {
+      const capture = capMaterial => {
+        assert.deepEqual(target.material, [material, capMaterial]); assert.notEqual(capMaterial, material);
+        const current = capMaterial.toJSON(), previous = material.toJSON(); delete current.uuid; delete previous.uuid;
+        assert.deepEqual(current, previous, "split baseline preserves every authored material property");
+        assert.deepEqual(target.geometry.groups, [{ start: 0, count: 564, materialIndex: 0 }, { start: 564, count: 276, materialIndex: 1 }]);
+        for (const name of Object.keys(chamfer.attributes)) assert.deepEqual(target.geometry.attributes[name].array, chamfer.attributes[name].array);
+        capMaterial.emissiveIntensity = 0;
+        assert.equal(material.emissiveIntensity, intensity, "original armor and feedback material cannot be changed by cap diagnosis");
+        if (fail) throw new Error("split material interrupted");
+      };
+      if (fail) await assert.rejects(capMaterialSplit(target, capture), /split material interrupted/); else await capMaterialSplit(target, capture);
+      assert.equal(target.geometry, chamfer); assert.equal(target.material, material);
+      assert.equal(geometries.size, 2); assert.ok([...geometries.values()].every(count => count === 1)); assert.ok(!geometries.has(chamfer));
+      assert.equal(materials.size, 1); assert.ok([...materials.values()].every(count => count === 1)); assert.ok(!materials.has(material));
+    } finally { THREE.BufferGeometry.prototype.dispose = originalDispose; THREE.Material.prototype.dispose = originalMaterialDispose; }
+  }, false, "chamfer");
+  assert.equal(target.geometry, owned); assert.equal(target.material, material); hero.dispose(); shellGame.players[0] = capHeroBefore;
+}
 {
   const hero = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
   shellGame.players[0] = hero;
@@ -1114,8 +1144,8 @@ assert.deepEqual(shellControlElements.map(control => control.disabled), [false, 
 const armRunState = { running: false }, armRunMaterial = {}, armRunTarget = { isMesh: true, material: armRunMaterial }, armRunLinks = [], armRunModes = [];
 const armRunControls = [{ disabled: false }, { disabled: true }];
 const armRunGame = { ...shellRunGame, paused: true, players: [{ darkMaterial: armRunMaterial, rightForearm: { children: [null, null, armRunTarget] } }] };
-let armRunView = "hand-side", armWaits = 0, expectedDiagnosticTarget = armRunTarget, armGeometryCalls = 0, shoulderGeometryCalls = 0, envelopeCalls = 0, capCalls = 0, bearingCalls = 0;
-const armRunHarness = new Function("game", "cameraReview", "document", "select", "waitForReviewFrame", "withHelmetShellDiagnostic", "shellReviewState", "withElbowSilhouette", "withShoulderCapAlignment", `
+let armRunView = "hand-side", armWaits = 0, expectedDiagnosticTarget = armRunTarget, armGeometryCalls = 0, shoulderGeometryCalls = 0, envelopeCalls = 0, capCalls = 0, bearingCalls = 0, splitCalls = 0, splitRestores = 0, interruptCapEmission = false;
+const armRunHarness = new Function("game", "cameraReview", "document", "select", "waitForReviewFrame", "withHelmetShellDiagnostic", "shellReviewState", "withElbowSilhouette", "withShoulderCapAlignment", "withCapMaterialSplit", `
   const resetReview={}, cacheReview={}, decoyReview={}, resetPhase="ready", sceneSerial=1, errorCount=0, renderedFrames=0, aoOutput="final";
   let stress=false, cameraOffset=.31;
   ${shellRunSource}
@@ -1123,10 +1153,10 @@ const armRunHarness = new Function("game", "cameraReview", "document", "select",
 `)(armRunGame, armRunState, { querySelectorAll: () => armRunControls, createElement: () => ({}),
   querySelector: () => ({ toDataURL: type => { assert.equal(type, "image/png"); return "data:image/png;base64,test"; } }) },
   id => id === "view" ? { value: armRunView } : { replaceChildren() { armRunLinks.length = 0; }, append(link) { armRunLinks.push(link); } },
-  async () => { armWaits++; assert.equal(armRunState.shell, true, "freeze flag spans every forearm capture");
+  async () => { armWaits++; if (interruptCapEmission && armRunState.samples.length === 6) throw new Error("cap emission interrupted"); assert.equal(armRunState.shell, true, "freeze flag spans every forearm capture");
     assert.deepEqual(armRunControls.map(control => control.disabled), [true, true]); },
   async (mode, action, target) => { assert.ok(target === expectedDiagnosticTarget); armRunModes.push(mode); await action(); },
-  target => { assert.ok(target === expectedDiagnosticTarget, "every sample records the material target actually overridden"); return { targetName: "actual forearm batch" }; },
+  (target, material) => { assert.ok(target === expectedDiagnosticTarget, "every sample records the material target actually overridden"); return { targetName: "actual forearm batch", capIntensity: material?.emissiveIntensity }; },
   async (target, capture, shoulder, preserveZ, bearingFit) => {
     if (bearingFit && armRunView === "fighter") assert.ok([armRunGame.players[0].leftArm.children[0], armRunGame.players[0].rightArm.children[0]].includes(target));
     else assert.ok(target === expectedDiagnosticTarget);
@@ -1134,7 +1164,8 @@ const armRunHarness = new Function("game", "cameraReview", "document", "select",
     if (preserveZ) envelopeCalls++;
     if (bearingFit) { assert.equal(shoulder, true); assert.equal(preserveZ, false); assert.equal(bearingFit, "previous"); bearingCalls++; }
     return capture();
-  }, async (target, capture, previous, faceNormals) => { assert.ok(target === expectedDiagnosticTarget); assert.equal(previous, !faceNormals); capCalls++; return capture(); });
+  }, async (target, capture, previous, faceNormals) => { assert.ok(target === expectedDiagnosticTarget); assert.equal(previous, !faceNormals); capCalls++; return capture(); },
+  async (target, capture) => { assert.ok(target === expectedDiagnosticTarget); splitCalls++; try { return await capture({ emissiveIntensity: .16 }); } finally { splitRestores++; } });
 await armRunHarness.run(false, true);
 assert.equal(armRunState.error, null); assert.equal(armWaits, 13); assert.equal(armRunLinks.length, 13);
 assert.ok(armRunLinks.every(link => link.download.startsWith("forearm-")), "download names disclose the actual diagnostic scope");
@@ -1295,6 +1326,15 @@ assert.ok(armRunState.samples.every(sample => sample.diagnosticTarget.startsWith
 armRunView = "hand-shoulder-oblique";
 await armRunHarness.run(true, false, false, true, "cap-chamfer");
 assert.equal(armRunState.error, null); assert.equal(armWaits, 161); assert.equal(capCalls, 5);
+await armRunHarness.run(true, false, false, true, "cap-emission");
+assert.equal(armRunState.error, null); assert.equal(armWaits, 176); assert.equal(capCalls, 6); assert.equal(splitCalls, 1); assert.equal(splitRestores, 1);
+assert.deepEqual(armRunState.samples.map(sample => sample.mode), ["chamfer-baseline", "split-baseline", "cap-no-emission", "split-restored", "chamfer-restored"].flatMap(mode => [mode, mode, mode]));
+assert.deepEqual(armRunState.samples.map(sample => sample.capIntensity), [undefined, undefined, undefined, .16, .16, .16, 0, 0, 0, .16, .16, .16, undefined, undefined, undefined]);
+interruptCapEmission = true;
+await armRunHarness.run(true, false, false, true, "cap-emission");
+assert.match(armRunState.error, /cap emission interrupted/); assert.equal(armWaits, 183); assert.equal(splitRestores, 2);
+assert.equal(armRunState.running, false); assert.equal(armRunState.shell, false); assert.equal(armRunHarness.offset(), .31);
+assert.deepEqual(armRunControls.map(control => control.disabled), [false, true]);
 const geometryNormalToken = {}, colorOutputToken = {};
 const makeAOWrapper = new Function("mrt", "normalViewGeometry", "output", "geometryAONormals", "aoOutput", "vec3", "vec4", "depthAONormals", "legacyAONormals", "normalView", "materialBlendAONormals", "THREE", "recoverAONormals", "singleSampleAO", "emulateCompatibilityAO", `${aoWrapperSource}; return withAODiagnostics;`);
 const wrapAONormals = makeAOWrapper(value => value, geometryNormalToken, colorOutputToken, true, "final");

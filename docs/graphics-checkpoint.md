@@ -2,6 +2,13 @@
 
 Updated: 2026-09-08. Pass40 shoulder fit is PUBLISHED after actual visual92→96 improvement, technical99/98PASS, full validation and production verification. The graphics project is NOT complete.
 
+## Current Pass43 — emission diagnostic rejected; next Pass44 surface-finish trial
+
+- FINAL visual94/100, no improvement over published96: all three no-emission views merely darken the same slabs. Preserve emission and gameplay feedback. Technical QA PASS after independent graphics suite: exact owned suffix authentication, original material untouched, success/interruption cleanup. No product change.
+- tests/graphics.browser.html adds authenticated withCapMaterialSplit over the fixed chamfer: unchanged prefix564 vertices uses original armor; right276 uses one clone. All clone properties match except UUID. One split spans baseline/no-emission/restored with actual runtime .16→0→.16. Two temporary geometries and one material dispose exactly once; outer chamfer restores published geometry. Tests cover real ownership, every attribute, groups, clone parity and interrupted 15-frame runner.
+- Temp pass43-native-cap-emission.json/+0..14PNG: unsplit0..2, split3..5, no-emission6..8, split-restored9..11, unsplit-restored12..14. All nine expected split/restoration pairs byte-identical, errors0/fallbackfalse. Split residency +1geometry/+2attrs20160B/+1UBO336B; programs156 unchanged; total188314713→188294217B exact restoration. Full19+15PASS00:42:37, build/hosting/diffPASS; product bundles remain v105 main-D-UiYDmu.js/three-qFsCeRD-.js.
+- NEXT Pass44 bounded ART trial: same chamfer/.16 emission/full IBL and scalar PBR, test cap-only subtle mipmapped tangent normal finish (roughly1–2 degrees), no albedo noise/geometry/details. Use existing split and texture ownership patterns. Frozen oblique before/after/restored first; reject glitter, tiling or lost readability. This is an experiment, not a confirmed material bug or permission to ship extra draws. Vite28224 retained, QA7 completed/no active batch, no Worker; existing mirror8 preserved. Continue without user prompt; only actual validated rating increases publish as art.
+
 ## Latest publication — Pass40 complete, continue cap reflection diagnosis
 
 - Exact source9c093682afd95cecb3c089333c294539e624710a pushed origin/main andexistingSitesmain. Pagesa22a473e-51c7-4718-960a-47cb86fa09f1 at https://masterblaster.se/; Sites version105 savedappgprj_6a6378a267348191a15d7e0faf662c64~appgver_10c27664f66081919a9237e3939c6b3f, deploymentappgdep_6a9f361749148191aac9288a0fd45ca2 succeeded existingpublicmirror. Archive962ff61930d26f38187a429ae640a1a1101d483ffeda16aa1a1b1dac177c8a5e/96files16404480B. No audience/env/automaticdeployment changes.
