@@ -159,12 +159,22 @@ function articulatedArm(dark, armor, accent, x) {
   const bracer = part(new THREE.CylinderGeometry(.18, .145, .5, 8), armor, 0, -.24, .035);
   bracer.scale.set(.92, 1, 1.06);
   const wristLight = part(new THREE.BoxGeometry(.19, .045, .04), accent, 0, -.43, .22, false);
-  const hand = part(new THREE.BoxGeometry(.25, .22, .29), dark, 0, -.58, .05);
-  const knuckle = part(new THREE.BoxGeometry(.2, .055, .18), accent, 0, -.59, .19, false);
+  // Fixed armored fist: keep the exact grip anchor and existing render batches.
+  const hand = part(new THREE.CylinderGeometry(.075, .105, .2, 8), dark, 0, -.58, .05);
+  hand.scale.z = 1.05;
+  const thumb = part(new THREE.CapsuleGeometry(.04, .05, 2, 6), dark, -Math.sign(x) * .06, -.604, .132);
+  thumb.rotation.z = Math.sign(x) * .85;
+  const fingerCenters = [-.07125, -.02375, .02375, .07125];
+  const curledFingers = fingerCenters.map(center => part(new THREE.BoxGeometry(.0415, .065, .09), dark, center, -.651, .138));
+  // Flush luminous insets sit on each finger's flat face, leaving its bevel and
+  // the three shallow separations readable instead of bridging them with a bar.
+  const knuckles = fingerCenters.map(center => part(new THREE.PlaneGeometry(.026, .02), accent, center, -.654, .184, false));
   const elbowJoint = part(new THREE.SphereGeometry(.135, 10, 6), dark, 0, .015, 0);
-  forearm.add(bracer, mergeStaticParts(accent, [wristLight, knuckle]), mergeStaticParts(dark, [hand, elbowJoint]));
+  forearm.add(bracer, mergeStaticParts(accent, [wristLight, ...knuckles]), mergeStaticParts(dark, [hand, thumb, ...curledFingers, elbowJoint]));
   upper.add(mergeStaticParts(dark, [upperArmor, shoulderJoint]), upperStripe, forearm);
-  return { upper, forearm, hand };
+  // The visible hand is baked into the forearm; keep only its grip anchor,
+  // not the disposed source mesh and its redundant per-fighter CPU buffers.
+  return { upper, forearm, hand: { position: hand.position.clone() } };
 }
 
 function disposeChildren(group) {

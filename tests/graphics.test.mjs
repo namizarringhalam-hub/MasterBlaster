@@ -18,6 +18,30 @@ import { weaponPresentation } from "../src/weaponPresentation.js";
 // Execute the previous clone path against the same complete fighter/weapon builder.
 // Only the three transient merge copies differ; no frozen art data to maintain.
 const playerMergeSource = readFileSync(new URL("../src/player.js", import.meta.url), "utf8");
+const fistProbe = new Fighter(new THREE.Scene(), { id: "fist-probe", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+for (const hand of [fistProbe.leftHand, fistProbe.rightHand]) {
+  assert.ok(!hand.geometry, "grip metadata must not retain the disposed source palm buffers");
+  assert.deepEqual(hand.position.toArray(), [0, -.58, .05], "hand shaping cannot change the IK grip center");
+}
+for (const forearm of [fistProbe.leftForearm, fistProbe.rightForearm]) {
+  const positions = forearm.children[2].geometry.attributes.position;
+  let wristWidth = 0, fingerWidth = 0;
+  for (let i = 0; i < positions.count; i++) {
+    const y = positions.getY(i), x = Math.abs(positions.getX(i));
+    if (y > -.51 && y < -.475) wristWidth = Math.max(wristWidth, x);
+    if (y < -.63) fingerWidth = Math.max(fingerWidth, x);
+  }
+  assert.ok(wristWidth > .05 && wristWidth < .095 && fingerWidth > .1, "actual merged fist tapers from curl to wrist");
+}
+const fistVertices = (forearm, mirror) => {
+  const { position, normal } = forearm.children[2].geometry.attributes;
+  // Rounded-box face diagonals duplicate corner vertices with different valence;
+  // compare the actual surface samples/normals, not their triangulation counts.
+  return [...new Set(Array.from({ length: position.count }, (_, i) => [position.getX(i) * mirror, position.getY(i), position.getZ(i),
+    normal.getX(i) * mirror, normal.getY(i), normal.getZ(i)].map(value => Math.round(value * 1e5)).join(",")))].sort();
+};
+assert.deepEqual(fistVertices(fistProbe.leftForearm, 1), fistVertices(fistProbe.rightForearm, -1), "merged left/right fist vertices and normals are true mirrors");
+fistProbe.dispose();
 const satinProbe = new Fighter(new THREE.Scene(), { id: "helmet-2", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
 assert.ok(satinProbe.helmetShell?.isMesh, "capsule shell needs its own finish without changing the shared dark hardware");
 assert.equal(satinProbe.helmetShell.material.roughness, .56);
@@ -34,6 +58,37 @@ const beforeSatinSource = playerMergeSource.replace(/^import .*;\r?\n/gm, "").re
   .replace(/    if \(costumeVariant === 2\) \{\r?\n      \/\/ Separate only the shell finish;[\s\S]*?    \}\r?\n/, "");
 const BeforeSatinFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
   `${beforeSatinSource}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
+const beforeFistSource = playerMergeSource.replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "")
+  .replace(/  \/\/ Fixed armored fist:[\s\S]*?(?=  const elbowJoint)/, `  const hand = part(new THREE.BoxGeometry(.25, .22, .29), dark, 0, -.58, .05);
+  const knuckle = part(new THREE.BoxGeometry(.2, .055, .18), accent, 0, -.59, .19, false);
+`)
+  .replace("[wristLight, ...knuckles]", "[wristLight, knuckle]")
+  .replace("[hand, thumb, ...curledFingers, elbowJoint]", "[hand, elbowJoint]")
+  .replace("hand: { position: hand.position.clone() }", "hand");
+const BeforeFistFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
+  `${beforeFistSource}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
+function assertFingerSeparations(fighter) {
+  for (const arm of [fighter.leftForearm, fighter.rightForearm]) {
+    const dark = new THREE.Mesh(arm.children[2].geometry, arm.children[2].material);
+    const accent = new THREE.Mesh(arm.children[1].geometry, arm.children[1].material);
+    const hit = (mesh, x) => new THREE.Raycaster(new THREE.Vector3(x, -.654, .3), new THREE.Vector3(0, 0, -1)).intersectObject(mesh, false)[0];
+    for (const x of [-.0475, 0, .0475]) {
+      assert.ok(!hit(dark, x) || hit(dark, x).point.z < .178, "three finger separations must remain recessed in the actual dark batch");
+      assert.equal(hit(accent, x), undefined, "the light insets must not bridge the finger separations");
+    }
+    for (const x of [-.07125, -.02375, .02375, .07125]) {
+      assert.ok(Math.abs(hit(dark, x).point.z - .183) < 1e-6);
+      assert.ok(Math.abs(hit(accent, x).point.z - .184) < 1e-6, "each inset sits on the flat finger face without covering its bevel");
+    }
+  }
+}
+{
+  const scene = new THREE.Scene(), config = { id: "finger-qa", color: 0x129dba, accent: 0x6ff6ff };
+  const before = new BeforeFistFighter(scene, config, ["blaster"], new THREE.Vector3());
+  const after = new Fighter(scene, config, ["blaster"], new THREE.Vector3());
+  assert.throws(() => assertFingerSeparations(before), /three finger separations/, "the original undivided hand fails the finger-readability regression");
+  assertFingerSeparations(after); before.dispose(); after.dispose();
+}
 function mergedFighterSnapshot(fighter, excluded = new Set()) {
   const meshes = [];
   fighter.group.updateMatrixWorld(true);
@@ -55,6 +110,34 @@ function mergedFighterSnapshot(fighter, excluded = new Set()) {
         opacity: material.opacity, transparent: material.transparent, blending: material.blending, side: material.side, depthWrite: material.depthWrite })) });
   });
   return { meshes, grip: fighter.weaponGrip.toArray(), support: fighter.weaponSupportGrip.toArray(), muzzle: fighter.weaponMuzzleDistance };
+}
+for (const weapon of Object.values(WEAPONS)) {
+  const config = { id: "fist-parity", color: 0x129dba, accent: 0x6ff6ff }, scene = new THREE.Scene();
+  const after = new Fighter(scene, config, [weapon.id], new THREE.Vector3());
+  const before = new BeforeFistFighter(scene, config, [weapon.id], new THREE.Vector3());
+  const changedBatches = fighter => new Set([fighter.leftForearm, fighter.rightForearm].flatMap(arm => arm.children.slice(1)));
+  assert.deepEqual(mergedFighterSnapshot(after, changedBatches(after)), mergedFighterSnapshot(before, changedBatches(before)),
+    `${weapon.id}: hand art must not alter other geometry/materials, grip anchors or weapon/muzzle transforms`);
+  assert.equal(mergedFighterSnapshot(after).meshes.length, mergedFighterSnapshot(before).meshes.length, "fist uses existing render batches");
+  for (const forearm of [after.leftForearm, after.rightForearm]) {
+    const geometry = forearm.children[2].geometry;
+    geometry.computeBoundingBox();
+    assert.ok(geometry.boundingBox.min.x > -.16 && geometry.boundingBox.max.x < .16 && geometry.boundingBox.min.y > -.7,
+      "tucked thumb and curl stay within the compact forearm envelope");
+    for (const name of ["position", "normal", "uv"]) assert.ok([...geometry.attributes[name].array].every(Number.isFinite));
+    const normals = geometry.attributes.normal;
+    for (let i = 0; i < normals.count; i++) assert.ok(Math.abs(Math.hypot(normals.getX(i), normals.getY(i), normals.getZ(i)) - 1) < 1e-6);
+  }
+  const world = { resolve: p => { p.y = 0; return { grounded: true }; }, boostAt: () => null }, move = new THREE.Vector3();
+  for (const pose of ["aim", "reload", "fire"]) for (let i = 0; i < 24; i++) {
+    for (const fighter of [before, after]) {
+      fighter.reloadTimer = pose === "reload" ? 1 : 0; fighter.attackTimer = pose === "fire" ? weapon.cooldown : 0;
+      fighter.update(1 / 60, move, new THREE.Vector3(0, .4, -1), {}, world);
+    }
+    assert.deepEqual(after.weaponGroup.matrix.toArray(), before.weaponGroup.matrix.toArray(), `${weapon.id}/${pose}: weapon animation remains exact`);
+    for (const key of ["leftArm", "rightArm", "leftForearm", "rightForearm"]) assert.deepEqual(after[key].quaternion.toArray(), before[key].quaternion.toArray());
+  }
+  after.dispose(); before.dispose(); assert.equal(scene.children.length, 0);
 }
 for (let variant = 0; variant < 4; variant++) {
   const config = { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff };
@@ -214,7 +297,7 @@ for (const variant of ["", "0", "1", "2", "3"]) {
   selected.dispose(); assert.equal(scene.children.length, 0);
 }
 const settleReviewSource = graphicsFixture.slice(graphicsFixture.indexOf("const stillMove"), graphicsFixture.indexOf("function replaceReviewCostume("));
-for (const view of ["hand-front", "hand-side", "player-camera"]) assert.ok(graphicsFixture.includes(`<option>${view}</option>`), `missing actual ${view} review view`);
+for (const view of ["hand-front", "hand-side", "hand-palm", "player-camera"]) assert.ok(graphicsFixture.includes(`<option>${view}</option>`), `missing actual ${view} review view`);
 for (const weaponId of ["blaster", "rocket_launcher", "energy_sword"]) for (const pose of ["aim", "reload", "reacquire-early", "reacquire-complete"]) {
   const hero = new Fighter(new THREE.Scene(), { id: "hand-qa", color: 0x129dba, accent: 0x6ff6ff }, [weaponId], new THREE.Vector3());
   const world = { resolve: position => { position.y = 0; return { grounded: true }; }, boostAt: () => null };
@@ -248,7 +331,7 @@ for (const height of [0, Math.sqrt(3), -Math.sqrt(3)]) {
 // Execute the exact capture block: later frame counters must not alter evidence.
 const handViewSource = graphicsFixture.slice(graphicsFixture.indexOf("function setView()"), graphicsFixture.indexOf("async function reset()"));
 const weaponSelectSource = graphicsFixture.slice(graphicsFixture.indexOf('select("weapon").onchange ='), graphicsFixture.indexOf('select("pose").onchange ='));
-for (const view of ["hand-front", "hand-side"]) for (const previousPose of ["aim", "reload", "reacquire-early"]) {
+for (const view of ["hand-front", "hand-side", "hand-palm"]) for (const previousPose of ["aim", "reload", "reacquire-early"]) {
   const hero = new Fighter(new THREE.Scene(), { id: "hand-view", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
   const controls = { view: { value: view }, weapon: { value: "blaster" }, pose: { value: "aim" }, "aim-height": { value: "0" } };
   const game = { players: [hero], camera: new THREE.PerspectiveCamera(62, 16 / 9, .1, 300), clearTransientNetworkCombat() {},
@@ -263,7 +346,8 @@ for (const view of ["hand-front", "hand-side"]) for (const previousPose of ["aim
   controls.weapon.onchange();
   assert.equal(controls.pose.value, "aim", "hand view/weapon changes visibly reset to ready pose before framing");
   game.updateCamera(); game.camera.updateMatrixWorld(true);
-  const target = hero.weaponGrip.clone().applyMatrix4(hero.weaponGroup.matrixWorld).project(game.camera);
+  const target = (view === "hand-palm" ? hero.leftHand.position.clone().applyMatrix4(hero.leftForearm.matrixWorld)
+    : hero.weaponGrip.clone().applyMatrix4(hero.weaponGroup.matrixWorld)).project(game.camera);
   assert.ok(Math.abs(target.x) < 1e-6 && Math.abs(target.y) < 1e-6, "weapon switching must reframe the current grip, not retain the old anchor");
   const cameraPosition = game.camera.position.clone();
   controls.pose.value = "fire";
