@@ -3067,19 +3067,23 @@ export class ArenaWorld {
     for (const x of xs) for (const z of zs) candidates.push(new THREE.Vector3(x, THREE.MathUtils.clamp(hit.y, ys[0], ys[1]), z));
     for (const y of ys) for (const z of zs) candidates.push(new THREE.Vector3(THREE.MathUtils.clamp(hit.x, xs[0], xs[1]), y, z));
 
-    const blockedByItem = (a, b) => {
-      const delta = b.clone().sub(a);
+    // The obstruction owns its hit point. Reuse only temporary collision data;
+    // returned candidates must remain independent because the rope retains them.
+    const delta = this.collisionDirection, box = this.collisionBox, ray = this.collisionRay, hitPoint = this.collisionHit;
+    box.min.set(item.x - item.w / 2, item.baseY, item.z - item.d / 2);
+    box.max.set(item.x + item.w / 2, item.top, item.z + item.d / 2);
+    const blockedByItem = (point) => {
+      delta.copy(point).sub(origin);
       const length = delta.length();
       if (length < .05) return false;
-      const box = new THREE.Box3(
-        new THREE.Vector3(item.x - item.w / 2, item.baseY, item.z - item.d / 2),
-        new THREE.Vector3(item.x + item.w / 2, item.top, item.z + item.d / 2)
-      );
-      const contact = new THREE.Ray(a, delta.multiplyScalar(1 / length)).intersectBox(box, new THREE.Vector3());
-      return Boolean(contact && a.distanceTo(contact) > .03 && a.distanceTo(contact) < length - .03);
+      const contact = ray.set(origin, delta.multiplyScalar(1 / length)).intersectBox(box, hitPoint);
+      const contactDistance = contact ? origin.distanceTo(contact) : 0;
+      return Boolean(contact && contactDistance > .03 && contactDistance < length - .03);
     };
+    // Keep the original comparator arithmetic: reassociating its floating-point
+    // distances can select the opposite side of a symmetric obstacle.
     return candidates
-      .filter((point) => point.distanceTo(origin) > .2 && !blockedByItem(origin, point))
+      .filter(point => point.distanceTo(origin) > .2 && !blockedByItem(point))
       .sort((a, b) => origin.distanceTo(a) + a.distanceTo(target) - origin.distanceTo(b) - b.distanceTo(target))[0] || null;
   }
 

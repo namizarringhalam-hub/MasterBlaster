@@ -9,7 +9,7 @@
 <nav style="position:fixed;z-index:100;inset:auto 0 0;background:#07111def;padding:8px;display:flex;gap:8px;flex-wrap:wrap;font:12px monospace">
 <label>Tier <select id="tier"><option>high</option><option>medium</option><option>low</option></select></label>
 <label>Theme <select id="seed"><option>BLAST-01</option><option>SOLAR-01</option><option>ION-01</option></select></label>
-<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>thrusters</option><option>weapon</option><option>effects</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option><option>boost-top</option><option>boost-side</option><option>boost-raised</option></select></label>
+<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>thrusters</option><option>weapon</option><option>effects</option><option>rope-corner</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option><option>boost-top</option><option>boost-side</option><option>boost-raised</option></select></label>
 <label>Weapon <select id="weapon"></select></label>
 <label>Pose <select id="pose"><option>aim</option><option>reload</option><option>fire</option></select></label>
 <label>Boost pad <select id="boost-pad"><option value="0">1</option><option value="1">2</option><option value="2" selected>3</option><option value="3">4</option><option value="4">5</option><option value="5">6</option><option value="6">7</option><option value="7">8</option></select></label>
@@ -37,6 +37,8 @@ import * as THREE from "three/webgpu";
 import { mrt, normalView, normalViewGeometry, output, uniform, vec3, vec4 } from "three/tsl";
 import { WEAPONS, MAP_THEMES, seedFromText } from "../src/gameData.js";
 import { Fighter } from "../src/player.js";
+import { ArenaWorld } from "../src/world.js";
+import { CombatVisuals } from "../src/combatVisuals.js";
 import { NeonRenderPipeline, recoverInvalidAONormals } from "../src/renderPipeline.js";
 const geometryAONormals = new URLSearchParams(location.search).has("geometryAONormals");
 const legacyAONormals = new URLSearchParams(location.search).has("legacyAONormals");
@@ -170,14 +172,47 @@ select("seed").innerHTML = MAP_THEMES.map((theme, i) => {
 let stress = false, sampleAt = performance.now(), previous = sampleAt, frames = [], stats = {};
 const traceFrames = new URLSearchParams(location.search).has("traceFrames");
 let cpu = {}, previousCpu = {}, slowFrames = [], pipelineCreations = 0, decoyPipelines = [];
+let activeTraceBot = null;
+// QA-only inclusive timings: nested totals overlap and must not be added.
+// One fixed-size aggregate per method/frame; no fighter/resource references retained.
+function traceBotMethod(target, name, prefix) {
+  const method = target[name];
+  target[name] = function (...args) {
+    if (!activeTraceBot) return method.apply(this, args);
+    const bot = activeTraceBot.id, weapon = activeTraceBot.weapon.id;
+    const started = performance.now();
+    try { return method.apply(this, args); } finally {
+      const ms = performance.now() - started;
+      const record = (cpu.botCalls ||= {})[`${prefix}.${name}`] ||= { calls: 0, totalMs: 0, maxMs: -1 };
+      record.calls++; record.totalMs += ms;
+      if (ms > record.maxMs) {
+        Object.assign(record, { maxMs: ms, bot, weapon });
+        // These world queries do not mutate their arguments. resolve does, so
+        // omit its coordinates rather than allocating pre-snapshots on every call.
+        if (prefix === "world" && name !== "resolve") record.inputs = args.slice(0, 4).map(value => value?.isVector3 ? value.toArray() : typeof value === "number" ? value : null);
+        if (name === "updateGrapple") record.wraps = args[0].grapple?.wraps.slice(0, 8).map(point => point.toArray()) || [];
+      }
+    }
+  };
+}
 if (traceFrames) for (const name of ["update", "renderScene", "updateBot", "updateProjectiles", "updateAudio", "updateHud", "updateRespawns", "processStructuralEvents"]) {
   const method = game[name].bind(game);
   game[name] = (...args) => {
-    const start = performance.now();
-    try { return method(...args); } finally { cpu[name] = (cpu[name] || 0) + performance.now() - start; }
+    const start = performance.now(), previousBot = activeTraceBot;
+    if (name === "updateBot") activeTraceBot = args[0];
+    try { return method(...args); } finally {
+      activeTraceBot = previousBot;
+      cpu[name] = (cpu[name] || 0) + performance.now() - start;
+    }
   };
 }
 if (traceFrames) {
+  for (const name of ["tryFire", "spawnProjectile", "updateGrapple", "toggleGrapple", "releaseGrapple", "audioSpatial", "updateCharge", "releaseCharge"])
+    traceBotMethod(game, name, "game");
+  for (const name of ["update", "switchSlot"]) traceBotMethod(Fighter.prototype, name, "fighter");
+  for (const name of ["ropeBlocked", "surfaceHeightAt", "resolve", "grapplePoint", "ropeWrapPoint", "ropeObstacle", "nearbyObstacles"]) traceBotMethod(ArenaWorld.prototype, name, "world");
+  for (const name of ["play", "playWeapon", "sample", "updateWeaponLoop", "updateChargeLoop", "_route"]) traceBotMethod(game.sound, name, "sound");
+  for (const name of ["muzzle", "createProjectile"]) traceBotMethod(CombatVisuals.prototype, name, "visuals");
   const buildWeapon = Fighter.prototype.updateWeaponModel;
   Fighter.prototype.updateWeaponModel = function (...args) {
     const start = performance.now(), cached = this.weaponModels.has(this.weapon.id);
@@ -343,10 +378,12 @@ function setView() {
   const view = select("view").value;
   hero.position.set(0, 15.01, 8); hero.group.rotation.y = Math.PI;
   settlePose();
+  if (view === "rope-corner") hero.position.set(-12, 18.6, 0);
   hero.rig.visible = true;
   const poses = { arena: [[70, 47, 98], [0, 25, 0]], grazing: [[3, 1.8, 65], [0, 4, -40]],
     fighter: [[3.7, 17.1, 3.3], [0, 16.35, 8]], thrusters: [[1.6, 16.7, 10.3], [0, 16.15, 8.49]],
     weapon: [[1.8, 16.9, 6.1], [.4, 16.4, 8.7]], effects: [[7, 19, 17], [0, 16, 8]],
+    "rope-corner": [[-10, 27, -22], [0, 20, 0]],
     underpass: [[12, 3, 37], [0, 13, -10]], collapse: [[-49, 22, -29], [-72, 17, -66]] };
   const coverDistrict = ["cover-capacitor", "cover-shield", "cover-vent", "cover-reactor"].indexOf(view);
   if (coverDistrict >= 0) {
@@ -570,8 +607,13 @@ select("burst").onclick = () => {
 select("destroy").onclick = () => game.world.queueStructuralFailure(game.world.structures[16].segments[0], game.players[0].id);
 select("grapple").onclick = () => {
   // Aim at the existing high central structure, so the rope clears the body.
-  game.camera.lookAt(0, 30, 0);
+  const corner = select("view").value === "rope-corner";
+  if (corner) {
+    // A real far-face anchor reproduces a player moving around the same column.
+    game.camera.position.set(12, 20, 0); game.camera.lookAt(0, 20, 0);
+  } else game.camera.lookAt(0, 30, 0);
   game.toggleGrapple(game.players[0]);
+  if (corner) game.updateGrapple(game.players[0], 0);
   const line = game.players[0].grapple?.line;
   if (line) line.onAfterRender = () => { ropeRenders++; };
   game.updateCamera(); captureCanvas = true;
@@ -629,8 +671,9 @@ game.frame = time => {
     captureCanvas = false;
     const grapple = game.players[0]?.grapple;
     canvasCapture = { renderedFrames, sceneSerial, view: select("view").value,
+      grappleLines: game.scene.children.filter(object => object.isLine2).length,
       draws: game.renderer.info.render.drawCalls, triangles: game.renderer.info.render.triangles,
-      rope: grapple ? { anchor: grapple.anchor.toArray(), segments: grapple.line.geometry.instanceCount,
+      rope: grapple ? { anchor: grapple.anchor.toArray(), wraps: grapple.wraps?.map(point => point.toArray()) || [], segments: grapple.line.geometry.instanceCount,
         rendersThisFrame: ropeRenders - ropeRendersBefore, blending: grapple.line.material.blending } : null,
       thrusterSort: thrusterSortControl ? { mode: thrusterSortControl.mode, legacyZ: thrusterSortControl.legacyZ,
         modernZ: thrusterSortControl.modernZ, quadZ: thrusterSortControl.quadZ, order: [...thrusterRenderOrder] } : null,

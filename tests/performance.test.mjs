@@ -85,6 +85,82 @@ assert.ok(maximumFighterRenderables <= 30, "all forty-seven weapons and four cos
 
 const scene = new THREE.Scene();
 const world = new ArenaWorld(scene, "PERFORMANCE-GRID");
+// Frozen pre-pass19 reference: preserve stable-sort ties and retained point ownership.
+function legacyRopeWrapPoint(origin, target) {
+  const obstruction = this.ropeObstacle(origin, target);
+  if (!obstruction) return null;
+  const { item, hit } = obstruction, clearance = .3;
+  const xs = [item.x - item.w / 2 - clearance, item.x + item.w / 2 + clearance];
+  const ys = [Math.max(.12, item.baseY - clearance), item.top + clearance];
+  const zs = [item.z - item.d / 2 - clearance, item.z + item.d / 2 + clearance];
+  const candidates = [];
+  for (const x of xs) for (const y of ys) candidates.push(new THREE.Vector3(x, y, THREE.MathUtils.clamp(hit.z, zs[0], zs[1])));
+  for (const x of xs) for (const z of zs) candidates.push(new THREE.Vector3(x, THREE.MathUtils.clamp(hit.y, ys[0], ys[1]), z));
+  for (const y of ys) for (const z of zs) candidates.push(new THREE.Vector3(THREE.MathUtils.clamp(hit.x, xs[0], xs[1]), y, z));
+  const blockedByItem = (a, b) => {
+    const delta = b.clone().sub(a), length = delta.length();
+    if (length < .05) return false;
+    const box = new THREE.Box3(new THREE.Vector3(item.x - item.w / 2, item.baseY, item.z - item.d / 2), new THREE.Vector3(item.x + item.w / 2, item.top, item.z + item.d / 2));
+    const contact = new THREE.Ray(a, delta.multiplyScalar(1 / length)).intersectBox(box, new THREE.Vector3());
+    return Boolean(contact && a.distanceTo(contact) > .03 && a.distanceTo(contact) < length - .03);
+  };
+  return candidates.filter(point => point.distanceTo(origin) > .2 && !blockedByItem(origin, point))
+    .sort((a, b) => origin.distanceTo(a) + a.distanceTo(target) - origin.distanceTo(b) - b.distanceTo(target))[0] || null;
+}
+const wrapCases = [];
+for (let i = 0; i < 1800; i++) wrapCases.push([
+  new THREE.Vector3((i * 37 % 211) - 105, i * 13 % 75 + .12, (i * 71 % 211) - 105),
+  new THREE.Vector3((i * 67 % 211) - 105, i * 31 % 75 + .12, (i * 43 % 211) - 105)
+]);
+wrapCases.push([new THREE.Vector3(), new THREE.Vector3()], [new THREE.Vector3(90, 10, 90), new THREE.Vector3(90, 10.01, 90)]);
+function wrapRoute(method, start, end) {
+  const points = []; let from = start;
+  for (let i = 0; i < 8; i++) {
+    const point = method.call(world, from, end);
+    if (!point) break;
+    points.push(point); from = point;
+  }
+  return points;
+}
+let routedCases = 0;
+for (const [start, end] of wrapCases) {
+  const expected = wrapRoute(legacyRopeWrapPoint, start, end).map(point => point.toArray());
+  const points = wrapRoute(ArenaWorld.prototype.ropeWrapPoint, start, end);
+  if (expected.length) routedCases++;
+  assert.deepEqual(points.map(point => point.toArray()), expected, "full route including legacy repeated corners stays exact");
+  world.ropeWrapPoint(end, start);
+  assert.deepEqual(points.map(point => point.toArray()), expected, "later queries cannot mutate retained wrap points");
+}
+assert.ok(routedCases > 50, "comparison must actually exercise obstructed routes");
+const wrapAllocations = { Vector3: 0, Box3: 0, Ray: 0 };
+const countedThree = { ...THREE };
+for (const name of Object.keys(wrapAllocations)) countedThree[name] = class extends THREE[name] {
+  constructor(...args) { super(...args); wrapAllocations[name]++; }
+};
+const countedWrap = new Function("THREE", `return ({${ArenaWorld.prototype.ropeWrapPoint.toString()}}).ropeWrapPoint;`)(countedThree);
+const symmetricObstruction = { item: { x: 0, z: 0, w: 2, d: 2, baseY: -1, top: 1 }, hit: new THREE.Vector3(-1, 0, 0) };
+const wrapFixture = { ropeObstacle: () => symmetricObstruction, collisionDirection: new THREE.Vector3(), collisionBox: new THREE.Box3(), collisionRay: new THREE.Ray(), collisionHit: new THREE.Vector3() };
+const wrapStart = new THREE.Vector3(-4, 0, 0), wrapEnd = new THREE.Vector3(4, 0, 0);
+assert.deepEqual(countedWrap.call(wrapFixture, wrapStart, wrapEnd).toArray(), legacyRopeWrapPoint.call(wrapFixture, wrapStart, wrapEnd).toArray(), "symmetric equal-length candidates preserve the first stable-sort choice");
+const tieItem = { x: 0, z: 0, w: 2, d: 2, baseY: 0, top: 10 };
+const tieFixture = { ...wrapFixture, nearbyObstacles: () => [tieItem], ropeObstacle: ArenaWorld.prototype.ropeObstacle };
+for (const endX of [2.25, 5, 5.5, 5.75]) {
+  const start = new THREE.Vector3(-2.25, 5, 0), end = new THREE.Vector3(endX, 5, 0);
+  assert.deepEqual(ArenaWorld.prototype.ropeWrapPoint.call(tieFixture, start, end).toArray(), legacyRopeWrapPoint.call(tieFixture, start, end).toArray(),
+    "left-associative comparator rounding must preserve the original side of a symmetric obstacle");
+}
+assert.equal(wrapAllocations.Box3, 0, "wrap candidates reuse one existing collision box");
+assert.equal(wrapAllocations.Ray, 0, "wrap candidates reuse the existing collision ray");
+assert.equal(wrapAllocations.Vector3, 12, "only the twelve independently owned candidate points are allocated");
+if (process.argv.includes("--bench-rope")) {
+  const results = [];
+  for (let batch = 0; batch < 6; batch++) for (const [name, method] of (batch % 2 ? [["current", ArenaWorld.prototype.ropeWrapPoint], ["legacy", legacyRopeWrapPoint]] : [["legacy", legacyRopeWrapPoint], ["current", ArenaWorld.prototype.ropeWrapPoint]])) {
+    const started = performance.now(); let points = 0;
+    for (let round = 0; round < 25; round++) for (const [start, end] of wrapCases.slice(0, 182)) points += wrapRoute(method, start, end).length;
+    results.push({ batch, name, ms: performance.now() - started, routes: 25 * Math.min(182, wrapCases.length), points });
+  }
+  console.log(JSON.stringify({ ropeBenchmark: results }));
+}
 let candidateTotal = 0;
 let samples = 0;
 for (let x = -104; x <= 104; x += 8) for (let z = -104; z <= 104; z += 8) {

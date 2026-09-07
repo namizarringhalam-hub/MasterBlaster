@@ -18,14 +18,17 @@ const captureSource = graphicsFixture.slice(graphicsFixture.indexOf("    const g
 const captureFrame = new Function("game", "renderedFrames", "sceneSerial", "select", "ropeRenders", "ropeRendersBefore", "errorCount", "thrusterSortControl", "thrusterRenderOrder", `let canvasCapture; ${captureSource}; return canvasCapture;`);
 for (const renders of [0, 1]) {
   const captureGame = { players: [{ grapple: { anchor: new THREE.Vector3(1, 2, 3), line: { geometry: { instanceCount: 1 }, material: { blending: THREE.NoBlending } } } }],
+    scene: { children: [{ isLine2: true }, {}] },
     renderer: { info: { render: { drawCalls: 378, triangles: 169330 } } }, renderPipeline: { direct: false } };
   const captured = captureFrame(captureGame, 8, 1, () => ({ value: "effects" }), 4 + renders, 4, 0);
   captureGame.renderer.info.render.drawCalls = 1;
   assert.equal(captured.draws, 378);
   assert.equal(captured.rope.rendersThisFrame, renders, "a live grapple object alone cannot certify a rendered rope");
   assert.equal(captured.rope.segments, 1);
-  captureGame.players = [];
-  assert.equal(captureFrame(captureGame, 9, 1, () => ({ value: "effects" }), 4, 4, 0).rope, null);
+  assert.equal(captured.grappleLines, 1);
+  captureGame.players = []; captureGame.scene.children = [];
+  const released = captureFrame(captureGame, 9, 1, () => ({ value: "effects" }), 4, 4, 0);
+  assert.equal(released.rope, null); assert.equal(released.grappleLines, 0);
 }
 const sortControlSource = graphicsFixture.slice(graphicsFixture.indexOf("function clearThrusterSortControl("), graphicsFixture.indexOf("let settleUntil"));
 const sortScene = new THREE.Scene(), sortCamera = new THREE.PerspectiveCamera(62, 16 / 9, .1, 300);
@@ -134,6 +137,38 @@ const coldResetWait = waitReview(4, () => false, 60000);
 assert.equal(timeoutDelay, 60000, "only cold reset readiness receives the longer bounded window");
 timeoutCallback();
 await assert.rejects(coldResetWait, /60 seconds/, "a stalled reset still terminates independently of rAF");
+
+const botTraceSource = graphicsFixture.slice(graphicsFixture.indexOf("function traceBotMethod("), graphicsFixture.indexOf("if (traceFrames) for"));
+let botTraceClock = 0, botTraceContext = null, botTraceCpu = {};
+const traceBotMethod = new Function("performance", "getBot", "getCpu", botTraceSource.replaceAll("activeTraceBot", "getBot()").replaceAll("cpu.botCalls", "getCpu().botCalls") + "; return traceBotMethod;")(
+  { now: () => ++botTraceClock }, () => botTraceContext, () => botTraceCpu);
+const botTraceTarget = { value: 4, run(n) { return this.value + n; } };
+traceBotMethod(botTraceTarget, "run", "test");
+assert.equal(botTraceTarget.run(3), 7);
+assert.equal(botTraceClock, 0, "nested timing is inactive outside bot updates");
+botTraceContext = { id: "p3", weapon: { id: "blaster" } };
+for (let i = 0; i < 30; i++) assert.equal(botTraceTarget.run(i), 4 + i);
+assert.deepEqual(botTraceCpu.botCalls["test.run"], { calls: 30, totalMs: 30, maxMs: 1, bot: "p3", weapon: "blaster" });
+const botTraceError = new Error("bot call failed");
+botTraceTarget.fail = () => { throw botTraceError; };
+traceBotMethod(botTraceTarget, "fail", "test");
+assert.throws(() => botTraceTarget.fail(), error => error === botTraceError);
+assert.equal(botTraceCpu.botCalls["test.fail"].calls, 1);
+botTraceCpu = {};
+botTraceTarget.run(1);
+assert.equal(botTraceCpu.botCalls["test.run"].calls, 1, "nested counters follow the current frame rather than retaining old state");
+const queryPoint = new THREE.Vector3(1, 2, 3);
+const queryTrace = { resolve(point) { point.x = 8; }, ropeObstacle(point) { return point; } };
+traceBotMethod(queryTrace, "resolve", "world"); traceBotMethod(queryTrace, "ropeObstacle", "world");
+queryTrace.resolve(queryPoint);
+assert.equal(botTraceCpu.botCalls["world.resolve"].inputs, undefined, "mutating query coordinates cannot be mislabeled as inputs");
+queryTrace.ropeObstacle(queryPoint); queryPoint.set(0, 0, 0);
+assert.deepEqual(botTraceCpu.botCalls["world.ropeObstacle"].inputs, [[8, 2, 3]], "read-only query evidence owns numeric copies");
+const ropeTrace = { updateGrapple() {} }, ropeTraceBot = { grapple: { wraps: Array.from({ length: 10 }, () => new THREE.Vector3(1, 2, 3)) } };
+traceBotMethod(ropeTrace, "updateGrapple", "game"); ropeTrace.updateGrapple(ropeTraceBot);
+ropeTraceBot.grapple.wraps[0].set(0, 0, 0);
+assert.equal(botTraceCpu.botCalls["game.updateGrapple"].wraps.length, 8);
+assert.deepEqual(botTraceCpu.botCalls["game.updateGrapple"].wraps[0], [1, 2, 3], "grapple evidence cannot retain mutable vectors");
 
 const traceSource = graphicsFixture.slice(graphicsFixture.indexOf("function traceStartupMethod("), graphicsFixture.indexOf("if (traceStartup) {"));
 let traceClock = 0;
