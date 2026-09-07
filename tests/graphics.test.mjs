@@ -1028,6 +1028,77 @@ for (let variant = 0; variant < 4; variant++) {
   assert.ok([...resources.values()].every(count => count === 1), "nested head resources are disposed exactly once with the fighter");
   assert.equal(fighter.group.parent, null);
 }
+const browFighter = new Fighter(scene, { id: "helmet-2", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+const browPositions = browFighter.helmet.getObjectByName("Helmet brow and crest").geometry.attributes.position;
+for (const side of [-1, 1]) {
+  assert.ok(Array.from({ length: browPositions.count }, (_, i) => i).some(i =>
+    side * browPositions.getX(i) > .3 && browPositions.getY(i) > .1 && browPositions.getZ(i) < .16),
+  "capsule brow ends must sweep back toward the temples, not remain a straight plank");
+}
+browFighter.dispose();
+const straightBrowSource = playerMergeSource.replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "")
+  .replace(/    let browGeometry;[\s\S]*?    brow.rotation.x = -.18;/,
+    "    const brow = part(new THREE.BoxGeometry(.78, .1, .16), armor, 0, 2.27, .3);\n    brow.rotation.x = -.18;")
+  .replace("    } else if (costumeVariant === 2) {", "    } else if (costumeVariant === 2) {\n      brow.scale.set(1.22, .7, 1.14);");
+const StraightBrowFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
+  `${straightBrowSource}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
+const browSources = [];
+class TrackedBrowGeometry extends THREE.ExtrudeGeometry {
+  constructor(...args) {
+    super(...args);
+    const record = { disposed: 0 }; browSources.push(record);
+    this.addEventListener("dispose", () => record.disposed++);
+  }
+}
+const TrackedBrowFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
+  `${playerMergeSource.replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "")}; return Fighter;`)(
+  { ...THREE, ExtrudeGeometry: TrackedBrowGeometry }, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
+for (const variant of [0, 1, 3, 2]) {
+  const fighter = new TrackedBrowFighter(scene, { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  assert.deepEqual(browSources.map(source => source.disposed), variant === 2 ? [1] : [], "only capsule creates an extrusion and merge disposes that owned source exactly once");
+  fighter.dispose();
+  assert.deepEqual(browSources.map(source => source.disposed), variant === 2 ? [1] : [], "fighter teardown owns the merged geometry, not its already-disposed source");
+}
+for (let variant = 0; variant < 4; variant++) {
+  const config = { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff };
+  const fighter = new Fighter(scene, config, ["blaster"], new THREE.Vector3());
+  const before = new StraightBrowFighter(new THREE.Scene(), config, ["blaster"], new THREE.Vector3());
+  if (variant !== 2) assert.deepEqual(mergedFighterSnapshot(fighter), mergedFighterSnapshot(before), "non-capsule brow geometry and materials remain byte-identical");
+  else {
+    const head = fighter.helmet.getObjectByName("Helmet brow and crest"), oldHead = before.helmet.getObjectByName("Helmet brow and crest");
+    assert.deepEqual(mergedFighterSnapshot(fighter, new Set([head])), mergedFighterSnapshot(before, new Set([oldHead])), "only capsule brow changes, not visor/socket/ears/weapons/body");
+    assert.equal(head.material, fighter.armorMaterial);
+    assert.deepEqual(head.matrix.elements, oldHead.matrix.elements);
+    for (const name of ["position", "normal", "uv"]) {
+      const current = head.geometry.attributes[name], old = oldHead.geometry.attributes[name];
+      assert.equal(current.count, old.count - 48, "swept brow uses 92 triangles instead of 108, in the same existing mesh");
+      assert.deepEqual(current.array.slice(276 * current.itemSize), old.array.slice(324 * old.itemSize), "crest buffers remain untouched");
+      assert.ok([...current.array].every(Number.isFinite));
+    }
+    assert.deepEqual(new THREE.Box3().setFromObject(fighter.group), new THREE.Box3().setFromObject(before.group), "swept brow does not enlarge complete fighter bounds");
+    const positions = head.geometry.attributes.position, normals = head.geometry.attributes.normal, edges = new Map();
+    const key = point => point.toArray().map(value => value.toFixed(6)).join(",");
+    for (let i = 0; i < 276; i += 3) {
+      const [a, b, c] = [0, 1, 2].map(corner => new THREE.Vector3().fromBufferAttribute(positions, i + corner));
+      const normal = b.clone().sub(a).cross(c.clone().sub(a));
+      assert.ok(normal.length() > 1e-8, "beveled brow has no degenerate triangles");
+      normal.normalize();
+      for (const [corner, point] of [a, b, c].entries()) {
+        const stored = new THREE.Vector3().fromBufferAttribute(normals, i + corner);
+        assert.ok(Math.abs(stored.length() - 1) < 1e-6 && stored.dot(normal) > .99999, "bevel normals agree with outward triangle winding");
+        assert.ok(Math.abs(point.x) < .4758 && point.y < .241 && point.z < .399, "brow stays within its old upper/front/width silhouette");
+        assert.ok(point.z < .4, "brow remains behind the nearest lens surface at z.4515");
+      }
+      for (const [start, end] of [[a, b], [b, c], [c, a]]) {
+        const ka = key(start), kb = key(end), edgeKey = [ka, kb].sort().join("|");
+        const edge = edges.get(edgeKey) || { count: 0, winding: 0 };
+        edge.count++; edge.winding += ka < kb ? 1 : -1; edges.set(edgeKey, edge);
+      }
+    }
+    assert.ok([...edges.values()].every(edge => edge.count === 2 && edge.winding === 0), "swept brow is a closed consistently wound solid");
+  }
+  fighter.dispose(); before.dispose();
+}
 const posedHand = new THREE.Vector3(), posedGrip = new THREE.Vector3();
 const wristAxis = new THREE.Vector3(), wristNormal = new THREE.Vector3(), barrelNormal = new THREE.Vector3();
 for (const weaponId of ["blaster", "rocket_launcher", "machine_gun"]) for (const release of ["reload", "grapple"]) {

@@ -294,7 +294,19 @@ export class Fighter {
     visor.position.set(0, .02, .469);
     visor.name = "Segmented inset visor";
     this.visor = visor;
-    const brow = part(new THREE.BoxGeometry(.78, .1, .16), armor, 0, 2.27, .3);
+    let browGeometry;
+    if (costumeVariant === 2) {
+      // One beveled armor strip wraps the capsule temples, with a straight central brow.
+      const outline = new THREE.Shape([
+        [-.38, .075], [.38, .075], [.45, -.1], [.36, -.2], [.33, -.15], [.38, -.07],
+        [.33, -.045], [-.33, -.045], [-.38, -.07], [-.33, -.15], [-.36, -.2], [-.45, -.1]
+      ].map(([x, z]) => new THREE.Vector2(x, z)));
+      browGeometry = new THREE.ExtrudeGeometry(outline, {
+        depth: .05, steps: 1, bevelEnabled: true, bevelSegments: 1, bevelSize: .007, bevelThickness: .01
+      });
+      browGeometry.rotateX(Math.PI / 2).translate(0, .025, 0);
+    } else browGeometry = new THREE.BoxGeometry(.78, .1, .16);
+    const brow = part(browGeometry, armor, 0, 2.27, .3);
     brow.rotation.x = -.18;
     const helmetCrest = part(new THREE.BoxGeometry(.13, .34, .48), armor, 0, 2.35, -.08);
     helmetCrest.rotation.x = -.32;
@@ -357,7 +369,6 @@ export class Fighter {
       breastplate.scale.set(.88, 1.18, .22 * 1.08);
       leftFin.scale.set(.66, 1.46, .66); rightFin.scale.copy(leftFin.scale);
     } else if (costumeVariant === 2) {
-      brow.scale.set(1.22, .7, 1.14);
       leftShoulder.scale.set(.84, 1.34, .92); rightShoulder.scale.copy(leftShoulder.scale);
       backpack.scale.set(1.08, 1.16, 1.08);
     } else {
