@@ -18,12 +18,22 @@ import { weaponPresentation } from "../src/weaponPresentation.js";
 // Execute the previous clone path against the same complete fighter/weapon builder.
 // Only the three transient merge copies differ; no frozen art data to maintain.
 const playerMergeSource = readFileSync(new URL("../src/player.js", import.meta.url), "utf8");
+const satinProbe = new Fighter(new THREE.Scene(), { id: "helmet-2", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+assert.ok(satinProbe.helmetShell?.isMesh, "capsule shell needs its own finish without changing the shared dark hardware");
+assert.equal(satinProbe.helmetShell.material.roughness, .56);
+assert.equal(satinProbe.helmetShell.material.clearcoatRoughness, .4);
+satinProbe.dispose();
 assert.equal(playerMergeSource.split("new THREE.BufferGeometry().copy(mesh.geometry)").length - 1, 3,
   "transient merge copies must not rebuild each procedural geometry constructor");
 const legacyPlayerSource = playerMergeSource.replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "")
   .replaceAll("new THREE.BufferGeometry().copy(mesh.geometry)", "mesh.geometry.clone()");
 const LegacyMergeFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
   `${legacyPlayerSource}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
+const beforeSatinSource = playerMergeSource.replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "")
+  .replace("costumeVariant === 2 ? visorFrame : [helmet, ...visorFrame]", "[helmet, ...visorFrame]")
+  .replace(/    if \(costumeVariant === 2\) \{\r?\n      \/\/ Separate only the shell finish;[\s\S]*?    \}\r?\n/, "");
+const BeforeSatinFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
+  `${beforeSatinSource}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
 function mergedFighterSnapshot(fighter, excluded = new Set()) {
   const meshes = [];
   fighter.group.updateMatrixWorld(true);
@@ -45,6 +55,58 @@ function mergedFighterSnapshot(fighter, excluded = new Set()) {
         opacity: material.opacity, transparent: material.transparent, blending: material.blending, side: material.side, depthWrite: material.depthWrite })) });
   });
   return { meshes, grip: fighter.weaponGrip.toArray(), support: fighter.weaponSupportGrip.toArray(), muzzle: fighter.weaponMuzzleDistance };
+}
+for (let variant = 0; variant < 4; variant++) {
+  const config = { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff };
+  const fighter = new Fighter(new THREE.Scene(), config, ["blaster"], new THREE.Vector3());
+  const before = new BeforeSatinFighter(new THREE.Scene(), config, ["blaster"], new THREE.Vector3());
+  if (variant !== 2) {
+    assert.equal(fighter.helmetShell, undefined); assert.ok(fighter.shellMaterial === fighter.darkMaterial);
+    assert.deepEqual(mergedFighterSnapshot(fighter), mergedFighterSnapshot(before), "other variants retain all geometry, materials and transforms");
+  } else {
+    const shell = fighter.helmetShell;
+    assert.ok(shell.parent === fighter.helmet && shell.material === fighter.shellMaterial && shell.material !== fighter.darkMaterial);
+    assert.deepEqual(shell.position.toArray(), [0, 0, 0]); assert.deepEqual(shell.scale.toArray(), [1, 1, 1]);
+    assert.deepEqual(mergedFighterSnapshot(fighter, new Set([fighter.helmet, shell])), mergedFighterSnapshot(before, new Set([before.helmet])),
+      "hardware children, weapons, body, armor, lenses and all other materials remain exact");
+    const combined = mergeGeometries([shell.geometry, fighter.helmet.geometry], false);
+    for (const name of ["position", "normal", "uv"]) assert.deepEqual(combined.attributes[name].array, before.helmet.geometry.attributes[name].array,
+      `splitting the shell preserves every existing ${name} value and triangle order`);
+    combined.dispose();
+    const oldJSON = before.darkMaterial.toJSON(), satinJSON = shell.material.toJSON();
+    for (const key of ["uuid", "roughness", "clearcoatRoughness"]) { delete oldJSON[key]; delete satinJSON[key]; }
+    assert.deepEqual(satinJSON, oldJSON, "only the two approved finish properties differ, no lighting/color/emission loss");
+    assert.ok(shell.material.envMap === null, "shell keeps full shared scene environment lighting");
+    assert.equal(shell.castShadow, before.helmet.castShadow); assert.equal(shell.receiveShadow, before.helmet.receiveShadow);
+    assert.equal(shell.frustumCulled, true);
+    assert.deepEqual(new THREE.Box3().setFromObject(fighter.group), new THREE.Box3().setFromObject(before.group));
+    const relative = fighter.helmet.matrixWorld.clone().invert().multiply(shell.matrixWorld);
+    const world = { resolve: () => ({ grounded: true }), boostAt: () => null };
+    for (const pitch of [-Math.PI / 2, -Math.PI / 3, 0, Math.PI / 3, Math.PI / 2]) {
+      fighter.takeHit(1);
+      for (let frame = 0; frame < 60; frame++) {
+        fighter.update(1 / 60, new THREE.Vector3(), new THREE.Vector3(0, Math.sin(pitch), Math.cos(pitch)), {}, world);
+        fighter.group.updateMatrixWorld(true);
+        const actual = fighter.helmet.matrixWorld.clone().invert().multiply(shell.matrixWorld);
+        actual.elements.forEach((value, i) => assert.ok(Math.abs(value - relative.elements[i]) < 1e-12));
+        assert.equal(shell.material.emissiveIntensity, fighter.darkMaterial.emissiveIntensity, "hit/idle shell feedback stays synchronized");
+      }
+    }
+    fighter.takeHit(100);
+    for (let frame = 0; frame < 90; frame++) {
+      fighter.updateDeath(1 / 60);
+      assert.equal(shell.material.emissiveIntensity, fighter.darkMaterial.emissiveIntensity, "death flash/fade remains synchronized");
+    }
+    fighter.respawn(new THREE.Vector3(1, 2, 3));
+    assert.equal(shell.material.emissiveIntensity, .025);
+    assert.equal(shell.material.roughness, .56); assert.equal(shell.material.clearcoatRoughness, .4);
+    const owned = [shell.geometry, shell.material], disposals = new Map(owned.map(resource => [resource, 0]));
+    for (const resource of owned) resource.addEventListener("dispose", () => disposals.set(resource, disposals.get(resource) + 1));
+    fighter.dispose();
+    assert.ok([...disposals.values()].every(count => count === 1), "nested shell buffers and owned finish dispose exactly once");
+  }
+  if (variant !== 2) fighter.dispose();
+  before.dispose();
 }
 for (const id of Object.keys(WEAPONS)) {
   const config = { id: "merge-parity", color: 0x129dba, accent: 0x6ff6ff };
@@ -223,7 +285,7 @@ let sharedShellDisposals = 0;
 shellOriginal.addEventListener("dispose", () => sharedShellDisposals++);
 shellEnvironment.addEventListener("dispose", () => sharedShellDisposals++);
 const shellOriginalJSON = shellOriginal.toJSON();
-for (const mode of ["baseline", "explicit-environment", "no-environment", "normals", "restored"]) for (const fail of [false, true]) {
+for (const mode of ["baseline", "explicit-environment", "no-environment", "normals", "previous-finish", "restored"]) for (const fail of [false, true]) {
   let temporaryDisposals = 0;
   const action = async () => {
     const current = shellGame.players[0].helmet.material;
@@ -231,7 +293,11 @@ for (const mode of ["baseline", "explicit-environment", "no-environment", "norma
     else {
       assert.notEqual(current, shellOriginal);
       current.addEventListener("dispose", () => temporaryDisposals++);
-      if (mode !== "normals") {
+      if (mode === "previous-finish") {
+        assert.equal(current.roughness, .4); assert.equal(current.clearcoatRoughness, .2);
+        assert.equal(current.envMap, shellOriginal.envMap); assert.equal(current.envMapIntensity, shellOriginal.envMapIntensity);
+        assert.equal(current.metalness, shellOriginal.metalness); assert.equal(current.clearcoat, shellOriginal.clearcoat);
+      } else if (mode !== "normals") {
         assert.ok(current.envMap === shellEnvironment, "explicit texture makes the zero intensity effective in pinned Three");
         assert.equal(current.envMapIntensity, mode === "no-environment" ? 0 : .82);
         assert.ok(current.envMapRotation.equals(shellGame.scene.environmentRotation));
@@ -251,11 +317,20 @@ for (const mode of ["baseline", "explicit-environment", "no-environment", "norma
   assert.ok(shellGame.players[0].helmet.material === shellOriginal);
   assert.ok(shellGame.renderPipeline.pipeline.outputNode === shellOutput);
   assert.equal(shellGame.renderer.toneMapping, THREE.ACESFilmicToneMapping);
-  assert.equal(temporaryDisposals, ["explicit-environment", "no-environment", "normals"].includes(mode) ? 1 : 0);
+  assert.equal(temporaryDisposals, ["explicit-environment", "no-environment", "normals", "previous-finish"].includes(mode) ? 1 : 0);
   assert.equal(sharedShellDisposals, 0, "temporary controls never dispose shared environment or original material");
   assert.deepEqual(shellOriginal.toJSON(), shellOriginalJSON);
 }
 await assert.rejects(shellControl("unknown", () => assert.fail("invalid mode ran")), /Unknown shell/);
+const hardwareMaterial = new THREE.MeshPhysicalMaterial();
+shellGame.players[0].helmetShell = shellGame.players[0].helmet;
+shellGame.players[0].helmet = { material: hardwareMaterial };
+await shellControl("previous-finish", async () => {
+  assert.ok(shellGame.players[0].helmet.material === hardwareMaterial, "split-shell QA never changes hardware material");
+  assert.notEqual(shellGame.players[0].helmetShell.material, shellOriginal);
+});
+assert.ok(shellGame.players[0].helmetShell.material === shellOriginal);
+hardwareMaterial.dispose();
 shellOriginal.dispose(); shellEnvironment.dispose();
 const shellRunSource = graphicsFixture.slice(graphicsFixture.indexOf("async function runShellReview("), graphicsFixture.indexOf('select("shell-diagnosis").onclick'));
 const shellControlElements = [{ disabled: false }, { disabled: true }];
@@ -1292,23 +1367,26 @@ for (let variant = 0; variant < 4; variant++) {
   const before = new WithoutSocketFighter(new THREE.Scene(), config, ["blaster"], new THREE.Vector3());
   if (variant !== 2) assert.deepEqual(mergedFighterSnapshot(fighter), mergedFighterSnapshot(before), "other helmet variants remain byte-identical");
   else {
+    // Reassemble the two actual buffers for the existing shell/hardware contact checks.
+    const headGeometry = mergeGeometries([fighter.helmetShell.geometry, fighter.helmet.geometry], false);
+    const oldHeadGeometry = mergeGeometries([before.helmetShell.geometry, before.helmet.geometry], false);
     assert.deepEqual(mergedFighterSnapshot(fighter, new Set([fighter.helmet])), mergedFighterSnapshot(before, new Set([before.helmet])),
       "only the capsule housing changes; lens, pivot, armor, weapons and materials stay intact");
     const added = {};
     for (const name of ["position", "normal", "uv"]) {
-      const current = fighter.helmet.geometry.attributes[name], old = before.helmet.geometry.attributes[name];
+      const current = headGeometry.attributes[name], old = oldHeadGeometry.attributes[name];
       assert.equal(current.count - old.count, 228, "socket and two closed eight-sided ear mounts add exactly 76 triangles and no draw");
       assert.deepEqual(current.array.slice(0, old.array.length), old.array, "existing shell and frame buffers stay byte-identical");
       added[name] = new THREE.BufferAttribute(current.array.slice(old.array.length), current.itemSize);
     }
-    for (const fighterGeometry of [fighter.helmet.geometry, before.helmet.geometry]) {
+    for (const fighterGeometry of [headGeometry, oldHeadGeometry]) {
       fighterGeometry.computeBoundingBox(); fighterGeometry.computeBoundingSphere();
     }
     assert.deepEqual(new THREE.Box3().setFromObject(fighter.group), new THREE.Box3().setFromObject(before.group), "mounts stay inside the existing complete fighter bounds");
-    const headBounds = fighter.helmet.geometry.boundingBox, oldBounds = before.helmet.geometry.boundingBox;
+    const headBounds = headGeometry.boundingBox, oldBounds = oldHeadGeometry.boundingBox;
     assert.ok(Math.abs(headBounds.max.x - .44) < 1e-7 && Math.abs(headBounds.min.x + .44) < 1e-7, "head culling bounds include both mounts");
     for (const axis of ["y", "z"]) { assert.equal(headBounds.min[axis], oldBounds.min[axis]); assert.equal(headBounds.max[axis], oldBounds.max[axis]); }
-    assert.deepEqual(fighter.helmet.geometry.boundingSphere, before.helmet.geometry.boundingSphere);
+    assert.deepEqual(headGeometry.boundingSphere, oldHeadGeometry.boundingSphere);
     const vertices = Array.from({ length: 36 }, (_, i) => new THREE.Vector3().fromBufferAttribute(added.position, i));
     const edges = new Map(), center = new THREE.Vector3(0, .02, (.13 + .405) / 2);
     const pointKey = point => point.toArray().map(value => value.toFixed(6)).join(",");
@@ -1330,7 +1408,7 @@ for (let variant = 0; variant < 4; variant++) {
     fighter.visor.geometry.computeBoundingBox();
     const front = Math.max(...vertices.map(point => point.z));
     assert.ok(fighter.visor.position.z + fighter.visor.geometry.boundingBox.min.z - front > .0464, "backing stays behind every lens");
-    const oldHead = new THREE.Mesh(before.helmet.geometry, before.darkMaterial); oldHead.updateMatrixWorld(true);
+    const oldHead = new THREE.Mesh(oldHeadGeometry, before.darkMaterial); oldHead.updateMatrixWorld(true);
     for (const vertex of vertices.filter(point => point.z < .14)) for (const side of [-1, 1]) {
       socketRay.set(new THREE.Vector3(side * 2, vertex.y, vertex.z), new THREE.Vector3(-side, 0, 0));
       const hit = socketRay.intersectObject(oldHead, false)[0];
@@ -1352,6 +1430,7 @@ for (let variant = 0; variant < 4; variant++) {
         assert.ok(Math.abs(vertex.x) > .425 && Math.abs(vertex.x) < .515, "outer mount overlaps the unchanged ear cap depth");
       }
     }
+    headGeometry.dispose(); oldHeadGeometry.dispose();
   }
   fighter.dispose(); before.dispose();
 }

@@ -262,6 +262,7 @@ export class Fighter {
     this.armorMaterial = armor;
     this.accentMaterial = accent;
     this.darkMaterial = dark;
+    this.shellMaterial = dark;
     accent.color.multiplyScalar(.38);
 
     this.rig = new THREE.Group();
@@ -407,11 +408,21 @@ export class Fighter {
         visorFrame.push(mount);
       }
     }
-    const helmetAssembly = mergeStaticParts(dark, [helmet, ...visorFrame]);
+    const helmetAssembly = mergeStaticParts(dark, costumeVariant === 2 ? visorFrame : [helmet, ...visorFrame]);
     helmetAssembly.geometry.translate(0, -2.08, 0);
     helmetAssembly.position.y = 2.08;
     helmetAssembly.name = "Helmet and recessed visor housing";
     this.helmet = helmetAssembly;
+    if (costumeVariant === 2) {
+      // Separate only the shell finish; hardware keeps the shared polished dark material.
+      this.shellMaterial = dark.clone();
+      this.shellMaterial.roughness = .56;
+      this.shellMaterial.clearcoatRoughness = .4;
+      this.helmetShell = mergeStaticParts(this.shellMaterial, [helmet]);
+      this.helmetShell.geometry.translate(0, -2.08, 0);
+      this.helmetShell.name = "Capsule satin shell";
+      helmetAssembly.add(this.helmetShell);
+    }
     // Keep all head surfaces on the same pitch pivot. Matching rotations on
     // separate lens/helmet pivots pulls the lenses out of their apertures.
     const headArmor = mergeStaticParts(armor, [brow, helmetCrest]);
@@ -907,7 +918,7 @@ export class Fighter {
     this.group.scale.setScalar(1 + burst * .1 - progress * .78);
     this.armorMaterial.emissiveIntensity = 1.65 * fade;
     this.accentMaterial.emissiveIntensity = 2.8 * fade;
-    this.darkMaterial.emissiveIntensity = .5 * burst;
+    this.darkMaterial.emissiveIntensity = this.shellMaterial.emissiveIntensity = .5 * burst;
     this.identityRing.material.opacity = .62 * fade;
     this.identityBeacon.material.opacity = fade;
     if (this.deathTimer === 0) this.group.visible = false;
@@ -932,7 +943,7 @@ export class Fighter {
     this.rightLeg.rotation.set(0, 0, 0);
     this.armorMaterial.emissiveIntensity = .16;
     this.accentMaterial.emissiveIntensity = .25;
-    this.darkMaterial.emissiveIntensity = .025;
+    this.darkMaterial.emissiveIntensity = this.shellMaterial.emissiveIntensity = .025;
     this.identityRing.material.opacity = .46;
     this.identityBeacon.material.opacity = .94;
     this.ammo = Object.fromEntries(this.loadout.map((id) => [id, WEAPONS[id].ammo]));
@@ -1185,7 +1196,7 @@ export class Fighter {
     const hitFlash = hit ? .55 + hitWave * .95 : 0;
     this.armorMaterial.emissiveIntensity = .16 + hitFlash * 1.45;
     this.accentMaterial.emissiveIntensity = .25 + hitFlash * 1.15;
-    this.darkMaterial.emissiveIntensity = .025 + hitFlash * .44;
+    this.darkMaterial.emissiveIntensity = this.shellMaterial.emissiveIntensity = .025 + hitFlash * .44;
     const pulse = .5 + Math.sin(time * .55 + this.id.length) * .5;
     const frozen = this.slowTimer > 0;
     const freezePulse = .5 + Math.sin(time * 1.8) * .5;

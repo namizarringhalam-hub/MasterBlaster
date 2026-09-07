@@ -269,7 +269,7 @@ decoyOwner.group.updateMatrixWorld(true);
 decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
 const firstDecoy = decoyHarness.decoys[0]; trackDecoy(firstDecoy.mesh);
 const frozenHead = firstDecoy.mesh.getObjectByName("Helmet and recessed visor housing");
-for (const name of ["Segmented inset visor", "Helmet brow and crest"]) {
+for (const name of ["Segmented inset visor", "Helmet brow and crest", "Capsule satin shell"]) {
   const frozen = firstDecoy.mesh.getObjectByName(name), source = decoyOwner.group.getObjectByName(name);
   assert.equal(frozen.parent, frozenHead, "a decoy preserves nested head ownership");
   assert.deepEqual(frozen.matrix.elements, source.matrix.elements, "a decoy freezes the local head pose");
