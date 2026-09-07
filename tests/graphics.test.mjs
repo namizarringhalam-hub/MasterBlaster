@@ -769,10 +769,12 @@ for (const mode of ["baseline", "explicit-environment", "no-environment", "norma
   assert.deepEqual(shoulderOriginal.toJSON(), shoulderOriginalJSON);
   assert.equal(disposals, ["baseline", "restored"].includes(mode) ? 0 : 1);
 }
-for (const arm of [shoulderProbe.leftArm, shoulderProbe.rightArm]) for (const fail of [false, true]) {
+for (const arm of [shoulderProbe.leftArm, shoulderProbe.rightArm]) for (const fail of [false, true]) for (const preserveZ of [false, true]) {
   const target = arm.children[0], geometry = target.geometry, material = target.material;
   const coarseIndexed = new THREE.SphereGeometry(.18, 10, 6), coarse = coarseIndexed.toNonIndexed().translate(0, -.045, 0);
   const fineIndexed = new THREE.SphereGeometry(.18, 16, 10), fine = fineIndexed.toNonIndexed().translate(0, -.045, 0);
+  coarse.computeBoundingBox(); fine.computeBoundingBox();
+  if (preserveZ) fine.scale(1, 1, coarse.boundingBox.max.z / fine.boundingBox.max.z);
   const capture = async () => {
     assert.notEqual(target.geometry, geometry); assert.ok(target.material === material);
     for (const [key, attribute] of Object.entries(geometry.attributes)) {
@@ -784,14 +786,21 @@ for (const arm of [shoulderProbe.leftArm, shoulderProbe.rightArm]) for (const fa
       if (mesh !== target) assert.ok(mesh.material === originalMaterial && mesh.geometry === originalGeometry);
     }
     assert.equal(target.geometry.attributes.position.count - geometry.attributes.position.count, 564);
+    if (preserveZ) {
+      assert.ok(Math.abs(target.geometry.boundingBox.max.z - coarse.boundingBox.max.z) < 1e-8);
+      assert.ok(Math.abs(target.geometry.boundingBox.min.z - coarse.boundingBox.min.z) < 1e-8);
+      const normals = target.geometry.attributes.normal;
+      for (let i = 0; i < normals.count; i++) assert.ok(Math.abs(Math.hypot(normals.getX(i), normals.getY(i), normals.getZ(i)) - 1) < 1e-6);
+    }
     if (fail) throw new Error("shoulder silhouette interrupted");
   };
-  if (fail) await assert.rejects(elbowControl(target, capture, true), /shoulder silhouette interrupted/);
-  else await elbowControl(target, capture, true);
+  if (fail) await assert.rejects(elbowControl(target, capture, true, preserveZ), /shoulder silhouette interrupted/);
+  else await elbowControl(target, capture, true, preserveZ);
   assert.ok(target.geometry === geometry && target.material === material);
   coarseIndexed.dispose(); coarse.dispose(); fineIndexed.dispose(); fine.dispose();
 }
 await assert.rejects(elbowControl(shoulderTarget, () => assert.fail("shoulder accepted as elbow")), /Unexpected elbow/);
+await assert.rejects(elbowControl(shoulderTarget, () => assert.fail("invalid envelope route"), false, true), /shoulder-only/);
 shoulderProbe.dispose();
 armDiagnosticProbe.dispose();
 hardwareMaterial.dispose();
@@ -836,7 +845,7 @@ assert.deepEqual(shellControlElements.map(control => control.disabled), [false, 
 const armRunState = { running: false }, armRunMaterial = {}, armRunTarget = { isMesh: true, material: armRunMaterial }, armRunLinks = [], armRunModes = [];
 const armRunControls = [{ disabled: false }, { disabled: true }];
 const armRunGame = { ...shellRunGame, paused: true, players: [{ darkMaterial: armRunMaterial, rightForearm: { children: [null, null, armRunTarget] } }] };
-let armRunView = "hand-side", armWaits = 0, expectedDiagnosticTarget = armRunTarget, armGeometryCalls = 0, shoulderGeometryCalls = 0;
+let armRunView = "hand-side", armWaits = 0, expectedDiagnosticTarget = armRunTarget, armGeometryCalls = 0, shoulderGeometryCalls = 0, envelopeCalls = 0;
 const armRunHarness = new Function("game", "cameraReview", "document", "select", "waitForReviewFrame", "withHelmetShellDiagnostic", "shellReviewState", "withElbowSilhouette", `
   const resetReview={}, cacheReview={}, decoyReview={}, resetPhase="ready", sceneSerial=1, errorCount=0, renderedFrames=0, aoOutput="final";
   let stress=false, cameraOffset=.31;
@@ -849,9 +858,10 @@ const armRunHarness = new Function("game", "cameraReview", "document", "select",
     assert.deepEqual(armRunControls.map(control => control.disabled), [true, true]); },
   async (mode, action, target) => { assert.ok(target === expectedDiagnosticTarget); armRunModes.push(mode); await action(); },
   target => { assert.ok(target === expectedDiagnosticTarget, "every sample records the material target actually overridden"); return { targetName: "actual forearm batch" }; },
-  async (target, capture, shoulder) => {
+  async (target, capture, shoulder, preserveZ) => {
     assert.ok(target === expectedDiagnosticTarget);
     if (shoulder) shoulderGeometryCalls++; else armGeometryCalls++;
+    if (preserveZ) envelopeCalls++;
     return capture();
   });
 await armRunHarness.run(false, true);
@@ -952,6 +962,14 @@ assert.ok(armRunState.samples.every(sample => sample.diagnosticTarget.startsWith
 for (const args of [[false, false, false, true, true], [true, false, false, false, true]]) {
   await armRunHarness.run(...args); assert.match(armRunState.error, /Shoulder silhouette requires/); assert.equal(armWaits, 89);
 }
+assert.equal(armRunHarness.offset(), .31); assert.equal(armRunState.running, false); assert.equal(armRunState.shell, false);
+assert.deepEqual(armRunControls.map(control => control.disabled), [false, true]);
+await armRunHarness.run(true, false, false, true, "envelope");
+assert.equal(armRunState.error, null); assert.equal(armWaits, 98); assert.equal(envelopeCalls, 1);
+assert.deepEqual(armRunState.samples.map(sample => sample.mode), ["baseline", "baseline", "baseline", "ellipsoidal-z-envelope", "ellipsoidal-z-envelope", "ellipsoidal-z-envelope", "restored", "restored", "restored"]);
+assert.deepEqual(armRunModes, [], "envelope control preserves the exact published material");
+await armRunHarness.run(true, false, false, true, "typo");
+assert.match(armRunState.error, /Unknown shoulder silhouette/); assert.equal(armWaits, 98);
 assert.equal(armRunHarness.offset(), .31); assert.equal(armRunState.running, false); assert.equal(armRunState.shell, false);
 assert.deepEqual(armRunControls.map(control => control.disabled), [false, true]);
 const geometryNormalToken = {}, colorOutputToken = {};

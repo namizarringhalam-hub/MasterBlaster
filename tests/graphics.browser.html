@@ -37,6 +37,7 @@
 <button id="shoulder-diagnosis">Diagnose shoulder and upper arm</button>
 <button id="shoulder-comparison">Check shoulder finish restoration</button>
 <button id="shoulder-silhouette">Compare shoulder ball silhouette</button>
+<button id="shoulder-envelope">Compare ellipsoidal shoulder Z envelope</button>
 <button id="arm-comparison">Check elbow finish restoration</button>
 <button id="elbow-comparison">Compare elbow silhouette</button>
 <button id="boost-passage">Test boost passage</button>
@@ -737,7 +738,8 @@ async function runCameraReview(boostPassage = false) {
 }
 select("camera-sequence").onclick = () => runCameraReview();
 select("boost-passage").onclick = () => runCameraReview(true);
-async function withElbowSilhouette(target, capture, shoulder = false) {
+async function withElbowSilhouette(target, capture, shoulder = false, preserveZEnvelope = false) {
+  if (preserveZEnvelope && !shoulder) throw new Error("Z-envelope control is shoulder-only");
   const original = target.geometry;
   // Integrated elbow: compare the previous contour without touching the fist.
   if (!shoulder && original.type === "SphereGeometry") {
@@ -766,7 +768,14 @@ async function withElbowSilhouette(target, capture, shoulder = false) {
           actual.count !== original.attributes.position.count || start < 0 ||
           !reference.array.every((value, index) => Object.is(value, actual.array[start + index]))) throw new Error(`Unexpected elbow ${name} suffix`);
     }
-    fine = sphere(16, 10); temporary = new THREE.BufferGeometry();
+    fine = sphere(16, 10);
+    if (preserveZEnvelope) {
+      coarse.computeBoundingBox(); fine.computeBoundingBox();
+      // A deliberately ellipsoidal control, not an unchanged-radius sphere.
+      // BufferGeometry.scale also applies the inverse-transpose normal matrix.
+      fine.scale(1, 1, coarse.boundingBox.max.z / fine.boundingBox.max.z);
+    }
+    temporary = new THREE.BufferGeometry();
     for (const [name, actual] of Object.entries(original.attributes)) {
       const start = actual.array.length - coarse.attributes[name].array.length, replacement = fine.attributes[name];
       const data = new Float32Array(start + replacement.array.length);
@@ -845,6 +854,7 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
   const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
   const originalOffset = cameraOffset, serial = sceneSerial, initialErrors = errorCount;
   try {
+    if (![false, true, "envelope"].includes(shoulderSilhouette)) throw new Error("Unknown shoulder silhouette control");
     if (shoulderSilhouette && (!shoulder || !compareFinish)) throw new Error("Shoulder silhouette requires the shoulder comparison route");
     if (shoulder && (forearm || elbowSilhouette)) throw new Error("Shoulder diagnosis cannot run an elbow comparison");
     if (elbowSilhouette && (!compareFinish || !forearm)) throw new Error("Elbow silhouette comparison requires the satin forearm route");
@@ -872,7 +882,7 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
       throw new Error("Wait for all combat lights to expire before shell diagnosis");
     if (compareFinish && !forearm && !shoulder && !game.players[0].helmetShell) throw new Error("Select the capsule helmet for its finish comparison");
     for (const [control] of controls) control.disabled = true;
-    const modes = shoulderSilhouette ? ["baseline", "shoulder-silhouette", "restored"]
+    const modes = shoulderSilhouette ? ["baseline", shoulderSilhouette === "envelope" ? "ellipsoidal-z-envelope" : "shoulder-silhouette", "restored"]
       : elbowSilhouette && separateElbow ? ["previous-elbow", "elbow-silhouette", "restored"]
       : elbowSilhouette ? ["satin-baseline", "elbow-silhouette", "satin-restored"]
       : compareFinish ? ["baseline", forearm || shoulder ? "satin-trial" : "previous-finish", "restored"] : ["baseline", "explicit-environment", "no-environment", "normals", "restored"];
@@ -895,7 +905,7 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
         }
       };
       if (shoulderSilhouette) {
-        if (mode === "shoulder-silhouette") await withElbowSilhouette(target, capture, true);
+        if (mode === "shoulder-silhouette" || mode === "ellipsoidal-z-envelope") await withElbowSilhouette(target, capture, true, shoulderSilhouette === "envelope");
         else await capture();
       } else if (elbowSilhouette && separateElbow) {
         if (mode === "previous-elbow") await withHelmetShellDiagnostic("previous-finish", () => withElbowSilhouette(target, capture), target);
@@ -915,6 +925,7 @@ select("arm-diagnosis").onclick = () => runShellReview(false, true);
 select("shoulder-diagnosis").onclick = () => runShellReview(false, false, false, true);
 select("shoulder-comparison").onclick = () => runShellReview(true, false, false, true);
 select("shoulder-silhouette").onclick = () => runShellReview(true, false, false, true, true);
+select("shoulder-envelope").onclick = () => runShellReview(true, false, false, true, "envelope");
 select("arm-comparison").onclick = () => runShellReview(true, true);
 select("elbow-comparison").onclick = () => runShellReview(true, true, true);
 async function runDecoyReview(crossTier = false, overlap = false) {
