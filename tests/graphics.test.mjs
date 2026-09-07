@@ -849,6 +849,38 @@ await assert.rejects(elbowControl(shoulderTarget, () => assert.fail("invalid env
 const capAlignment = new Function("THREE", "game", "shoulderChamferGeometry", `${elbowControlSource}; return withShoulderCapAlignment;`)(THREE, shellGame, shoulderChamferGeometry);
 const capHeroBefore = shellGame.players[0];
 const capMaterialSplit = new Function("THREE", "game", "shoulderChamferGeometry", `${elbowControlSource}; return withCapMaterialSplit;`)(THREE, shellGame, shoulderChamferGeometry);
+const capSurfaceFinish = new Function("THREE", `${elbowControlSource}; return withCapSurfaceFinish;`)(THREE);
+{
+  const material = new THREE.MeshPhysicalMaterial({ emissiveIntensity: .16, roughness: .265, clearcoat: .6 });
+  const before = material.toJSON(); let firstData;
+  for (const fail of [false, true]) {
+    let texture, disposed = 0;
+    const capture = () => {
+      texture = material.normalMap; texture.addEventListener("dispose", () => disposed++);
+      assert.deepEqual(material.normalScale.toArray(), [.025, .025]);
+      assert.equal(texture.image.width, 64); assert.equal(texture.image.height, 64);
+      assert.equal(texture.colorSpace, THREE.NoColorSpace); assert.equal(texture.generateMipmaps, true);
+      assert.equal(texture.wrapS, THREE.RepeatWrapping); assert.equal(texture.wrapT, THREE.RepeatWrapping);
+      assert.equal(texture.minFilter, THREE.LinearMipmapLinearFilter); assert.equal(texture.magFilter, THREE.LinearFilter); assert.equal(texture.anisotropy, 4);
+      const data = texture.image.data;
+      if (firstData) assert.deepEqual(data, firstData); else firstData = data.slice();
+      for (let i = 0; i < data.length; i += 4) {
+        const x = (data[i] / 255 * 2 - 1) * .025, y = (data[i + 1] / 255 * 2 - 1) * .025, z = data[i + 2] / 255 * 2 - 1;
+        assert.ok(Math.atan2(Math.hypot(x, y), z) < 2 * Math.PI / 180); assert.equal(data[i + 3], 255);
+      }
+      const json = material.toJSON();
+      assert.equal(json.normalMapType, THREE.TangentSpaceNormalMap);
+      delete json.normalMap; delete json.normalMapType; delete json.normalScale; delete json.textures; delete json.images;
+      assert.deepEqual(json, before, "no unrelated material property changes");
+      if (fail) throw new Error("finish interrupted");
+    };
+    if (fail) await assert.rejects(capSurfaceFinish(material, capture), /finish interrupted/); else await capSurfaceFinish(material, capture);
+    assert.equal(disposed, 1); assert.equal(material.normalMap, null); assert.deepEqual(material.toJSON(), before);
+  }
+  material.normalMap = new THREE.Texture();
+  await assert.rejects(capSurfaceFinish(material, () => assert.fail("existing texture overwritten")), /untextured baseline/);
+  material.normalMap.dispose(); material.dispose();
+}
 {
   const hero = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
   shellGame.players[0] = hero;
@@ -1145,7 +1177,7 @@ const armRunState = { running: false }, armRunMaterial = {}, armRunTarget = { is
 const armRunControls = [{ disabled: false }, { disabled: true }];
 const armRunGame = { ...shellRunGame, paused: true, players: [{ darkMaterial: armRunMaterial, rightForearm: { children: [null, null, armRunTarget] } }] };
 let armRunView = "hand-side", armWaits = 0, expectedDiagnosticTarget = armRunTarget, armGeometryCalls = 0, shoulderGeometryCalls = 0, envelopeCalls = 0, capCalls = 0, bearingCalls = 0, splitCalls = 0, splitRestores = 0, interruptCapEmission = false;
-const armRunHarness = new Function("game", "cameraReview", "document", "select", "waitForReviewFrame", "withHelmetShellDiagnostic", "shellReviewState", "withElbowSilhouette", "withShoulderCapAlignment", "withCapMaterialSplit", `
+const armRunHarness = new Function("game", "cameraReview", "document", "select", "waitForReviewFrame", "withHelmetShellDiagnostic", "shellReviewState", "withElbowSilhouette", "withShoulderCapAlignment", "withCapMaterialSplit", "withCapSurfaceFinish", `
   const resetReview={}, cacheReview={}, decoyReview={}, resetPhase="ready", sceneSerial=1, errorCount=0, renderedFrames=0, aoOutput="final";
   let stress=false, cameraOffset=.31;
   ${shellRunSource}
@@ -1165,7 +1197,8 @@ const armRunHarness = new Function("game", "cameraReview", "document", "select",
     if (bearingFit) { assert.equal(shoulder, true); assert.equal(preserveZ, false); assert.equal(bearingFit, "previous"); bearingCalls++; }
     return capture();
   }, async (target, capture, previous, faceNormals) => { assert.ok(target === expectedDiagnosticTarget); assert.equal(previous, !faceNormals); capCalls++; return capture(); },
-  async (target, capture) => { assert.ok(target === expectedDiagnosticTarget); splitCalls++; try { return await capture({ emissiveIntensity: .16 }); } finally { splitRestores++; } });
+  async (target, capture) => { assert.ok(target === expectedDiagnosticTarget); splitCalls++; try { return await capture({ emissiveIntensity: .16 }); } finally { splitRestores++; } },
+  async (material, capture) => { assert.equal(material.emissiveIntensity, .16); return capture(); });
 await armRunHarness.run(false, true);
 assert.equal(armRunState.error, null); assert.equal(armWaits, 13); assert.equal(armRunLinks.length, 13);
 assert.ok(armRunLinks.every(link => link.download.startsWith("forearm-")), "download names disclose the actual diagnostic scope");
@@ -1333,6 +1366,14 @@ assert.deepEqual(armRunState.samples.map(sample => sample.capIntensity), [undefi
 interruptCapEmission = true;
 await armRunHarness.run(true, false, false, true, "cap-emission");
 assert.match(armRunState.error, /cap emission interrupted/); assert.equal(armWaits, 183); assert.equal(splitRestores, 2);
+interruptCapEmission = false;
+await armRunHarness.run(true, false, false, true, "cap-finish");
+assert.equal(armRunState.error, null); assert.equal(armWaits, 198); assert.equal(splitRestores, 3);
+assert.deepEqual(armRunState.samples.map(sample => sample.mode), ["chamfer-baseline", "split-baseline", "cap-finish", "split-restored", "chamfer-restored"].flatMap(mode => [mode, mode, mode]));
+assert.ok(armRunState.samples.every(sample => sample.capIntensity === undefined || sample.capIntensity === .16));
+interruptCapEmission = true;
+await armRunHarness.run(true, false, false, true, "cap-finish");
+assert.match(armRunState.error, /cap emission interrupted/); assert.equal(splitRestores, 4);
 assert.equal(armRunState.running, false); assert.equal(armRunState.shell, false); assert.equal(armRunHarness.offset(), .31);
 assert.deepEqual(armRunControls.map(control => control.disabled), [false, true]);
 const geometryNormalToken = {}, colorOutputToken = {};
