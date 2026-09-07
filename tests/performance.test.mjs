@@ -5,7 +5,6 @@ import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
 import { WEAPONS, projectileStepCount } from "../src/gameData.js";
 import { Fighter } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
-import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { PLAYER_TEXT } from "../PLAYER_TEXT.js";
 
 const botScene = new THREE.Scene();
@@ -21,6 +20,50 @@ bot.group.traverse((object) => { if (object.isMesh || object.isLine || object.is
 assert.ok(fighterRenderables <= 30, `a complete fighter stays within the thirty-renderable budget (received ${fighterRenderables})`);
 assert.ok(bot.botTargetPoint?.isVector3, "bot target-position scratch storage survives AI target initialization");
 assert.equal(bot.botTarget, null, "bot target selection remains independent from its target-position scratch vector");
+assert.ok(bot.thrusterLights.isMesh && !bot.thrusterLights.isInstancedMesh,
+  "the fighter's two flames must share an ordinary mesh without unique per-fighter instance bindings");
+const referenceFlame = new THREE.ConeGeometry(.105, .36, 6, 1, true);
+const referenceTransform = new THREE.Object3D();
+for (const scale of [.65, 1.2, 1.8]) {
+  bot.thrusterScale = scale;
+  bot.update(0, new THREE.Vector3(), new THREE.Vector3(0, 0, 1), {}, { resolve: () => ({ grounded: true }), boostAt: () => null });
+  bot.thrusterLights.updateMatrix();
+  assert.equal(bot.thrusterLights.scale.y, scale, "actual fighter update animates only the pair's local scale");
+  assert.deepEqual(bot.thrusterLights.position.toArray(), [0, 1.02, -.49], "thrust cannot move the common anchor");
+  const actual = bot.thrusterLights.geometry.clone().applyMatrix4(bot.thrusterLights.matrix);
+  const expectedBounds = new THREE.Box3();
+  assert.equal(actual.index.count, referenceFlame.index.count * 2);
+  assert.equal(actual.groups.length, 0, "both flames retain a single material batch");
+  for (let instance = 0; instance < 2; instance++) {
+    referenceTransform.position.set(instance ? .2 : -.2, 1.02, -.49);
+    referenceTransform.rotation.set(Math.PI, 0, 0); referenceTransform.scale.set(1, scale, 1); referenceTransform.updateMatrix();
+    // Old instance matrices are float32, as are the new merged vertex buffers.
+    const matrix = new THREE.Matrix4().fromArray(new Float32Array(referenceTransform.matrix.elements));
+    const expected = referenceFlame.clone().applyMatrix4(matrix);
+    expected.computeBoundingBox(); expectedBounds.union(expected.boundingBox);
+    for (const name of ["position", "normal", "uv"]) {
+      const source = expected.attributes[name].array, values = actual.attributes[name].array;
+      for (let i = 0; i < source.length; i++) assert.ok(Math.abs(source[i] - values[instance * source.length + i]) < 2e-7,
+        `scale ${scale}, flame ${instance}, ${name}[${i}] remains float32-equivalent`);
+    }
+    const offset = instance * referenceFlame.attributes.position.count;
+    assert.deepEqual(actual.index.array.slice(instance * referenceFlame.index.count, (instance + 1) * referenceFlame.index.count),
+      referenceFlame.index.array.map(index => index + offset), "triangle order and winding are unchanged");
+    expected.dispose();
+  }
+  actual.computeBoundingBox();
+  assert.ok(actual.boundingBox.min.distanceTo(expectedBounds.min) < 2e-7 && actual.boundingBox.max.distanceTo(expectedBounds.max) < 2e-7,
+    "animation preserves the full flame bounds, not just its tip");
+  actual.dispose();
+}
+referenceFlame.dispose();
+const otherFighter = new Fighter(botScene, { id: "independent-thruster", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+const otherOpacity = otherFighter.thrusterMaterial.opacity;
+bot.thrusterMaterial.opacity = .1;
+assert.notEqual(bot.thrusterMaterial, otherFighter.thrusterMaterial);
+assert.equal(otherFighter.thrusterMaterial.opacity, otherOpacity, "thruster intensity remains independent per fighter");
+assert.equal(bot.thrusterLights.frustumCulled, true);
+otherFighter.dispose();
 bot.dispose();
 
 let maximumFighterRenderables = 0;
@@ -131,7 +174,7 @@ const mainSource = fs.readFileSync(new URL("../src/main.js", import.meta.url), "
 const decoyMethods = mainSource.slice(mainSource.indexOf("\n  spawnDecoy("), mainSource.indexOf("\n  damagePlayer("));
 const removeObjectMethod = mainSource.slice(mainSource.indexOf("\n  removeObject(object) {"), mainSource.indexOf("\n}\n\nconst game ="));
 const transientMethod = mainSource.slice(mainSource.indexOf("\n  clearTransientNetworkCombat() {"), mainSource.indexOf("\n  removeOwnedCombat("));
-const decoyHarness = new Function("THREE", "mergeGeometries", `return new (class {${decoyMethods}${removeObjectMethod}${transientMethod}})();`)(THREE, mergeGeometries);
+const decoyHarness = new Function("THREE", `return new (class {${decoyMethods}${removeObjectMethod}${transientMethod}})();`)(THREE);
 Object.assign(decoyHarness, { scene: new THREE.Scene(), world: { surfaceHeightAt: () => 0 },
   decoys: [], projectiles: [], hazards: [], effects: [], decoyRenderAnchor: null, spawnBurst() {}, renderPipeline: { quality: "high", direct: false } });
 const decoyOwner = new Fighter(decoyHarness.scene, { id: "decoy-qa", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
@@ -148,18 +191,10 @@ decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher)
 const firstDecoy = decoyHarness.decoys[0]; trackDecoy(firstDecoy.mesh);
 const thrusterSnapshot = firstDecoy.mesh.getObjectByName("Fighter thruster pair");
 assert.ok(thrusterSnapshot.isMesh && !thrusterSnapshot.isInstancedMesh, "a frozen decoy pair uses one ordinary draw without per-clone instance bindings");
-assert.equal(thrusterSnapshot.geometry.index.count, decoyOwner.thrusterLights.geometry.index.count * 2);
-const thrusterMatrix = new THREE.Matrix4();
-for (let instance = 0; instance < 2; instance++) {
-  decoyOwner.thrusterLights.getMatrixAt(instance, thrusterMatrix);
-  const expected = decoyOwner.thrusterLights.geometry.clone().applyMatrix4(thrusterMatrix);
-  for (const name of ["position", "normal", "uv"]) {
-    const source = expected.attributes[name].array, actual = thrusterSnapshot.geometry.attributes[name].array;
-    assert.deepEqual(actual.slice(instance * source.length, (instance + 1) * source.length), source,
-      `decoy thruster ${instance} retains the exact ${name} data`);
-  }
-  expected.dispose();
-}
+assert.notEqual(thrusterSnapshot.geometry, decoyOwner.thrusterLights.geometry);
+assert.deepEqual(thrusterSnapshot.geometry.index.array, decoyOwner.thrusterLights.geometry.index.array);
+for (const name of ["position", "normal", "uv"]) assert.deepEqual(thrusterSnapshot.geometry.attributes[name].array,
+  decoyOwner.thrusterLights.geometry.attributes[name].array, `decoy pair preserves exact ${name} data`);
 thrusterSnapshot.onAfterRender();
 assert.equal(firstDecoy.mesh.userData.decoyRendered, false, "a partially visible decoy cannot retain incomplete shader coverage");
 assert.ok(thrusterSnapshot.onAfterRender === THREE.Object3D.prototype.onAfterRender, "render marker removes its own per-draw work after first use");
@@ -188,24 +223,17 @@ assert.ok([...decoyDisposals.values()].every(count => count === 1), "all owned d
 decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
 decoyHarness.removeDecoy(decoyHarness.decoys[0]);
 assert.equal(decoyHarness.decoyRenderAnchor, null, "an offscreen/unrendered first decoy must not occupy the sole shader anchor");
-for (const scale of [.65, 1.8]) {
-  for (let instance = 0; instance < 2; instance++) {
-    thrusterMatrix.makeScale(1, scale, 1).setPosition(instance ? .2 : -.2, 1.02, -.49);
-    decoyOwner.thrusterLights.setMatrixAt(instance, thrusterMatrix);
-  }
+for (const scale of [.65, 1.2, 1.8]) {
+  decoyOwner.thrusterLights.scale.y = scale;
+  decoyOwner.thrusterLights.updateMatrix();
   decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
   const snapshot = decoyHarness.decoys[0].mesh.getObjectByName("Fighter thruster pair");
-  for (let instance = 0; instance < 2; instance++) {
-    decoyOwner.thrusterLights.getMatrixAt(instance, thrusterMatrix);
-    const expected = decoyOwner.thrusterLights.geometry.clone().applyMatrix4(thrusterMatrix);
-    for (const name of ["position", "normal", "uv"]) {
-      const values = expected.attributes[name].array;
-      assert.deepEqual(snapshot.geometry.attributes[name].array.slice(instance * values.length, (instance + 1) * values.length), values);
-    }
-    expected.dispose();
-  }
+  snapshot.updateMatrix();
+  assert.deepEqual(snapshot.matrix.elements, decoyOwner.thrusterLights.matrix.elements, "a decoy freezes the full flame pose");
   const frozenPositions = snapshot.geometry.attributes.position.array.slice();
-  decoyOwner.thrusterLights.setMatrixAt(0, new THREE.Matrix4().makeScale(9, 9, 9));
+  decoyOwner.thrusterLights.scale.y = 9;
+  decoyOwner.thrusterLights.updateMatrix();
+  assert.equal(snapshot.scale.y, scale, "later owner thrust cannot move or resize the decoy's flames");
   assert.deepEqual(snapshot.geometry.attributes.position.array, frozenPositions, "later owner thrust cannot change an existing decoy pose");
   decoyHarness.clearTransientNetworkCombat();
 }

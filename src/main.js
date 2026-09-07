@@ -1,7 +1,6 @@
 import * as THREE from "three/webgpu";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { Line2 } from "three/addons/lines/webgpu/Line2.js";
-import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { SoundBoard } from "./audio.js";
 import { CombatVisuals } from "./combatVisuals.js";
 import { ArenaWorld } from "./world.js";
@@ -3067,9 +3066,7 @@ class BlasterBattle {
   spawnDecoy(position, owner, weapon) {
     const mesh = owner.group.clone(true);
     const materials = [];
-    const thrusterSnapshots = [];
     mesh.traverse((child) => {
-      if (child.isInstancedMesh && child.name === "Fighter thruster pair") thrusterSnapshots.push(child);
       if (child.geometry) child.geometry = child.geometry.clone();
       if (!child.material) return;
       const source = Array.isArray(child.material) ? child.material : [child.material];
@@ -3089,21 +3086,6 @@ class BlasterBattle {
       child.castShadow = false;
       child.receiveShadow = false;
     });
-    // Decoys freeze the source pose. Bake the two thrusters into the same single
-    // draw so fresh instance-buffer identities cannot generate unique shaders.
-    for (const thrusters of thrusterSnapshots) {
-      const matrix = new THREE.Matrix4(), parts = [];
-      for (let index = 0; index < thrusters.count; index++) {
-        thrusters.getMatrixAt(index, matrix);
-        parts.push(thrusters.geometry.clone().applyMatrix4(matrix));
-      }
-      const snapshot = new THREE.Mesh().copy(thrusters, false);
-      snapshot.geometry = mergeGeometries(parts, false);
-      for (const part of parts) part.dispose();
-      thrusters.geometry.dispose();
-      const parent = thrusters.parent;
-      parent.remove(thrusters); parent.add(snapshot);
-    }
     mesh.userData.decoyRendered = false;
     mesh.userData.decoyPendingMeshes = 0;
     mesh.userData.decoyRenderContext = null;

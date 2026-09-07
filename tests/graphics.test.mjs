@@ -15,7 +15,7 @@ import { surfaceTextures } from "../src/surfaceTextures.js";
 const graphicsFixture = readFileSync(new URL("./graphics.browser.html", import.meta.url), "utf8");
 // Execute the exact capture block: later frame counters must not alter evidence.
 const captureSource = graphicsFixture.slice(graphicsFixture.indexOf("    const grapple = game.players[0]?.grapple;"), graphicsFixture.indexOf('    const link = select("canvas-capture");'));
-const captureFrame = new Function("game", "renderedFrames", "sceneSerial", "select", "ropeRenders", "ropeRendersBefore", "errorCount", `let canvasCapture; ${captureSource}; return canvasCapture;`);
+const captureFrame = new Function("game", "renderedFrames", "sceneSerial", "select", "ropeRenders", "ropeRendersBefore", "errorCount", "thrusterSortControl", "thrusterRenderOrder", `let canvasCapture; ${captureSource}; return canvasCapture;`);
 for (const renders of [0, 1]) {
   const captureGame = { players: [{ grapple: { anchor: new THREE.Vector3(1, 2, 3), line: { geometry: { instanceCount: 1 }, material: { blending: THREE.NoBlending } } } }],
     renderer: { info: { render: { drawCalls: 378, triangles: 169330 } } }, renderPipeline: { direct: false } };
@@ -27,6 +27,28 @@ for (const renders of [0, 1]) {
   captureGame.players = [];
   assert.equal(captureFrame(captureGame, 9, 1, () => ({ value: "effects" }), 4, 4, 0).rope, null);
 }
+const sortControlSource = graphicsFixture.slice(graphicsFixture.indexOf("function clearThrusterSortControl("), graphicsFixture.indexOf("let settleUntil"));
+const sortScene = new THREE.Scene(), sortCamera = new THREE.PerspectiveCamera(62, 16 / 9, .1, 300);
+sortCamera.position.set(1.6, 1.7, 2.3); sortCamera.lookAt(0, 1.15, .49); sortCamera.updateMatrixWorld(true);
+const sortFighter = new Fighter(sortScene, { id: "sort-control", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+const modernFlames = sortFighter.thrusterLights, originalParent = modernFlames.parent, originalCallback = modernFlames.onBeforeRender;
+const sortHarness = new Function("THREE", "game", `let stress=false, resetReview={}, cacheReview={}, cameraReview={}, decoyReview={}, thrusterSortControl=null, thrusterRenderOrder=[], captureCanvas=false;
+  ${sortControlSource}; return { toggle: toggleThrusterSortControl, clear: clearThrusterSortControl, state: () => thrusterSortControl };`)(THREE, { scene: sortScene, camera: sortCamera, players: [sortFighter] });
+sortHarness.toggle();
+const sortControl = sortHarness.state();
+assert.ok(sortControl.quadZ > Math.min(sortControl.legacyZ, sortControl.modernZ) && sortControl.quadZ < Math.max(sortControl.legacyZ, sortControl.modernZ),
+  "overlap control must exercise the changed transparent sort keys");
+assert.equal(sortControl.mode, "merged");
+sortHarness.toggle();
+assert.equal(sortControl.mode, "legacy"); assert.equal(modernFlames.parent, null);
+assert.ok(sortControl.legacy.parent === originalParent);
+const controlResources = [sortControl.legacy.geometry, sortControl.legacy.material, sortControl.quad.geometry, sortControl.quad.material];
+const disposed = new Map(controlResources.map(resource => [resource, 0]));
+for (const resource of controlResources) resource.addEventListener("dispose", () => disposed.set(resource, disposed.get(resource) + 1));
+sortHarness.clear(); sortHarness.clear();
+assert.ok(modernFlames.parent === originalParent && modernFlames.onBeforeRender === originalCallback, "cleanup restores the real fighter even when the legacy control is active");
+assert.ok([...disposed.values()].every(count => count === 1));
+sortFighter.dispose();
 const hideAOObjectSource = graphicsFixture.slice(graphicsFixture.indexOf("function hideAOObjectForReview("), graphicsFixture.indexOf("const requestedAOOutput"));
 for (const hidden of [null, "grid", "route", "unknown"]) {
   const hide = new Function("hiddenAOObject", `${hideAOObjectSource}; return hideAOObjectForReview;`)(hidden);
@@ -124,6 +146,11 @@ assert.ok(shaderTarget.build() === shaderTarget.object);
 assert.equal(startupCalls["nodeBuilder.build"].calls, 1, "actual shader builds are counted separately from cache lookups");
 assert.equal(startupCalls["nodeBuilder.build"].slowest[0].object, "Fighter thruster pair");
 assert.equal(startupCalls["nodeBuilder.build"].slowest[0].material, "MeshBasicMaterial");
+for (let i = 0; i < 20; i++) shaderTarget.build();
+assert.deepEqual(startupCalls["nodeBuilder.build"].thrusters, { calls: 21, totalMs: 21, maxMs: 1 }, "target aggregate counts every build, not just the top eight");
+assert.equal(startupCalls["nodeBuilder.build"].slowest.length, 8);
+shaderTarget.object = { name: "Other mesh" }; shaderTarget.build();
+assert.equal(startupCalls["nodeBuilder.build"].thrusters.calls, 21, "other objects cannot inflate target attribution");
 const expectedFailure = new Error("original failure");
 tracedTarget.fail = () => { throw expectedFailure; };
 traceMethod(tracedTarget, "fail", "test");

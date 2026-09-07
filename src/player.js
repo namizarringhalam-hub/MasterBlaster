@@ -337,16 +337,15 @@ export class Fighter {
       blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false
     });
     this.thrusterMaterial = thrusterMaterial;
-    this.thrusterLights = new THREE.InstancedMesh(new THREE.ConeGeometry(.105, .36, 6, 1, true), thrusterMaterial, 2);
+    // Both flames share one animated scale and material. An ordinary indexed
+    // pair avoids per-fighter instance shader keys and per-frame buffer uploads.
+    const flame = new THREE.ConeGeometry(.105, .36, 6, 1, true).rotateX(Math.PI);
+    const leftFlame = flame.clone().translate(-.2, 0, 0), rightFlame = flame.translate(.2, 0, 0);
+    this.thrusterLights = new THREE.Mesh(mergeGeometries([leftFlame, rightFlame], false), thrusterMaterial);
+    leftFlame.dispose(); rightFlame.dispose();
     this.thrusterLights.name = "Fighter thruster pair";
-    this.thrusterTransform = new THREE.Object3D();
+    this.thrusterLights.position.set(0, 1.02, -.49);
     this.thrusterScale = 1;
-    for (let index = 0; index < 2; index++) {
-      this.thrusterTransform.position.set(index ? .2 : -.2, 1.02, -.49);
-      this.thrusterTransform.rotation.x = Math.PI;
-      this.thrusterTransform.updateMatrix();
-      this.thrusterLights.setMatrixAt(index, this.thrusterTransform.matrix);
-    }
     if (costumeVariant === 0) {
       leftShoulder.scale.set(1.3, .82, 1.22); rightShoulder.scale.copy(leftShoulder.scale);
       helmetCrest.scale.set(.94, 1.34, 1.12);
@@ -1140,14 +1139,7 @@ export class Fighter {
     this.visor.rotation.x = this.helmet.rotation.x;
     const thrust = landing > .05 ? 1.7 + landing * .7 : grappled ? 1.8 : this.grounded ? .65 : 1.2 + clamp(horizontalSpeed / 32, 0, .65);
     this.thrusterScale = THREE.MathUtils.damp(this.thrusterScale, thrust, 11, dt);
-    for (let index = 0; index < 2; index++) {
-      this.thrusterTransform.position.set(index ? .2 : -.2, 1.02, -.49);
-      this.thrusterTransform.rotation.set(Math.PI, 0, 0);
-      this.thrusterTransform.scale.set(1, this.thrusterScale, 1);
-      this.thrusterTransform.updateMatrix();
-      this.thrusterLights.setMatrixAt(index, this.thrusterTransform.matrix);
-    }
-    this.thrusterLights.instanceMatrix.needsUpdate = true;
+    this.thrusterLights.scale.y = this.thrusterScale;
     if (this.thrusterMaterial) this.thrusterMaterial.opacity = .32 + clamp(thrust / 2.4, 0, 1) * .48;
     const hit = this.hitTimer > 0;
     const hitFlash = hit ? .55 + hitWave * .95 : 0;

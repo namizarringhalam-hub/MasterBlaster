@@ -9,11 +9,12 @@
 <nav style="position:fixed;z-index:100;inset:auto 0 0;background:#07111def;padding:8px;display:flex;gap:8px;flex-wrap:wrap;font:12px monospace">
 <label>Tier <select id="tier"><option>high</option><option>medium</option><option>low</option></select></label>
 <label>Theme <select id="seed"><option>BLAST-01</option><option>SOLAR-01</option><option>ION-01</option></select></label>
-<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>weapon</option><option>effects</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option></select></label>
+<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>thrusters</option><option>weapon</option><option>effects</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option></select></label>
 <label>Weapon <select id="weapon"></select></label>
 <label>Pose <select id="pose"><option>aim</option><option>reload</option><option>fire</option></select></label>
 <button id="burst">Fire / impact</button><button id="destroy">Collapse tower</button><button id="grapple">Toggle grapple</button>
 <button id="inspect-surface">Inspect footing material</button>
+<button id="thruster-sort">Toggle thruster sort control</button><button id="thruster-dust">Overlap structural dust</button>
 <button id="stress">Run 16-fighter stress</button><button id="reset">Reset scene</button>
 <button id="reset-ten">Test ten resets</button>
 <button id="reset-decoys">Test ten decoy resets</button>
@@ -219,8 +220,12 @@ function traceStartupMethod(target, name, prefix) {
       const ms = performance.now() - started;
       const record = startupCalls[`${prefix}.${name}`] ||= { calls: 0, totalMs: 0, maxMs: 0, slowest: [] };
       record.calls++; record.totalMs += ms; record.maxMs = Math.max(record.maxMs, ms);
+      const object = args[0]?.object || this.object;
+      if (object?.name === "Fighter thruster pair") {
+        const thrusters = record.thrusters ||= { calls: 0, totalMs: 0, maxMs: 0 };
+        thrusters.calls++; thrusters.totalMs += ms; thrusters.maxMs = Math.max(thrusters.maxMs, ms);
+      }
       if (record.slowest.length < 8 || ms > record.slowest.at(-1).ms) {
-        const object = args[0]?.object || this.object;
         record.slowest.push({ ms, object: object?.name || object?.type, material: (args[0]?.material || this.material)?.type,
           stage: args[0]?.stage, shaderLength: args[0]?.code?.length, parameter: name === "getProgramParameter" ? args[1] : undefined });
         record.slowest.sort((a, b) => b.ms - a.ms); record.slowest.length = Math.min(8, record.slowest.length);
@@ -250,6 +255,51 @@ let cameraOffset = 0;
 let renderedFrames = 0;
 let captureCanvas = false;
 let canvasCapture = null, ropeRenders = 0;
+let thrusterSortControl = null, thrusterRenderOrder = [];
+function clearThrusterSortControl() {
+  if (!thrusterSortControl) return;
+  const { modern, legacy, quad, parent, beforeRender } = thrusterSortControl;
+  parent.add(modern); modern.onBeforeRender = beforeRender;
+  for (const mesh of [legacy, quad]) { mesh.removeFromParent(); mesh.geometry.dispose(); mesh.material.dispose(); }
+  thrusterSortControl = null;
+}
+function toggleThrusterSortControl() {
+  if (stress || resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
+  if (!thrusterSortControl) {
+    const modern = game.players[0].thrusterLights, parent = modern.parent;
+    const legacy = new THREE.InstancedMesh(new THREE.ConeGeometry(.105, .36, 6, 1, true), modern.material.clone(), 2);
+    const transform = new THREE.Object3D();
+    for (let i = 0; i < 2; i++) {
+      transform.position.set(i ? .2 : -.2, 1.02, -.49); transform.rotation.x = Math.PI;
+      transform.scale.y = modern.scale.y; transform.updateMatrix(); legacy.setMatrixAt(i, transform.matrix);
+    }
+    game.scene.updateMatrixWorld(true);
+    modern.geometry.computeBoundingSphere(); legacy.geometry.computeBoundingSphere();
+    const oldCenter = legacy.geometry.boundingSphere.center.clone().applyMatrix4(parent.matrixWorld);
+    const newCenter = modern.geometry.boundingSphere.center.clone().applyMatrix4(modern.matrixWorld);
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshBasicMaterial({
+      color: 0x66727a, transparent: true, opacity: .5, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true, toneMapped: false }));
+    quad.position.copy(oldCenter).lerp(newCenter, .5); quad.quaternion.copy(game.camera.quaternion);
+    const clipZ = point => new THREE.Vector4(point.x, point.y, point.z, 1).applyMatrix4(game.camera.matrixWorldInverse).applyMatrix4(game.camera.projectionMatrix).z;
+    const legacyZ = clipZ(oldCenter), modernZ = clipZ(newCenter), quadZ = clipZ(quad.position);
+    if (!(quadZ > Math.min(legacyZ, modernZ) && quadZ < Math.max(legacyZ, modernZ))) {
+      for (const mesh of [legacy, quad]) { mesh.geometry.dispose(); mesh.material.dispose(); }
+      throw new Error("Sort control did not bracket the flame sort keys");
+    }
+    thrusterSortControl = { modern, legacy, quad, parent, beforeRender: modern.onBeforeRender, mode: "merged", legacyZ, modernZ, quadZ };
+    modern.onBeforeRender = () => thrusterRenderOrder.push("merged");
+    legacy.onBeforeRender = () => thrusterRenderOrder.push("legacy");
+    quad.onBeforeRender = () => thrusterRenderOrder.push("quad");
+    game.scene.add(quad);
+  } else {
+    const control = thrusterSortControl;
+    const old = control.mode === "merged" ? control.modern : control.legacy;
+    const next = control.mode === "merged" ? control.legacy : control.modern;
+    old.removeFromParent(); control.parent.add(next);
+    control.mode = control.mode === "merged" ? "legacy" : "merged";
+  }
+  captureCanvas = true;
+}
 let settleUntil = sampleAt + 5000;
 let surface = null;
 function resetSamples(settleMs = 5000) { frames = []; slowFrames = []; previousCpu = {}; sampleAt = previous = performance.now(); settleUntil = sampleAt + settleMs; }
@@ -285,6 +335,7 @@ function settlePose() {
   hero.group.updateMatrixWorld(true);
 }
 function setView() {
+  clearThrusterSortControl();
   resetSamples();
   const hero = game.players[0];
   const view = select("view").value;
@@ -292,7 +343,8 @@ function setView() {
   settlePose();
   hero.rig.visible = true;
   const poses = { arena: [[70, 47, 98], [0, 25, 0]], grazing: [[3, 1.8, 65], [0, 4, -40]],
-    fighter: [[3.7, 17.1, 3.3], [0, 16.35, 8]], weapon: [[1.8, 16.9, 6.1], [.4, 16.4, 8.7]], effects: [[7, 19, 17], [0, 16, 8]],
+    fighter: [[3.7, 17.1, 3.3], [0, 16.35, 8]], thrusters: [[1.6, 16.7, 10.3], [0, 16.15, 8.49]],
+    weapon: [[1.8, 16.9, 6.1], [.4, 16.4, 8.7]], effects: [[7, 19, 17], [0, 16, 8]],
     underpass: [[12, 3, 37], [0, 13, -10]], collapse: [[-49, 22, -29], [-72, 17, -66]] };
   const coverDistrict = ["cover-capacitor", "cover-shield", "cover-vent", "cover-reactor"].indexOf(view);
   if (coverDistrict >= 0) {
@@ -310,6 +362,7 @@ function setView() {
   game.updateCamera();
 }
 async function reset() {
+  clearThrusterSortControl();
   sceneSerial++;
   cameraOffset = 0;
   stress = false; game.mode = "training"; game.seed = select("seed").value;
@@ -500,6 +553,13 @@ select("grapple").onclick = () => {
   if (line) line.onAfterRender = () => { ropeRenders++; };
   game.updateCamera(); captureCanvas = true;
 };
+select("thruster-sort").onclick = toggleThrusterSortControl;
+select("thruster-dust").onclick = () => {
+  clearThrusterSortControl();
+  game.world.spawnStructuralDust(game.players[0].position.clone().add(new THREE.Vector3(0, .6, .65)), 0x66727a, 8, { w: .2, h: .2, d: .2 }, "THRUSTER-OVERLAP");
+  game.world.updateStructuralDebris(.25); // Capture the real dust after its initial growth envelope.
+  captureCanvas = true;
+};
 select("inspect-surface").onclick = () => {
   const ray = new THREE.Raycaster(game.players[0].position.clone().add(new THREE.Vector3(0, .4, 0)), new THREE.Vector3(0, -1, 0));
   ray.camera = game.camera;
@@ -511,6 +571,7 @@ select("inspect-surface").onclick = () => {
   });
 };
 select("stress").onclick = () => {
+  clearThrusterSortControl();
   stress = !stress; game.paused = !stress; game.sound.resume();
   game.setTrainingBotOption("botsStandStill", !stress); game.setTrainingBotOption("botsDontAttack", !stress);
   game.players[0].rig.visible = true; resetSamples();
@@ -535,8 +596,10 @@ game.frame = time => {
     game.processStructuralEvents();
   }
   const ropeRendersBefore = ropeRenders;
+  thrusterRenderOrder = [];
   frame(time);
-  if (startupCalls) startupTrace.push({ timeMs: now, durationMs: performance.now() - now, calls: startupCalls });
+  if (startupCalls) startupTrace.push({ timeMs: now, durationMs: performance.now() - now, calls: startupCalls,
+    draws: game.renderer.info.render.drawCalls, triangles: game.renderer.info.render.triangles, memory: { ...game.renderer.info.memory } });
   startupCalls = null;
   renderedFrames++;
   if (captureCanvas) {
@@ -546,6 +609,8 @@ game.frame = time => {
       draws: game.renderer.info.render.drawCalls, triangles: game.renderer.info.render.triangles,
       rope: grapple ? { anchor: grapple.anchor.toArray(), segments: grapple.line.geometry.instanceCount,
         rendersThisFrame: ropeRenders - ropeRendersBefore, blending: grapple.line.material.blending } : null,
+      thrusterSort: thrusterSortControl ? { mode: thrusterSortControl.mode, legacyZ: thrusterSortControl.legacyZ,
+        modernZ: thrusterSortControl.modernZ, quadZ: thrusterSortControl.quadZ, order: [...thrusterRenderOrder] } : null,
       errorCount, directFallback: game.renderPipeline.direct };
     const link = select("canvas-capture");
     link.href = document.querySelector("#game-canvas").toDataURL("image/png");
