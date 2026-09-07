@@ -1,6 +1,13 @@
 # Graphics overhaul checkpoint
 
-Updated: 2026-09-07. Pass36 shoulder finish is PUBLISHED after actual visual84→88 improvement, technical99/98PASS, full validation and production verification. The graphics project is NOT complete.
+Updated: 2026-09-07. Pass39 shoulder alignment is PUBLISHED after actual visual88→92 improvement, technical99/98PASS, full validation and production verification. The graphics project is NOT complete.
+
+## Latest publication — Pass39 complete, continue remaining shoulder contact
+
+- Exact source420252af3dc7faf06f78e7d19f62bb10792d2f8f pushed origin/main and existing Sites source main. Pages8349f165-3f46-464b-97f0-98fb9921861b at https://masterblaster.se/; Sites version104 savedappgprj_6a6378a267348191a15d7e0faf662c64~appgver_bcf80d455f388191a72202a5ab58fb02, deploymentappgdep_6a9f2fecaec08191a24596fab3071b1d succeeded, existing public mirror unchanged. Archive43fb40f6e69d28291f75afefdeb4ea0f4a1b29e5d2e89aae0ef3666c9e288283/96files16404480B. Audience/env/automatic deployments unchanged.
+- Both origins binarymatch main-Dk5YrAV2.js SHA2563625cca8a7438f6947ee6eb2fd6fa3fc2fb34c207494da73b7980afe2901126c and unchangedthree-qFsCeRD-.js SHA256646b2b7b508a4334d13e566dda7d000877fa0768a47aa9195580bf8d7c5c64c2. Primary HTMLexactdist; health200/ok/protocol1/arenaRevision2. Worker active100% e79ad4a2-f74a-42bc-9c18-e1ea58af707c unchanged; no backend deployment necessary.
+- Production live multiplayer suitePASS both recovery/sessionresume/coalescedstate/private-lobby and four-cornerdestruction/ammunition/reconnect16fighters. Training production16fighters/nativeHigh renders with scoring progression; Temp pass39-production.jpg/-dom.txt, HUD60FPS/612draws at17sec (smoke only, no controlled FPS claim). Final scoped scores visual92/100PASS up88, Ramanujan99PASS, adversarial98PASS; broader98gate remains unmet.
+- NEXT Pass40: visual reviewer independently measures remaining right-shoulder contact from actualFighter/savedposes and proposes a single bounded causal trial; no new productchange yet. Preserve approvedleft/capsatin/wholefighter and rejectedPass37/38evidence. Root ends productionTraining viaMainMenu then reuses tab7 for localQA. Vite retained, no duplicatework; recovery automationACTIVE. Continue without asking user.
 
 ## Latest publication — Pass36 complete, continue with shoulder shape
 
