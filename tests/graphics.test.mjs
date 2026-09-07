@@ -283,6 +283,43 @@ botTraceTarget.run(1);
 assert.equal(botTraceClock, stoppedTraceClock, "combat tracing stops outside both update phases");
 
 const traceSource = graphicsFixture.slice(graphicsFixture.indexOf("function traceStartupMethod("), graphicsFixture.indexOf("if (traceStartup) {"));
+assert.ok(graphicsFixture.includes("function createStartupIdentityRecorder("), "startup diagnostics distinguish actual cache keys from shader source identities");
+const identitySource = graphicsFixture.slice(graphicsFixture.indexOf("function createStartupIdentityRecorder("), graphicsFixture.indexOf("const startupIdentityRecorder ="));
+let clearedSources = 0;
+class SourceMap extends Map { clear() { clearedSources += this.size; super.clear(); } }
+const identityRecorder = new Function("Map", `${identitySource}; return createStartupIdentityRecorder();`)(SourceMap);
+const identityObject = { initialCacheKey: 1, context: { id: 2 }, material: { type: "MeshStandardMaterial", isShadowPassMaterial: false },
+  object: { id: 3, name: "Test slats", type: "Mesh", isInstancedMesh: true, count: 4, receiveShadow: false },
+  getGeometryCacheKey: () => "position,3,uv,2,index," };
+const identityBuilder = { material: identityObject.material, vertexShader: "vertex-a", fragmentShader: "fragment-a" };
+identityRecorder.build(identityBuilder, identityObject);
+identityObject.initialCacheKey = 4; identityRecorder.build(identityBuilder, identityObject);
+identityObject.initialCacheKey = 1; identityRecorder.build(identityBuilder, identityObject);
+identityRecorder.program({ code: "fragment-a", stage: "fragment" });
+identityRecorder.program({ code: "fragment-b", stage: "fragment" });
+assert.deepEqual(identityRecorder.state.builds.map(entry => entry.key), [1, 4, 1]);
+assert.deepEqual(identityRecorder.state.builds.map(entry => entry.sources), [[1, 2], [1, 2], [1, 2]], "distinct/repeated keys retain identical exact shader IDs");
+assert.deepEqual(identityRecorder.state.programs.map(entry => entry.source), [2, 3], "backend programs share the same exact source identity space");
+assert.equal(identityRecorder.state.builds[0].instanced, true);
+assert.equal(identityRecorder.state.builds[0].geometryKey, identityObject.getGeometryCacheKey(), "record the pinned renderer's full layout discriminator");
+identityRecorder.build({ ...identityBuilder, material: { type: "NodeMaterial" } }, identityObject);
+assert.equal(identityRecorder.state.builds[3].material, "NodeMaterial", "successful fallback builds report the actual material, not the original request");
+assert.equal(identityRecorder.state.builds[3].requestedMaterial, "MeshStandardMaterial");
+identityObject.object.name = "changed"; identityBuilder.fragmentShader = "changed";
+assert.equal(identityRecorder.state.builds[0].object, "Test slats", "records retain primitives, never live scene objects");
+assert.ok(!JSON.stringify(identityRecorder.state).includes("vertex-a"), "shader text is not copied into DOM metrics");
+for (let i = 0; i < 600; i++) {
+  identityRecorder.build({ material: identityObject.material, vertexShader: `vertex-${i}`, fragmentShader: `fragment-${i}` }, identityObject);
+  identityRecorder.program({ code: `other-${i}`, stage: "vertex" });
+}
+assert.equal(identityRecorder.state.builds.length, 256);
+assert.equal(identityRecorder.state.programs.length, 256);
+assert.ok(identityRecorder.state.dropped > 0);
+identityRecorder.close(); identityRecorder.close();
+assert.equal(clearedSources, 512, "bounded source strings are released once capture finishes");
+const closedIdentity = JSON.stringify(identityRecorder.state);
+identityRecorder.build(identityBuilder, identityObject); identityRecorder.program({ code: "after", stage: "fragment" });
+assert.equal(JSON.stringify(identityRecorder.state), closedIdentity, "closed captures cannot retain more sources");
 let traceClock = 0;
 const startupCalls = {};
 const traceMethod = new Function("performance", "startupCalls", `${traceSource}; return traceStartupMethod;`)({ now: () => ++traceClock }, startupCalls);
@@ -312,6 +349,29 @@ const inactiveTrace = new Function("performance", "startupCalls", `${traceSource
 const inactiveTarget = { draw: value => value };
 inactiveTrace(inactiveTarget, "draw", "test");
 assert.equal(inactiveTarget.draw(7), 7, "timing stops after the bounded startup capture");
+const capturedKinds = [];
+const identityHooks = { build: (builder, object) => capturedKinds.push(["build", builder, object]), program: program => capturedKinds.push(["program", program]) };
+const identityTrace = new Function("performance", "startupCalls", "startupIdentityRecorder", `${traceSource}; return traceStartupMethod;`)({ now: () => ++traceClock }, {}, identityHooks);
+const identityBuildTarget = { build: () => 7 };
+identityTrace(identityBuildTarget, "build", "nodeBuilder", identityObject);
+assert.equal(identityBuildTarget.build(), 7);
+assert.ok(capturedKinds[0][1] === identityBuildTarget && capturedKinds[0][2] === identityObject);
+const identityBackend = { createProgram: program => program, fail() { throw expectedFailure; } };
+identityTrace(identityBackend, "createProgram", "backend");
+const sourceProgram = { stage: "vertex", code: "source" };
+assert.ok(identityBackend.createProgram(sourceProgram) === sourceProgram);
+assert.ok(capturedKinds[1][1] === sourceProgram);
+identityTrace(identityBackend, "fail", "nodeBuilder", identityObject);
+assert.throws(() => identityBackend.fail(), error => error === expectedFailure);
+assert.equal(capturedKinds.length, 2, "failed builds never become successful source-identity evidence");
+const tracedFrameAt = graphicsFixture.indexOf("    frame(time);");
+const finishStartupSource = graphicsFixture.slice(graphicsFixture.lastIndexOf("  try {", tracedFrameAt), graphicsFixture.indexOf("  renderedFrames++;", tracedFrameAt));
+const finishStartup = new Function("frame", "startupTrace", "startupIdentityRecorder", `const time=0, now=0, performance={now:()=>1}, game={renderer:{info:{render:{},memory:{}}}}; let startupCalls={}; ${finishStartupSource}; return startupCalls;`);
+let startupClosures = 0;
+assert.equal(finishStartup(() => {}, [{}, {}], { close: () => startupClosures++ }), null);
+assert.equal(startupClosures, 1, "third successful frame releases transient shader-source identities");
+assert.throws(() => finishStartup(() => { throw expectedFailure; }, [], { close: () => startupClosures++ }), error => error === expectedFailure);
+assert.equal(startupClosures, 2, "render failure releases transient identities without swallowing the original error");
 
 for (const [seed, expected] of [
   ["GRAPHICS-QA-structure", ["3fcaf9d84ec4401241287fef3d3288259e9493dd3171fc3d3bd7ccf8cec086ec", "39cdd4e5bbe8932bb96e6b805f99647f9c5723cf63edace962550765be1769f5", "183e544aca3ae4ebc7b6ada691287b7adfd03daeab38bd51a0c6056b5153a381"]],

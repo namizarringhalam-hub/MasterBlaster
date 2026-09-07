@@ -262,12 +262,44 @@ if (traceFrames) {
 const traceStartup = new URLSearchParams(location.search).has("traceStartup");
 const startupTrace = [];
 let startupCalls = null;
-function traceStartupMethod(target, name, prefix) {
+function createStartupIdentityRecorder() {
+  const sources = new Map();
+  const state = { builds: [], programs: [], dropped: 0, closed: false };
+  const sourceId = code => {
+    if (typeof code !== "string") return null;
+    if (sources.has(code)) return sources.get(code);
+    if (sources.size >= 512) { state.dropped++; return null; }
+    const id = sources.size + 1; sources.set(code, id); return id;
+  };
+  return {
+    state,
+    build(builder, renderObject) {
+      if (state.closed) return;
+      if (state.builds.length >= 256) { state.dropped++; return; }
+      const { object } = renderObject, material = builder.material;
+      state.builds.push({ key: renderObject.initialCacheKey, context: renderObject.context.id,
+        object: object.name || object.type, objectId: object.id, instanced: Boolean(object.isInstancedMesh),
+        batched: Boolean(object.isBatchedMesh), count: object.count ?? 1, receiveShadow: object.receiveShadow,
+        material: material.type, requestedMaterial: renderObject.material.type, shadowPass: Boolean(material.isShadowPassMaterial),
+        geometryKey: renderObject.getGeometryCacheKey(),
+        sources: [sourceId(builder.vertexShader), sourceId(builder.fragmentShader)] });
+    },
+    program(program) {
+      if (state.closed) return;
+      if (state.programs.length >= 256) { state.dropped++; return; }
+      state.programs.push({ stage: program.stage, source: sourceId(program.code) });
+    },
+    close() { sources.clear(); state.closed = true; }
+  };
+}
+const startupIdentityRecorder = traceStartup ? createStartupIdentityRecorder() : null;
+function traceStartupMethod(target, name, prefix, renderObject = null) {
   const method = target[name];
   target[name] = function (...args) {
     if (!startupCalls) return method.apply(this, args);
     const started = performance.now();
-    try { return method.apply(this, args); } finally {
+    let completed = false;
+    try { const result = method.apply(this, args); completed = true; return result; } finally {
       const ms = performance.now() - started;
       const record = startupCalls[`${prefix}.${name}`] ||= { calls: 0, totalMs: 0, maxMs: 0, slowest: [] };
       record.calls++; record.totalMs += ms; record.maxMs = Math.max(record.maxMs, ms);
@@ -281,6 +313,10 @@ function traceStartupMethod(target, name, prefix) {
           stage: args[0]?.stage, shaderLength: args[0]?.code?.length, parameter: name === "getProgramParameter" ? args[1] : undefined });
         record.slowest.sort((a, b) => b.ms - a.ms); record.slowest.length = Math.min(8, record.slowest.length);
       }
+      // Record only real builds/programs, after timing. Parent timings still
+      // include this diagnostic overhead; these are not clean FPS samples.
+      if (completed && renderObject) startupIdentityRecorder?.build(this, renderObject);
+      if (completed && prefix === "backend" && name === "createProgram") startupIdentityRecorder?.program(args[0]);
     }
   };
 }
@@ -289,7 +325,7 @@ if (traceStartup) {
   const createBuilder = game.renderer._nodes._createNodeBuilder;
   game.renderer._nodes._createNodeBuilder = function (...args) {
     const builder = createBuilder.apply(this, args);
-    traceStartupMethod(builder, "build", "nodeBuilder");
+    traceStartupMethod(builder, "build", "nodeBuilder", args[0]);
     return builder;
   };
   for (const name of ["createProgram", "createRenderPipeline", "draw"]) traceStartupMethod(game.renderer.backend, name, "backend");
@@ -676,10 +712,15 @@ game.frame = time => {
   }
   const ropeRendersBefore = ropeRenders;
   thrusterRenderOrder = [];
-  frame(time);
-  if (startupCalls) startupTrace.push({ timeMs: now, durationMs: performance.now() - now, calls: startupCalls,
-    draws: game.renderer.info.render.drawCalls, triangles: game.renderer.info.render.triangles, memory: { ...game.renderer.info.memory } });
-  startupCalls = null;
+  try {
+    frame(time);
+    if (startupCalls) startupTrace.push({ timeMs: now, durationMs: performance.now() - now, calls: startupCalls,
+      draws: game.renderer.info.render.drawCalls, triangles: game.renderer.info.render.triangles, memory: { ...game.renderer.info.memory } });
+  } catch (error) { startupIdentityRecorder?.close(); throw error; }
+  finally {
+    startupCalls = null;
+    if (startupTrace.length === 3) startupIdentityRecorder?.close();
+  }
   renderedFrames++;
   if (captureCanvas) {
     captureCanvas = false;
@@ -728,7 +769,7 @@ game.frame = time => {
     compiles: compiles.map(s => ({ pending: s.completed === null, durationMs: +( (s.completed ?? now) - s.started).toFixed(1) })),
     frames: frames.length, medianMs: percentile(.5), p95Ms: percentile(.95), p99Ms: percentile(.99), maxMs: percentile(1),
     over33Ms: frames.filter(ms => ms > 33.3).length, over50Ms: frames.filter(ms => ms > 50).length,
-    traceFrames, slowFrames, visibilityEvents, traceStartup, startupTrace,
+    traceFrames, slowFrames, visibilityEvents, traceStartup, startupTrace, startupIdentity: startupIdentityRecorder?.state,
     startupMeasures: performance.getEntriesByType("measure").filter(entry => entry.name.startsWith("blaster-")).slice(-12)
       .map(({ name, startTime, duration }) => ({ name, startTime, duration })),
     draws: game.renderer.info.render.drawCalls, triangles: game.renderer.info.render.triangles,
