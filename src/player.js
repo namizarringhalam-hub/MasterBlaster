@@ -351,8 +351,9 @@ export class Fighter {
       : costumeVariant === 3
         ? new THREE.DodecahedronGeometry(.25, 0)
         : new THREE.BoxGeometry(.34, .27, .48);
-    const leftShoulder = part(shoulderGeometry, armor, -.57, 1.62, -.02);
-    const rightShoulder = part(shoulderGeometry, armor, .57, 1.62, -.02);
+    const shoulderX = costumeVariant === 1 ? .61 : .57;
+    const leftShoulder = part(shoulderGeometry, armor, -shoulderX, 1.62, -.02);
+    const rightShoulder = part(shoulderGeometry, armor, shoulderX, 1.62, -.02);
     if (costumeVariant === 1) leftShoulder.rotation.x = rightShoulder.rotation.x = Math.PI / 2;
     leftShoulder.rotation.z = -.16;
     rightShoulder.rotation.z = .16;
