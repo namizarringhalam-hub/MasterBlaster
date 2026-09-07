@@ -2,6 +2,12 @@
 
 Updated: 2026-09-08. Pass40 shoulder fit is PUBLISHED after actual visual92→96 improvement, technical99/98PASS, full validation and production verification. The graphics project is NOT complete.
 
+## Latest publication — Pass47 renderer correction v106 verified
+
+- Exact source50d6daf4c29489d9264190571c5df59d207a3cf8 pushed origin/main and Sitesmain. Pagesd89e6f34-ccda-45fc-a51c-d365335a6694 at https://masterblaster.se/; Sitesv106/appgprj_6a6378a267348191a15d7e0faf662c64~appgver_8bbb97917c288191b24219117a300646, deploymentappgdep_6a9f4e3841e88191a43324eb729bf641 succeededrevision0 existingpublicmirror. Archive087ed8729e27ed572f393e713d296d1364ae731e2639f39c87a129524861f4b3/96files16404480B. Bothorigins binarymatch recordedmain/Three SHA256. Health200/ok/protocol1/arenaRevision2. Backend unchanged active100%e79ad4a2-f74a-42bc-9c18-e1ea58af707c; no Worker redeploy.
+- Production live multiplayer both recovery/private-lobby/coalescedstate andfourcornerdestruction/paidammo/reconnect16fighter suitesPASS. Desktop1280x720 and narrow390x844 productionTraining smoke rendered16fighters withprogressingscores; pass47-production.jpg/-dom.txt and-mobile.jpg/-dom.txt. Narrow viewport is notphysicaltouch/deviceperformance proof. SessionendedMainMenu; QA7backlocal/native1280x720. Siteshandoff queuedexistingtab7, no duplicateview.
+- All3 actualscoped98/100PASS, no rendererfixblockers. No overall98/art/FPSclaim. NEXT resumePass46 wholefighter normal/hardlanding A/B andvisiblebarrel/shot relationship, then integrateonlyifindependentreview approvesreal improvement. Lowerbody76/shoulder96 remainopen. Vitesession13885retained; no Worker/test/browserbatch active. Continueautonomously; no userpause.
+
 ## Current Pass47 — renderer cache correction validated, independent release review next
 
 - FINAL all3 independent scoped98/100PASS, no renderer-correction release blockers. Publish now. Active815frame smoke used followCamera=true, NOT fixed overview; median24.6/p9533.7/p9944.9/max274ms remains poor and is not an FPS pass. No equivalent activeGL stress claim. Audio untouched. All older pending numerical verdict references below are superseded.
