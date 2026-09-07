@@ -29,6 +29,7 @@
 <button id="decoy-tiers">Test cross-tier decoys</button>
 <button id="decoy-overlap">Test overlapping tier decoys</button>
 <button id="camera-sequence">Capture moving-camera sequence</button><span id="camera-captures"></span>
+<button id="shell-diagnosis">Diagnose helmet shell finish</button>
 <button id="boost-passage">Test boost passage</button>
 <button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
 <label><input id="follow-camera" type="checkbox" checked>Follow player camera</label>
@@ -646,6 +647,91 @@ async function runCameraReview(boostPassage = false) {
 }
 select("camera-sequence").onclick = () => runCameraReview();
 select("boost-passage").onclick = () => runCameraReview(true);
+async function withHelmetShellDiagnostic(mode, capture) {
+  if (mode === "baseline" || mode === "restored") return capture();
+  if (!["explicit-environment", "no-environment", "normals"].includes(mode)) throw new Error("Unknown shell diagnostic mode");
+  const helmet = game.players[0].helmet, original = helmet.material;
+  const pipeline = game.renderPipeline.pipeline, originalOutput = pipeline.outputNode;
+  const originalToneMapping = game.renderer.toneMapping;
+  const temporary = mode === "normals" ? new THREE.MeshNormalMaterial({ side: original.side }) : original.clone();
+  try {
+    if (mode !== "normals") {
+      // An intensity alone is ignored by pinned Three when material.envMap is null.
+      temporary.envMap = game.scene.environment;
+      temporary.envMapIntensity = mode === "no-environment" ? 0 : game.scene.environmentIntensity;
+      temporary.envMapRotation.copy(game.scene.environmentRotation);
+    } else {
+      pipeline.outputNode = game.renderPipeline.scenePass.getTextureNode("output");
+      pipeline.needsUpdate = true; // Raw scene color excludes AO and bloom.
+      game.renderer.toneMapping = THREE.NoToneMapping; // Also bypass the final fullscreen ACES transform.
+    }
+    helmet.material = temporary;
+    return await capture();
+  } finally {
+    helmet.material = original;
+    game.renderer.toneMapping = originalToneMapping;
+    if (pipeline.outputNode !== originalOutput) { pipeline.outputNode = originalOutput; pipeline.needsUpdate = true; }
+    temporary.dispose(); // Never dispose original material or its shared environment texture.
+  }
+}
+function shellReviewState() {
+  const hero = game.players[0], material = hero.helmet.material, lights = [];
+  game.scene.traverse(object => {
+    if (!object.isLight) return;
+    lights.push({ id: object.id, type: object.type, color: object.color.toArray(), intensity: object.intensity,
+      visible: object.visible, matrix: object.matrixWorld.toArray(), target: object.target?.matrixWorld.toArray(),
+      groundColor: object.groundColor?.toArray(), distance: object.distance, decay: object.decay, castShadow: object.castShadow });
+  });
+  return { fighterId: hero.id, aim: hero.aim.toArray(), helmetMatrix: hero.helmet.matrixWorld.toArray(), rigMatrix: hero.rig.matrixWorld.toArray(),
+    geometryId: hero.helmet.geometry.uuid, cameraMatrix: game.camera.matrixWorld.toArray(), projection: game.camera.projectionMatrix.toArray(),
+    viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio }, sceneSerial, paused: game.paused,
+    material: { type: material.type, uuid: material.uuid, color: material.color?.toArray(), emissive: material.emissive?.toArray(),
+      emissiveIntensity: material.emissiveIntensity, roughness: material.roughness, metalness: material.metalness,
+      clearcoat: material.clearcoat, clearcoatRoughness: material.clearcoatRoughness, normalMap: material.normalMap?.uuid ?? null,
+      roughnessMap: material.roughnessMap?.uuid ?? null, envMap: material.envMap?.uuid ?? null, envMapIntensity: material.envMapIntensity,
+      envMapRotation: material.envMapRotation?.toArray(), side: material.side, flatShading: material.flatShading },
+    environment: { texture: game.scene.environment?.uuid, intensity: game.scene.environmentIntensity, rotation: game.scene.environmentRotation.toArray() },
+    lights, combatLights: game.combatVisuals.combatLights.map(light => ({ intensity: light.intensity, life: light.userData.life })),
+    effects: { projectiles: game.projectiles.length, hazards: game.hazards.length, decoys: game.decoys.length, effects: game.effects.length },
+    exposure: game.renderer.toneMappingExposure, toneMapping: game.renderer.toneMapping };
+}
+async function runShellReview() {
+  if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
+  cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.error = null;
+  select("camera-captures").replaceChildren();
+  const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
+  const originalOffset = cameraOffset, serial = sceneSerial, initialErrors = errorCount;
+  try {
+    if (stress || !game.paused || resetPhase !== "ready" || game.settings.graphics !== "high" ||
+        !select("view").value.startsWith("helmet-") || game.renderPipeline.direct || aoOutput !== "final")
+      throw new Error("Shell diagnosis needs a ready paused High helmet view with the ordinary pipeline");
+    if (game.combatVisuals.combatLights.some(light => light.intensity !== 0 || light.userData.life !== 0))
+      throw new Error("Wait for all combat lights to expire before shell diagnosis");
+    for (const [control] of controls) control.disabled = true;
+    for (const mode of ["baseline", "explicit-environment", "no-environment", "normals", "restored"]) {
+      await withHelmetShellDiagnostic(mode, async () => {
+        for (const offset of mode === "explicit-environment" ? [0] : [-.16, 0, .16]) {
+          cameraOffset = offset; game.updateCamera();
+          const readyFrame = renderedFrames + 4;
+          await waitForReviewFrame(serial, () => renderedFrames >= readyFrame);
+          if (!game.paused) throw new Error("Shell diagnosis must remain paused; comparison interrupted");
+          if (errorCount !== initialErrors || game.renderPipeline.direct) throw new Error("Shell diagnosis encountered a renderer failure");
+          const index = cameraReview.samples.length, link = document.createElement("a");
+          link.textContent = `Camera frame ${index}`; link.download = `shell-${mode}-${offset}.png`;
+          link.href = document.querySelector("#game-canvas").toDataURL("image/png");
+          select("camera-captures").append(link, " ");
+          cameraReview.samples.push({ index, mode, offset, output: mode === "normals" ? "scene-color" : "final",
+            ...shellReviewState(), renderedFrames, errorCount, directFallback: game.renderPipeline.direct });
+        }
+      });
+    }
+  } catch (error) { cameraReview.error = String(error); }
+  finally {
+    cameraOffset = originalOffset; game.updateCamera(); cameraReview.running = false; cameraReview.shell = false;
+    for (const [control, disabled] of controls) control.disabled = disabled;
+  }
+}
+select("shell-diagnosis").onclick = runShellReview;
 async function runDecoyReview(crossTier = false, overlap = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   decoyReview.running = true; decoyReview.samples = []; decoyReview.error = null;
@@ -761,7 +847,7 @@ game.frame = time => {
   }
   cpu = {};
   const programsBefore = game.renderer.info.memory.programs;
-  if (!stress && game.world) {
+  if (!stress && !cameraReview.shell && game.world) {
     game.world.update(Math.min(interval / 1000, .033), []);
     game.combatVisuals.update(Math.min(interval / 1000, .033));
     game.processStructuralEvents();

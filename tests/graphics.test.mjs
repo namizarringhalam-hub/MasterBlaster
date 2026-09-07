@@ -211,6 +211,89 @@ for (const hidden of [null, "grid", "route", "unknown"]) {
   assert.deepEqual(objects.map(object => object.visible), [hidden !== "grid", hidden !== "route", true], "QA visibility isolation changes only the requested object, never the ground");
 }
 const aoWrapperSource = graphicsFixture.slice(graphicsFixture.indexOf("function withAODiagnostics("), graphicsFixture.indexOf("// QA-only causal comparison"));
+assert.ok(graphicsFixture.includes("async function withHelmetShellDiagnostic("), "shell diagnosis needs an isolated, restoring material control");
+const shellControlSource = graphicsFixture.slice(graphicsFixture.indexOf("async function withHelmetShellDiagnostic("), graphicsFixture.indexOf("function shellReviewState("));
+const shellOriginal = new THREE.MeshPhysicalMaterial({ roughness: .4, metalness: .68, clearcoat: .32, clearcoatRoughness: .2, envMapIntensity: 1.2 });
+const shellEnvironment = new THREE.Texture(), shellOutput = {}, shellRawOutput = {};
+const shellGame = { players: [{ helmet: { material: shellOriginal } }], renderer: { toneMapping: THREE.ACESFilmicToneMapping },
+  scene: { environment: shellEnvironment, environmentIntensity: .82, environmentRotation: new THREE.Euler(0, .3, 0) },
+  renderPipeline: { pipeline: { outputNode: shellOutput }, scenePass: { getTextureNode: name => { assert.equal(name, "output"); return shellRawOutput; } } } };
+const shellControl = new Function("THREE", "game", `${shellControlSource}; return withHelmetShellDiagnostic;`)(THREE, shellGame);
+let sharedShellDisposals = 0;
+shellOriginal.addEventListener("dispose", () => sharedShellDisposals++);
+shellEnvironment.addEventListener("dispose", () => sharedShellDisposals++);
+const shellOriginalJSON = shellOriginal.toJSON();
+for (const mode of ["baseline", "explicit-environment", "no-environment", "normals", "restored"]) for (const fail of [false, true]) {
+  let temporaryDisposals = 0;
+  const action = async () => {
+    const current = shellGame.players[0].helmet.material;
+    if (mode === "baseline" || mode === "restored") assert.ok(current === shellOriginal);
+    else {
+      assert.notEqual(current, shellOriginal);
+      current.addEventListener("dispose", () => temporaryDisposals++);
+      if (mode !== "normals") {
+        assert.ok(current.envMap === shellEnvironment, "explicit texture makes the zero intensity effective in pinned Three");
+        assert.equal(current.envMapIntensity, mode === "no-environment" ? 0 : .82);
+        assert.ok(current.envMapRotation.equals(shellGame.scene.environmentRotation));
+        for (const key of ["roughness", "metalness", "clearcoat", "clearcoatRoughness", "side", "depthWrite", "normalMap", "roughnessMap"])
+          assert.equal(current[key], shellOriginal[key], `isolation preserves ${key}`);
+        assert.ok(current.color.equals(shellOriginal.color));
+      } else assert.equal(current.isMeshNormalMaterial, true);
+    }
+    assert.ok(shellGame.renderPipeline.pipeline.outputNode === (mode === "normals" ? shellRawOutput : shellOutput));
+    assert.equal(shellGame.renderer.toneMapping, mode === "normals" ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping);
+    await Promise.resolve();
+    if (fail) throw new Error("deliberate capture failure");
+    return 42;
+  };
+  if (fail) await assert.rejects(shellControl(mode, action), /deliberate capture failure/);
+  else assert.equal(await shellControl(mode, action), 42);
+  assert.ok(shellGame.players[0].helmet.material === shellOriginal);
+  assert.ok(shellGame.renderPipeline.pipeline.outputNode === shellOutput);
+  assert.equal(shellGame.renderer.toneMapping, THREE.ACESFilmicToneMapping);
+  assert.equal(temporaryDisposals, ["explicit-environment", "no-environment", "normals"].includes(mode) ? 1 : 0);
+  assert.equal(sharedShellDisposals, 0, "temporary controls never dispose shared environment or original material");
+  assert.deepEqual(shellOriginal.toJSON(), shellOriginalJSON);
+}
+await assert.rejects(shellControl("unknown", () => assert.fail("invalid mode ran")), /Unknown shell/);
+shellOriginal.dispose(); shellEnvironment.dispose();
+const shellRunSource = graphicsFixture.slice(graphicsFixture.indexOf("async function runShellReview("), graphicsFixture.indexOf('select("shell-diagnosis").onclick'));
+const shellControlElements = [{ disabled: false }, { disabled: true }];
+const shellRunState = { running: false }, shellRunGame = { paused: true, settings: { graphics: "high" },
+  renderPipeline: { direct: false }, combatVisuals: { combatLights: [{ intensity: 0, userData: { life: 0 } }] }, updateCamera() {} };
+let shellWaits = 0, interruptShell = false;
+const runShellHarness = new Function("game", "cameraReview", "document", "select", "waitForReviewFrame", "withHelmetShellDiagnostic", `
+  const resetReview={}, cacheReview={}, decoyReview={}, resetPhase="ready", sceneSerial=1, errorCount=0, renderedFrames=0, aoOutput="final";
+  let stress=false, cameraOffset=.31;
+  ${shellRunSource}
+  return { run: runShellReview, offset: () => cameraOffset };
+`)(shellRunGame, shellRunState, { querySelectorAll: () => shellControlElements },
+  id => id === "view" ? { value: "helmet-profile" } : { replaceChildren() {} }, async () => {
+    shellWaits++;
+    assert.deepEqual(shellControlElements.map(control => control.disabled), [true, true]);
+    if (interruptShell) { shellRunGame.paused = false; return; }
+    throw new Error("deliberate shell frame timeout");
+  }, async (mode, action) => action());
+await runShellHarness.run();
+assert.match(shellRunState.error, /deliberate shell frame timeout/);
+assert.equal(shellRunState.running, false); assert.equal(shellRunState.shell, false);
+assert.equal(runShellHarness.offset(), .31);
+assert.deepEqual(shellControlElements.map(control => control.disabled), [false, true], "outer failure restores prior disabled states");
+assert.equal(shellRunGame.paused, true);
+shellRunState.running = true;
+await runShellHarness.run();
+assert.equal(shellWaits, 1, "an already running camera review cannot start a duplicate shell run");
+shellRunState.running = false; shellRunGame.combatVisuals.combatLights[0].intensity = .1;
+await runShellHarness.run();
+assert.match(shellRunState.error, /combat lights/);
+assert.equal(shellWaits, 1, "active combat lighting invalidates the fixed-light diagnostic before capture");
+assert.deepEqual(shellControlElements.map(control => control.disabled), [false, true]);
+shellRunGame.combatVisuals.combatLights[0].intensity = 0; interruptShell = true;
+await runShellHarness.run();
+assert.match(shellRunState.error, /paused/, "Escape can resume simulation despite disabled navigation; discard that comparison");
+assert.equal(shellRunState.running, false); assert.equal(shellRunState.shell, false);
+assert.equal(shellRunGame.paused, false, "cleanup preserves the user's new pause choice");
+assert.deepEqual(shellControlElements.map(control => control.disabled), [false, true]);
 const geometryNormalToken = {}, colorOutputToken = {};
 const makeAOWrapper = new Function("mrt", "normalViewGeometry", "output", "geometryAONormals", "aoOutput", "vec3", "vec4", "depthAONormals", "legacyAONormals", "normalView", "materialBlendAONormals", "THREE", "recoverAONormals", "singleSampleAO", "emulateCompatibilityAO", `${aoWrapperSource}; return withAODiagnostics;`);
 const wrapAONormals = makeAOWrapper(value => value, geometryNormalToken, colorOutputToken, true, "final");
