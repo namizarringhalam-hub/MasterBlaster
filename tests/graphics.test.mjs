@@ -19,6 +19,20 @@ import { weaponPresentation } from "../src/weaponPresentation.js";
 // Execute the previous clone path against the same complete fighter/weapon builder.
 // Only the three transient merge copies differ; no frozen art data to maintain.
 const playerMergeSource = readFileSync(new URL("../src/player.js", import.meta.url), "utf8");
+const beforeBearingSource = playerMergeSource.replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "")
+  .replace("const shoulderRadius = costumeVariant === 1 ? .16 : .18;", "const shoulderRadius = .18;");
+const BeforeBearingFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
+  `${beforeBearingSource}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
+{
+  const fighter = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const sphere = new THREE.SphereGeometry(.16, 10, 6);
+  for (const arm of [fighter.leftArm, fighter.rightArm]) {
+    const position = arm.children[0].geometry.attributes.position;
+    const radii = Array.from({ length: sphere.index.count }, (_, i) => new THREE.Vector3().fromBufferAttribute(position, position.count - sphere.index.count + i).sub(new THREE.Vector3(0, -.045, 0)).length());
+    assert.ok(radii.every(radius => Math.abs(radius - .16) < 2e-8), "bearing must fit the measured housing without changing its topology or pivot");
+  }
+  sphere.dispose(); fighter.dispose();
+}
 const beforeElbowSource = playerMergeSource.replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "")
   .replace("this.elbowMaterial = dark.clone();", "this.elbowMaterial = dark;")
   .replace("this.elbowMaterial.roughness = .56;", "")
@@ -49,7 +63,9 @@ function shoulderClearance(fighter, y) {
   assert.ok(shoulderClearance(hero, 1.625) > .015, "aligned cap must cover the protruding joint by at least 15mm");
   assert.ok(shoulderClearance(hero, 1.76) > .035, "aligned cap must cover the upper joint patch by at least 35mm");
   hero.dispose();
-  const previous = new BeforeCapFighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["energy_sword"], new THREE.Vector3());
+  const BeforeContactFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
+    `${beforeCapSource.replace("const shoulderRadius = costumeVariant === 1 ? .16 : .18;", "const shoulderRadius = .18;")}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
+  const previous = new BeforeContactFighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["energy_sword"], new THREE.Vector3());
   assert.ok(shoulderClearance(previous, 1.625) < -.025, "old cap exposes the lower joint");
   assert.ok(shoulderClearance(previous, 1.76) < -.004, "old cap exposes the upper joint");
   previous.dispose();
@@ -608,7 +624,7 @@ assert.ok(graphicsFixture.includes("async function withHelmetShellDiagnostic("),
 const shellControlSource = graphicsFixture.slice(graphicsFixture.indexOf("async function withHelmetShellDiagnostic("), graphicsFixture.indexOf("function shellReviewState("));
 assert.ok(graphicsFixture.includes("async function withElbowSilhouette("), "elbow silhouette comparison needs an isolated restoring geometry control");
 const elbowControlSource = graphicsFixture.slice(graphicsFixture.indexOf("async function withElbowSilhouette("), graphicsFixture.indexOf("async function withHelmetShellDiagnostic("));
-const elbowControl = new Function("THREE", `${elbowControlSource}; return withElbowSilhouette;`)(THREE);
+const elbowControl = new Function("THREE", "game", `${elbowControlSource}; return withElbowSilhouette;`)(THREE, { players: [] });
 {
   const fighter = new Fighter(new THREE.Scene(), { id: "elbow-qa", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
   for (const arm of [fighter.leftForearm, fighter.rightForearm]) for (const fail of [false, true]) {
@@ -825,6 +841,43 @@ await assert.rejects(elbowControl(shoulderTarget, () => assert.fail("shoulder ac
 await assert.rejects(elbowControl(shoulderTarget, () => assert.fail("invalid envelope route"), false, true), /shoulder-only/);
 const capAlignment = new Function("THREE", "game", `${elbowControlSource}; return withShoulderCapAlignment;`)(THREE, shellGame);
 const capHeroBefore = shellGame.players[0];
+const bearingControl = new Function("THREE", "game", `${elbowControlSource}; return withElbowSilhouette;`)(THREE, shellGame);
+for (const variant of [0, 1, 2, 3]) {
+  const hero = new BeforeBearingFighter(new THREE.Scene(), { id: String.fromCharCode(100 + variant), color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  shellGame.players[0] = hero;
+  for (const arm of [hero.leftArm, hero.rightArm]) {
+    const target = arm.children[0], original = target.geometry;
+    if (variant !== 1) { await assert.rejects(bearingControl(target, () => assert.fail("wrong costume"), true, false, true), /variant-1/); continue; }
+    for (const fail of [false, true]) {
+      const originalDispose = THREE.BufferGeometry.prototype.dispose, disposed = new Map();
+      THREE.BufferGeometry.prototype.dispose = function () { disposed.set(this, (disposed.get(this) || 0) + 1); return originalDispose.call(this); };
+      try {
+        const check = () => {
+          THREE.BufferGeometry.prototype.dispose = originalDispose;
+          const indexed = new THREE.SphereGeometry(.16, 10, 6), expected = indexed.toNonIndexed().translate(0, -.045, 0);
+          for (const [name, attribute] of Object.entries(target.geometry.attributes)) {
+            const tail = expected.attributes[name].array, start = attribute.array.length - tail.length;
+            assert.equal(attribute.array.length, original.attributes[name].array.length);
+            assert.deepEqual(attribute.array.slice(0, start), original.attributes[name].array.slice(0, start), "capsule prefix preserved");
+            assert.deepEqual(attribute.array.slice(start), tail, "only the bearing radius changes");
+          }
+          indexed.dispose(); expected.dispose();
+          THREE.BufferGeometry.prototype.dispose = function () { disposed.set(this, (disposed.get(this) || 0) + 1); return originalDispose.call(this); };
+          assert.equal(target.material, hero.elbowMaterial);
+          if (fail) throw new Error("bearing interrupted");
+        };
+        if (fail) await assert.rejects(bearingControl(target, check, true, false, true), /bearing interrupted/);
+        else await bearingControl(target, check, true, false, true);
+        assert.equal(target.geometry, original);
+        assert.equal(disposed.size, 5); assert.ok([...disposed.values()].every(count => count === 1));
+        assert.ok(!disposed.has(original));
+      } finally { THREE.BufferGeometry.prototype.dispose = originalDispose; }
+    }
+    await assert.rejects(bearingControl(target, () => assert.fail("mixed trial"), true, true, true), /variant-1/);
+  }
+  hero.dispose();
+}
+shellGame.players[0] = capHeroBefore;
 for (let variant = 0; variant < 4; variant++) {
   const hero = new BeforeCapFighter(new THREE.Scene(), { id: String.fromCharCode(100 + variant), color: 0x129dba, accent: 0x6ff6ff }, ["energy_sword"], new THREE.Vector3());
   shellGame.players[0] = hero;
@@ -867,10 +920,13 @@ for (let variant = 0; variant < 4; variant++) {
 }
 shellGame.players[0] = capHeroBefore;
 // Match the integrated builder to the independently reviewed geometry-only trial.
-for (const variant of [0, 1, 2, 3]) for (const weapon of Object.keys(WEAPONS)) {
+for (const change of ["cap", "bearing"]) for (const variant of [0, 1, 2, 3]) for (const weapon of Object.keys(WEAPONS)) {
   const options = { id: String.fromCharCode(100 + variant), color: 0x129dba, accent: 0x6ff6ff };
   const current = new Fighter(new THREE.Scene(), options, [weapon], new THREE.Vector3());
-  const previous = new BeforeCapFighter(new THREE.Scene(), options, [weapon], new THREE.Vector3());
+  const PreviousFighter = change === "cap" ? BeforeCapFighter : BeforeBearingFighter;
+  const previous = new PreviousFighter(new THREE.Scene(), options, [weapon], new THREE.Vector3());
+  const swap = (fighter, capture, reverse = false) => change === "cap" ? capAlignment(fighter.rig.children[1], capture, reverse)
+    : bearingControl(fighter.leftArm.children[0], () => bearingControl(fighter.rightArm.children[0], capture, true, false, reverse ? "previous" : true), true, false, reverse ? "previous" : true);
   const compare = () => {
     const oldObjects = [], newObjects = [];
     previous.group.traverse(object => oldObjects.push(object)); current.group.traverse(object => newObjects.push(object));
@@ -890,14 +946,20 @@ for (const variant of [0, 1, 2, 3]) for (const weapon of Object.keys(WEAPONS)) {
     });
   };
   shellGame.players[0] = previous;
-  if (variant === 1) await capAlignment(previous.rig.children[1], compare); else compare();
+  if (variant === 1) await swap(previous, compare); else compare();
   if (variant === 1) {
     shellGame.players[0] = current;
-    const original = current.rig.children[1].geometry;
-    await capAlignment(current.rig.children[1], compare, true);
-    assert.equal(current.rig.children[1].geometry, original);
-    await assert.rejects(capAlignment(current.rig.children[1], () => { throw new Error("reverse interrupted"); }, true), /reverse interrupted/);
-    assert.equal(current.rig.children[1].geometry, original);
+    const targets = [current.rig.children[1], current.leftArm.children[0], current.rightArm.children[0]], originals = targets.map(target => target.geometry);
+    await swap(current, compare, true);
+    targets.forEach((target, i) => assert.equal(target.geometry, originals[i]));
+    if (change === "bearing") for (const envelope of [false, true]) {
+      await bearingControl(current.rightArm.children[0], () => {
+        assert.ok(current.rightArm.children[0].geometry.attributes.position.count > originals[2].attributes.position.count, "existing tessellation controls use the current fitted radius");
+      }, true, envelope);
+      assert.equal(current.rightArm.children[0].geometry, originals[2]);
+    }
+    await assert.rejects(swap(current, () => { throw new Error("reverse interrupted"); }, true), /reverse interrupted/);
+    targets.forEach((target, i) => assert.equal(target.geometry, originals[i]));
   }
   current.dispose(); previous.dispose();
 }
@@ -946,7 +1008,7 @@ assert.deepEqual(shellControlElements.map(control => control.disabled), [false, 
 const armRunState = { running: false }, armRunMaterial = {}, armRunTarget = { isMesh: true, material: armRunMaterial }, armRunLinks = [], armRunModes = [];
 const armRunControls = [{ disabled: false }, { disabled: true }];
 const armRunGame = { ...shellRunGame, paused: true, players: [{ darkMaterial: armRunMaterial, rightForearm: { children: [null, null, armRunTarget] } }] };
-let armRunView = "hand-side", armWaits = 0, expectedDiagnosticTarget = armRunTarget, armGeometryCalls = 0, shoulderGeometryCalls = 0, envelopeCalls = 0, capCalls = 0;
+let armRunView = "hand-side", armWaits = 0, expectedDiagnosticTarget = armRunTarget, armGeometryCalls = 0, shoulderGeometryCalls = 0, envelopeCalls = 0, capCalls = 0, bearingCalls = 0;
 const armRunHarness = new Function("game", "cameraReview", "document", "select", "waitForReviewFrame", "withHelmetShellDiagnostic", "shellReviewState", "withElbowSilhouette", "withShoulderCapAlignment", `
   const resetReview={}, cacheReview={}, decoyReview={}, resetPhase="ready", sceneSerial=1, errorCount=0, renderedFrames=0, aoOutput="final";
   let stress=false, cameraOffset=.31;
@@ -959,10 +1021,12 @@ const armRunHarness = new Function("game", "cameraReview", "document", "select",
     assert.deepEqual(armRunControls.map(control => control.disabled), [true, true]); },
   async (mode, action, target) => { assert.ok(target === expectedDiagnosticTarget); armRunModes.push(mode); await action(); },
   target => { assert.ok(target === expectedDiagnosticTarget, "every sample records the material target actually overridden"); return { targetName: "actual forearm batch" }; },
-  async (target, capture, shoulder, preserveZ) => {
-    assert.ok(target === expectedDiagnosticTarget);
+  async (target, capture, shoulder, preserveZ, bearingFit) => {
+    if (bearingFit && armRunView === "fighter") assert.ok([armRunGame.players[0].leftArm.children[0], armRunGame.players[0].rightArm.children[0]].includes(target));
+    else assert.ok(target === expectedDiagnosticTarget);
     if (shoulder) shoulderGeometryCalls++; else armGeometryCalls++;
     if (preserveZ) envelopeCalls++;
+    if (bearingFit) { assert.equal(shoulder, true); assert.equal(preserveZ, false); assert.equal(bearingFit, "previous"); bearingCalls++; }
     return capture();
   }, async (target, capture, previous) => { assert.ok(target === expectedDiagnosticTarget); assert.equal(previous, true); capCalls++; return capture(); });
 await armRunHarness.run(false, true);
@@ -1093,6 +1157,20 @@ assert.ok(armRunState.samples.every(sample => sample.diagnosticTarget.startsWith
 expectedDiagnosticTarget = leftShoulderTarget;
 await armRunHarness.run(true, false, false, true, true);
 assert.match(armRunState.error, /matching view/); assert.equal(armWaits, 116, "whole-fighter framing is restricted to the cap-contact comparison");
+armRunView = "hand-shoulder-opposite";
+await armRunHarness.run(true, false, false, true, "bearing-fit");
+assert.equal(armRunState.error, null); assert.equal(armWaits, 125); assert.equal(bearingCalls, 1);
+assert.deepEqual(armRunState.samples.map(sample => sample.mode), ["previous-bearing-fit", "previous-bearing-fit", "previous-bearing-fit", "bearing-fit", "bearing-fit", "bearing-fit", "restored", "restored", "restored"]);
+assert.deepEqual(armRunModes, [], "bearing fit preserves material");
+armRunGame.players[0].id = "d";
+await armRunHarness.run(true, false, false, true, "bearing-fit");
+assert.match(armRunState.error, /restricted to costume variant 1/); assert.equal(armWaits, 125);
+assert.equal(armRunState.running, false); assert.equal(armRunState.shell, false); assert.equal(armRunHarness.offset(), .31);
+assert.deepEqual(armRunControls.map(control => control.disabled), [false, true]);
+armRunGame.players[0].id = "p1"; armRunView = "fighter"; expectedDiagnosticTarget = armRunGame.players[0].rightArm.children[0];
+await armRunHarness.run(true, false, false, true, "bearing-fit");
+assert.equal(armRunState.error, null); assert.equal(armWaits, 134); assert.equal(bearingCalls, 3, "whole-fighter trial swaps both bearings");
+assert.ok(armRunState.samples.every(sample => sample.diagnosticTarget.includes("both variant-1 shoulder bearings")));
 const geometryNormalToken = {}, colorOutputToken = {};
 const makeAOWrapper = new Function("mrt", "normalViewGeometry", "output", "geometryAONormals", "aoOutput", "vec3", "vec4", "depthAONormals", "legacyAONormals", "normalView", "materialBlendAONormals", "THREE", "recoverAONormals", "singleSampleAO", "emulateCompatibilityAO", `${aoWrapperSource}; return withAODiagnostics;`);
 const wrapAONormals = makeAOWrapper(value => value, geometryNormalToken, colorOutputToken, true, "final");

@@ -39,6 +39,7 @@
 <button id="shoulder-silhouette">Compare shoulder ball silhouette</button>
 <button id="shoulder-envelope">Compare ellipsoidal shoulder Z envelope</button>
 <button id="shoulder-cap-alignment">Compare previous shoulder cap alignment</button>
+<button id="shoulder-bearing-fit">Compare previous shoulder bearing fit</button>
 <button id="arm-comparison">Check elbow finish restoration</button>
 <button id="elbow-comparison">Compare elbow silhouette</button>
 <button id="boost-passage">Test boost passage</button>
@@ -739,8 +740,13 @@ async function runCameraReview(boostPassage = false) {
 }
 select("camera-sequence").onclick = () => runCameraReview();
 select("boost-passage").onclick = () => runCameraReview(true);
-async function withElbowSilhouette(target, capture, shoulder = false, preserveZEnvelope = false) {
+async function withElbowSilhouette(target, capture, shoulder = false, preserveZEnvelope = false, bearingFit = false) {
   if (preserveZEnvelope && !shoulder) throw new Error("Z-envelope control is shoulder-only");
+  if (![false, true, "previous"].includes(bearingFit)) throw new Error("Unknown bearing fit control");
+  if (bearingFit && (!shoulder || preserveZEnvelope ||
+      [...game.players[0].id].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % 4 !== 1 ||
+      ![game.players[0].leftArm.children[0], game.players[0].rightArm.children[0]].includes(target)))
+    throw new Error("Bearing fit is restricted to variant-1 shoulder batches");
   const original = target.geometry;
   // Integrated elbow: compare the previous contour without touching the fist.
   if (!shoulder && original.type === "SphereGeometry") {
@@ -751,12 +757,13 @@ async function withElbowSilhouette(target, capture, shoulder = false, preserveZE
     try { target.geometry = previous; return await capture(); }
     finally { target.geometry = original; previous.dispose(); }
   }
-  const sphere = (width, height) => {
-    const indexed = new THREE.SphereGeometry(shoulder ? .18 : .135, width, height);
+  const jointRadius = shoulder ? (!bearingFit && [...(game.players[0]?.id ?? "")].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % 4 === 1 ? .16 : .18) : .135;
+  const sphere = (width, height, radius = jointRadius) => {
+    const indexed = new THREE.SphereGeometry(radius, width, height);
     const geometry = indexed.toNonIndexed(); indexed.dispose();
     return geometry.translate(0, shoulder ? -.045 : .015, 0);
   };
-  const coarse = sphere(10, 6);
+  const coarse = sphere(10, 6, bearingFit === "previous" ? .16 : jointRadius);
   let fine, temporary;
   try {
     // Authenticate the joint suffix before replacing it; preserve every prefix
@@ -769,7 +776,7 @@ async function withElbowSilhouette(target, capture, shoulder = false, preserveZE
           actual.count !== original.attributes.position.count || start < 0 ||
           !reference.array.every((value, index) => Object.is(value, actual.array[start + index]))) throw new Error(`Unexpected elbow ${name} suffix`);
     }
-    fine = sphere(16, 10);
+    fine = bearingFit ? sphere(10, 6, bearingFit === "previous" ? .18 : .16) : sphere(16, 10);
     if (preserveZEnvelope) {
       coarse.computeBoundingBox(); fine.computeBoundingBox();
       // A deliberately ellipsoidal control, not an unchanged-radius sphere.
@@ -888,7 +895,7 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
   const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
   const originalOffset = cameraOffset, serial = sceneSerial, initialErrors = errorCount;
   try {
-    if (![false, true, "envelope", "cap-alignment"].includes(shoulderSilhouette)) throw new Error("Unknown shoulder silhouette control");
+    if (![false, true, "envelope", "cap-alignment", "bearing-fit"].includes(shoulderSilhouette)) throw new Error("Unknown shoulder silhouette control");
     if (shoulderSilhouette && (!shoulder || !compareFinish)) throw new Error("Shoulder silhouette requires the shoulder comparison route");
     if (shoulder && (forearm || elbowSilhouette)) throw new Error("Shoulder diagnosis cannot run an elbow comparison");
     if (elbowSilhouette && (!compareFinish || !forearm)) throw new Error("Elbow silhouette comparison requires the satin forearm route");
@@ -904,6 +911,8 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
       throw new Error("Unexpected shoulder batch layout; update the diagnostic target before capturing");
     if (shoulderSilhouette && target.material !== game.players[0].elbowMaterial)
       throw new Error("Shoulder silhouette must preserve the published satin material");
+    if (shoulderSilhouette === "bearing-fit" && [...game.players[0].id].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % 4 !== 1)
+      throw new Error("Bearing fit is restricted to costume variant 1");
     if (shoulderSilhouette === "cap-alignment") {
       if ([...game.players[0].id].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % 4 !== 1)
         throw new Error("Static cap alignment is restricted to costume variant 1");
@@ -913,7 +922,7 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
         target.material !== (separateElbow ? game.players[0].elbowMaterial : game.players[0].darkMaterial)))
       throw new Error("Unexpected forearm batch layout; update the diagnostic target before capturing");
     const validView = shoulder ? ["hand-shoulder", "hand-shoulder-opposite"].includes(select("view").value) ||
-      (shoulderSilhouette === "cap-alignment" && select("view").value === "fighter")
+      (["cap-alignment", "bearing-fit"].includes(shoulderSilhouette) && select("view").value === "fighter")
       : forearm ? select("view").value === "hand-side" : select("view").value.startsWith("helmet-");
     if (stress || !game.paused || resetPhase !== "ready" || game.settings.graphics !== "high" ||
         !validView || game.renderPipeline.direct || aoOutput !== "final")
@@ -923,7 +932,8 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
     if (compareFinish && !forearm && !shoulder && !game.players[0].helmetShell) throw new Error("Select the capsule helmet for its finish comparison");
     for (const [control] of controls) control.disabled = true;
     const modes = shoulderSilhouette === "cap-alignment" ? ["previous-cap-x-alignment", "aligned-cap-x", "restored"]
-      : shoulderSilhouette ? ["baseline", shoulderSilhouette === "envelope" ? "ellipsoidal-z-envelope" : "shoulder-silhouette", "restored"]
+      : shoulderSilhouette === "bearing-fit" ? ["previous-bearing-fit", "bearing-fit", "restored"]
+      : shoulderSilhouette ? ["baseline", shoulderSilhouette === "envelope" ? "ellipsoidal-z-envelope" : shoulderSilhouette === "bearing-fit" ? "bearing-fit" : "shoulder-silhouette", "restored"]
       : elbowSilhouette && separateElbow ? ["previous-elbow", "elbow-silhouette", "restored"]
       : elbowSilhouette ? ["satin-baseline", "elbow-silhouette", "satin-restored"]
       : compareFinish ? ["baseline", forearm || shoulder ? "satin-trial" : "previous-finish", "restored"] : ["baseline", "explicit-environment", "no-environment", "normals", "restored"];
@@ -940,7 +950,8 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
           link.href = document.querySelector("#game-canvas").toDataURL("image/png");
           select("camera-captures").append(link, " ");
           cameraReview.samples.push({ index, mode, offset, output: mode === "normals" ? "scene-color" : "final",
-            diagnosticTarget: shoulderSilhouette === "cap-alignment" ? `${select("view").value === "fighter" ? "whole-fighter" : oppositeShoulder ? "left" : "right"} view of variant-1 static shoulder caps; other armor prefix preserved`
+            diagnosticTarget: shoulderSilhouette === "bearing-fit" && select("view").value === "fighter" ? "whole-fighter view of both variant-1 shoulder bearings; capsule prefixes preserved"
+              : shoulderSilhouette === "cap-alignment" ? `${select("view").value === "fighter" ? "whole-fighter" : oppositeShoulder ? "left" : "right"} view of variant-1 static shoulder caps; other armor prefix preserved`
               : shoulder ? `${oppositeShoulder ? "left" : "right"} upper-arm dark batch: shoulder ball and capsule; excludes elbow, fist and static armor`
               : separateElbow ? "right elbow only" : forearm ? "right forearm dark batch: elbow and fist" : "helmet shell",
             armMatrices: shoulder ? [game.players[0].leftArm?.matrixWorld?.toArray(), game.players[0].rightArm?.matrixWorld?.toArray()] : undefined,
@@ -949,6 +960,8 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
       };
       if (shoulderSilhouette) {
         if (mode === "previous-cap-x-alignment") await withShoulderCapAlignment(target, capture, true);
+        else if (mode === "previous-bearing-fit") await withElbowSilhouette(target,
+          () => select("view").value === "fighter" ? withElbowSilhouette(game.players[0].leftArm.children[0], capture, true, false, "previous") : capture(), true, false, "previous");
         else if (mode === "shoulder-silhouette" || mode === "ellipsoidal-z-envelope") await withElbowSilhouette(target, capture, true, shoulderSilhouette === "envelope");
         else await capture();
       } else if (elbowSilhouette && separateElbow) {
@@ -971,6 +984,7 @@ select("shoulder-comparison").onclick = () => runShellReview(true, false, false,
 select("shoulder-silhouette").onclick = () => runShellReview(true, false, false, true, true);
 select("shoulder-envelope").onclick = () => runShellReview(true, false, false, true, "envelope");
 select("shoulder-cap-alignment").onclick = () => runShellReview(true, false, false, true, "cap-alignment");
+select("shoulder-bearing-fit").onclick = () => runShellReview(true, false, false, true, "bearing-fit");
 select("arm-comparison").onclick = () => runShellReview(true, true);
 select("elbow-comparison").onclick = () => runShellReview(true, true, true);
 async function runDecoyReview(crossTier = false, overlap = false) {

@@ -148,11 +148,11 @@ function alignArmGrip(upper, forearm, grip, forward) {
   forearm.quaternion.copy(upper.quaternion).invert().multiply(handRotation);
 }
 
-function articulatedArm(dark, armor, accent, x, elbowMaterial, elbowGeometry) {
+function articulatedArm(dark, armor, accent, x, elbowMaterial, elbowGeometry, shoulderRadius) {
   const upper = new THREE.Group();
   upper.position.set(x, 1.67, 0);
   const upperArmor = part(new THREE.CapsuleGeometry(.145, .27, 3, 8), dark, 0, -.28, 0);
-  const shoulderJoint = part(new THREE.SphereGeometry(.18, 10, 6), dark, 0, -.045, 0);
+  const shoulderJoint = part(new THREE.SphereGeometry(shoulderRadius, 10, 6), dark, 0, -.045, 0);
   const upperStripe = part(new THREE.BoxGeometry(.21, .045, .055), accent, 0, -.19, .155, false);
   const forearm = new THREE.Group();
   forearm.position.y = -.55;
@@ -330,8 +330,9 @@ export class Fighter {
     leftEar.rotation.z = rightEar.rotation.z = Math.PI / 2;
 
     const elbowGeometry = new THREE.SphereGeometry(.135, 16, 10);
-    const leftArmRig = articulatedArm(dark, armor, accent, -.61, this.elbowMaterial, elbowGeometry);
-    const rightArmRig = articulatedArm(dark, armor, accent, .61, this.elbowMaterial, elbowGeometry);
+    const shoulderRadius = costumeVariant === 1 ? .16 : .18;
+    const leftArmRig = articulatedArm(dark, armor, accent, -.61, this.elbowMaterial, elbowGeometry, shoulderRadius);
+    const rightArmRig = articulatedArm(dark, armor, accent, .61, this.elbowMaterial, elbowGeometry, shoulderRadius);
     this.leftArm = leftArmRig.upper;
     this.rightArm = rightArmRig.upper;
     this.leftForearm = leftArmRig.forearm;
