@@ -10,6 +10,103 @@ import { NeonRenderPipeline, recoverInvalidAONormals } from "../src/renderPipeli
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { surfaceTextures } from "../src/surfaceTextures.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { weaponUsesAmmo } from "../src/gameData.js";
+import { weaponPresentation } from "../src/weaponPresentation.js";
+
+// Execute the previous clone path against the same complete fighter/weapon builder.
+// Only the three transient merge copies differ; no frozen art data to maintain.
+const playerMergeSource = readFileSync(new URL("../src/player.js", import.meta.url), "utf8");
+assert.equal(playerMergeSource.split("new THREE.BufferGeometry().copy(mesh.geometry)").length - 1, 3,
+  "transient merge copies must not rebuild each procedural geometry constructor");
+const legacyPlayerSource = playerMergeSource.replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "")
+  .replaceAll("new THREE.BufferGeometry().copy(mesh.geometry)", "mesh.geometry.clone()");
+const LegacyMergeFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
+  `${legacyPlayerSource}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
+function mergedFighterSnapshot(fighter) {
+  const meshes = [];
+  fighter.group.updateMatrixWorld(true);
+  fighter.group.traverse(object => {
+    if (!object.geometry) return;
+    const geometry = object.geometry, digest = createHash("sha256");
+    const attributes = {};
+    for (const [name, attribute] of Object.entries(geometry.attributes)) {
+      digest.update(new Uint8Array(attribute.array.buffer, attribute.array.byteOffset, attribute.array.byteLength));
+      attributes[name] = [attribute.itemSize, attribute.count, attribute.normalized];
+    }
+    if (geometry.index) digest.update(new Uint8Array(geometry.index.array.buffer, geometry.index.array.byteOffset, geometry.index.array.byteLength));
+    geometry.computeBoundingBox(); geometry.computeBoundingSphere();
+    meshes.push({ attributes, hash: digest.digest("hex"), groups: geometry.groups, drawRange: geometry.drawRange,
+      bounds: [geometry.boundingBox.min.toArray(), geometry.boundingBox.max.toArray(), geometry.boundingSphere.center.toArray(), geometry.boundingSphere.radius],
+      matrix: object.matrixWorld.toArray(), shadow: [object.castShadow, object.receiveShadow],
+      materials: [].concat(object.material).map(material => ({ type: material.type, color: material.color?.getHexString(), emissive: material.emissive?.getHexString(),
+        intensity: material.emissiveIntensity, roughness: material.roughness, metalness: material.metalness, clearcoat: material.clearcoat,
+        opacity: material.opacity, transparent: material.transparent, blending: material.blending, side: material.side, depthWrite: material.depthWrite })) });
+  });
+  return { meshes, grip: fighter.weaponGrip.toArray(), support: fighter.weaponSupportGrip.toArray(), muzzle: fighter.weaponMuzzleDistance };
+}
+for (const id of Object.keys(WEAPONS)) {
+  const config = { id: "merge-parity", color: 0x129dba, accent: 0x6ff6ff };
+  const modern = new Fighter(new THREE.Scene(), config, [id], new THREE.Vector3(3, 4, 5));
+  const legacy = new LegacyMergeFighter(new THREE.Scene(), config, [id], new THREE.Vector3(3, 4, 5));
+  assert.deepEqual(mergedFighterSnapshot(modern), mergedFighterSnapshot(legacy), `${id}: direct buffer copies preserve the full fighter/weapon output`);
+  modern.dispose(); legacy.dispose();
+}
+const mergeHelperSource = playerMergeSource.slice(playerMergeSource.indexOf("function mergeStaticParts("), playerMergeSource.indexOf("const armDown"));
+const mergeCopies = [];
+const mergeHelpers = new Function("THREE", "mergeGeometries", "disposeGeometry", `${mergeHelperSource}; return { mergeStaticParts, mergeRigidMeshes, combineMaterialBatches };`)(THREE,
+  (geometries, groups) => {
+    for (const geometry of geometries) {
+      const copy = { geometry, disposals: 0 }; mergeCopies.push(copy);
+      geometry.addEventListener("dispose", () => copy.disposals++);
+    }
+    return mergeGeometries(geometries, groups);
+  }, geometry => { if (!geometry.userData.sharedFighterGeometry) geometry.dispose(); });
+let proceduralCopies = 0;
+class CountedMergeGeometry extends THREE.BufferGeometry {
+  constructor() { super(); proceduralCopies++; }
+}
+for (const indexed of [true, false]) for (const name of Object.keys(mergeHelpers)) {
+  const box = new THREE.BoxGeometry(1, 2, 3), flat = indexed ? box : box.toNonIndexed();
+  const source = new CountedMergeGeometry().copy(flat);
+  if (flat !== box) flat.dispose(); box.dispose();
+  source.userData.sharedFighterGeometry = true;
+  source.morphAttributes.position = [source.attributes.position.clone()]; source.morphTargetsRelative = true;
+  source.computeBoundingBox(); source.computeBoundingSphere(); source.setDrawRange(0, 12);
+  const sourceData = source.toJSON(), sourceBuffers = Object.values(source.attributes).map(attribute => attribute.array);
+  let sourceDisposals = 0; source.addEventListener("dispose", () => sourceDisposals++);
+  const beforeConstructors = proceduralCopies, beforeCopies = mergeCopies.length;
+  const root = new THREE.Group();
+  const materials = [new THREE.MeshBasicMaterial(), new THREE.MeshBasicMaterial()];
+  const meshes = materials.map((material, i) => { const mesh = new THREE.Mesh(source, name === "mergeRigidMeshes" ? materials[0] : material); mesh.position.set(i, 2, 3); mesh.updateMatrix(); root.add(mesh); return mesh; });
+  const output = name === "mergeStaticParts" ? mergeHelpers[name](materials[0], meshes) : (mergeHelpers[name](root), root);
+  assert.equal(proceduralCopies, beforeConstructors, `${name} must not invoke a source subclass constructor (${indexed ? "indexed" : "flat"})`);
+  assert.equal(sourceDisposals, 0, "shared source buffers remain owned by their cache");
+  assert.deepEqual(source.toJSON(), sourceData, "transforms/copying cannot mutate source geometry data, morphs or bounds");
+  assert.deepEqual(Object.values(source.attributes).map(attribute => attribute.array), sourceBuffers);
+  assert.ok(mergeCopies.slice(beforeCopies).every(copy => copy.disposals === 1), "all transient merge inputs are disposed exactly once");
+  output.traverse(object => { if (object.geometry && object.geometry !== source) object.geometry.dispose(); });
+  source.dispose(); materials.forEach(material => material.dispose());
+}
+if (process.argv.includes("--bench-merge")) {
+  const results = [];
+  for (let batch = 0; batch < 6; batch++) {
+    const variants = [["current", Fighter], ["legacy", LegacyMergeFighter]];
+    if (batch % 2) variants.reverse();
+    for (const [name, Type] of variants) {
+      let constructionMs = 0, disposalMs = 0;
+      for (const id of Object.keys(WEAPONS)) {
+        const start = performance.now();
+        const fighter = new Type(new THREE.Scene(), { id: "merge-bench", color: 0x129dba, accent: 0x6ff6ff }, [id], new THREE.Vector3());
+        const built = performance.now(); fighter.dispose();
+        constructionMs += built - start; disposalMs += performance.now() - built;
+      }
+      results.push({ batch, name, weapons: Object.keys(WEAPONS).length, constructionMs, disposalMs });
+    }
+  }
+  console.log(JSON.stringify({ mergeBenchmark: results }));
+}
 
 // Execute the fixture's actual wait helper with a stopped animation clock.
 const graphicsFixture = readFileSync(new URL("./graphics.browser.html", import.meta.url), "utf8");
@@ -139,10 +236,11 @@ timeoutCallback();
 await assert.rejects(coldResetWait, /60 seconds/, "a stalled reset still terminates independently of rAF");
 
 const botTraceSource = graphicsFixture.slice(graphicsFixture.indexOf("function traceBotMethod("), graphicsFixture.indexOf("if (traceFrames) for"));
-let botTraceClock = 0, botTraceContext = null, botTraceCpu = {};
-const traceBotMethod = new Function("performance", "getBot", "getCpu", botTraceSource.replaceAll("activeTraceBot", "getBot()").replaceAll("cpu.botCalls", "getCpu().botCalls") + "; return traceBotMethod;")(
-  { now: () => ++botTraceClock }, () => botTraceContext, () => botTraceCpu);
+let botTraceClock = 0, botTraceContext = null, botTraceCpu = {}, projectileTraceActive = false;
+const traceBotMethod = new Function("performance", "getBot", "getCpu", "getProjectiles", botTraceSource.replaceAll("activeTraceBot", "getBot()").replaceAll("activeTraceProjectiles", "getProjectiles()").replaceAll("cpu.botCalls", "getCpu().botCalls").replaceAll("cpu[", "getCpu()[") + "; return traceBotMethod;")(
+  { now: () => ++botTraceClock }, () => botTraceContext, () => botTraceCpu, () => projectileTraceActive);
 const botTraceTarget = { value: 4, run(n) { return this.value + n; } };
+assert.throws(() => traceBotMethod(botTraceTarget, "missing", "test"), /Unknown trace method: test.missing/, "stale hook names must fail visibly rather than silently lose attribution");
 traceBotMethod(botTraceTarget, "run", "test");
 assert.equal(botTraceTarget.run(3), 7);
 assert.equal(botTraceClock, 0, "nested timing is inactive outside bot updates");
@@ -169,6 +267,20 @@ traceBotMethod(ropeTrace, "updateGrapple", "game"); ropeTrace.updateGrapple(rope
 ropeTraceBot.grapple.wraps[0].set(0, 0, 0);
 assert.equal(botTraceCpu.botCalls["game.updateGrapple"].wraps.length, 8);
 assert.deepEqual(botTraceCpu.botCalls["game.updateGrapple"].wraps[0], [1, 2, 3], "grapple evidence cannot retain mutable vectors");
+botTraceContext = null; projectileTraceActive = true;
+assert.equal(botTraceTarget.run(8), 12);
+assert.deepEqual(botTraceCpu.projectileCalls["test.run"], { calls: 1, totalMs: 1, maxMs: 1, bot: null, weapon: null }, "projectile-loop timing must not be mislabeled as a bot update");
+assert.throws(() => botTraceTarget.fail(), error => error === botTraceError);
+assert.equal(botTraceCpu.projectileCalls["test.fail"].calls, 1);
+const shotTrace = { damagePlayer() { return 7; } }, shotWeapon = { id: "rocket_launcher" };
+traceBotMethod(shotTrace, "damagePlayer", "game");
+assert.equal(shotTrace.damagePlayer({}, 10, {}, {}, shotWeapon), 7);
+shotWeapon.id = "changed";
+assert.equal(botTraceCpu.projectileCalls["game.damagePlayer"].weapon, "rocket_launcher", "max projectile attribution owns the relevant weapon label");
+projectileTraceActive = false;
+const stoppedTraceClock = botTraceClock;
+botTraceTarget.run(1);
+assert.equal(botTraceClock, stoppedTraceClock, "combat tracing stops outside both update phases");
 
 const traceSource = graphicsFixture.slice(graphicsFixture.indexOf("function traceStartupMethod("), graphicsFixture.indexOf("if (traceStartup) {"));
 let traceClock = 0;

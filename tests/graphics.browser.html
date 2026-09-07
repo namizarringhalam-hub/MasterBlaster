@@ -172,25 +172,37 @@ select("seed").innerHTML = MAP_THEMES.map((theme, i) => {
 let stress = false, sampleAt = performance.now(), previous = sampleAt, frames = [], stats = {};
 const traceFrames = new URLSearchParams(location.search).has("traceFrames");
 let cpu = {}, previousCpu = {}, slowFrames = [], pipelineCreations = 0, decoyPipelines = [];
-let activeTraceBot = null;
+let activeTraceBot = null, activeTraceProjectiles = false;
 // QA-only inclusive timings: nested totals overlap and must not be added.
 // One fixed-size aggregate per method/frame; no fighter/resource references retained.
 function traceBotMethod(target, name, prefix) {
   const method = target[name];
+  if (typeof method !== "function") throw new Error(`Unknown trace method: ${prefix}.${name}`);
   target[name] = function (...args) {
-    if (!activeTraceBot) return method.apply(this, args);
-    const bot = activeTraceBot.id, weapon = activeTraceBot.weapon.id;
+    if (!activeTraceBot && !activeTraceProjectiles) return method.apply(this, args);
+    const phase = activeTraceBot ? "botCalls" : "projectileCalls";
+    const bot = activeTraceBot?.id || null, weapon = activeTraceBot?.weapon.id || null;
     const started = performance.now();
     try { return method.apply(this, args); } finally {
       const ms = performance.now() - started;
-      const record = (cpu.botCalls ||= {})[`${prefix}.${name}`] ||= { calls: 0, totalMs: 0, maxMs: -1 };
+      const record = (cpu[phase] ||= {})[`${prefix}.${name}`] ||= { calls: 0, totalMs: 0, maxMs: -1 };
       record.calls++; record.totalMs += ms;
       if (ms > record.maxMs) {
         Object.assign(record, { maxMs: ms, bot, weapon });
         // These world queries do not mutate their arguments. resolve does, so
         // omit its coordinates rather than allocating pre-snapshots on every call.
-        if (prefix === "world" && name !== "resolve") record.inputs = args.slice(0, 4).map(value => value?.isVector3 ? value.toArray() : typeof value === "number" ? value : null);
+        if (prefix === "world" && name !== "resolve" && name !== "destroy" && name !== "addTemporaryWall") record.inputs = args.slice(0, 4).map(value => value?.isVector3 ? value.toArray() : typeof value === "number" ? value : null);
         if (name === "updateGrapple") record.wraps = args[0].grapple?.wraps.slice(0, 8).map(point => point.toArray()) || [];
+        if (prefix === "sound" && name === "sample") record.sample = args[0];
+        if (prefix === "sound" && name === "_audioBufferFromMono") record.samples = args[0].length;
+        if (phase === "projectileCalls") {
+          if (["findProjectileTarget", "updateProjectile", "explode", "splitProjectile", "bounceProjectile"].includes(name)) record.weapon = args[0].weapon.id;
+          if (name === "finishProjectile") record.weapon = args[1].weapon.id;
+          if (name === "damageTerrain") record.weapon = args[1].id;
+          if (name === "spawnHazard") record.weapon = args[2].id;
+          if (name === "damageTarget" || name === "damagePlayer") record.weapon = args[4]?.id || null;
+          if (name === "showCombatFeedback") record.weapon = args[2]?.id || null;
+        }
       }
     }
   };
@@ -198,21 +210,23 @@ function traceBotMethod(target, name, prefix) {
 if (traceFrames) for (const name of ["update", "renderScene", "updateBot", "updateProjectiles", "updateAudio", "updateHud", "updateRespawns", "processStructuralEvents"]) {
   const method = game[name].bind(game);
   game[name] = (...args) => {
-    const start = performance.now(), previousBot = activeTraceBot;
+    const start = performance.now(), previousBot = activeTraceBot, previousProjectiles = activeTraceProjectiles;
     if (name === "updateBot") activeTraceBot = args[0];
+    if (name === "updateProjectiles") activeTraceProjectiles = true;
     try { return method(...args); } finally {
       activeTraceBot = previousBot;
+      activeTraceProjectiles = previousProjectiles;
       cpu[name] = (cpu[name] || 0) + performance.now() - start;
     }
   };
 }
 if (traceFrames) {
-  for (const name of ["tryFire", "spawnProjectile", "updateGrapple", "toggleGrapple", "releaseGrapple", "audioSpatial", "updateCharge", "releaseCharge"])
+  for (const name of ["tryFire", "spawnProjectile", "updateGrapple", "toggleGrapple", "releaseGrapple", "audioSpatial", "updateCharge", "releaseCharge", "findProjectileTarget", "damageTerrain", "finishProjectile", "explode", "damageTarget", "removeProjectile", "spawnDecoy", "spawnHazard", "damagePlayer", "showCombatFeedback", "spawnImpact", "stealWeapon", "teleportOwner", "splitProjectile", "bounceProjectile"])
     traceBotMethod(game, name, "game");
-  for (const name of ["update", "switchSlot"]) traceBotMethod(Fighter.prototype, name, "fighter");
-  for (const name of ["ropeBlocked", "surfaceHeightAt", "resolve", "grapplePoint", "ropeWrapPoint", "ropeObstacle", "nearbyObstacles"]) traceBotMethod(ArenaWorld.prototype, name, "world");
-  for (const name of ["play", "playWeapon", "sample", "updateWeaponLoop", "updateChargeLoop", "_route"]) traceBotMethod(game.sound, name, "sound");
-  for (const name of ["muzzle", "createProjectile"]) traceBotMethod(CombatVisuals.prototype, name, "visuals");
+  for (const name of ["update", "switchSlot", "takeHit"]) traceBotMethod(Fighter.prototype, name, "fighter");
+  for (const name of ["ropeBlocked", "surfaceHeightAt", "resolve", "grapplePoint", "ropeWrapPoint", "ropeObstacle", "nearbyObstacles", "projectileHit", "destroy", "effectBlocked", "addTemporaryWall"]) traceBotMethod(ArenaWorld.prototype, name, "world");
+  for (const name of ["play", "playWeapon", "sample", "updateWeaponLoop", "updateChargeLoop", "updateProjectileLoop", "playImpact", "_audioBufferFromMono", "_route"]) traceBotMethod(game.sound, name, "sound");
+  for (const name of ["muzzle", "createProjectile", "updateProjectile", "impact"]) traceBotMethod(CombatVisuals.prototype, name, "visuals");
   const buildWeapon = Fighter.prototype.updateWeaponModel;
   Fighter.prototype.updateWeaponModel = function (...args) {
     const start = performance.now(), cached = this.weaponModels.has(this.weapon.id);

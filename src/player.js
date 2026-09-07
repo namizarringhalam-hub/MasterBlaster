@@ -57,7 +57,9 @@ function limb(geometry, mat, x, y, z) {
 function mergeStaticParts(mat, meshes) {
   const transformed = meshes.map((mesh) => {
     mesh.updateMatrix();
-    const clone = mesh.geometry.clone();
+    // A derived geometry's clone rebuilds its default shape before copying.
+    // Merge inputs need only owned buffers, not that discarded procedural work.
+    const clone = new THREE.BufferGeometry().copy(mesh.geometry);
     const compatible = clone.index ? clone.toNonIndexed() : clone;
     if (compatible !== clone) clone.dispose();
     return compatible.applyMatrix4(mesh.matrix);
@@ -82,7 +84,7 @@ function mergeRigidMeshes(root, excludedRoots = []) {
   const rootInverse = root.matrixWorld.clone().invert();
   for (const [mat, meshes] of byMaterial) {
     const transformed = meshes.map((mesh) => {
-      const clone = mesh.geometry.clone();
+      const clone = new THREE.BufferGeometry().copy(mesh.geometry);
       const compatible = clone.index ? clone.toNonIndexed() : clone;
       if (compatible !== clone) clone.dispose();
       return compatible.applyMatrix4(rootInverse.clone().multiply(mesh.matrixWorld));
@@ -104,7 +106,7 @@ function combineMaterialBatches(root, excludedRoots = []) {
   const excluded = new Set(excludedRoots.filter(Boolean));
   const meshes = root.children.filter((child) => child.isMesh && !excluded.has(child));
   if (meshes.length < 2) return;
-  const transformed = meshes.map((mesh) => mesh.geometry.clone().applyMatrix4(mesh.matrix));
+  const transformed = meshes.map((mesh) => new THREE.BufferGeometry().copy(mesh.geometry).applyMatrix4(mesh.matrix));
   const geometry = mergeGeometries(transformed, true);
   for (const entry of transformed) entry.dispose();
   const merged = new THREE.Mesh(geometry, meshes.map((mesh) => mesh.material));
