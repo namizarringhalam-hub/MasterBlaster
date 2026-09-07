@@ -1,6 +1,13 @@
 # Graphics overhaul checkpoint
 
-Updated: 2026-09-07. Pass33 and Pass34 are PUBLISHED as an interim testing release. The graphics project is NOT complete.
+Updated: 2026-09-07. Pass36 shoulder finish is PUBLISHED after actual visual84→88 improvement, technical99/98PASS, full validation and production verification. The graphics project is NOT complete.
+
+## Latest publication — Pass36 complete, continue with shoulder shape
+
+- Exact source c6805089e51376238eb51688137da7f8e438fab3 pushed origin/main and existing Sites source main. Pages production7357d685-5f8d-49b0-a138-6d3ed98c8279 serves https://masterblaster.se/. Sites version103, savedappgprj_6a6378a267348191a15d7e0faf662c64~appgver_3649687380bc8191a85aa5c889d064f3, deploymentappgdep_6a9f23a902ec819196c979531ba424bb succeeded at existing public mirror. Archive hashffba988cba3c12860604ae759ddef5c737a6356f18174e8caac13c352d760205. No audience/environment/automatic deploy changes.
+- Both hosting targets binary-match tested main-lOd5cywi.js SHA256fb036a6897d140dc8524a61d4c092e629509f1b21059c17f238199155ddbbb21 and unchanged three-qFsCeRD-.js SHA256646b2b7b508a4334d13e566dda7d000877fa0768a47aa9195580bf8d7c5c64c2; primary HTML exact dist. Backend unchanged activee79ad4a2-f74a-42bc-9c18-e1ea58af707c, health200/ok/protocol1/arenaRevision2.
+- Production multiplayer suite completed exit0: recovery/session resume/coalesced state/private lobby plus all-four-corner destruction/paidammo/reconnect in16fighters. Production Training16fighterHigh/WebGPUUltra startup/game/score progression/menu exit rendered; evidence pass36-production.jpg and -dom.txt. Early10second HUD45FPS/587draws then22second58FPS/478draws; not controlled FPS certification or uplift. No backend redeploy required for material-only source change.
+- Scores remain visual88/100(user-authorized scoped incrementPASS, eventual98artFAIL), menu_audio_perf_critic99/100PASS, menu_audio_perf_reviewer98/100PASS. Next unfinished step is bounded shoulder silhouette refinement with frozen approved satin finish; get independent specific next experiment before changing geometry. Do not repeat completed Pass35/36, reopen approved elbow/fist/helmet, or wait for the user to saycontinue. Current existing tab7 returned to ordinary local native QA; no live match/review batch left active. Recovery automation remainsACTIVE with partial-publishing policy.
 
 ## Current publication policy and verified release (supersedes historical holds below)
 
