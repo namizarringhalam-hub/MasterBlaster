@@ -547,6 +547,66 @@ for (const pose of ["gait-positive", "gait-negative", "landing"]) {
   hero.dispose();
 }
 const handViewSource = graphicsFixture.slice(graphicsFixture.indexOf("function setView()"), graphicsFixture.indexOf("async function reset()"));
+const landingDropSource = graphicsFixture.slice(graphicsFixture.indexOf("async function withLandingDropRemoved("), graphicsFixture.indexOf("async function runLandingReview("));
+const removeLandingDrop = new Function(`${landingDropSource}; return withLandingDropRemoved;`)();
+assert.ok(playerMergeSource.includes("this.rig.position.y = bob - landing * .27;"), "QA control must track the actual production drop term");
+for (const weaponId of Object.keys(WEAPONS)) {
+  const hero = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, [weaponId], new THREE.Vector3(8, 15, 8));
+  hero.grounded = true; hero.landTimer = .11; hero.landStrength = .36; hero.rig.position.y = -.07; hero.group.updateMatrixWorld(true);
+  const before = { y: hero.rig.position.y, scale: hero.rig.scale.toArray(), rotation: hero.rig.rotation.toArray(),
+    muzzle: hero.muzzlePoint().toArray(), projectile: hero.forwardPoint(.08).toArray(), position: hero.position.toArray(),
+    legs: [hero.leftLeg, hero.rightLeg].map(leg => leg.matrix.toArray()), rig: hero.rig.matrixWorld.toArray() };
+  for (const fail of [false, true]) {
+    const capture = drop => {
+      assert.ok(Math.abs(drop - .0972) < 1e-12); assert.ok(Math.abs(hero.rig.position.y - before.y - drop) < 1e-12);
+      assert.deepEqual(hero.rig.scale.toArray(), before.scale); assert.deepEqual(hero.rig.rotation.toArray(), before.rotation);
+      assert.deepEqual(hero.muzzlePoint().toArray(), before.muzzle); assert.deepEqual(hero.forwardPoint(.08).toArray(), before.projectile);
+      assert.deepEqual(hero.position.toArray(), before.position); assert.deepEqual([hero.leftLeg, hero.rightLeg].map(leg => leg.matrix.toArray()), before.legs);
+      if (fail) throw new Error("landing capture interrupted");
+    };
+    if (fail) await assert.rejects(removeLandingDrop(hero, capture), /landing capture interrupted/); else await removeLandingDrop(hero, capture);
+    assert.equal(hero.rig.position.y, before.y); assert.deepEqual(hero.rig.matrixWorld.toArray(), before.rig);
+  }
+  hero.landTimer = 0; await assert.rejects(removeLandingDrop(hero, () => assert.fail("idle accepted")), /landing pose/);
+  hero.dispose();
+}
+{
+  const source = graphicsFixture.slice(graphicsFixture.indexOf("async function runLandingReview("), graphicsFixture.indexOf('select("landing-translation").onclick'));
+  const hero = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3(8, 15, 8));
+  hero.grounded = true; hero.landTimer = .11; hero.landStrength = .36; hero.rig.position.y = -.07; hero.group.updateMatrixWorld(true);
+  const state = {}, controls = [{ disabled: false }, { disabled: true }], links = [];
+  let interrupted = false;
+  const run = new Function("THREE", "game", "cameraReview", "document", "select", "waitForReviewFrame", "shellReviewState", "withLandingDropRemoved", `
+    const resetReview={},cacheReview={},decoyReview={},sceneSerial=1,errorCount=0,stress=false,resetPhase="ready",renderedFrames=0,stillMove=new THREE.Vector3(),reviewAim=new THREE.Vector3(0,0,-1);
+    ${source};return runLandingReview;`)(THREE, { players: [hero], paused: true, renderPipeline: { direct: false }, world: {
+      surfaceHeightAt: () => 15, resolve: position => { const grounded = position.y <= 15; if (grounded) position.y = 15; return { grounded }; }, boostAt: () => null } }, state,
+    { querySelectorAll: () => controls, createElement: () => ({}), querySelector: () => ({ toDataURL: () => "data:image/png;base64,test" }) },
+    name => name === "view" ? { value: "lower-body-side" } : name === "pose" ? { value: "landing" } : { replaceChildren: () => { links.length = 0; }, append: link => links.push(link) },
+    async () => { assert.equal(state.shell, true); assert.ok(controls.every(control => control.disabled)); if (interrupted && state.samples.length === 1) throw new Error("landing frame timeout"); },
+    () => ({}), removeLandingDrop);
+  await run(); assert.equal(state.error, null); assert.equal(links.length, 3);
+  assert.deepEqual(state.samples.map(sample => sample.mode), ["baseline", "no-extra-drop", "restored"]);
+  assert.equal(state.samples[0].rigY, state.samples[2].rigY); assert.ok(state.samples[1].rigY > state.samples[0].rigY);
+  interrupted = true; await run(); assert.match(state.error, /landing frame timeout/);
+  assert.equal(hero.rig.position.y, -.07); assert.equal(state.running, false); assert.equal(state.shell, false);
+  assert.deepEqual(controls.map(control => control.disabled), [false, true]);
+  interrupted = false;
+  for (const fallHeight of [0, 8]) {
+    await run(true, fallHeight); assert.equal(state.error, null);
+    assert.equal(state.samples.length, 27); assert.equal(state.landingFrames.length, 46);
+    assert.equal(state.landingFrames.at(-1).baseline.landTimer, 0);
+    assert.ok(state.landingFrames[0].baseline.landStrength > (fallHeight ? .9 : .3));
+    for (const frame of state.landingFrames) {
+      assert.equal(frame.fallHeight, fallHeight); assert.equal(frame.baseline.floor, 15);
+      assert.deepEqual(frame.baseline.fighterPosition, frame.candidate.fighterPosition);
+      assert.deepEqual(frame.baseline.velocity, frame.candidate.velocity);
+      assert.deepEqual(frame.baseline.logicalMuzzle, frame.candidate.logicalMuzzle);
+      assert.deepEqual(frame.baseline.rigScale, frame.candidate.rigScale);
+      assert.ok(frame.candidate.rigY >= frame.baseline.rigY);
+    }
+  }
+  hero.dispose();
+}
 const weaponSelectSource = graphicsFixture.slice(graphicsFixture.indexOf('select("weapon").onchange ='), graphicsFixture.indexOf('select("pose").onchange ='));
 for (const view of ["lower-body-front", "lower-body-side"]) {
   assert.ok(graphicsFixture.includes(`<option>${view}</option>`));

@@ -44,6 +44,9 @@
 <button id="shoulder-cap-chamfer">Compare right cap edge chamfer</button>
 <button id="shoulder-cap-emission">Diagnose right cap self-illumination</button>
 <button id="shoulder-cap-finish">Compare right cap surface finish</button>
+<button id="landing-translation">Compare landing translation</button>
+<button id="landing-sequence">Compare full landing recovery</button>
+<button id="landing-hard-sequence">Compare hard landing recovery</button>
 <button id="arm-comparison">Check elbow finish restoration</button>
 <button id="elbow-comparison">Compare elbow silhouette</button>
 <button id="boost-passage">Test boost passage</button>
@@ -125,6 +128,27 @@ addEventListener("error", e => recordError(e.message));
 addEventListener("unhandledrejection", e => recordError(String(e.reason)));
 const { gameReady } = await import("../src/main.js");
 const game = await gameReady, metrics = document.querySelector("#metrics");
+function installObserverMatrixSync(renderer, stats) {
+  const nodes = renderer._nodes, original = nodes.getForRender, patched = new WeakSet();
+  nodes.getForRender = function (...args) {
+    const state = original.apply(this, args), observer = state.observer;
+    if (!patched.has(observer)) {
+      patched.add(observer);
+      const refresh = observer.needsRefresh;
+      observer.needsRefresh = function (renderObject, frame) {
+        const result = refresh.call(this, renderObject, frame);
+        const cached = result && this.renderObjects.get(renderObject);
+        if (cached && !cached.worldMatrix.equals(renderObject.object.matrixWorld)) {
+          cached.worldMatrix.copy(renderObject.object.matrixWorld); stats.synchronized++;
+        }
+        return result;
+      };
+    }
+    return state;
+  };
+}
+const observerMatrixSync = { enabled: new URLSearchParams(location.search).has("observerMatrixSync"), synchronized: 0 };
+if (observerMatrixSync.enabled) installObserverMatrixSync(game.renderer, observerMatrixSync);
 // QA-only labels identify which real render target is destroyed. Keep only
 // copied metadata, never GPU resources; this trace is not a speed benchmark.
 function installResizeTextureTrace(renderer, state) {
@@ -732,6 +756,73 @@ select("cache-cycle").onclick = async () => {
   } catch (error) { cacheReview.error = String(error); }
   finally { cacheReview.running = false; }
 };
+async function withLandingDropRemoved(hero, capture) {
+  if (!hero.alive || !hero.grounded || hero.landTimer <= 0 || hero.landTimer > .22) throw new Error("Select a living grounded landing pose");
+  const originalY = hero.rig.position.y;
+  const removedDrop = hero.landStrength * Math.sin((1 - hero.landTimer / .22) * Math.PI) * .27;
+  try {
+    hero.rig.position.y += removedDrop; hero.group.updateMatrixWorld(true);
+    return await capture(removedDrop);
+  } finally { hero.rig.position.y = originalY; hero.group.updateMatrixWorld(true); }
+}
+async function runLandingReview(sequence = false, fallHeight = 0) {
+  if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
+  cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.landingFrames = []; cameraReview.error = null;
+  select("camera-captures").replaceChildren();
+  const serial = sceneSerial, initialErrors = errorCount, hero = game.players[0];
+  const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
+  try {
+    if (stress || !game.paused || resetPhase !== "ready" || !(select("view").value.startsWith("lower-body-") || sequence && select("view").value === "fighter") || !sequence && select("pose").value !== "landing")
+      throw new Error("Landing comparison needs the ready paused lower-body landing view");
+    controls.forEach(([control]) => { control.disabled = true; });
+    const state = () => ({ fighterPosition: hero.position.toArray(), velocity: hero.velocity.toArray(), rigY: hero.rig.position.y,
+      rigScale: hero.rig.scale.toArray(), landTimer: hero.landTimer, landStrength: hero.landStrength,
+      floor: game.world.surfaceHeightAt(hero.position, hero.position.y + .35),
+      logicalMuzzle: hero.muzzlePoint().toArray(), logicalProjectileOrigin: hero.forwardPoint(.08).toArray(),
+      legs: [hero.leftLeg, hero.rightLeg].map(leg => ({ localMatrix: leg.matrix.toArray(), matrix: leg.matrixWorld.toArray(), minY: new THREE.Box3().setFromObject(leg, true).min.y,
+        meshes: leg.children.map(mesh => ({ name: mesh.name, geometry: mesh.geometry?.uuid, localMatrix: mesh.matrix.toArray(), matrix: mesh.matrixWorld.toArray(), visible: mesh.visible })) })) });
+    const capture = async (mode, removedDrop = 0, landingFrame = null) => {
+      const ready = renderedFrames + 4;
+      await waitForReviewFrame(serial, () => renderedFrames >= ready);
+      if (!game.paused || errorCount !== initialErrors || game.renderPipeline.direct) throw new Error("Landing comparison interrupted");
+      const index = cameraReview.samples.length, link = document.createElement("a");
+      link.textContent = `Camera frame ${index}`; link.download = `landing-${mode}.png`;
+      link.href = document.querySelector("#game-canvas").toDataURL("image/png"); select("camera-captures").append(link, " ");
+      cameraReview.samples.push({ index, mode, removedDrop, landingFrame, ...shellReviewState(hero.leftLeg.children[0]), ...state(),
+        renderedFrames, errorCount, directFallback: game.renderPipeline.direct });
+    };
+    const compare = async landingFrame => {
+      await capture("baseline", 0, landingFrame);
+      if (hero.landTimer > 0) await withLandingDropRemoved(hero, drop => capture("no-extra-drop", drop, landingFrame));
+      else await capture("no-extra-drop", 0, landingFrame);
+      await capture("restored", 0, landingFrame);
+    };
+    if (!sequence) await compare(null);
+    else {
+      hero.velocity.set(0, 0, 0);
+      for (let i = 0; i < 60; i++) hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
+      if (fallHeight) { hero.position.y += fallHeight; hero.grounded = false; }
+      let landingFrame = -1;
+      for (let i = 0; i < 240; i++) {
+        const stepTime = performance.now();
+        hero.update(1 / 60, stillMove, reviewAim, { jump: !fallHeight && i === 0 }, game.world); hero.group.updateMatrixWorld(true);
+        if (landingFrame < 0 && hero.landTimer > 0) landingFrame = 0;
+        if (landingFrame >= 0) {
+          const baseline = state(), candidate = hero.landTimer > 0 ? await withLandingDropRemoved(hero, () => state()) : state();
+          cameraReview.landingFrames.push({ simulationFrame: i, landingFrame, stepTime, fallHeight, baseline, candidate });
+          if ([0, 2, 4, 6, 8, 10, 13, 21, 45].includes(landingFrame)) await compare(landingFrame);
+          if (landingFrame === 45) break;
+          landingFrame++;
+        }
+      }
+      if (cameraReview.landingFrames.length !== 46 || hero.landTimer !== 0) throw new Error("Landing recovery did not complete within 240 frames");
+    }
+  } catch (error) { cameraReview.error = String(error); }
+  finally { cameraReview.running = false; cameraReview.shell = false; controls.forEach(([control, disabled]) => { control.disabled = disabled; }); }
+}
+select("landing-translation").onclick = () => runLandingReview();
+select("landing-sequence").onclick = () => runLandingReview(true);
+select("landing-hard-sequence").onclick = () => runLandingReview(true, 8);
 async function runCameraReview(boostPassage = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cameraReview.running = true; cameraReview.samples = []; cameraReview.error = null;
@@ -1340,6 +1431,7 @@ game.frame = time => {
     failedBuffers: errors.map(e => bufferHistory.get(e.match(/qa-\d+/)?.[0])).filter(Boolean),
     retainedBuffers: [...bufferHistory.values()].filter(e => !e.destroyed && e.sceneSerial < sceneSerial),
     gpu: game.renderer.backend.device?.adapterInfo || {}, worldTextures: game.world?.textures.map(t => ({ size: t.image.width, mipmaps: t.generateMipmaps, anisotropy: t.anisotropy })) };
+  stats.observerMatrixSync = { ...observerMatrixSync };
   metrics.textContent = JSON.stringify(stats);
 };
 await reset();
