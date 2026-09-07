@@ -9,9 +9,10 @@
 <nav style="position:fixed;z-index:100;inset:auto 0 0;background:#07111def;padding:8px;display:flex;gap:8px;flex-wrap:wrap;font:12px monospace">
 <label>Tier <select id="tier"><option>high</option><option>medium</option><option>low</option></select></label>
 <label>Theme <select id="seed"><option>BLAST-01</option><option>SOLAR-01</option><option>ION-01</option></select></label>
-<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>thrusters</option><option>weapon</option><option>effects</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option></select></label>
+<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>thrusters</option><option>weapon</option><option>effects</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option><option>boost-top</option><option>boost-side</option><option>boost-raised</option></select></label>
 <label>Weapon <select id="weapon"></select></label>
 <label>Pose <select id="pose"><option>aim</option><option>reload</option><option>fire</option></select></label>
+<label>Boost pad <select id="boost-pad"><option value="0">1</option><option value="1">2</option><option value="2" selected>3</option><option value="3">4</option><option value="4">5</option><option value="5">6</option><option value="6">7</option><option value="7">8</option></select></label>
 <button id="burst">Fire / impact</button><button id="destroy">Collapse tower</button><button id="grapple">Toggle grapple</button>
 <button id="inspect-surface">Inspect footing material</button>
 <button id="thruster-sort">Toggle thruster sort control</button><button id="thruster-dust">Overlap structural dust</button>
@@ -24,6 +25,7 @@
 <button id="decoy-tiers">Test cross-tier decoys</button>
 <button id="decoy-overlap">Test overlapping tier decoys</button>
 <button id="camera-sequence">Capture moving-camera sequence</button><span id="camera-captures"></span>
+<button id="boost-passage">Test boost passage</button>
 <button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
 <label><input id="follow-camera" type="checkbox" checked>Follow player camera</label>
 <output id="metrics" style="flex-basis:100%;min-width:0;max-height:100px;overflow:auto;white-space:pre-wrap">Loading actual game…</output>
@@ -304,11 +306,11 @@ let settleUntil = sampleAt + 5000;
 let surface = null;
 function resetSamples(settleMs = 5000) { frames = []; slowFrames = []; previousCpu = {}; sampleAt = previous = performance.now(); settleUntil = sampleAt + settleMs; }
 // A separate timer also terminates a review when a hidden window stops rAF.
-function waitForReviewFrame(serial, ready) {
+function waitForReviewFrame(serial, ready, timeoutMs = 20000) {
   return new Promise((resolve, reject) => {
     let raf;
     const finish = error => { clearTimeout(timer); cancelAnimationFrame(raf); error ? reject(error) : resolve(); };
-    const timer = setTimeout(() => finish(new Error("Review frame wait timed out after 20 seconds")), 20000);
+    const timer = setTimeout(() => finish(new Error(`Review frame wait timed out after ${timeoutMs / 1000} seconds`)), timeoutMs);
     const poll = () => {
       if (sceneSerial !== serial) return finish(new Error("Review interrupted by scene change"));
       if (ready()) return finish();
@@ -352,6 +354,11 @@ function setView() {
     const span = Math.max(cover.w, cover.h), centerY = cover.baseY + cover.h / 2, faceZ = cover.z + cover.d / 2;
     poses[view] = [[cover.x + span * .55, centerY + span * .13, faceZ + span * 1.2], [cover.x, centerY, faceZ]];
   }
+  if (view.startsWith("boost-")) {
+    const pad = view === "boost-raised" ? game.world.boostPads.find(pad => pad.support) : game.world.boostPads[Number(select("boost-pad").value)];
+    const { x, y, z } = pad.position;
+    poses[view] = [[x - 6, y + (view === "boost-side" ? 2.2 : 6), z + 7], [x, y + 1, z]];
+  }
   game.updateCamera = () => {
     if (stress && select("follow-camera").checked) return cameraUpdate();
     const [position, target] = poses[view];
@@ -384,6 +391,7 @@ async function reset() {
   setView();
 }
 select("view").onchange = setView;
+select("boost-pad").onchange = setView;
 select("capture-canvas").onclick = () => { captureCanvas = true; };
 select("tier").onchange = () => { game.settings.graphics = select("tier").value; game.applyGraphicsSettings(); resetSamples(); };
 select("seed").onchange = reset;
@@ -429,7 +437,9 @@ async function runResetReview(warmDecoy = false) {
       }
       await reset();
       const serial = sceneSerial;
-      await waitForReviewFrame(serial, () => stats.sceneSerial === serial && stats.frames >= 60);
+      // Lifecycle readiness is not a startup-speed pass: cold rendering can
+      // consume most of 20s before the 60-frame sample and metrics publication.
+      await waitForReviewFrame(serial, () => stats.sceneSerial === serial && stats.frames >= 60, 60000);
       resetReview.samples.push({ sceneSerial, warmDecoy, anchorRetained: Boolean(game.decoyRenderAnchor), programs: stats.programs, attributes: stats.attributes, attributesSize: stats.attributesSize,
         geometries: stats.geometries, textures: stats.textures, renderTargets: stats.renderTargets,
         uniformBuffers: stats.uniformBuffers, total: stats.total, errorCount, directFallback: stats.directFallback });
@@ -459,17 +469,27 @@ select("cache-cycle").onclick = async () => {
   } catch (error) { cacheReview.error = String(error); }
   finally { cacheReview.running = false; }
 };
-select("camera-sequence").onclick = async () => {
+async function runCameraReview(boostPassage = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cameraReview.running = true; cameraReview.samples = []; cameraReview.error = null;
   select("camera-captures").replaceChildren();
   const serial = sceneSerial;
+  const wasPaused = game.paused;
   try {
     if (stress) throw new Error("Stop stress before deterministic camera capture");
+    if (boostPassage) {
+      if (!select("view").value.startsWith("boost-")) throw new Error("Select a boost view first");
+      const pad = select("view").value === "boost-raised" ? game.world.boostPads.find(pad => pad.support) : game.world.boostPads[Number(select("boost-pad").value)];
+      const hero = game.players[0];
+      if (!hero.alive || !pad.active) throw new Error("Reset the scene before testing boost passage");
+      hero.position.copy(pad.position); hero.velocity.set(0, 0, 0); hero.grounded = true;
+      game.paused = false; game.sound.resume(); // Actual game physics owns the launch and trajectory.
+    }
     for (let i = 0; i < 8; i++) {
       // Small sideways movements expose sub-pixel coverage changes at near/far distances.
-      cameraOffset = i * .16; game.updateCamera();
-      const readyFrame = renderedFrames + 4;
+      if (!boostPassage) cameraOffset = i * .16;
+      game.updateCamera();
+      const readyFrame = renderedFrames + (boostPassage ? 1 : 4);
       await waitForReviewFrame(serial, () => renderedFrames >= readyFrame);
       const link = document.createElement("a");
       link.textContent = `Camera frame ${i}`; link.download = `camera-frame-${i}.png`;
@@ -477,11 +497,14 @@ select("camera-sequence").onclick = async () => {
       select("camera-captures").append(link, " ");
       cameraReview.samples.push({ index: i, offset: cameraOffset, position: game.camera.position.toArray(),
         tier: game.settings.graphics, view: select("view").value, theme: game.world.theme.id,
+        ...(boostPassage ? { fighterPosition: game.players[0].position.toArray(), velocityY: game.players[0].velocity.y, boosted: game.players[0].boosted } : {}),
         renderedFrames, errorCount, directFallback: game.renderPipeline.direct });
     }
   } catch (error) { cameraReview.error = String(error); }
-  finally { cameraOffset = 0; game.updateCamera(); cameraReview.running = false; }
-};
+  finally { game.paused = wasPaused; cameraOffset = 0; game.updateCamera(); cameraReview.running = false; }
+}
+select("camera-sequence").onclick = () => runCameraReview();
+select("boost-passage").onclick = () => runCameraReview(true);
 async function runDecoyReview(crossTier = false, overlap = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   decoyReview.running = true; decoyReview.samples = []; decoyReview.error = null;
@@ -627,6 +650,8 @@ game.frame = time => {
     settling: now < settleUntil, visibility: document.visibilityState, focused: document.hasFocus(),
     viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
     stress, sceneSerial, fullEffectCapacity, followCamera: select("follow-camera").checked, view: select("view").value, pose: select("pose").value, fighters: game.players.length, surface,
+    boostPads: game.world.boostPads.map(pad => ({ position: pad.position.toArray(), strength: pad.strength, active: pad.active,
+      supported: Boolean(pad.support), color: pad.mesh.children[0].material.color.getHexString() })), selectedBoostPad: Number(select("boost-pad").value),
     aoNormals: depthAONormals ? "depth" : geometryAONormals ? "geometry" : legacyAONormals ? "legacy-material" : "depth-matched-material", aoOutput, hiddenAOObject,
     aoNormalBlending: game.renderPipeline.scenePass?.getMRT()?.getBlendMode("normal").blending ?? null,
     materialBlendAONormals,

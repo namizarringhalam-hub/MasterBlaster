@@ -10,6 +10,7 @@ const HIDDEN_INSTANCE = new THREE.Matrix4().makeScale(0, 0, 0);
 const ZERO_VECTOR = new THREE.Vector3();
 const ONE_VECTOR = new THREE.Vector3(1, 1, 1);
 const ZERO_EULER = new THREE.Euler();
+const BOOST_PLUME_OPACITY = smoothstep(.5, 1, uv().y).oneMinus().mul(.055);
 const DISTRICT_PALETTES = {
   foundry: [0x28e7ff, 0xff4f87, 0xffc247, 0x9d7bff],
   solar: [0xffc34f, 0xff526f, 0x43ddff, 0xa7ff66],
@@ -87,6 +88,21 @@ function routeMarkingGeometry(width, depth, brokenBorder = false) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
   geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function boostPadHousingGeometry() {
+  // Separate bands keep the deck flat and the bevel normals crisp; all merge
+  // into one indexed surface within the original radius/height envelope.
+  const parts = [
+    new THREE.CircleGeometry(2.36, 48).rotateX(Math.PI / 2).translate(0, -.11, 0),
+    new THREE.CylinderGeometry(2.5, 2.36, .06, 48, 1, true).translate(0, -.08, 0),
+    new THREE.CylinderGeometry(2.5, 2.5, .08, 48, 1, true).translate(0, -.01, 0),
+    new THREE.CylinderGeometry(2.36, 2.5, .08, 48, 1, true).translate(0, .07, 0),
+    new THREE.CircleGeometry(2.36, 48).rotateX(-Math.PI / 2).translate(0, .11, 0)
+  ];
+  const geometry = mergeGeometries(parts, false);
+  parts.forEach(part => part.dispose());
   return geometry;
 }
 
@@ -2527,9 +2543,10 @@ export class ArenaWorld {
   addBoostPad(x, y, z, strength) {
     const color = this.districtColorAt(x, z);
     const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(2.5, 2.5, .22, 28),
-      material(0x102030, color, .96, { roughness: .38, metalness: .55, emissiveIntensity: .65 })
+      this.boostPadGeometry ||= boostPadHousingGeometry(),
+      material(0x263947, 0, 1, { roughness: .38, metalness: .55 })
     );
+    mesh.name = "Boost pad metal housing";
     mesh.position.set(x, y + .12, z);
     const ring = new THREE.Mesh(
       new THREE.TorusGeometry(2.12, .12, 7, 36),
@@ -2541,7 +2558,7 @@ export class ArenaWorld {
     arrows.position.y = .125;
     const liftColumn = new THREE.Mesh(
       new THREE.CylinderGeometry(1.55, 2.15, 3.4, 24, 1, true),
-      new THREE.MeshBasicMaterial({
+      new THREE.MeshBasicNodeMaterial({
         color,
         transparent: true,
         opacity: .055,
@@ -2551,6 +2568,8 @@ export class ArenaWorld {
         toneMapped: false
       })
     );
+    liftColumn.name = "Boost pad lift plume";
+    liftColumn.material.opacityNode = BOOST_PLUME_OPACITY;
     liftColumn.position.y = 1.55;
     mesh.add(ring, arrows, liftColumn);
     this.group.add(mesh);
@@ -3085,11 +3104,14 @@ export class ArenaWorld {
     this.scene.backgroundNode = this.previousBackgroundNode;
     this.scene.fog = this.previousFog;
     this.scene.remove(this.group);
+    const resources = new Set(this.textures);
     this.group.traverse((child) => {
       // Three owns one shared quad for every Sprite, including the next arena.
-      if (!child.isSprite) child.geometry?.dispose?.();
-      child.material?.dispose?.();
+      if (!child.isSprite && child.geometry) resources.add(child.geometry);
+      for (const material of Array.isArray(child.material) ? child.material : [child.material]) {
+        if (material) resources.add(material);
+      }
     });
-    for (const texture of this.textures) texture.dispose();
+    for (const resource of resources) resource.dispose();
   }
 }

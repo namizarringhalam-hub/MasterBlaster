@@ -115,12 +115,13 @@ for (const mode of ["raw", "color"]) {
   assert.equal(target.pipeline.needsUpdate, true);
 }
 const waitSource = graphicsFixture.slice(graphicsFixture.indexOf("function waitForReviewFrame("), graphicsFixture.indexOf("const stillMove"));
-let timeoutCallback, frameCallback, cleared = 0, cancelled = 0, serial = 3;
+let timeoutCallback, timeoutDelay, frameCallback, cleared = 0, cancelled = 0, serial = 3;
 const makeWait = new Function("setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "getSerial",
   waitSource.replaceAll("sceneSerial", "getSerial()") + "; return waitForReviewFrame;");
-const waitReview = makeWait(callback => { timeoutCallback = callback; return 9; }, () => cleared++,
+const waitReview = makeWait((callback, delay) => { timeoutCallback = callback; timeoutDelay = delay; return 9; }, () => cleared++,
   callback => { frameCallback = callback; return 7; }, () => cancelled++, () => serial);
 const stalledWait = waitReview(3, () => false);
+assert.equal(timeoutDelay, 20000);
 timeoutCallback();
 await assert.rejects(stalledWait, /timed out/, "a suspended rAF cannot prevent the independent timeout");
 assert.equal(cleared, 1); assert.equal(cancelled, 1);
@@ -129,6 +130,10 @@ assert.equal(cleared, 2); assert.equal(cancelled, 2);
 const interruptedWait = waitReview(3, () => false);
 serial = 4; frameCallback();
 await assert.rejects(interruptedWait, /scene change/);
+const coldResetWait = waitReview(4, () => false, 60000);
+assert.equal(timeoutDelay, 60000, "only cold reset readiness receives the longer bounded window");
+timeoutCallback();
+await assert.rejects(coldResetWait, /60 seconds/, "a stalled reset still terminates independently of rAF");
 
 const traceSource = graphicsFixture.slice(graphicsFixture.indexOf("function traceStartupMethod("), graphicsFixture.indexOf("if (traceStartup) {"));
 let traceClock = 0;
@@ -420,6 +425,51 @@ emptyEffects.dispose();
 scene.environment = new THREE.Texture();
 const lightingEnvironment = scene.environment;
 const world = new ArenaWorld(scene, "GRAPHICS-QA");
+assert.equal(new Set(world.boostPads.map(pad => pad.mesh.geometry)).size, 1, "all eight pads reuse one immutable housing");
+assert.equal(world.boostPads[0].mesh.geometry.index.count / 3, 384, "housing triangle cost remains explicitly bounded");
+assert.equal(new Set(world.boostPads.map(pad => pad.mesh.children[2].material.opacityNode)).size, 1,
+  "all plumes must share one shader expression rather than compiling identical per-pad graphs");
+assert.equal(new Set(world.boostPads.map(pad => pad.mesh.children[2].material.customProgramCacheKey())).size, 1);
+assert.deepEqual(world.boostPads.map(pad => [...pad.position.toArray(), pad.strength]), [
+  [-18, 0, -18, 24], [18, 0, 18, 24], [-66, 0, 22, 29], [66, 0, -22, 29],
+  [-52, 15, -48, 26], [53, 15, 49, 26], [42, 31, -22, 27], [-42, 47, 30, 28]
+], "boost artwork preserves all gameplay positions and launch strengths");
+for (const pad of world.boostPads) {
+  assert.equal(pad.radius, 2.5); assert.equal(pad.mesh.position.y, pad.position.y + .12);
+  assert.equal(pad.mesh.material.transparent, false, "boost hardware is opaque, not a translucent light source");
+  assert.equal(pad.mesh.material.emissiveIntensity, 0, "the body cannot compete with its inset emitters");
+  pad.mesh.geometry.computeBoundingBox();
+  const bounds = pad.mesh.geometry.boundingBox;
+  assert.ok(Math.abs(bounds.min.y + .11) < 1e-6 && Math.abs(bounds.max.y - .11) < 1e-6);
+  assert.ok(Math.abs(bounds.min.x + 2.5) < 1e-6 && Math.abs(bounds.max.x - 2.5) < 1e-6);
+  const housingNormals = pad.mesh.geometry.attributes.normal;
+  assert.ok(Array.from({ length: housingNormals.count }, (_, i) => Math.abs(housingNormals.getY(i)))
+    .some(y => y > .1 && y < .99), "housing has an authored bevel between the flat top and cylindrical side");
+  const [ring, arrows, plume] = pad.mesh.children;
+  assert.equal(pad.mesh.children.length, 3, "material refinement adds no pad objects or light sources");
+  assert.equal(ring.material.opacity, .38); assert.equal(arrows.material.opacity, .42);
+  assert.equal(ring.material.blending, THREE.AdditiveBlending);
+  assert.equal(plume.geometry.parameters.height, 3.4);
+  assert.equal(plume.geometry.parameters.radiusTop, 1.55); assert.equal(plume.geometry.parameters.radiusBottom, 2.15);
+  assert.equal(plume.material.depthWrite, false); assert.equal(plume.material.side, THREE.DoubleSide);
+  assert.ok(plume.material.opacityNode?.isNode, "plume transparency fades continuously in its actual shader");
+  const unwrap = node => node.isVarNode ? node.node : node;
+  const opacity = unwrap(plume.material.opacityNode), inverse = unwrap(opacity.aNode), fade = unwrap(inverse.aNode);
+  assert.equal(opacity.op, "*"); assert.equal(unwrap(opacity.bNode).value, .055, "lower lift cue keeps its original alpha");
+  assert.equal(inverse.method, "oneMinus"); assert.equal(fade.method, "smoothstep");
+  assert.equal(unwrap(fade.aNode).value, .5); assert.equal(unwrap(fade.bNode).value, 1);
+  const heightUV = unwrap(fade.cNode);
+  assert.equal(heightUV.components, "y"); assert.equal(unwrap(heightUV.node).getAttributeName(), "uv");
+  const positions = plume.geometry.attributes.position, uvs = plume.geometry.attributes.uv;
+  for (let i = 0; i < positions.count; i++) assert.equal(uvs.getY(i), positions.getY(i) > 0 ? 1 : 0,
+    "actual cylinder UVs place full intensity at the base and zero at the upper rim");
+  const pulse = world.pulsers.find(pulse => pulse.object === ring);
+  assert.deepEqual([pulse.base, pulse.amplitude, pulse.speed, pulse.phase], [1, .055, 3.8, pad.position.x + pad.position.z]);
+}
+const triggerPad = world.boostPads[0], trigger = triggerPad.position;
+assert.ok(world.boostAt(trigger) === triggerPad);
+assert.equal(world.boostAt(trigger.clone().add(new THREE.Vector3(2.5, 0, 0))), undefined);
+assert.equal(world.boostAt(trigger.clone().add(new THREE.Vector3(0, .35, 0))), undefined);
 assertCompatibleAONormals(world.group);
 const coverLights = world.destructibles.map(obstacle => obstacle.mesh.children.find(child => child.isInstancedMesh));
 assert.equal(coverLights.length, 34);
@@ -682,6 +732,9 @@ const onSharedSpriteDispose = () => sharedSpriteDisposals++;
 outsideSprite.geometry.addEventListener("dispose", onSharedSpriteDispose);
 for (const arena of [world, new ArenaWorld(scene, "RESET-2"), new ArenaWorld(scene, "RESET-3")]) {
   let spriteMaterialsDisposed = 0, ownedGeometryDisposed = 0;
+  const boostDisposals = new Map(arena.boostPads.flatMap(pad => [pad.mesh, ...pad.mesh.children])
+    .flatMap(mesh => [mesh.geometry, mesh.material]).map(resource => [resource, 0]));
+  for (const resource of boostDisposals.keys()) resource.addEventListener("dispose", () => boostDisposals.set(resource, boostDisposals.get(resource) + 1));
   const coverDisposals = new Map([...arena.coverTextures, arena.coverLightMask].map(texture => [texture, 0]));
   for (const texture of coverDisposals.keys()) texture.addEventListener("dispose", () => coverDisposals.set(texture, coverDisposals.get(texture) + 1));
   arena.group.traverse(object => {
@@ -689,6 +742,7 @@ for (const arena of [world, new ArenaWorld(scene, "RESET-2"), new ArenaWorld(sce
     else if (object.geometry) object.geometry.addEventListener("dispose", () => ownedGeometryDisposed++);
   });
   arena.dispose();
+  assert.ok([...boostDisposals.values()].every(count => count === 1), "all boost geometry and materials dispose exactly once, including shared route marks");
   assert.ok([...coverDisposals.values()].every(count => count === 1), "shared cover textures dispose exactly once per arena");
   assert.ok(scene.backgroundNode === arena.previousBackgroundNode, "teardown restores the previous sky expression without disposing Three's owned sky mesh");
   assert.equal(sharedSpriteDisposals, 0, "arena teardown must not destroy Three's shared Sprite quad used by the next arena");
