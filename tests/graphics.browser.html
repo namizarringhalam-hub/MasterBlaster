@@ -9,9 +9,9 @@
 <nav style="position:fixed;z-index:100;inset:auto 0 0;background:#07111def;padding:8px;display:flex;gap:8px;flex-wrap:wrap;font:12px monospace">
 <label>Tier <select id="tier"><option>high</option><option>medium</option><option>low</option></select></label>
 <label>Theme <select id="seed"><option>BLAST-01</option><option>SOLAR-01</option><option>ION-01</option></select></label>
-<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>helmet-three-quarter</option><option>helmet-profile</option><option>thrusters</option><option>weapon</option><option>effects</option><option>rope-corner</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option><option>boost-top</option><option>boost-side</option><option>boost-raised</option></select></label>
+<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>helmet-three-quarter</option><option>helmet-profile</option><option>thrusters</option><option>weapon</option><option>hand-front</option><option>hand-side</option><option>player-camera</option><option>effects</option><option>rope-corner</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option><option>boost-top</option><option>boost-side</option><option>boost-raised</option></select></label>
 <label>Weapon <select id="weapon"></select></label>
-<label>Pose <select id="pose"><option>aim</option><option>reload</option><option>fire</option></select></label>
+<label>Pose <select id="pose"><option>aim</option><option>reload</option><option>reacquire-early</option><option>reacquire-complete</option><option>fire</option></select></label>
 <label>Helmet variant <select id="costume"><option value="">Current player</option><option value="0">0 · Dodecahedral</option><option value="1">1 · Round</option><option value="2">2 · Capsule</option><option value="3">3 · Faceted</option></select></label>
 <label>Aim height <select id="aim-height"><option value="0">Level</option><option value="1.7320508075688772">Up 60°</option><option value="-1.7320508075688772">Down 60°</option></select></label>
 <label>Boost pad <select id="boost-pad"><option value="0">1</option><option value="1">2</option><option value="2" selected>3</option><option value="3">4</option><option value="4">5</option><option value="5">6</option><option value="6">7</option><option value="7">8</option></select></label>
@@ -413,6 +413,7 @@ function waitForReviewFrame(serial, ready, timeoutMs = 20000) {
   });
 }
 const stillMove = new THREE.Vector3(), reviewAim = new THREE.Vector3(0, 0, -1);
+let poseReview = null;
 function settlePose() {
   game.clearTransientNetworkCombat();
   const hero = game.players[0];
@@ -420,10 +421,21 @@ function settlePose() {
   hero.velocity.set(0, 0, 0);
   hero.reloadTimer = 0; hero.reloadWeaponId = null; hero.attackTimer = 0; hero.recoilVisual = 0;
   for (let i = 0; i < 60; i++) hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
-  if (select("pose").value === "reload") {
-    hero.ammo[hero.weapon.id] = Math.max(0, hero.weapon.ammo - 1); hero.reload();
-    for (let i = 0; i < 20; i++) hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
-  } else if (select("pose").value === "fire") {
+  const pose = select("pose").value;
+  poseReview = { requested: pose, reloadAccepted: null, additionalReacquireFrames: 0 };
+  if (pose === "reload" || pose.startsWith("reacquire-")) {
+    hero.ammo[hero.weapon.id] = Math.max(0, hero.weapon.ammo - 1);
+    poseReview.reloadAccepted = hero.reload();
+    if (poseReview.reloadAccepted) {
+      for (let i = 0; i < 20; i++) hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
+      if (pose.startsWith("reacquire-")) {
+        // Exercise real reload completion and support-hand easing; no pose overrides.
+        for (let i = 0; hero.reloadTimer > 0 && i <= Math.ceil(hero.weapon.reload * 60); i++) hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
+        poseReview.additionalReacquireFrames = pose === "reacquire-early" ? 3 : 12;
+        for (let i = 0; i < poseReview.additionalReacquireFrames; i++) hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
+      }
+    }
+  } else if (pose === "fire") {
     hero.ammo[hero.weapon.id] = hero.weapon.ammo; game.tryFire(hero, true);
     for (let i = 0; i < 3; i++) hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
     game.clearTransientNetworkCombat(); // This selector captures the pose, not frozen projectile VFX.
@@ -445,6 +457,9 @@ function setView() {
   resetSamples();
   const hero = game.players[0];
   const view = select("view").value;
+  // Start each hand-view/weapon comparison at visible Aim; then select its
+  // transient pose without reframing. Control order cannot pick a reload anchor.
+  if (view === "hand-front" || view === "hand-side") select("pose").value = "aim";
   hero.position.set(0, 15.01, 8); hero.group.rotation.y = Math.PI;
   settlePose();
   if (view === "rope-corner") hero.position.set(-12, 18.6, 0);
@@ -467,8 +482,23 @@ function setView() {
     const { x, y, z } = pad.position;
     poses[view] = [[x - 6, y + (view === "boost-side" ? 2.2 : 6), z + 7], [x, y + 1, z]];
   }
+  // Hold this ready-view framing through subsequent pose selections: following
+  // the moving grip would visually cancel weapon travel during reload.
+  const handFocus = hero.weaponGrip.clone().applyMatrix4(hero.weaponGroup.matrixWorld);
+  const handOffset = new THREE.Vector3(view === "hand-side" ? 1.3 : .5, .12, view === "hand-side" ? .08 : 1.45).applyQuaternion(hero.group.quaternion);
   game.updateCamera = () => {
     if (stress && select("follow-camera").checked) return cameraUpdate();
+    if (view === "player-camera") {
+      game.cameraYaw = Math.atan2(hero.aim.x, hero.aim.z); game.cameraPitch = Math.asin(hero.aim.y);
+      return cameraUpdate(); // The actual gameplay camera, including collision and visibility.
+    }
+    hero.rig.visible = true;
+    if (view === "hand-front" || view === "hand-side") {
+      game.camera.position.copy(handFocus).add(handOffset); game.camera.position.x += cameraOffset;
+      game.camera.lookAt(handFocus.x + cameraOffset, handFocus.y, handFocus.z);
+      game.camera.fov = 62; game.camera.updateProjectionMatrix();
+      return;
+    }
     const [position, target] = poses[view];
     game.camera.position.fromArray(position); game.camera.position.x += cameraOffset;
     game.camera.lookAt(target[0] + cameraOffset, target[1], target[2]);
@@ -512,7 +542,11 @@ select("cover-edge").onchange = setView;
 select("capture-canvas").onclick = () => { captureCanvas = resetPhase === "ready"; };
 select("tier").onchange = () => { game.settings.graphics = select("tier").value; game.applyGraphicsSettings(); resetSamples(); };
 select("seed").onchange = reset;
-select("weapon").onchange = () => { game.players[0].loadout[0] = select("weapon").value; game.players[0].updateWeaponModel(); settlePose(); };
+select("weapon").onchange = () => {
+  game.players[0].loadout[0] = select("weapon").value; game.players[0].updateWeaponModel();
+  if (["hand-front", "hand-side"].includes(select("view").value)) setView();
+  else settlePose();
+};
 select("pose").onchange = settlePose;
 select("costume").onchange = () => { setTimeout(reset, 0); };
 select("aim-height").onchange = settlePose;
@@ -872,7 +906,16 @@ game.frame = time => {
   if (captureCanvas && resetPhase === "ready") {
     captureCanvas = false;
     const grapple = game.players[0]?.grapple;
+    const hero = game.players[0];
     canvasCapture = { renderedFrames, sceneSerial, view: select("view").value,
+      tier: game.settings?.graphics ?? null, profile: game.renderPipeline.profile ?? null, pose: { ...poseReview },
+      camera: game.camera ? { gameplay: select("view").value === "player-camera", matrix: game.camera.matrixWorld.toArray(), projection: game.camera.projectionMatrix.toArray(), fov: game.camera.fov,
+        firstPerson: game.cameraFirstPerson, clearance: { ...game.cameraClearance } } : null,
+      handPose: hero?.rightForearm ? { weapon: hero.weapon.id, reloadTimer: hero.reloadTimer, reloadWeaponId: hero.reloadWeaponId,
+        ammo: hero.ammo[hero.weapon.id], visible: hero.rig.visible, supportGripProgress: hero.supportGripProgress, hasSupportGrip: hero.weaponHasSupportGrip,
+        weaponMatrix: hero.weaponGroup.matrixWorld.toArray(), grip: hero.weaponGrip.toArray(), supportGrip: hero.weaponSupportGrip.toArray(),
+        rightForearmMatrix: hero.rightForearm.matrixWorld.toArray(), leftForearmMatrix: hero.leftForearm.matrixWorld.toArray(),
+        rightHandLocal: hero.rightHand.position.toArray(), leftHandLocal: hero.leftHand.position.toArray() } : null,
       fighter: game.players[0] ? { id: game.players[0].id, aim: game.players[0].aim?.toArray() ?? null,
         helmetMatrix: game.players[0].helmet?.matrixWorld.toArray() ?? null, visorMatrix: game.players[0].visor?.matrixWorld.toArray() ?? null } : null,
       grappleLines: game.scene.children.filter(object => object.isLine2).length,

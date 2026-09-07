@@ -214,6 +214,28 @@ for (const variant of ["", "0", "1", "2", "3"]) {
   selected.dispose(); assert.equal(scene.children.length, 0);
 }
 const settleReviewSource = graphicsFixture.slice(graphicsFixture.indexOf("const stillMove"), graphicsFixture.indexOf("function replaceReviewCostume("));
+for (const view of ["hand-front", "hand-side", "player-camera"]) assert.ok(graphicsFixture.includes(`<option>${view}</option>`), `missing actual ${view} review view`);
+for (const weaponId of ["blaster", "rocket_launcher", "energy_sword"]) for (const pose of ["aim", "reload", "reacquire-early", "reacquire-complete"]) {
+  const hero = new Fighter(new THREE.Scene(), { id: "hand-qa", color: 0x129dba, accent: 0x6ff6ff }, [weaponId], new THREE.Vector3());
+  const world = { resolve: position => { position.y = 0; return { grounded: true }; }, boostAt: () => null };
+  const review = new Function("THREE", "game", "select", `${settleReviewSource}; settlePose(); return poseReview;`)(THREE,
+    { players: [hero], world, clearTransientNetworkCombat() {} }, name => ({ value: name === "aim-height" ? "0" : pose }));
+  assert.equal(review.requested, pose);
+  if (pose !== "aim") assert.equal(review.reloadAccepted, weaponUsesAmmo(hero.weapon));
+  if (weaponUsesAmmo(hero.weapon) && pose === "reload") {
+    assert.ok(hero.reloadTimer > 0); assert.equal(hero.supportGripProgress, 0);
+  } else if (weaponUsesAmmo(hero.weapon) && pose.startsWith("reacquire")) {
+    assert.equal(hero.reloadTimer, 0); assert.equal(hero.reloadWeaponId, null); assert.equal(hero.ammo[weaponId], hero.weapon.ammo);
+    if (pose === "reacquire-early") assert.ok(hero.supportGripProgress > 0 && hero.supportGripProgress < 1);
+    else assert.equal(hero.supportGripProgress, 1);
+  }
+  if (pose === "aim" || pose === "reacquire-complete") {
+    const grip = hero.weaponGrip.clone().applyMatrix4(hero.weaponGroup.matrixWorld);
+    const hand = hero.rightHand.position.clone().applyMatrix4(hero.rightForearm.matrixWorld);
+    assert.ok(hand.distanceTo(grip) < .03, "review uses the existing grip solve, not a synthetic hand pose");
+  }
+  hero.dispose();
+}
 for (const height of [0, Math.sqrt(3), -Math.sqrt(3)]) {
   const aims = [], hero = { velocity: new THREE.Vector3(2, 3, 4), group: { updateMatrixWorld() {} },
     update(dt, move, aim) { assert.equal(dt, 1 / 60); assert.equal(move.length(), 0); aims.push(aim.clone()); } };
@@ -224,8 +246,54 @@ for (const height of [0, Math.sqrt(3), -Math.sqrt(3)]) {
   assert.ok(aims.every(aim => Math.abs(aim.length() - 1) < 1e-12 && Math.abs(aim.y - height / Math.hypot(height, 1)) < 1e-12 && aim.z < 0));
 }
 // Execute the exact capture block: later frame counters must not alter evidence.
+const handViewSource = graphicsFixture.slice(graphicsFixture.indexOf("function setView()"), graphicsFixture.indexOf("async function reset()"));
+const weaponSelectSource = graphicsFixture.slice(graphicsFixture.indexOf('select("weapon").onchange ='), graphicsFixture.indexOf('select("pose").onchange ='));
+for (const view of ["hand-front", "hand-side"]) for (const previousPose of ["aim", "reload", "reacquire-early"]) {
+  const hero = new Fighter(new THREE.Scene(), { id: "hand-view", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const controls = { view: { value: view }, weapon: { value: "blaster" }, pose: { value: "aim" }, "aim-height": { value: "0" } };
+  const game = { players: [hero], camera: new THREE.PerspectiveCamera(62, 16 / 9, .1, 300), clearTransientNetworkCombat() {},
+    world: { resolve: position => { position.y = 15.01; return { grounded: true }; }, boostAt: () => null } };
+  const review = new Function("THREE", "game", "select", `let stress=false, cameraOffset=0;
+    const clearThrusterSortControl=()=>{}, resetSamples=()=>{}, cameraUpdate=()=>{};
+    ${settleReviewSource}; ${handViewSource}; ${weaponSelectSource}; return {setView,settlePose};`)(THREE, game, name => controls[name]);
+  review.setView();
+  controls.pose.value = previousPose; review.settlePose();
+  controls.weapon.value = "hammer";
+  assert.ok(WEAPONS[controls.weapon.value], "use a real alternate grip");
+  controls.weapon.onchange();
+  assert.equal(controls.pose.value, "aim", "hand view/weapon changes visibly reset to ready pose before framing");
+  game.updateCamera(); game.camera.updateMatrixWorld(true);
+  const target = hero.weaponGrip.clone().applyMatrix4(hero.weaponGroup.matrixWorld).project(game.camera);
+  assert.ok(Math.abs(target.x) < 1e-6 && Math.abs(target.y) < 1e-6, "weapon switching must reframe the current grip, not retain the old anchor");
+  const cameraPosition = game.camera.position.clone();
+  controls.pose.value = "fire";
+  // A weapon transform change must NOT be followed after the view is established.
+  hero.weaponGroup.position.x += .3; hero.group.updateMatrixWorld(true); game.updateCamera();
+  assert.deepEqual(game.camera.position, cameraPosition, "fixed framing preserves visible weapon travel");
+  hero.dispose();
+}
 const captureSource = graphicsFixture.slice(graphicsFixture.indexOf("    const grapple = game.players[0]?.grapple;"), graphicsFixture.indexOf('    const link = select("canvas-capture");'));
-const captureFrame = new Function("game", "renderedFrames", "sceneSerial", "select", "ropeRenders", "ropeRendersBefore", "errorCount", "thrusterSortControl", "thrusterRenderOrder", `let canvasCapture; ${captureSource}; return canvasCapture;`);
+const captureFrame = new Function("game", "renderedFrames", "sceneSerial", "select", "ropeRenders", "ropeRendersBefore", "errorCount", "thrusterSortControl", "thrusterRenderOrder", "poseReview", `let canvasCapture; ${captureSource}; return canvasCapture;`);
+{
+  const hero = new Fighter(new THREE.Scene(), { id: "hand-metadata", color: 0x129dba, accent: 0x6ff6ff }, ["rocket_launcher"], new THREE.Vector3());
+  hero.group.updateMatrixWorld(true);
+  const camera = new THREE.PerspectiveCamera(62, 16 / 9, .1, 300); camera.position.set(1, 2, 3); camera.updateMatrixWorld(true);
+  const game = { players: [hero], scene: { children: [] }, camera, settings: { graphics: "high" },
+    renderer: { info: { render: { drawCalls: 1, triangles: 1 } } }, renderPipeline: { direct: false, profile: "WEBGPU ULTRA" } };
+  const review = { requested: "aim", reloadAccepted: null, additionalReacquireFrames: 0 };
+  const captured = captureFrame(game, 10, 3, () => ({ value: "hand-front" }), 0, 0, 0, null, [], review);
+  assert.equal(captured.handPose.weapon, "rocket_launcher"); assert.equal(captured.tier, "high"); assert.equal(captured.profile, "WEBGPU ULTRA");
+  assert.equal(captured.camera.gameplay, false);
+  assert.deepEqual(captured.handPose.rightForearmMatrix, hero.rightForearm.matrixWorld.toArray());
+  assert.deepEqual(captured.handPose.leftForearmMatrix, hero.leftForearm.matrixWorld.toArray());
+  assert.deepEqual(captured.handPose.weaponMatrix, hero.weaponGroup.matrixWorld.toArray());
+  assert.deepEqual(captured.handPose.rightHandLocal, [0, -.58, .05]);
+  const stored = JSON.stringify(captured);
+  hero.rightHand.position.x = 8; hero.rightForearm.matrixWorld.elements[12] = 9; hero.weaponGrip.y = 8;
+  camera.matrixWorld.elements[12] = 10; review.requested = "reload";
+  assert.equal(JSON.stringify(captured), stored, "later pose/camera changes cannot rewrite saved evidence");
+  hero.dispose();
+}
 for (const renders of [0, 1]) {
   const captureGame = { players: [{ id: "helmet-2", aim: new THREE.Vector3(0, 0, -1), helmet: { matrixWorld: new THREE.Matrix4() }, visor: { matrixWorld: new THREE.Matrix4() },
     grapple: { anchor: new THREE.Vector3(1, 2, 3), line: { geometry: { instanceCount: 1 }, material: { blending: THREE.NoBlending } } } }],
