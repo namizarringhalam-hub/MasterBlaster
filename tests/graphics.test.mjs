@@ -769,6 +769,29 @@ for (const mode of ["baseline", "explicit-environment", "no-environment", "norma
   assert.deepEqual(shoulderOriginal.toJSON(), shoulderOriginalJSON);
   assert.equal(disposals, ["baseline", "restored"].includes(mode) ? 0 : 1);
 }
+for (const arm of [shoulderProbe.leftArm, shoulderProbe.rightArm]) for (const fail of [false, true]) {
+  const target = arm.children[0], geometry = target.geometry, material = target.material;
+  const coarseIndexed = new THREE.SphereGeometry(.18, 10, 6), coarse = coarseIndexed.toNonIndexed().translate(0, -.045, 0);
+  const fineIndexed = new THREE.SphereGeometry(.18, 16, 10), fine = fineIndexed.toNonIndexed().translate(0, -.045, 0);
+  const capture = async () => {
+    assert.notEqual(target.geometry, geometry); assert.ok(target.material === material);
+    for (const [key, attribute] of Object.entries(geometry.attributes)) {
+      const prefix = attribute.array.length - coarse.attributes[key].array.length;
+      assert.deepEqual(target.geometry.attributes[key].array.slice(0, prefix), attribute.array.slice(0, prefix), "capsule prefix is byte-identical");
+      assert.deepEqual(target.geometry.attributes[key].array.slice(prefix), fine.attributes[key].array, "only the authenticated ball suffix changes");
+    }
+    for (const [mesh, [originalMaterial, originalGeometry]] of untouchedShoulderMeshes) {
+      if (mesh !== target) assert.ok(mesh.material === originalMaterial && mesh.geometry === originalGeometry);
+    }
+    assert.equal(target.geometry.attributes.position.count - geometry.attributes.position.count, 564);
+    if (fail) throw new Error("shoulder silhouette interrupted");
+  };
+  if (fail) await assert.rejects(elbowControl(target, capture, true), /shoulder silhouette interrupted/);
+  else await elbowControl(target, capture, true);
+  assert.ok(target.geometry === geometry && target.material === material);
+  coarseIndexed.dispose(); coarse.dispose(); fineIndexed.dispose(); fine.dispose();
+}
+await assert.rejects(elbowControl(shoulderTarget, () => assert.fail("shoulder accepted as elbow")), /Unexpected elbow/);
 shoulderProbe.dispose();
 armDiagnosticProbe.dispose();
 hardwareMaterial.dispose();
@@ -813,7 +836,7 @@ assert.deepEqual(shellControlElements.map(control => control.disabled), [false, 
 const armRunState = { running: false }, armRunMaterial = {}, armRunTarget = { isMesh: true, material: armRunMaterial }, armRunLinks = [], armRunModes = [];
 const armRunControls = [{ disabled: false }, { disabled: true }];
 const armRunGame = { ...shellRunGame, paused: true, players: [{ darkMaterial: armRunMaterial, rightForearm: { children: [null, null, armRunTarget] } }] };
-let armRunView = "hand-side", armWaits = 0, expectedDiagnosticTarget = armRunTarget, armGeometryCalls = 0;
+let armRunView = "hand-side", armWaits = 0, expectedDiagnosticTarget = armRunTarget, armGeometryCalls = 0, shoulderGeometryCalls = 0;
 const armRunHarness = new Function("game", "cameraReview", "document", "select", "waitForReviewFrame", "withHelmetShellDiagnostic", "shellReviewState", "withElbowSilhouette", `
   const resetReview={}, cacheReview={}, decoyReview={}, resetPhase="ready", sceneSerial=1, errorCount=0, renderedFrames=0, aoOutput="final";
   let stress=false, cameraOffset=.31;
@@ -826,7 +849,11 @@ const armRunHarness = new Function("game", "cameraReview", "document", "select",
     assert.deepEqual(armRunControls.map(control => control.disabled), [true, true]); },
   async (mode, action, target) => { assert.ok(target === expectedDiagnosticTarget); armRunModes.push(mode); await action(); },
   target => { assert.ok(target === expectedDiagnosticTarget, "every sample records the material target actually overridden"); return { targetName: "actual forearm batch" }; },
-  async (target, capture) => { assert.ok(target === armRunTarget); armGeometryCalls++; return capture(); });
+  async (target, capture, shoulder) => {
+    assert.ok(target === expectedDiagnosticTarget);
+    if (shoulder) shoulderGeometryCalls++; else armGeometryCalls++;
+    return capture();
+  });
 await armRunHarness.run(false, true);
 assert.equal(armRunState.error, null); assert.equal(armWaits, 13); assert.equal(armRunLinks.length, 13);
 assert.ok(armRunLinks.every(link => link.download.startsWith("forearm-")), "download names disclose the actual diagnostic scope");
@@ -908,6 +935,23 @@ assert.equal(armRunState.error, null); assert.equal(armWaits, 71); assert.equal(
 assert.deepEqual(armRunModes, ["baseline", "satin-trial", "restored"], "shoulder trial cannot accidentally use the helmet finish");
 assert.ok(armRunState.samples.every(sample => sample.output === "final" && sample.diagnosticTarget.startsWith("right upper-arm")));
 assert.deepEqual(armRunState.samples.map(sample => sample.offset), [-.04, 0, .04, -.04, 0, .04, -.04, 0, .04]);
+assert.equal(armRunHarness.offset(), .31); assert.equal(armRunState.running, false); assert.equal(armRunState.shell, false);
+assert.deepEqual(armRunControls.map(control => control.disabled), [false, true]);
+armRunModes.length = 0;
+await armRunHarness.run(true, false, false, true, true);
+assert.equal(armRunState.error, null); assert.equal(armWaits, 80); assert.equal(shoulderGeometryCalls, 1);
+assert.deepEqual(armRunModes, [], "geometry-only comparison must never clone or retune the published finish");
+assert.deepEqual(armRunState.samples.map(sample => sample.mode), ["baseline", "baseline", "baseline", "shoulder-silhouette", "shoulder-silhouette", "shoulder-silhouette", "restored", "restored", "restored"]);
+armRunGame.players[0].leftForearm = {};
+const leftShoulderTarget = { isMesh: true, material: armRunMaterial };
+armRunGame.players[0].leftArm = { children: [leftShoulderTarget, {}, armRunGame.players[0].leftForearm] };
+armRunView = "hand-shoulder-opposite"; expectedDiagnosticTarget = leftShoulderTarget;
+await armRunHarness.run(true, false, false, true, true);
+assert.equal(armRunState.error, null); assert.equal(armWaits, 89); assert.equal(shoulderGeometryCalls, 2);
+assert.ok(armRunState.samples.every(sample => sample.diagnosticTarget.startsWith("left upper-arm")));
+for (const args of [[false, false, false, true, true], [true, false, false, false, true]]) {
+  await armRunHarness.run(...args); assert.match(armRunState.error, /Shoulder silhouette requires/); assert.equal(armWaits, 89);
+}
 assert.equal(armRunHarness.offset(), .31); assert.equal(armRunState.running, false); assert.equal(armRunState.shell, false);
 assert.deepEqual(armRunControls.map(control => control.disabled), [false, true]);
 const geometryNormalToken = {}, colorOutputToken = {};
