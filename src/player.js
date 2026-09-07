@@ -291,7 +291,7 @@ export class Fighter {
     // Inset lenses sit behind a mechanical rim, instead of a solid luminous bar.
     const visor = mergeStaticParts(accent, [-.225, 0, .225].map(x =>
       part(new THREE.BoxGeometry(.195, .095, .035), accent, x, 0, 0, false)));
-    visor.position.set(0, 2.1, .469);
+    visor.position.set(0, .02, .469);
     visor.name = "Segmented inset visor";
     this.visor = visor;
     const brow = part(new THREE.BoxGeometry(.78, .1, .16), armor, 0, 2.27, .3);
@@ -379,11 +379,17 @@ export class Fighter {
     helmetAssembly.position.y = 2.08;
     helmetAssembly.name = "Helmet and recessed visor housing";
     this.helmet = helmetAssembly;
+    // Keep all head surfaces on the same pitch pivot. Matching rotations on
+    // separate lens/helmet pivots pulls the lenses out of their apertures.
+    const headArmor = mergeStaticParts(armor, [brow, helmetCrest]);
+    headArmor.geometry.translate(0, -2.08, 0);
+    headArmor.name = "Helmet brow and crest";
+    helmetAssembly.add(visor, headArmor);
     const staticDark = mergeStaticParts(dark, [torso, spine, backpack]);
-    const staticArmor = mergeStaticParts(armor, [chest, breastplate, pelvis, brow, helmetCrest, leftShoulder, rightShoulder]);
+    const staticArmor = mergeStaticParts(armor, [chest, breastplate, pelvis, leftShoulder, rightShoulder]);
     const staticAccent = mergeStaticParts(accent, [sternum, chestLight, leftEar, rightEar, leftFin, rightFin, packLight]);
     this.rig.add(
-      staticDark, staticArmor, staticAccent, helmetAssembly, visor,
+      staticDark, staticArmor, staticAccent, helmetAssembly,
       this.leftArm, this.rightArm, this.leftLeg, this.rightLeg,
       this.thrusterLights
     );
@@ -1138,7 +1144,6 @@ export class Fighter {
     this.leftLeg.rotation.z = THREE.MathUtils.damp(this.leftLeg.rotation.z, legBrace, 14, dt);
     this.rightLeg.rotation.z = THREE.MathUtils.damp(this.rightLeg.rotation.z, -legBrace, 14, dt);
     this.helmet.rotation.x = THREE.MathUtils.damp(this.helmet.rotation.x, -aimPitch * .18 + landing * .07, 12, dt);
-    this.visor.rotation.x = this.helmet.rotation.x;
     const thrust = landing > .05 ? 1.7 + landing * .7 : grappled ? 1.8 : this.grounded ? .65 : 1.2 + clamp(horizontalSpeed / 32, 0, .65);
     this.thrusterScale = THREE.MathUtils.damp(this.thrusterScale, thrust, 11, dt);
     this.thrusterLights.scale.y = this.thrusterScale;

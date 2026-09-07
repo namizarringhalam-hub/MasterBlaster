@@ -24,11 +24,11 @@ const legacyPlayerSource = playerMergeSource.replace(/^import .*;\r?\n/gm, "").r
   .replaceAll("new THREE.BufferGeometry().copy(mesh.geometry)", "mesh.geometry.clone()");
 const LegacyMergeFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
   `${legacyPlayerSource}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
-function mergedFighterSnapshot(fighter) {
+function mergedFighterSnapshot(fighter, excluded = new Set()) {
   const meshes = [];
   fighter.group.updateMatrixWorld(true);
   fighter.group.traverse(object => {
-    if (!object.geometry) return;
+    if (!object.geometry || excluded.has(object)) return;
     const geometry = object.geometry, digest = createHash("sha256");
     const attributes = {};
     for (const [name, attribute] of Object.entries(geometry.attributes)) {
@@ -110,11 +110,63 @@ if (process.argv.includes("--bench-merge")) {
 
 // Execute the fixture's actual wait helper with a stopped animation clock.
 const graphicsFixture = readFileSync(new URL("./graphics.browser.html", import.meta.url), "utf8");
+const resetCaptureSource = graphicsFixture.slice(graphicsFixture.indexOf('  resetPhase = "starting";'), graphicsFixture.indexOf('  clearThrusterSortControl();', graphicsFixture.indexOf("async function reset()")));
+const staleLink = { hidden: false, href: "old-frame", removeAttribute(name) { delete this[name]; } };
+const clearedCapture = new Function("select", `let resetPhase='ready', captureCanvas=true, canvasCapture={old:true}; ${resetCaptureSource}; return {resetPhase,captureCanvas,canvasCapture};`)(() => staleLink);
+assert.deepEqual(clearedCapture, { resetPhase: "starting", captureCanvas: false, canvasCapture: null });
+assert.equal(staleLink.hidden, true); assert.equal(staleLink.href, undefined);
+const requestCaptureSource = graphicsFixture.match(/select\("capture-canvas"\)\.onclick = ([^\n]+);/)[1];
+for (const phase of ["starting", "started", "ready"]) {
+  const requested = new Function("resetPhase", `let captureCanvas=false; (${requestCaptureSource})(); return captureCanvas;`)(phase);
+  assert.equal(requested, phase === "ready");
+}
+let deferredReset, resetCalls = 0;
+const costumeChangeSource = graphicsFixture.match(/select\("costume"\)\.onchange = ([^\n]+);/)[1];
+new Function("setTimeout", "reset", `(${costumeChangeSource})();`)((fn, delay) => { assert.equal(delay, 0); deferredReset = fn; }, () => resetCalls++);
+assert.equal(resetCalls, 0); deferredReset(); assert.equal(resetCalls, 1);
+assert.ok(graphicsFixture.includes('if (captureCanvas && resetPhase === "ready")'));
+assert.ok(graphicsFixture.includes("function replaceReviewCostume("), "helmet review uses all four actual Fighter variants");
+const reviewCostumeSource = graphicsFixture.slice(graphicsFixture.indexOf("function replaceReviewCostume("), graphicsFixture.indexOf("function setView("));
+for (const variant of ["", "0", "1", "2", "3"]) {
+  const scene = new THREE.Scene();
+  const original = new Fighter(scene, { id: "p1", name: "Review", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3(2, 3, 4));
+  const originalLoadout = original.loadout, neighbor = { id: "untouched" };
+  let disposed = 0;
+  const dispose = original.dispose.bind(original);
+  original.dispose = () => { disposed++; dispose(); };
+  const reviewGame = { scene, players: [original, neighbor] };
+  new Function("game", "select", "Fighter", `${reviewCostumeSource}; replaceReviewCostume();`)(reviewGame, () => ({ value: variant }), Fighter);
+  const selected = reviewGame.players[0];
+  assert.equal(reviewGame.players.length, 2); assert.ok(reviewGame.players[1] === neighbor);
+  assert.equal(disposed, variant === "" ? 0 : 1);
+  assert.equal(scene.children.length, 1);
+  assert.deepEqual(selected.position.toArray(), [2, 3, 4]);
+  assert.equal(selected.color, original.color); assert.equal(selected.accent, original.accent); assert.equal(selected.name, "Review");
+  assert.deepEqual(selected.loadout, originalLoadout);
+  if (variant === "") assert.ok(selected === original);
+  else {
+    assert.equal([...selected.id].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % 4, Number(variant));
+    assert.ok(selected.loadout !== originalLoadout); assert.equal(original.group.parent, null);
+    assert.equal(original.weaponModels.size, 0);
+  }
+  selected.dispose(); assert.equal(scene.children.length, 0);
+}
+const settleReviewSource = graphicsFixture.slice(graphicsFixture.indexOf("const stillMove"), graphicsFixture.indexOf("function replaceReviewCostume("));
+for (const height of [0, Math.sqrt(3), -Math.sqrt(3)]) {
+  const aims = [], hero = { velocity: new THREE.Vector3(2, 3, 4), group: { updateMatrixWorld() {} },
+    update(dt, move, aim) { assert.equal(dt, 1 / 60); assert.equal(move.length(), 0); aims.push(aim.clone()); } };
+  let clears = 0;
+  new Function("THREE", "game", "select", `${settleReviewSource}; settlePose();`)(THREE,
+    { players: [hero], world: {}, clearTransientNetworkCombat() { clears++; } }, name => ({ value: name === "aim-height" ? String(height) : "aim" }));
+  assert.equal(clears, 1); assert.equal(aims.length, 60); assert.equal(hero.velocity.length(), 0);
+  assert.ok(aims.every(aim => Math.abs(aim.length() - 1) < 1e-12 && Math.abs(aim.y - height / Math.hypot(height, 1)) < 1e-12 && aim.z < 0));
+}
 // Execute the exact capture block: later frame counters must not alter evidence.
 const captureSource = graphicsFixture.slice(graphicsFixture.indexOf("    const grapple = game.players[0]?.grapple;"), graphicsFixture.indexOf('    const link = select("canvas-capture");'));
 const captureFrame = new Function("game", "renderedFrames", "sceneSerial", "select", "ropeRenders", "ropeRendersBefore", "errorCount", "thrusterSortControl", "thrusterRenderOrder", `let canvasCapture; ${captureSource}; return canvasCapture;`);
 for (const renders of [0, 1]) {
-  const captureGame = { players: [{ grapple: { anchor: new THREE.Vector3(1, 2, 3), line: { geometry: { instanceCount: 1 }, material: { blending: THREE.NoBlending } } } }],
+  const captureGame = { players: [{ id: "helmet-2", aim: new THREE.Vector3(0, 0, -1), helmet: { matrixWorld: new THREE.Matrix4() }, visor: { matrixWorld: new THREE.Matrix4() },
+    grapple: { anchor: new THREE.Vector3(1, 2, 3), line: { geometry: { instanceCount: 1 }, material: { blending: THREE.NoBlending } } } }],
     scene: { children: [{ isLine2: true }, {}] },
     renderer: { info: { render: { drawCalls: 378, triangles: 169330 } } }, renderPipeline: { direct: false } };
   const captured = captureFrame(captureGame, 8, 1, () => ({ value: "effects" }), 4 + renders, 4, 0);
@@ -123,9 +175,11 @@ for (const renders of [0, 1]) {
   assert.equal(captured.rope.rendersThisFrame, renders, "a live grapple object alone cannot certify a rendered rope");
   assert.equal(captured.rope.segments, 1);
   assert.equal(captured.grappleLines, 1);
+  captureGame.players[0].aim.y = 1; captureGame.players[0].helmet.matrixWorld.elements[12] = 8;
+  assert.equal(captured.fighter.id, "helmet-2"); assert.deepEqual(captured.fighter.aim, [0, 0, -1]); assert.equal(captured.fighter.helmetMatrix[12], 0);
   captureGame.players = []; captureGame.scene.children = [];
   const released = captureFrame(captureGame, 9, 1, () => ({ value: "effects" }), 4, 4, 0);
-  assert.equal(released.rope, null); assert.equal(released.grappleLines, 0);
+  assert.equal(released.rope, null); assert.equal(released.grappleLines, 0); assert.equal(released.fighter, null);
 }
 const sortControlSource = graphicsFixture.slice(graphicsFixture.indexOf("function clearThrusterSortControl("), graphicsFixture.indexOf("let settleUntil"));
 const sortScene = new THREE.Scene(), sortCamera = new THREE.PerspectiveCamera(62, 16 / 9, .1, 300);
@@ -897,6 +951,74 @@ assert.ok(handCenter.distanceTo(gripCenter) < .03, `aiming hand must meet its gr
 gripFighter.dispose();
 const poseWorld = { resolve: position => { position.y = 0; return { grounded: true }; }, boostAt: () => null };
 const noMovement = new THREE.Vector3(), poseLook = new THREE.Vector3();
+// Reconstruct the old separate-pivot builder from the current builder. Put its
+// armor parts in body-then-head order only for a direct buffer comparison.
+const legacyHeadSource = playerMergeSource.replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "")
+  .replace("visor.position.set(0, .02, .469)", "visor.position.set(0, 2.1, .469)")
+  .replace(/    const headArmor = mergeStaticParts\(armor, \[brow, helmetCrest\]\);[\s\S]*?    helmetAssembly.add\(visor, headArmor\);\r?\n/, "")
+  .replace("[chest, breastplate, pelvis, leftShoulder, rightShoulder]", "[chest, breastplate, pelvis, leftShoulder, rightShoulder, brow, helmetCrest]")
+  .replace("staticDark, staticArmor, staticAccent, helmetAssembly,", "staticDark, staticArmor, staticAccent, helmetAssembly, visor,")
+  .replace("    const thrust = landing", "    this.visor.rotation.x = this.helmet.rotation.x;\n    const thrust = landing");
+const LegacyHeadFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
+  `${legacyHeadSource}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
+// Exercise the production update: equal Euler angles on different pivots do
+// not keep a lens inside its housing, especially at steep aim or on landing.
+for (let variant = 0; variant < 4; variant++) {
+  const fighter = new Fighter(scene, { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const legacy = new LegacyHeadFighter(new THREE.Scene(), { id: fighter.id, color: fighter.color, accent: fighter.accent }, ["blaster"], new THREE.Vector3());
+  const headArmor = fighter.helmet.getObjectByName("Helmet brow and crest");
+  assert.ok(headArmor, "head armor belongs to the moving head");
+  const bodyArmor = fighter.rig.children[1], oldArmor = legacy.rig.children[1];
+  for (const name of ["position", "normal", "uv"]) {
+    const body = bodyArmor.geometry.attributes[name], head = headArmor.geometry.attributes[name], old = oldArmor.geometry.attributes[name];
+    assert.equal(body.count + head.count, old.count, "splitting the armor never changes vertex/triangle count");
+    assert.deepEqual(body.array, old.array.slice(0, body.array.length), "body buffers remain byte-identical");
+    for (let i = 0; i < head.array.length; i++) {
+      const inRig = head.array[i] + (name === "position" && i % 3 === 1 ? 2.08 : 0);
+      assert.ok(Math.abs(inRig - old.array[body.array.length + i]) < 3e-7, `${variant}/${name}/${i}: neutral brow and crest geometry is preserved`);
+    }
+  }
+  const modernSnapshot = mergedFighterSnapshot(fighter, new Set([bodyArmor, headArmor]));
+  const legacySnapshot = mergedFighterSnapshot(legacy, new Set([oldArmor]));
+  assert.equal(modernSnapshot.meshes.length, legacySnapshot.meshes.length);
+  for (let i = 0; i < modernSnapshot.meshes.length; i++) {
+    const current = modernSnapshot.meshes[i], old = legacySnapshot.meshes[i];
+    assert.ok(current.matrix.every((value, index) => Math.abs(value - old.matrix[index]) < 1e-12), "all other neutral world transforms are unchanged");
+    assert.deepEqual({ ...current, matrix: null }, { ...old, matrix: null }, "all other geometry, UVs, bounds and materials are unchanged");
+  }
+  fighter.group.updateMatrixWorld(true);
+  const neutralLens = fighter.helmet.matrixWorld.clone().invert().multiply(fighter.visor.matrixWorld);
+  for (const pitch of [Math.PI / 3, -Math.PI / 3, Math.PI / 2, -Math.PI / 2, 0]) {
+    const aim = new THREE.Vector3(0, Math.sin(pitch), -Math.cos(pitch));
+    for (let frame = 0; frame < 60; frame++) {
+      if (pitch === 0) { fighter.landTimer = .15; fighter.landStrength = 1; }
+      fighter.update(1 / 60, noMovement, aim, {}, poseWorld);
+      if (pitch === 0) { legacy.landTimer = .15; legacy.landStrength = 1; }
+      legacy.update(1 / 60, noMovement, aim, {}, poseWorld);
+      assert.deepEqual(fighter.muzzlePoint().toArray(), legacy.muzzlePoint().toArray(), "head motion cannot change projectile origins");
+      assert.deepEqual(fighter.weaponGroup.matrix.elements, legacy.weaponGroup.matrix.elements, "weapon poses remain unchanged");
+      fighter.group.updateMatrixWorld(true);
+      const relative = fighter.helmet.matrixWorld.clone().invert().multiply(fighter.visor.matrixWorld);
+      assert.ok(relative.elements.every((value, i) => Math.abs(value - neutralLens.elements[i]) < 1e-10),
+        `helmet ${variant}/${pitch}/${frame}: lens must stay fixed inside the moving frame`);
+    }
+  }
+  assert.equal(fighter.visor.parent, fighter.helmet, "the existing helmet is the only head pitch pivot");
+  assert.deepEqual(fighter.visor.rotation.toArray(), [0, 0, 0, "XYZ"], "a child must not receive the head rotation twice");
+  assert.equal(headArmor?.parent, fighter.helmet, "brow and crest must follow the same pivot");
+  assert.equal(headArmor.material, fighter.armorMaterial, "head armor keeps its existing material");
+  const resources = new Map();
+  fighter.group.traverse(object => {
+    for (const resource of [object.geometry, ...[].concat(object.material || [])]) {
+      if (!resource || resource.userData?.sharedFighterGeometry || resources.has(resource)) continue;
+      resources.set(resource, 0); resource.addEventListener("dispose", () => resources.set(resource, resources.get(resource) + 1));
+    }
+  });
+  fighter.dispose();
+  legacy.dispose();
+  assert.ok([...resources.values()].every(count => count === 1), "nested head resources are disposed exactly once with the fighter");
+  assert.equal(fighter.group.parent, null);
+}
 const posedHand = new THREE.Vector3(), posedGrip = new THREE.Vector3();
 const wristAxis = new THREE.Vector3(), wristNormal = new THREE.Vector3(), barrelNormal = new THREE.Vector3();
 for (const weaponId of ["blaster", "rocket_launcher", "machine_gun"]) for (const release of ["reload", "grapple"]) {

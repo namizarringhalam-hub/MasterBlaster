@@ -9,9 +9,11 @@
 <nav style="position:fixed;z-index:100;inset:auto 0 0;background:#07111def;padding:8px;display:flex;gap:8px;flex-wrap:wrap;font:12px monospace">
 <label>Tier <select id="tier"><option>high</option><option>medium</option><option>low</option></select></label>
 <label>Theme <select id="seed"><option>BLAST-01</option><option>SOLAR-01</option><option>ION-01</option></select></label>
-<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>thrusters</option><option>weapon</option><option>effects</option><option>rope-corner</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option><option>boost-top</option><option>boost-side</option><option>boost-raised</option></select></label>
+<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>helmet-three-quarter</option><option>helmet-profile</option><option>thrusters</option><option>weapon</option><option>effects</option><option>rope-corner</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option><option>boost-top</option><option>boost-side</option><option>boost-raised</option></select></label>
 <label>Weapon <select id="weapon"></select></label>
 <label>Pose <select id="pose"><option>aim</option><option>reload</option><option>fire</option></select></label>
+<label>Helmet variant <select id="costume"><option value="">Current player</option><option value="0">0 · Dodecahedral</option><option value="1">1 · Round</option><option value="2">2 · Capsule</option><option value="3">3 · Faceted</option></select></label>
+<label>Aim height <select id="aim-height"><option value="0">Level</option><option value="1.7320508075688772">Up 60°</option><option value="-1.7320508075688772">Down 60°</option></select></label>
 <label>Boost pad <select id="boost-pad"><option value="0">1</option><option value="1">2</option><option value="2" selected>3</option><option value="3">4</option><option value="4">5</option><option value="5">6</option><option value="6">7</option><option value="7">8</option></select></label>
 <button id="burst">Fire / impact</button><button id="destroy">Collapse tower</button><button id="grapple">Toggle grapple</button>
 <button id="destroy-cover">Destroy viewed cover</button><label><input type="checkbox" id="cover-edge">Cover at frustum edge</label>
@@ -137,6 +139,7 @@ if (fullEffectCapacity) {
 const bufferHistory = new Map();
 const attributeOwners = new WeakMap();
 let sceneSerial = 0;
+let resetPhase = "idle";
 if (new URLSearchParams(location.search).has("traceBuffers") && game.renderer.backend.device) {
   const device = game.renderer.backend.device, createBuffer = device.createBuffer.bind(device);
   const createAttribute = game.renderer.backend.createAttribute.bind(game.renderer.backend);
@@ -411,6 +414,7 @@ const stillMove = new THREE.Vector3(), reviewAim = new THREE.Vector3(0, 0, -1);
 function settlePose() {
   game.clearTransientNetworkCombat();
   const hero = game.players[0];
+  reviewAim.set(0, Number(select("aim-height").value), -1).normalize();
   hero.velocity.set(0, 0, 0);
   hero.reloadTimer = 0; hero.reloadWeaponId = null; hero.attackTimer = 0; hero.recoilVisual = 0;
   for (let i = 0; i < 60; i++) hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
@@ -424,6 +428,16 @@ function settlePose() {
   }
   hero.group.updateMatrixWorld(true);
 }
+function replaceReviewCostume() {
+  const variant = select("costume").value;
+  if (variant === "") return;
+  const hero = game.players[0];
+  // These QA-only IDs select the real four constructor variants with the
+  // same player palette. No synthetic helmet geometry or studio material.
+  const replacement = new Fighter(game.scene, { id: `helmet-${variant}`, name: hero.name, color: hero.color, accent: hero.accent }, [...hero.loadout], hero.position);
+  hero.dispose();
+  game.players[0] = replacement;
+}
 function setView() {
   clearThrusterSortControl();
   resetSamples();
@@ -434,6 +448,7 @@ function setView() {
   if (view === "rope-corner") hero.position.set(-12, 18.6, 0);
   hero.rig.visible = true;
   const poses = { arena: [[70, 47, 98], [0, 25, 0]], grazing: [[3, 1.8, 65], [0, 4, -40]],
+    "helmet-three-quarter": [[1.2, 17.35, 6.4], [0, 17.19, 7.85]], "helmet-profile": [[2, 17.24, 8.15], [0, 17.19, 7.95]],
     fighter: [[3.7, 17.1, 3.3], [0, 16.35, 8]], thrusters: [[1.6, 16.7, 10.3], [0, 16.15, 8.49]],
     weapon: [[1.8, 16.9, 6.1], [.4, 16.4, 8.7]], effects: [[7, 19, 17], [0, 16, 8]],
     "rope-corner": [[-10, 27, -22], [0, 20, 0]],
@@ -460,6 +475,10 @@ function setView() {
   game.updateCamera();
 }
 async function reset() {
+  resetPhase = "starting";
+  captureCanvas = false; canvasCapture = null;
+  select("canvas-capture").hidden = true;
+  select("canvas-capture").removeAttribute("href");
   clearThrusterSortControl();
   sceneSerial++;
   coverDestruction = null;
@@ -471,6 +490,8 @@ async function reset() {
   game.settings.matchSettings.training.botsDontAttack = true;
   game.applyGraphicsSettings(); game.freshSessionReady = true;
   await game.startMatch(); game.paused = true; game.awaitingAudioGesture = false;
+  resetPhase = "started";
+  replaceReviewCostume();
   game.scene.traverse(child => {
     hideAOObjectForReview(child);
     for (const [key, attribute] of Object.entries(child.geometry?.attributes || {})) {
@@ -481,15 +502,18 @@ async function reset() {
   });
   game.matchStartDelay = 0; game.players[0].loadout[0] = select("weapon").value; game.players[0].updateWeaponModel();
   setView();
+  resetPhase = "ready";
 }
 select("view").onchange = setView;
 select("boost-pad").onchange = setView;
 select("cover-edge").onchange = setView;
-select("capture-canvas").onclick = () => { captureCanvas = true; };
+select("capture-canvas").onclick = () => { captureCanvas = resetPhase === "ready"; };
 select("tier").onchange = () => { game.settings.graphics = select("tier").value; game.applyGraphicsSettings(); resetSamples(); };
 select("seed").onchange = reset;
 select("weapon").onchange = () => { game.players[0].loadout[0] = select("weapon").value; game.players[0].updateWeaponModel(); settlePose(); };
 select("pose").onchange = settlePose;
+select("costume").onchange = () => { setTimeout(reset, 0); };
+select("aim-height").onchange = settlePose;
 select("reset").onclick = reset;
 select("loader-transitions").onclick = async () => {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
@@ -752,10 +776,12 @@ game.frame = time => {
     if (startupTrace.length === 3) startupIdentityRecorder?.close();
   }
   renderedFrames++;
-  if (captureCanvas) {
+  if (captureCanvas && resetPhase === "ready") {
     captureCanvas = false;
     const grapple = game.players[0]?.grapple;
     canvasCapture = { renderedFrames, sceneSerial, view: select("view").value,
+      fighter: game.players[0] ? { id: game.players[0].id, aim: game.players[0].aim?.toArray() ?? null,
+        helmetMatrix: game.players[0].helmet?.matrixWorld.toArray() ?? null, visorMatrix: game.players[0].visor?.matrixWorld.toArray() ?? null } : null,
       grappleLines: game.scene.children.filter(object => object.isLine2).length,
       draws: game.renderer.info.render.drawCalls, triangles: game.renderer.info.render.triangles,
       rope: grapple ? { anchor: grapple.anchor.toArray(), wraps: grapple.wraps?.map(point => point.toArray()) || [], segments: grapple.line.geometry.instanceCount,
@@ -777,7 +803,9 @@ game.frame = time => {
     compatibilityMode: game.renderer.backend.compatibilityMode ?? null, samples: game.renderer.samples,
     settling: now < settleUntil, visibility: document.visibilityState, focused: document.hasFocus(),
     viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
-    stress, sceneSerial, fullEffectCapacity, followCamera: select("follow-camera").checked, view: select("view").value, pose: select("pose").value, fighters: game.players.length, surface,
+    stress, sceneSerial, resetPhase, paused: game.paused,
+    reviewPlayer: { id: game.players[0]?.id, visible: game.players[0]?.rig.visible, aim: game.players[0]?.aim.toArray() },
+    fullEffectCapacity, followCamera: select("follow-camera").checked, view: select("view").value, pose: select("pose").value, fighters: game.players.length, surface,
     boostPads: game.world.boostPads.map(pad => ({ position: pad.position.toArray(), strength: pad.strength, active: pad.active,
       supported: Boolean(pad.support), color: pad.mesh.children[0].material.color.getHexString() })), selectedBoostPad: Number(select("boost-pad").value),
     aoNormals: depthAONormals ? "depth" : geometryAONormals ? "geometry" : legacyAONormals ? "legacy-material" : "depth-matched-material", aoOutput, hiddenAOObject,

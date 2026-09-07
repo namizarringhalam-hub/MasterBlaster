@@ -263,8 +263,21 @@ function trackDecoy(mesh) {
     }
   });
 }
+decoyOwner.helmet.rotation.x = -.18;
+decoyOwner.group.updateMatrixWorld(true);
 decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
 const firstDecoy = decoyHarness.decoys[0]; trackDecoy(firstDecoy.mesh);
+const frozenHead = firstDecoy.mesh.getObjectByName("Helmet and recessed visor housing");
+for (const name of ["Segmented inset visor", "Helmet brow and crest"]) {
+  const frozen = firstDecoy.mesh.getObjectByName(name), source = decoyOwner.group.getObjectByName(name);
+  assert.equal(frozen.parent, frozenHead, "a decoy preserves nested head ownership");
+  assert.deepEqual(frozen.matrix.elements, source.matrix.elements, "a decoy freezes the local head pose");
+  assert.notEqual(frozen.geometry, source.geometry);
+  assert.notEqual(frozen.material, source.material);
+  for (const attribute of ["position", "normal", "uv"]) assert.deepEqual(frozen.geometry.attributes[attribute].array, source.geometry.attributes[attribute].array);
+}
+decoyOwner.helmet.rotation.x = .18;
+assert.ok(Math.abs(frozenHead.rotation.x + .18) < 1e-12, "later owner aim cannot move its existing hologram's head");
 const thrusterSnapshot = firstDecoy.mesh.getObjectByName("Fighter thruster pair");
 assert.ok(thrusterSnapshot.isMesh && !thrusterSnapshot.isInstancedMesh, "a frozen decoy pair uses one ordinary draw without per-clone instance bindings");
 assert.notEqual(thrusterSnapshot.geometry, decoyOwner.thrusterLights.geometry);
