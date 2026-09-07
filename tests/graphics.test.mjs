@@ -427,6 +427,9 @@ for (const hidden of [null, "grid", "route", "unknown"]) {
 const aoWrapperSource = graphicsFixture.slice(graphicsFixture.indexOf("function withAODiagnostics("), graphicsFixture.indexOf("// QA-only causal comparison"));
 assert.ok(graphicsFixture.includes("async function withHelmetShellDiagnostic("), "shell diagnosis needs an isolated, restoring material control");
 const shellControlSource = graphicsFixture.slice(graphicsFixture.indexOf("async function withHelmetShellDiagnostic("), graphicsFixture.indexOf("function shellReviewState("));
+assert.ok(graphicsFixture.includes("async function withElbowSilhouette("), "elbow silhouette comparison needs an isolated restoring geometry control");
+const elbowControlSource = graphicsFixture.slice(graphicsFixture.indexOf("async function withElbowSilhouette("), graphicsFixture.indexOf("async function withHelmetShellDiagnostic("));
+const elbowControl = new Function("THREE", `${elbowControlSource}; return withElbowSilhouette;`)(THREE);
 const shellOriginal = new THREE.MeshPhysicalMaterial({ roughness: .4, metalness: .68, clearcoat: .32, clearcoatRoughness: .2, envMapIntensity: 1.2 });
 const shellEnvironment = new THREE.Texture(), shellOutput = {}, shellRawOutput = {};
 const shellGame = { players: [{ helmet: { material: shellOriginal } }], renderer: { toneMapping: THREE.ACESFilmicToneMapping },
@@ -488,6 +491,50 @@ const armDiagnosticProbe = new Fighter(new THREE.Scene(), { id: "arm-diagnostic"
 const armTarget = armDiagnosticProbe.rightForearm.children[2], armOriginal = armTarget.material;
 const armOriginalJSON = armOriginal.toJSON(), otherArmMaterials = new Map();
 armDiagnosticProbe.group.traverse(mesh => { if (mesh.isMesh && mesh !== armTarget) otherArmMaterials.set(mesh, mesh.material); });
+const fineElbowIndexed = new THREE.SphereGeometry(.135, 16, 10), fineElbow = fineElbowIndexed.toNonIndexed().translate(0, .015, 0);
+fineElbowIndexed.dispose();
+for (const arm of [armDiagnosticProbe.rightForearm, armDiagnosticProbe.leftForearm]) for (const fail of [false, true]) {
+  const target = arm.children[2], originalGeometry = target.geometry, originalMaterial = target.material;
+  const originalArrays = Object.fromEntries(Object.entries(originalGeometry.attributes).map(([name, attribute]) => [name, attribute.array.slice()]));
+  const originalDispose = THREE.BufferGeometry.prototype.dispose, disposed = new Map();
+  THREE.BufferGeometry.prototype.dispose = function () { disposed.set(this, (disposed.get(this) || 0) + 1); return originalDispose.call(this); };
+  try {
+    const capture = async () => {
+      const candidate = target.geometry;
+      assert.ok(candidate !== originalGeometry && target.material !== originalMaterial);
+      assert.equal(target.material.roughness, .56); assert.equal(target.material.clearcoatRoughness, .4);
+      assert.equal(candidate.attributes.position.count - originalGeometry.attributes.position.count, 188 * 3);
+      for (const [name, attribute] of Object.entries(candidate.attributes)) {
+        const prefix = originalArrays[name].length - 300 * attribute.itemSize;
+        assert.deepEqual(attribute.array.slice(0, prefix), originalArrays[name].slice(0, prefix), "every non-elbow float remains byte-identical");
+        assert.deepEqual(attribute.array.slice(prefix), fineElbow.attributes[name].array, "only the verified elbow suffix becomes the authored16x10 sphere");
+      }
+      assert.ok(Math.abs(candidate.boundingBox.min.z + .135) < 1e-7);
+      assert.ok(candidate.boundingSphere.radius > 0 && Number.isFinite(candidate.boundingSphere.radius));
+      if (fail) throw new Error("deliberate silhouette capture failure");
+      return 17;
+    };
+    const run = () => shellControl("satin-trial", () => elbowControl(target, capture), target);
+    if (fail) await assert.rejects(run(), /deliberate silhouette capture failure/);
+    else assert.equal(await run(), 17);
+    assert.ok(target.geometry === originalGeometry && target.material === originalMaterial);
+    for (const [name, attribute] of Object.entries(originalGeometry.attributes)) assert.deepEqual(attribute.array, originalArrays[name]);
+    assert.equal(disposed.get(originalGeometry), undefined);
+    assert.equal(disposed.size, 5, "two indexed sources, two expanded sources and one candidate are released");
+    assert.ok([...disposed.values()].every(count => count === 1), "temporary geometry disposal is exactly once, including capture failure");
+  } finally { THREE.BufferGeometry.prototype.dispose = originalDispose; }
+}
+for (const change of ["position", "normal", "uv", "index", "missing-uv"]) {
+  const malformed = new THREE.BufferGeometry().copy(armTarget.geometry);
+  if (change === "index") malformed.setIndex([0, 1, 2]);
+  else if (change === "missing-uv") malformed.deleteAttribute("uv");
+  else malformed.attributes[change].array[malformed.attributes[change].array.length - 1] += .01;
+  const target = { geometry: malformed };
+  await assert.rejects(elbowControl(target, () => assert.fail("invalid elbow layout reached capture")), /Unexpected elbow/);
+  assert.ok(target.geometry === malformed, "fail-closed validation preserves the supplied source geometry");
+  malformed.dispose();
+}
+fineElbow.dispose();
 for (const mode of ["baseline", "explicit-environment", "no-environment", "normals", "satin-trial", "restored"]) for (const fail of [false, true]) {
   let disposed = 0;
   const action = async () => {
@@ -560,8 +607,8 @@ assert.deepEqual(shellControlElements.map(control => control.disabled), [false, 
 const armRunState = { running: false }, armRunMaterial = {}, armRunTarget = { isMesh: true, material: armRunMaterial }, armRunLinks = [], armRunModes = [];
 const armRunControls = [{ disabled: false }, { disabled: true }];
 const armRunGame = { ...shellRunGame, paused: true, players: [{ darkMaterial: armRunMaterial, rightForearm: { children: [null, null, armRunTarget] } }] };
-let armRunView = "hand-side", armWaits = 0, expectedDiagnosticTarget = armRunTarget;
-const armRunHarness = new Function("game", "cameraReview", "document", "select", "waitForReviewFrame", "withHelmetShellDiagnostic", "shellReviewState", `
+let armRunView = "hand-side", armWaits = 0, expectedDiagnosticTarget = armRunTarget, armGeometryCalls = 0;
+const armRunHarness = new Function("game", "cameraReview", "document", "select", "waitForReviewFrame", "withHelmetShellDiagnostic", "shellReviewState", "withElbowSilhouette", `
   const resetReview={}, cacheReview={}, decoyReview={}, resetPhase="ready", sceneSerial=1, errorCount=0, renderedFrames=0, aoOutput="final";
   let stress=false, cameraOffset=.31;
   ${shellRunSource}
@@ -572,7 +619,8 @@ const armRunHarness = new Function("game", "cameraReview", "document", "select",
   async () => { armWaits++; assert.equal(armRunState.shell, true, "freeze flag spans every forearm capture");
     assert.deepEqual(armRunControls.map(control => control.disabled), [true, true]); },
   async (mode, action, target) => { assert.ok(target === expectedDiagnosticTarget); armRunModes.push(mode); await action(); },
-  target => { assert.ok(target === expectedDiagnosticTarget, "every sample records the material target actually overridden"); return { targetName: "actual forearm batch" }; });
+  target => { assert.ok(target === expectedDiagnosticTarget, "every sample records the material target actually overridden"); return { targetName: "actual forearm batch" }; },
+  async (target, capture) => { assert.ok(target === armRunTarget); armGeometryCalls++; return capture(); });
 await armRunHarness.run(false, true);
 assert.equal(armRunState.error, null); assert.equal(armWaits, 13); assert.equal(armRunLinks.length, 13);
 assert.ok(armRunLinks.every(link => link.download.startsWith("forearm-")), "download names disclose the actual diagnostic scope");
@@ -605,6 +653,18 @@ assert.equal(armRunState.error, null); assert.equal(armWaits, 31); assert.equal(
 assert.deepEqual(armRunModes, ["baseline", "previous-finish", "restored"]);
 assert.deepEqual(armRunState.samples.map(sample => sample.offset), [-.16, 0, .16, -.16, 0, .16, -.16, 0, .16]);
 assert.ok(armRunLinks.every(link => link.download.startsWith("shell-")));
+armRunView = "hand-side"; expectedDiagnosticTarget = armRunTarget; armRunModes.length = 0;
+await armRunHarness.run(true, true, true);
+assert.equal(armRunState.error, null); assert.equal(armWaits, 40); assert.equal(armRunLinks.length, 9); assert.equal(armGeometryCalls, 1);
+assert.deepEqual(armRunModes, ["satin-trial", "satin-trial", "satin-trial"], "geometry comparison keeps identical satin finish through all three modes");
+assert.deepEqual(armRunState.samples.map(sample => sample.mode), ["satin-baseline", "satin-baseline", "satin-baseline", "elbow-silhouette", "elbow-silhouette", "elbow-silhouette", "satin-restored", "satin-restored", "satin-restored"]);
+assert.deepEqual(armRunState.samples.map(sample => sample.offset), [-.04, 0, .04, -.04, 0, .04, -.04, 0, .04]);
+assert.equal(armRunState.running, false); assert.equal(armRunState.shell, false); assert.equal(armRunHarness.offset(), .31);
+assert.deepEqual(armRunControls.map(control => control.disabled), [false, true]);
+for (const [finish, forearm] of [[false, true], [true, false]]) {
+  await armRunHarness.run(finish, forearm, true);
+  assert.match(armRunState.error, /satin forearm route/); assert.equal(armWaits, 40); assert.equal(armGeometryCalls, 1);
+}
 const geometryNormalToken = {}, colorOutputToken = {};
 const makeAOWrapper = new Function("mrt", "normalViewGeometry", "output", "geometryAONormals", "aoOutput", "vec3", "vec4", "depthAONormals", "legacyAONormals", "normalView", "materialBlendAONormals", "THREE", "recoverAONormals", "singleSampleAO", "emulateCompatibilityAO", `${aoWrapperSource}; return withAODiagnostics;`);
 const wrapAONormals = makeAOWrapper(value => value, geometryNormalToken, colorOutputToken, true, "final");

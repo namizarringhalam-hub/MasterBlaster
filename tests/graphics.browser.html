@@ -33,6 +33,7 @@
 <button id="shell-comparison">Compare capsule shell finish</button>
 <button id="arm-diagnosis">Diagnose forearm dark batch</button>
 <button id="arm-comparison">Compare forearm satin trial</button>
+<button id="elbow-comparison">Compare elbow silhouette</button>
 <button id="boost-passage">Test boost passage</button>
 <button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
 <label><input id="follow-camera" type="checkbox" checked>Follow player camera</label>
@@ -689,6 +690,41 @@ async function runCameraReview(boostPassage = false) {
 }
 select("camera-sequence").onclick = () => runCameraReview();
 select("boost-passage").onclick = () => runCameraReview(true);
+async function withElbowSilhouette(target, capture) {
+  const original = target.geometry;
+  const sphere = (width, height) => {
+    const indexed = new THREE.SphereGeometry(.135, width, height);
+    const geometry = indexed.toNonIndexed(); indexed.dispose();
+    return geometry.translate(0, .015, 0);
+  };
+  const coarse = sphere(10, 6);
+  let fine, temporary;
+  try {
+    // The current builder appends the elbow last. Verify its actual bytes before
+    // replacing that suffix; the approved fist prefix must remain untouched.
+    if (original.index || original.groups.length || original.drawRange.start !== 0 || original.drawRange.count !== Infinity ||
+        Object.keys(original.attributes).sort().join(",") !== "normal,position,uv") throw new Error("Unexpected elbow batch layout");
+    for (const [name, reference] of Object.entries(coarse.attributes)) {
+      const actual = original.attributes[name], start = actual.array.length - reference.array.length;
+      if (!(actual.array instanceof Float32Array) || actual.itemSize !== reference.itemSize || actual.normalized !== reference.normalized ||
+          actual.count !== original.attributes.position.count || start < 0 ||
+          !reference.array.every((value, index) => Object.is(value, actual.array[start + index]))) throw new Error(`Unexpected elbow ${name} suffix`);
+    }
+    fine = sphere(16, 10); temporary = new THREE.BufferGeometry();
+    for (const [name, actual] of Object.entries(original.attributes)) {
+      const start = actual.array.length - coarse.attributes[name].array.length, replacement = fine.attributes[name];
+      const data = new Float32Array(start + replacement.array.length);
+      data.set(actual.array.subarray(0, start)); data.set(replacement.array, start);
+      temporary.setAttribute(name, new THREE.BufferAttribute(data, actual.itemSize, actual.normalized));
+    }
+    temporary.computeBoundingBox(); temporary.computeBoundingSphere();
+    target.geometry = temporary;
+    return await capture();
+  } finally {
+    target.geometry = original;
+    temporary?.dispose(); fine?.dispose(); coarse.dispose();
+  }
+}
 async function withHelmetShellDiagnostic(mode, capture, target = game.players[0].helmetShell ?? game.players[0].helmet) {
   if (mode === "baseline" || mode === "restored") return capture();
   if (!["explicit-environment", "no-environment", "normals", "previous-finish", "satin-trial"].includes(mode)) throw new Error("Unknown shell diagnostic mode");
@@ -721,6 +757,7 @@ async function withHelmetShellDiagnostic(mode, capture, target = game.players[0]
 }
 function shellReviewState(target = game.players[0].helmetShell ?? game.players[0].helmet) {
   const hero = game.players[0], helmet = target, material = helmet.material, lights = [];
+  helmet.geometry.computeBoundingBox();
   game.scene.traverse(object => {
     if (!object.isLight) return;
     lights.push({ id: object.id, type: object.type, color: object.color.toArray(), intensity: object.intensity,
@@ -729,6 +766,10 @@ function shellReviewState(target = game.players[0].helmetShell ?? game.players[0
   });
   return { fighterId: hero.id, aim: hero.aim.toArray(), helmetMatrix: hero.helmet.matrixWorld.toArray(), rigMatrix: hero.rig.matrixWorld.toArray(),
     targetName: helmet.name, targetMatrix: helmet.matrixWorld.toArray(), geometryId: helmet.geometry.uuid,
+    geometry: { vertices: helmet.geometry.attributes.position.count,
+      attributeBytes: Object.values(helmet.geometry.attributes).reduce((sum, attribute) => sum + attribute.array.byteLength, 0),
+      bounds: { min: helmet.geometry.boundingBox.min.toArray(), max: helmet.geometry.boundingBox.max.toArray() } },
+    rendererMemory: { ...game.renderer.info.memory }, // QA cleanup evidence, not a production FPS sample.
     cameraMatrix: game.camera.matrixWorld.toArray(), projection: game.camera.projectionMatrix.toArray(),
     viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio }, sceneSerial, paused: game.paused,
     material: { type: material.type, uuid: material.uuid, color: material.color?.toArray(), emissive: material.emissive?.toArray(),
@@ -741,13 +782,14 @@ function shellReviewState(target = game.players[0].helmetShell ?? game.players[0
     effects: { projectiles: game.projectiles.length, hazards: game.hazards.length, decoys: game.decoys.length, effects: game.effects.length },
     exposure: game.renderer.toneMappingExposure, toneMapping: game.renderer.toneMapping };
 }
-async function runShellReview(compareFinish = false, forearm = false) {
+async function runShellReview(compareFinish = false, forearm = false, elbowSilhouette = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.error = null;
   select("camera-captures").replaceChildren();
   const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
   const originalOffset = cameraOffset, serial = sceneSerial, initialErrors = errorCount;
   try {
+    if (elbowSilhouette && (!compareFinish || !forearm)) throw new Error("Elbow silhouette comparison requires the satin forearm route");
     // This target includes the elbow AND the approved fist. It is a whole-batch
     // diagnostic, not an isolated elbow material or a production finish change.
     const target = forearm ? game.players[0].rightForearm.children[2] : undefined;
@@ -761,8 +803,10 @@ async function runShellReview(compareFinish = false, forearm = false) {
       throw new Error("Wait for all combat lights to expire before shell diagnosis");
     if (compareFinish && !forearm && !game.players[0].helmetShell) throw new Error("Select the capsule helmet for its finish comparison");
     for (const [control] of controls) control.disabled = true;
-    for (const mode of compareFinish ? ["baseline", forearm ? "satin-trial" : "previous-finish", "restored"] : ["baseline", "explicit-environment", "no-environment", "normals", "restored"]) {
-      await withHelmetShellDiagnostic(mode, async () => {
+    const modes = elbowSilhouette ? ["satin-baseline", "elbow-silhouette", "satin-restored"]
+      : compareFinish ? ["baseline", forearm ? "satin-trial" : "previous-finish", "restored"] : ["baseline", "explicit-environment", "no-environment", "normals", "restored"];
+    for (const mode of modes) {
+      const capture = async () => {
         for (const offset of mode === "explicit-environment" ? [0] : forearm ? [-.04, 0, .04] : [-.16, 0, .16]) {
           cameraOffset = offset; game.updateCamera();
           const readyFrame = renderedFrames + 4;
@@ -777,7 +821,9 @@ async function runShellReview(compareFinish = false, forearm = false) {
             diagnosticTarget: forearm ? "right forearm dark batch: elbow and fist" : "helmet shell",
             ...shellReviewState(target), renderedFrames, errorCount, directFallback: game.renderPipeline.direct });
         }
-      }, target);
+      };
+      await withHelmetShellDiagnostic(elbowSilhouette ? "satin-trial" : mode,
+        () => mode === "elbow-silhouette" ? withElbowSilhouette(target, capture) : capture(), target);
     }
   } catch (error) { cameraReview.error = String(error); }
   finally {
@@ -789,6 +835,7 @@ select("shell-diagnosis").onclick = () => runShellReview();
 select("shell-comparison").onclick = () => runShellReview(true);
 select("arm-diagnosis").onclick = () => runShellReview(false, true);
 select("arm-comparison").onclick = () => runShellReview(true, true);
+select("elbow-comparison").onclick = () => runShellReview(true, true, true);
 async function runDecoyReview(crossTier = false, overlap = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   decoyReview.running = true; decoyReview.samples = []; decoyReview.error = null;
