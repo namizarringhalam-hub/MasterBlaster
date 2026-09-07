@@ -16,6 +16,8 @@
 <label>Aim height <select id="aim-height"><option value="0">Level</option><option value="1.7320508075688772">Up 60°</option><option value="-1.7320508075688772">Down 60°</option></select></label>
 <label>Boost pad <select id="boost-pad"><option value="0">1</option><option value="1">2</option><option value="2" selected>3</option><option value="3">4</option><option value="4">5</option><option value="5">6</option><option value="6">7</option><option value="7">8</option></select></label>
 <button id="burst">Fire / impact</button><button id="destroy">Collapse tower</button><button id="grapple">Toggle grapple</button>
+<button id="hold-ropes">Hold bot grapples</button>
+<button id="human-grapple">Run human grapple</button>
 <button id="destroy-cover">Destroy viewed cover</button><label><input type="checkbox" id="cover-edge">Cover at frustum edge</label>
 <button id="inspect-surface">Inspect footing material</button>
 <button id="thruster-sort">Toggle thruster sort control</button><button id="thruster-dust">Overlap structural dust</button>
@@ -112,6 +114,43 @@ addEventListener("error", e => recordError(e.message));
 addEventListener("unhandledrejection", e => recordError(String(e.reason)));
 const { gameReady } = await import("../src/main.js");
 const game = await gameReady, metrics = document.querySelector("#metrics");
+// QA-only labels identify which real render target is destroyed. Keep only
+// copied metadata, never GPU resources; this trace is not a speed benchmark.
+function installResizeTextureTrace(renderer, state) {
+  const backend = renderer.backend, device = backend.device;
+  const create = backend.createTexture, createGPU = device.createTexture;
+  let owner = null;
+  backend.createTexture = function (texture, ...args) {
+    const previous = owner;
+    owner = texture.renderTarget ? { textureId: texture.id, version: texture.version, name: texture.name,
+      width: texture.renderTarget.width, height: texture.renderTarget.height,
+      outputConversion: Boolean(texture.renderTarget.isPostProcessingRenderTarget) } : null;
+    try { return create.call(this, texture, ...args); } finally { owner = previous; }
+  };
+  device.createTexture = function (descriptor) {
+    if (!owner) return createGPU.call(this, descriptor);
+    const entry = { label: `resize-texture-${++state.serial}`, owner: { ...owner }, format: descriptor.format,
+      size: { ...descriptor.size }, samples: descriptor.sampleCount ?? 1,
+      created: { calls: renderer.info.calls, stack: new Error().stack }, destroyed: null };
+    const texture = createGPU.call(this, { ...descriptor, label: `${entry.label} ${descriptor.label || ""}` });
+    entry.actualLabel = texture.label;
+    const destroy = texture.destroy;
+    texture.destroy = function (...args) {
+      entry.destroyed = { calls: renderer.info.calls, label: this.label, stack: new Error().stack };
+      return destroy.apply(this, args);
+    };
+    state.entries.push(entry);
+    if (state.entries.length > 96) { state.entries.shift(); state.dropped++; }
+    return texture;
+  };
+}
+const resizeTextureTrace = { serial: 0, dropped: 0, entries: [] };
+if (new URLSearchParams(location.search).has("traceResizeTextures") && game.renderer.backend.device) installResizeTextureTrace(game.renderer, resizeTextureTrace);
+const textureUseTrace = { serial: 0, checked: 0, dropped: 0, untracked: 0, copies: 0, stale: [] };
+if (new URLSearchParams(location.search).has("traceStaleTextureUse") && game.renderer.backend.device) {
+  const { installGPUTextureUseTrace } = await import("./gpuTextureTrace.js");
+  installGPUTextureUseTrace(game.renderer, textureUseTrace);
+}
 let ropeShader = null, ropeRender = null;
 if (new URLSearchParams(location.search).has("traceRopeShader")) {
   const createPipeline = game.renderer.backend.createRenderPipeline.bind(game.renderer.backend);
@@ -915,6 +954,25 @@ select("grapple").onclick = () => {
   game.updateCamera(); captureCanvas = true;
 };
 select("thruster-sort").onclick = toggleThrusterSortControl;
+select("human-grapple").onclick = () => {
+  if (stress || !game.paused || resetPhase !== "ready" || !game.players[0]?.grapple) throw Error("Human motion needs a ready paused grapple");
+  game.setTrainingBotOption("botsStandStill", true);
+  game.setTrainingBotOption("botsDontAttack", true);
+  stress = true; game.paused = false; game.sound.resume(); resetSamples();
+};
+select("hold-ropes").onclick = () => {
+  if (stress || !game.paused || resetPhase !== "ready") throw Error("Hold ropes requires a ready paused scene");
+  for (const player of game.players) if (player.grapple) game.releaseGrapple(player, false, true);
+  for (const [index, player] of game.players.slice(1).entries()) {
+    player.position.set(-12, 18.6, -9 + index * 1.25); player.velocity.set(0, 0, 0);
+    player.aim.set(0, 20, 0).sub(player.position).normalize();
+    game.toggleGrapple(player);
+    if (new URLSearchParams(location.search).has("legacyRopeBindings") && player.grapple) {
+      player.grapple.line.material.opacityNode = null;
+    }
+  }
+  if (game.players.filter(player => player.grapple).length < 2) throw Error("Expected multiple real grapple anchors");
+};
 select("thruster-dust").onclick = () => {
   clearThrusterSortControl();
   game.world.spawnStructuralDust(game.players[0].position.clone().add(new THREE.Vector3(0, .6, .65)), 0x66727a, 8, { w: .2, h: .2, d: .2 }, "THRUSTER-OVERLAP");
@@ -1003,9 +1061,12 @@ game.frame = time => {
   stats = { tier: game.settings.graphics, profile: game.renderPipeline.profile, directFallback: game.renderPipeline.direct, theme: game.world?.theme.id,
     compatibilityMode: game.renderer.backend.compatibilityMode ?? null, samples: game.renderer.samples,
     settling: now < settleUntil, visibility: document.visibilityState, focused: document.hasFocus(),
-    viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
-    stress, sceneSerial, resetPhase, paused: game.paused,
-    reviewPlayer: { id: game.players[0]?.id, visible: game.players[0]?.rig.visible, aim: game.players[0]?.aim.toArray() },
+    viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio }, renderCalls: game.renderer.info.calls,
+    resizeTextureTrace, textureUseTrace, resize: { pending: Boolean(game.pendingResize), inFlight: Boolean(game.resizeInFlight), failed: Boolean(game.resizeFailed),
+      applied: game.renderSize ? { ...game.renderSize } : null,
+      buffer: { width: game.renderer.domElement.width, height: game.renderer.domElement.height } },
+    stress, sceneSerial, resetPhase, qaFrames: renderedFrames, paused: game.paused, ropes: game.players.filter(player => player.grapple).length,
+    reviewPlayer: { id: game.players[0]?.id, visible: game.players[0]?.rig.visible, aim: game.players[0]?.aim.toArray(), position: game.players[0]?.position.toArray() },
     fullEffectCapacity, followCamera: select("follow-camera").checked, view: select("view").value, pose: select("pose").value, fighters: game.players.length, surface,
     boostPads: game.world.boostPads.map(pad => ({ position: pad.position.toArray(), strength: pad.strength, active: pad.active,
       supported: Boolean(pad.support), color: pad.mesh.children[0].material.color.getHexString() })), selectedBoostPad: Number(select("boost-pad").value),

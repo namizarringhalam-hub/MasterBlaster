@@ -40,7 +40,7 @@ assert.match(mainSource, /await this\.renderer\.init\(\)/, "WebGPU initializes b
 assert.match(mainSource, /this\.renderPipeline\.render\(\)/, "the game renders through the node-based HDR pipeline");
 assert.match(mainSource, /setDrawingBufferSize\(size.width, size.height, size.pixelRatio\)/, "resize changes dimensions and DPR in one public transaction");
 assert.match(mainSource, /frame\(time\) \{\s*this.commitResize\(\)/, "resize commits before the frame starts rendering");
-assert.doesNotMatch(mainSource, /onSubmittedWorkDone/, "resize does not rely on a private GPU queue synchronization workaround");
+assert.doesNotMatch(mainSource, /onSubmittedWorkDone/, "resizing does not add an unnecessary GPU queue wait");
 assert.match(renderPipelineSource, /RenderPipeline[\s\S]*?bloom\([\s\S]*?ao\(/, "the HDR pipeline combines bloom with ambient grounding");
 assert.match(renderPipelineSource, /this\.direct = false[\s\S]*?if \(!nativeWebGPU\)[\s\S]*?bloom\([\s\S]*?renderer\.render\(this\.scene, this\.camera\)/, "pointer type cannot silently replace a selected graphics tier with direct rendering");
 assert.match(renderPipelineSource, /catch \(error\)[\s\S]*?degradeToDirect\(error\)/, "post-processing failures degrade to direct rendering");

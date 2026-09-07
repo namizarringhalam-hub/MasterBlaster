@@ -20,7 +20,7 @@ for (const outcome of [{ status: 0 }, { status: 1 }, { status: null, error: { co
       process: { execPath: process.execPath, exit(code) { exitCode = code; throw new Error("exit"); } }
     }, { timeout: 1000 });
   } catch (error) { if (error.message !== "exit") throw error; }
-  if (outcome.status === 0) { assert.equal(calls, 19); assert.equal(exitCode, undefined); }
+  if (outcome.status === 0) { assert.equal(calls, 20); assert.equal(exitCode, undefined); }
   else { assert.equal(calls, 1); assert.equal(exitCode, 1, "timeout/failure cannot report success or continue"); }
 }
 const timedOut = spawnSync(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { timeout: 200, windowsHide: true });

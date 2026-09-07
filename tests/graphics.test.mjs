@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import * as THREE from "three/webgpu";
-import { getCurrentStack, getNormalFromDepth, normalView, setCurrentStack, stack, uniform, vec2, vec4 } from "three/tsl";
+import { getCurrentStack, getNormalFromDepth, materialOpacity, normalView, setCurrentStack, stack, uniform, vec2, vec4 } from "three/tsl";
+import NodeMaterialObserver from "../node_modules/three/src/materials/nodes/manager/NodeMaterialObserver.js";
 import WebGPUPipelineUtils from "../node_modules/three/src/renderers/webgpu/utils/WebGPUPipelineUtils.js";
 import { ArenaWorld, structuralPanelGeometry, structuralRouteGeometry } from "../src/world.js";
 import { Fighter } from "../src/player.js";
@@ -255,6 +256,72 @@ if (process.argv.includes("--bench-merge")) {
 
 // Execute the fixture's actual wait helper with a stopped animation clock.
 const graphicsFixture = readFileSync(new URL("./graphics.browser.html", import.meta.url), "utf8");
+const humanGrappleSource = graphicsFixture.slice(graphicsFixture.indexOf('select("human-grapple").onclick = ') + 'select("human-grapple").onclick = '.length,
+  graphicsFixture.indexOf('select("hold-ropes").onclick')).trim().replace(/;$/, "");
+const startHumanMotion = new Function("game", "stress", "resetPhase", "resetSamples", `(${humanGrappleSource})(); return stress;`);
+const humanEvents = [], humanGame = { paused: true, players: [{ grapple: {} }], sound: { resume: () => humanEvents.push("audio") },
+  setTrainingBotOption: (...args) => humanEvents.push(args) };
+for (const [stress, phase] of [[true, "ready"], [false, "starting"]]) assert.throws(() => startHumanMotion(humanGame, stress, phase, () => {}), /ready paused grapple/);
+assert.equal(humanEvents.length, 0);
+assert.equal(startHumanMotion(humanGame, false, "ready", () => humanEvents.push("samples")), true);
+assert.equal(humanGame.paused, false);
+assert.deepEqual(humanEvents, [["botsStandStill", true], ["botsDontAttack", true], "audio", "samples"]);
+const holdRopeSource = graphicsFixture.slice(graphicsFixture.indexOf('select("hold-ropes").onclick = ') + 'select("hold-ropes").onclick = '.length,
+  graphicsFixture.indexOf('select("thruster-dust").onclick')).trim().replace(/;$/, "");
+for (const legacy of [false, true]) {
+  const players = Array.from({ length: 16 }, () => ({ position: new THREE.Vector3(), velocity: new THREE.Vector3(1, 2, 3), aim: new THREE.Vector3(), grapple: {} }));
+  let releases = 0, creates = 0;
+  const game = { paused: true, players, releaseGrapple(player) { releases++; player.grapple = null; },
+    toggleGrapple(player) { creates++; player.grapple = { line: { material: { opacityNode: materialOpacity } } }; } };
+  const runHeld = new Function("game", "stress", "resetPhase", "location", `return (${holdRopeSource})();`);
+  const location = { search: legacy ? "?legacyRopeBindings" : "" };
+  for (const [stress, phase, paused] of [[true, "ready", true], [false, "starting", true], [false, "ready", false]]) {
+    game.paused = paused;
+    assert.throws(() => runHeld(game, stress, phase, location), /ready paused/);
+    assert.equal(releases + creates, 0, "guarded QA attempts cannot mutate gameplay");
+  }
+  game.paused = true; runHeld(game, false, "ready", location);
+  assert.equal(releases, 16); assert.equal(creates, 15); assert.equal(players[0].grapple, null);
+  assert.deepEqual(players[0].position.toArray(), [0, 0, 0]);
+  for (const [i, player] of players.slice(1).entries()) {
+    assert.deepEqual(player.position.toArray(), [-12, 18.6, -9 + i * 1.25]);
+    assert.equal(player.velocity.lengthSq(), 0); assert.ok(Math.abs(player.aim.length() - 1) < 1e-12);
+    assert.ok(player.grapple.line.material.opacityNode === (legacy ? null : materialOpacity));
+  }
+}
+const textureTraceSource = graphicsFixture.slice(graphicsFixture.indexOf("function installResizeTextureTrace("), graphicsFixture.indexOf("const resizeTextureTrace ="));
+const installTextureTrace = new Function(`${textureTraceSource}; return installResizeTextureTrace;`)();
+const tracedDescriptors = [], traceEvents = [], textureTraceState = { serial: 0, dropped: 0, entries: [] };
+const traceDevice = { createTexture(descriptor) {
+  assert.equal(this, traceDevice); tracedDescriptors.push(descriptor);
+  const result = { label: descriptor.label, destroy(...args) { assert.equal(this, result); traceEvents.push(args); return "destroyed"; } }; return result;
+} };
+const traceBackend = { device: traceDevice, createTexture(texture, options) {
+  assert.equal(this, traceBackend);
+  if (options.fail) throw Error("trace failure");
+  if (options.nested) this.createTexture({}, { descriptor: options.descriptor });
+  return this.device.createTexture(options.descriptor);
+} };
+installTextureTrace({ backend: traceBackend, info: { calls: 42 } }, textureTraceState);
+const tracedOwner = { id: 123, name: "output", version: 7, renderTarget: { width: 10, height: 20, isPostProcessingRenderTarget: true } };
+const sourceDescriptor = { label: "original", format: "rgba16float", size: { width: 10, height: 20 }, sampleCount: 4, usage: 16 };
+const tracedTexture = traceBackend.createTexture(tracedOwner, { descriptor: sourceDescriptor, nested: true });
+assert.equal(tracedDescriptors[0], sourceDescriptor, "non-target texture descriptors stay untouched even inside nested creation");
+assert.deepEqual(tracedDescriptors[1], { ...sourceDescriptor, label: "resize-texture-1 original" });
+assert.equal(sourceDescriptor.label, "original");
+assert.deepEqual(textureTraceState.entries[0].owner, { textureId: 123, version: 7, name: "output", width: 10, height: 20, outputConversion: true });
+assert.notEqual(textureTraceState.entries[0].size, sourceDescriptor.size);
+assert.equal(tracedTexture.destroy("argument"), "destroyed");
+assert.deepEqual(traceEvents, [["argument"]]);
+assert.equal(textureTraceState.entries[0].destroyed.calls, 42);
+assert.equal(textureTraceState.entries[0].actualLabel, "resize-texture-1 original");
+assert.equal(textureTraceState.entries[0].destroyed.label, "resize-texture-1 original");
+assert.throws(() => traceBackend.createTexture(tracedOwner, { fail: true }), /trace failure/);
+traceDevice.createTexture(sourceDescriptor);
+assert.equal(tracedDescriptors.at(-1), sourceDescriptor, "a thrown backend call always restores the previous trace owner");
+for (let i = 0; i < 100; i++) traceBackend.createTexture(tracedOwner, { descriptor: sourceDescriptor });
+assert.equal(textureTraceState.serial, 101); assert.equal(textureTraceState.entries.length, 96); assert.equal(textureTraceState.dropped, 5);
+assert.equal(textureTraceState.entries.at(-1).label, "resize-texture-101");
 const resetCaptureSource = graphicsFixture.slice(graphicsFixture.indexOf('  resetPhase = "starting";'), graphicsFixture.indexOf('  clearThrusterSortControl();', graphicsFixture.indexOf("async function reset()")));
 const staleLink = { hidden: false, href: "old-frame", removeAttribute(name) { delete this[name]; } };
 const clearedCapture = new Function("select", `let resetPhase='ready', captureCanvas=true, canvasCapture={old:true}; ${resetCaptureSource}; return {resetPhase,captureCanvas,canvasCapture};`)(() => staleLink);
@@ -1021,6 +1088,24 @@ for (const nativeWebGPU of [true, false]) for (const quality of ["low", "medium"
 }
 
 const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
+const ropeMaterialSource = main.slice(main.indexOf("    const ropeMaterial ="), main.indexOf("    const line = new Line2"));
+const makeRopeMaterial = new Function("THREE", "materialOpacity", "player", `${ropeMaterialSource}; return ropeMaterial;`);
+for (const isBot of [false, true]) {
+  const material = makeRopeMaterial(THREE, materialOpacity, { accent: 0x6ff6ff, isBot });
+  const observer = new NodeMaterialObserver({ material, object: {}, context: {} });
+  // Two already-initialized, otherwise unchanged ropes share a builder monitor.
+  // The second must still update bindings when their shared viewport copy resized.
+  observer.firstInitialization = () => false;
+  observer.getLights = () => [];
+  observer.equals = () => true;
+  const object = { object: {}, bundle: null }, frame = { renderId: 42, renderer: { getMRT: () => null } };
+  assert.equal(observer.needsRefresh(object, frame), true);
+  assert.equal(observer.needsRefresh(object, frame), true, "every rope refreshes its viewport-copy binding, including unchanged second ropes");
+  assert.ok(material.opacityNode === materialOpacity, "explicit node is the original built-in opacity expression");
+  assert.deepEqual([material.opacity, material.linewidth, material.transparent, material.depthWrite, material.toneMapped, material.alphaToCoverage],
+    [isBot ? .64 : .92, isBot ? 1.55 : 2.35, true, false, false, true]);
+  material.dispose();
+}
 const frameSource = main.slice(main.indexOf("  frame(time) {"), main.indexOf("  update(dt, realDt = dt) {"));
 const firstFrameEvents = [];
 const frameMethod = new Function("performance", `return ({${frameSource}}).frame`)({

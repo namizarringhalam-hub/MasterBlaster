@@ -1,4 +1,5 @@
 import * as THREE from "three/webgpu";
+import { materialOpacity } from "three/tsl";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { Line2 } from "three/addons/lines/webgpu/Line2.js";
 import { SoundBoard } from "./audio.js";
@@ -2232,6 +2233,9 @@ class BlasterBattle {
       linewidth: player.isBot ? 1.55 : 2.35,
       transparent: true,
       opacity: player.isBot ? .64 : .92,
+      // Keep Three's normal opacity, but mark the built-in viewport sampler as
+      // dynamic so unchanged ropes also refresh bindings after a resize.
+      opacityNode: materialOpacity,
       depthWrite: false,
       toneMapped: false,
       alphaToCoverage: true
