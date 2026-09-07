@@ -1,6 +1,13 @@
 # Graphics overhaul checkpoint
 
-Updated: 2026-09-07. Pass39 shoulder alignment is PUBLISHED after actual visual88→92 improvement, technical99/98PASS, full validation and production verification. The graphics project is NOT complete.
+Updated: 2026-09-08. Pass40 shoulder fit is PUBLISHED after actual visual92→96 improvement, technical99/98PASS, full validation and production verification. The graphics project is NOT complete.
+
+## Latest publication — Pass40 complete, continue cap reflection diagnosis
+
+- Exact source9c093682afd95cecb3c089333c294539e624710a pushed origin/main andexistingSitesmain. Pagesa22a473e-51c7-4718-960a-47cb86fa09f1 at https://masterblaster.se/; Sites version105 savedappgprj_6a6378a267348191a15d7e0faf662c64~appgver_10c27664f66081919a9237e3939c6b3f, deploymentappgdep_6a9f361749148191aac9288a0fd45ca2 succeeded existingpublicmirror. Archive962ff61930d26f38187a429ae640a1a1101d483ffeda16aa1a1b1dac177c8a5e/96files16404480B. No audience/env/automaticdeployment changes.
+- Bothorigins exact local main-D-UiYDmu.js SHA2568047e88a4454f98f41bc1753c1663b9c49baad7eaf12ae05c6bd3ead41ed0ef6 andunchangedthree-qFsCeRD-.js SHA256646b2b7b508a4334d13e566dda7d000877fa0768a47aa9195580bf8d7c5c64c2. PrimaryHTMLexact;health200/ok/protocol1/arenaRevision2. Worker unchanged activee79ad4a2-f74a-42bc-9c18-e1ea58af707c; no backend/configchange orredeploy.
+- Productionmultiplayer bothlifecycle/private-lobby/coalescedrecovery andfour-cornerdestruction/ammunition/reconnect16fighter suitesPASS. ProductionTraining16fightersnativeHigh rendered withscoresprogressing; Temp pass40-production.jpg/-dom.txt HUD60FPS/469draws at19sec (smoke, notFPSproof). SessionendedMainMenu thenQA tab7local. Scopedfinalscores96visual(up92),99performance,98adversarialallPASS; broadgraphics98notmet.
+- NEXT Pass41: visualcritic deriving source/evidence-backed cause of remainingcapreflectionbands; rootwillimplementonlyboundedQAcomparison afterproposal. Preserveapprovedgeometry/contact/materialselsewhere. NoPass41codeyet. Vite28224retained; noWorker/livetestactive. Separatepublishedmirrorview8(providerTabId7) preserved, QA7; no duplicatework. RecoveryautomationACTIVE, keepworkingwithoutaskingcontinue. Historicalpendingentriesbelow arecompletedbythisrelease.
 
 ## Latest publication — Pass39 complete, continue remaining shoulder contact
 
