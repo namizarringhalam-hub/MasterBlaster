@@ -463,7 +463,7 @@ for (const height of [0, Math.sqrt(3), -Math.sqrt(3)]) {
 // Execute the exact capture block: later frame counters must not alter evidence.
 const handViewSource = graphicsFixture.slice(graphicsFixture.indexOf("function setView()"), graphicsFixture.indexOf("async function reset()"));
 const weaponSelectSource = graphicsFixture.slice(graphicsFixture.indexOf('select("weapon").onchange ='), graphicsFixture.indexOf('select("pose").onchange ='));
-for (const view of ["hand-front", "hand-side", "hand-opposite", "hand-palm"]) for (const previousPose of ["aim", "reload", "reacquire-early"]) {
+for (const view of ["hand-front", "hand-side", "hand-opposite", "hand-palm", "hand-shoulder"]) for (const previousPose of ["aim", "reload", "reacquire-early"]) {
   const hero = new Fighter(new THREE.Scene(), { id: "hand-view", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
   const controls = { view: { value: view }, weapon: { value: "blaster" }, pose: { value: "aim" }, "aim-height": { value: "0" } };
   const game = { players: [hero], camera: new THREE.PerspectiveCamera(62, 16 / 9, .1, 300), clearTransientNetworkCombat() {},
@@ -478,7 +478,8 @@ for (const view of ["hand-front", "hand-side", "hand-opposite", "hand-palm"]) fo
   controls.weapon.onchange();
   assert.equal(controls.pose.value, "aim", "hand view/weapon changes visibly reset to ready pose before framing");
   game.updateCamera(); game.camera.updateMatrixWorld(true);
-  const target = (view === "hand-palm" ? hero.leftHand.position.clone().applyMatrix4(hero.leftForearm.matrixWorld)
+  const target = (view === "hand-shoulder" ? new THREE.Vector3(0, -.16, 0).applyMatrix4(hero.rightArm.matrixWorld)
+    : view === "hand-palm" ? hero.leftHand.position.clone().applyMatrix4(hero.leftForearm.matrixWorld)
     : hero.weaponGrip.clone().applyMatrix4(hero.weaponGroup.matrixWorld)).project(game.camera);
   assert.ok(Math.abs(target.x) < 1e-6 && Math.abs(target.y) < 1e-6, "weapon switching must reframe the current grip, not retain the old anchor");
   const cameraPosition = game.camera.position.clone();
@@ -715,6 +716,31 @@ for (const mode of ["baseline", "explicit-environment", "no-environment", "norma
   assert.equal(disposed, ["baseline", "restored"].includes(mode) ? 0 : 1);
   assert.equal(sharedShellDisposals, 0);
 }
+const shoulderProbe = new Fighter(new THREE.Scene(), { id: "shoulder-diagnostic", color: 0x129dba, accent: 0x6ff6ff }, ["energy_sword"], new THREE.Vector3());
+const shoulderTarget = shoulderProbe.rightArm.children[0], shoulderOriginal = shoulderTarget.material;
+const shoulderOriginalJSON = shoulderOriginal.toJSON(), untouchedShoulderMeshes = new Map();
+shoulderProbe.group.traverse(mesh => { if (mesh.isMesh && mesh !== shoulderTarget) untouchedShoulderMeshes.set(mesh, [mesh.material, mesh.geometry]); });
+for (const mode of ["baseline", "explicit-environment", "no-environment", "normals", "restored"]) for (const fail of [false, true]) {
+  let disposals = 0;
+  const geometry = shoulderTarget.geometry;
+  const capture = async () => {
+    for (const [mesh, [material, originalGeometry]] of untouchedShoulderMeshes) {
+      assert.ok(mesh.material === material && mesh.geometry === originalGeometry, "shoulder control preserves approved elbow, fist, armor and opposite arm");
+    }
+    assert.ok(shoulderTarget.geometry === geometry);
+    if (!["baseline", "restored"].includes(mode)) {
+      assert.notEqual(shoulderTarget.material, shoulderOriginal);
+      shoulderTarget.material.addEventListener("dispose", () => disposals++);
+    }
+    if (fail) throw new Error("shoulder capture interruption");
+  };
+  if (fail) await assert.rejects(shellControl(mode, capture, shoulderTarget), /shoulder capture interruption/);
+  else await shellControl(mode, capture, shoulderTarget);
+  assert.ok(shoulderTarget.material === shoulderOriginal && shoulderTarget.geometry === geometry);
+  assert.deepEqual(shoulderOriginal.toJSON(), shoulderOriginalJSON);
+  assert.equal(disposals, ["baseline", "restored"].includes(mode) ? 0 : 1);
+}
+shoulderProbe.dispose();
 armDiagnosticProbe.dispose();
 hardwareMaterial.dispose();
 shellOriginal.dispose(); shellEnvironment.dispose();
@@ -826,6 +852,27 @@ assert.deepEqual(armRunModes, ["previous-finish"]);
 assert.deepEqual(armRunState.samples.map(sample => sample.mode), ["previous-elbow", "previous-elbow", "previous-elbow", "elbow-silhouette", "elbow-silhouette", "elbow-silhouette", "restored", "restored", "restored"]);
 assert.ok(armRunState.samples.every(sample => sample.diagnosticTarget === "right elbow only"));
 assert.deepEqual(armRunControls.map(control => control.disabled), [false, true]);
+// Shoulder diagnosis reuses the frozen control without touching the approved elbow.
+const shoulderRunTarget = { isMesh: true, material: armRunMaterial };
+armRunGame.players[0].rightArm = { children: [shoulderRunTarget, {}, armRunGame.players[0].rightForearm] };
+expectedDiagnosticTarget = shoulderRunTarget; armRunView = "hand-shoulder"; armRunModes.length = 0;
+await armRunHarness.run(false, false, false, true);
+assert.equal(armRunState.error, null); assert.equal(armWaits, 62); assert.equal(armRunLinks.length, 13);
+assert.deepEqual(armRunModes, ["baseline", "explicit-environment", "no-environment", "normals", "restored"]);
+assert.ok(armRunLinks.every(link => link.download.startsWith("shoulder-")));
+assert.ok(armRunState.samples.every(sample => sample.diagnosticTarget.includes("excludes elbow, fist and static armor")));
+assert.deepEqual(armRunState.samples.map(sample => sample.offset), [-.04, 0, .04, 0, -.04, 0, .04, -.04, 0, .04, -.04, 0, .04]);
+assert.equal(armRunHarness.offset(), .31); assert.equal(armRunState.running, false); assert.equal(armRunState.shell, false);
+assert.deepEqual(armRunControls.map(control => control.disabled), [false, true]);
+armRunView = "hand-side"; await armRunHarness.run(false, false, false, true);
+assert.match(armRunState.error, /matching view/); assert.equal(armWaits, 62);
+armRunView = "hand-shoulder"; shoulderRunTarget.material = {};
+await armRunHarness.run(false, false, false, true);
+assert.match(armRunState.error, /shoulder batch layout/); assert.equal(armWaits, 62);
+shoulderRunTarget.material = armRunMaterial;
+for (const args of [[true, false, false, true], [false, true, false, true], [false, false, true, true]]) {
+  await armRunHarness.run(...args); assert.match(armRunState.error, /cannot run/); assert.equal(armWaits, 62);
+}
 const geometryNormalToken = {}, colorOutputToken = {};
 const makeAOWrapper = new Function("mrt", "normalViewGeometry", "output", "geometryAONormals", "aoOutput", "vec3", "vec4", "depthAONormals", "legacyAONormals", "normalView", "materialBlendAONormals", "THREE", "recoverAONormals", "singleSampleAO", "emulateCompatibilityAO", `${aoWrapperSource}; return withAODiagnostics;`);
 const wrapAONormals = makeAOWrapper(value => value, geometryNormalToken, colorOutputToken, true, "final");
