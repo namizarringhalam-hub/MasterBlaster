@@ -9,7 +9,7 @@
 <nav style="position:fixed;z-index:100;inset:auto 0 0;background:#07111def;padding:8px;display:flex;gap:8px;flex-wrap:wrap;font:12px monospace">
 <label>Tier <select id="tier"><option>high</option><option>medium</option><option>low</option></select></label>
 <label>Theme <select id="seed"><option>BLAST-01</option><option>SOLAR-01</option><option>ION-01</option></select></label>
-<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>helmet-three-quarter</option><option>helmet-profile</option><option>thrusters</option><option>weapon</option><option>hand-front</option><option>hand-side</option><option>hand-palm</option><option>player-camera</option><option>effects</option><option>rope-corner</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option><option>boost-top</option><option>boost-side</option><option>boost-raised</option></select></label>
+<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>helmet-three-quarter</option><option>helmet-profile</option><option>thrusters</option><option>weapon</option><option>hand-front</option><option>hand-side</option><option>hand-opposite</option><option>hand-palm</option><option>player-camera</option><option>effects</option><option>rope-corner</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option><option>boost-top</option><option>boost-side</option><option>boost-raised</option></select></label>
 <label>Weapon <select id="weapon"></select></label>
 <label>Pose <select id="pose"><option>aim</option><option>reload</option><option>reacquire-early</option><option>reacquire-complete</option><option>fire</option></select></label>
 <label>Helmet variant <select id="costume"><option value="">Current player</option><option value="0">0 · Dodecahedral</option><option value="1">1 · Round</option><option value="2">2 · Capsule</option><option value="3">3 · Faceted</option></select></label>
@@ -33,8 +33,8 @@
 <button id="camera-sequence">Capture moving-camera sequence</button><span id="camera-captures"></span>
 <button id="shell-diagnosis">Diagnose helmet shell finish</button>
 <button id="shell-comparison">Compare capsule shell finish</button>
-<button id="arm-diagnosis">Diagnose forearm dark batch</button>
-<button id="arm-comparison">Compare forearm satin trial</button>
+<button id="arm-diagnosis">Diagnose elbow finish</button>
+<button id="arm-comparison">Check elbow finish restoration</button>
 <button id="elbow-comparison">Compare elbow silhouette</button>
 <button id="boost-passage">Test boost passage</button>
 <button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
@@ -532,7 +532,8 @@ function setView() {
   const handOffset = view === "hand-palm"
     ? new THREE.Vector3(0, 0, 1).transformDirection(hero.leftForearm.matrixWorld).multiplyScalar(.8)
       .addScaledVector(new THREE.Vector3(1, 0, 0).transformDirection(hero.leftForearm.matrixWorld), .22)
-    : new THREE.Vector3(view === "hand-side" ? 1.3 : .5, .12, view === "hand-side" ? .08 : 1.45).applyQuaternion(hero.group.quaternion);
+    : new THREE.Vector3(view === "hand-opposite" ? -1.3 : view === "hand-side" ? 1.3 : .5, .12,
+      ["hand-side", "hand-opposite"].includes(view) ? .08 : 1.45).applyQuaternion(hero.group.quaternion);
   game.updateCamera = () => {
     if (stress && select("follow-camera").checked) return cameraUpdate();
     if (view === "player-camera") {
@@ -731,6 +732,15 @@ select("camera-sequence").onclick = () => runCameraReview();
 select("boost-passage").onclick = () => runCameraReview(true);
 async function withElbowSilhouette(target, capture) {
   const original = target.geometry;
+  // Integrated elbow: compare the previous contour without touching the fist.
+  if (original.type === "SphereGeometry") {
+    const { radius, widthSegments, heightSegments } = original.parameters;
+    if (radius !== .135 || widthSegments !== 16 || heightSegments !== 10 ||
+        !target.position.equals(new THREE.Vector3(0, .015, 0))) throw new Error("Unexpected elbow geometry");
+    const previous = new THREE.SphereGeometry(.135, 10, 6);
+    try { target.geometry = previous; return await capture(); }
+    finally { target.geometry = original; previous.dispose(); }
+  }
   const sphere = (width, height) => {
     const indexed = new THREE.SphereGeometry(.135, width, height);
     const geometry = indexed.toNonIndexed(); indexed.dispose();
@@ -829,10 +839,12 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
   const originalOffset = cameraOffset, serial = sceneSerial, initialErrors = errorCount;
   try {
     if (elbowSilhouette && (!compareFinish || !forearm)) throw new Error("Elbow silhouette comparison requires the satin forearm route");
-    // This target includes the elbow AND the approved fist. It is a whole-batch
-    // diagnostic, not an isolated elbow material or a production finish change.
-    const target = forearm ? game.players[0].rightForearm.children[2] : undefined;
-    if (forearm && (game.players[0].rightForearm.children.length !== 3 || !target?.isMesh || target.material !== game.players[0].darkMaterial))
+    // Preserve the archived merged-batch control, but target only the elbow in
+    // the integrated model. The approved hand never receives a trial material.
+    const separateElbow = forearm && game.players[0].rightForearm.children.length === 4;
+    const target = forearm ? game.players[0].rightForearm.children[separateElbow ? 3 : 2] : undefined;
+    if (forearm && (![3, 4].includes(game.players[0].rightForearm.children.length) || !target?.isMesh ||
+        target.material !== (separateElbow ? game.players[0].elbowMaterial : game.players[0].darkMaterial)))
       throw new Error("Unexpected forearm batch layout; update the diagnostic target before capturing");
     const validView = forearm ? select("view").value === "hand-side" : select("view").value.startsWith("helmet-");
     if (stress || !game.paused || resetPhase !== "ready" || game.settings.graphics !== "high" ||
@@ -842,7 +854,8 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
       throw new Error("Wait for all combat lights to expire before shell diagnosis");
     if (compareFinish && !forearm && !game.players[0].helmetShell) throw new Error("Select the capsule helmet for its finish comparison");
     for (const [control] of controls) control.disabled = true;
-    const modes = elbowSilhouette ? ["satin-baseline", "elbow-silhouette", "satin-restored"]
+    const modes = elbowSilhouette && separateElbow ? ["previous-elbow", "elbow-silhouette", "restored"]
+      : elbowSilhouette ? ["satin-baseline", "elbow-silhouette", "satin-restored"]
       : compareFinish ? ["baseline", forearm ? "satin-trial" : "previous-finish", "restored"] : ["baseline", "explicit-environment", "no-environment", "normals", "restored"];
     for (const mode of modes) {
       const capture = async () => {
@@ -857,11 +870,14 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
           link.href = document.querySelector("#game-canvas").toDataURL("image/png");
           select("camera-captures").append(link, " ");
           cameraReview.samples.push({ index, mode, offset, output: mode === "normals" ? "scene-color" : "final",
-            diagnosticTarget: forearm ? "right forearm dark batch: elbow and fist" : "helmet shell",
+            diagnosticTarget: separateElbow ? "right elbow only" : forearm ? "right forearm dark batch: elbow and fist" : "helmet shell",
             ...shellReviewState(target), renderedFrames, errorCount, directFallback: game.renderPipeline.direct });
         }
       };
-      await withHelmetShellDiagnostic(elbowSilhouette ? "satin-trial" : mode,
+      if (elbowSilhouette && separateElbow) {
+        if (mode === "previous-elbow") await withHelmetShellDiagnostic("previous-finish", () => withElbowSilhouette(target, capture), target);
+        else await capture();
+      } else await withHelmetShellDiagnostic(elbowSilhouette ? "satin-trial" : mode,
         () => mode === "elbow-silhouette" ? withElbowSilhouette(target, capture) : capture(), target);
     }
   } catch (error) { cameraReview.error = String(error); }

@@ -19,6 +19,53 @@ import { weaponPresentation } from "../src/weaponPresentation.js";
 // Execute the previous clone path against the same complete fighter/weapon builder.
 // Only the three transient merge copies differ; no frozen art data to maintain.
 const playerMergeSource = readFileSync(new URL("../src/player.js", import.meta.url), "utf8");
+const beforeElbowSource = playerMergeSource.replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "")
+  .replace("this.elbowMaterial = dark.clone();", "this.elbowMaterial = dark;")
+  .replace("this.elbowMaterial.roughness = .56;", "")
+  .replace("this.elbowMaterial.clearcoatRoughness = .4;", "")
+  .replace("const elbowGeometry = new THREE.SphereGeometry(.135, 16, 10);", "const elbowGeometry = null;")
+  .replace("part(elbowGeometry, elbowMaterial", "part(new THREE.SphereGeometry(.135, 10, 6), dark")
+  .replace("[hand, thumb, ...curledFingers]), elbowJoint", "[hand, thumb, ...curledFingers, elbowJoint])");
+const BeforeElbowFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
+  `${beforeElbowSource}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
+const elbowProbe = new Fighter(new THREE.Scene(), { id: "helmet-2", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+for (const arm of [elbowProbe.leftForearm, elbowProbe.rightForearm]) {
+  const elbow = arm.children[3];
+  assert.ok(elbow?.isMesh, "elbow finish must be isolated from the approved fist");
+  assert.equal(elbow.geometry.parameters.widthSegments, 16);
+  assert.equal(elbow.geometry.parameters.heightSegments, 10);
+  assert.equal(elbow.geometry.parameters.radius, .135);
+  assert.deepEqual(elbow.position.toArray(), [0, .015, 0]);
+  assert.equal(elbow.material, elbowProbe.elbowMaterial);
+  assert.notEqual(elbow.material, elbowProbe.darkMaterial);
+  assert.equal(elbow.material.roughness, .56);
+  assert.equal(elbow.material.clearcoatRoughness, .4);
+  assert.equal(arm.children[2].material.roughness, .4);
+}
+let elbowMaterialDisposals = 0;
+const elbowGeometryDisposals = new Map([elbowProbe.leftForearm, elbowProbe.rightForearm].map(arm => [arm.children[3].geometry, 0]));
+for (const geometry of elbowGeometryDisposals.keys()) geometry.addEventListener("dispose", () => elbowGeometryDisposals.set(geometry, elbowGeometryDisposals.get(geometry) + 1));
+elbowProbe.elbowMaterial.addEventListener("dispose", () => elbowMaterialDisposals++);
+assert.equal(new Set([elbowProbe.darkMaterial, elbowProbe.shellMaterial, elbowProbe.elbowMaterial]).size, 3);
+elbowProbe.takeHit(10);
+elbowProbe.update(1 / 60, new THREE.Vector3(), new THREE.Vector3(0, 0, -1), {}, { resolve: () => ({ grounded: true }), boostAt: () => null });
+assert.ok(elbowProbe.elbowMaterial.emissiveIntensity > .025);
+assert.equal(elbowProbe.elbowMaterial.emissiveIntensity, elbowProbe.darkMaterial.emissiveIntensity);
+assert.equal(elbowProbe.elbowMaterial.emissiveIntensity, elbowProbe.shellMaterial.emissiveIntensity);
+elbowProbe.respawn(new THREE.Vector3());
+assert.equal(elbowProbe.elbowMaterial.emissiveIntensity, elbowProbe.darkMaterial.emissiveIntensity);
+elbowProbe.dispose();
+assert.equal(elbowMaterialDisposals, 1, "both elbows share one fighter-owned material disposed once");
+assert.equal(elbowGeometryDisposals.size, 1, "both elbows share the identical fighter-owned geometry");
+assert.deepEqual([...elbowGeometryDisposals.values()], [1]);
+{
+  const other = new Fighter(new THREE.Scene(), { id: "elbow-owner", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const geometry = other.leftForearm.children[3].geometry, expected = new THREE.SphereGeometry(.135, 16, 10);
+  assert.ok(!elbowGeometryDisposals.has(geometry), "geometry sharing cannot cross fighter lifetime ownership");
+  for (const name of ["position", "normal", "uv"]) assert.deepEqual(geometry.attributes[name].array, expected.attributes[name].array);
+  assert.deepEqual(geometry.index.array, expected.index.array, "sharing preserves every authored triangle and attribute");
+  expected.dispose(); other.dispose();
+}
 const fistProbe = new Fighter(new THREE.Scene(), { id: "fist-probe", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
 for (const hand of [fistProbe.leftHand, fistProbe.rightHand]) {
   assert.ok(!hand.geometry, "grip metadata must not retain the disposed source palm buffers");
@@ -64,7 +111,7 @@ const beforeFistSource = playerMergeSource.replace(/^import .*;\r?\n/gm, "").rep
   const knuckle = part(new THREE.BoxGeometry(.2, .055, .18), accent, 0, -.59, .19, false);
 `)
   .replace("[wristLight, ...knuckles]", "[wristLight, knuckle]")
-  .replace("[hand, thumb, ...curledFingers, elbowJoint]", "[hand, elbowJoint]")
+  .replace("[hand, thumb, ...curledFingers]", "[hand]")
   .replace("hand: { position: hand.position.clone() }", "hand");
 const BeforeFistFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
   `${beforeFistSource}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
@@ -115,6 +162,16 @@ function mergedFighterSnapshot(fighter, excluded = new Set()) {
 for (const weapon of Object.values(WEAPONS)) {
   const config = { id: "fist-parity", color: 0x129dba, accent: 0x6ff6ff }, scene = new THREE.Scene();
   const after = new Fighter(scene, config, [weapon.id], new THREE.Vector3());
+  const oldElbow = new BeforeElbowFighter(scene, config, [weapon.id], new THREE.Vector3());
+  const elbowBatches = fighter => new Set([fighter.leftForearm, fighter.rightForearm].flatMap(arm => arm.children.slice(2)));
+  assert.deepEqual(mergedFighterSnapshot(after, elbowBatches(after)), mergedFighterSnapshot(oldElbow, elbowBatches(oldElbow)),
+    `${weapon.id}: elbow shaping preserves all other meshes, weapon anchors and materials`);
+  for (const side of ["leftForearm", "rightForearm"]) for (const name of ["position", "normal", "uv"]) {
+    const current = after[side].children[2].geometry.attributes[name];
+    assert.deepEqual(current.array, oldElbow[side].children[2].geometry.attributes[name].array.slice(0, current.array.length),
+      `${weapon.id}: every approved hand ${name} float remains exact`);
+  }
+  assert.equal(mergedFighterSnapshot(after).meshes.length - mergedFighterSnapshot(oldElbow).meshes.length, 2);
   const before = new BeforeFistFighter(scene, config, [weapon.id], new THREE.Vector3());
   const changedBatches = fighter => new Set([fighter.leftForearm, fighter.rightForearm].flatMap(arm => arm.children.slice(1)));
   assert.deepEqual(mergedFighterSnapshot(after, changedBatches(after)), mergedFighterSnapshot(before, changedBatches(before)),
@@ -131,14 +188,22 @@ for (const weapon of Object.values(WEAPONS)) {
   }
   const world = { resolve: p => { p.y = 0; return { grounded: true }; }, boostAt: () => null }, move = new THREE.Vector3();
   for (const pose of ["aim", "reload", "fire"]) for (let i = 0; i < 24; i++) {
-    for (const fighter of [before, after]) {
+    for (const fighter of [before, after, oldElbow]) {
       fighter.reloadTimer = pose === "reload" ? 1 : 0; fighter.attackTimer = pose === "fire" ? weapon.cooldown : 0;
       fighter.update(1 / 60, move, new THREE.Vector3(0, .4, -1), {}, world);
     }
     assert.deepEqual(after.weaponGroup.matrix.toArray(), before.weaponGroup.matrix.toArray(), `${weapon.id}/${pose}: weapon animation remains exact`);
     for (const key of ["leftArm", "rightArm", "leftForearm", "rightForearm"]) assert.deepEqual(after[key].quaternion.toArray(), before[key].quaternion.toArray());
+    for (const key of ["leftArm", "rightArm", "leftForearm", "rightForearm"]) assert.deepEqual(after[key].quaternion.toArray(), oldElbow[key].quaternion.toArray());
+    assert.deepEqual(after.weaponGroup.matrix.toArray(), oldElbow.weaponGroup.matrix.toArray());
+    assert.equal(after.elbowMaterial.emissiveIntensity, after.darkMaterial.emissiveIntensity);
   }
-  after.dispose(); before.dispose(); assert.equal(scene.children.length, 0);
+  after.takeHit(100);
+  for (let i = 0; i < 90; i++) {
+    after.updateDeath(1 / 60);
+    assert.equal(after.elbowMaterial.emissiveIntensity, after.darkMaterial.emissiveIntensity);
+  }
+  after.dispose(); before.dispose(); oldElbow.dispose(); assert.equal(scene.children.length, 0);
 }
 for (let variant = 0; variant < 4; variant++) {
   const config = { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff };
@@ -364,7 +429,7 @@ for (const variant of ["", "0", "1", "2", "3"]) {
   selected.dispose(); assert.equal(scene.children.length, 0);
 }
 const settleReviewSource = graphicsFixture.slice(graphicsFixture.indexOf("const stillMove"), graphicsFixture.indexOf("function replaceReviewCostume("));
-for (const view of ["hand-front", "hand-side", "hand-palm", "player-camera"]) assert.ok(graphicsFixture.includes(`<option>${view}</option>`), `missing actual ${view} review view`);
+for (const view of ["hand-front", "hand-side", "hand-opposite", "hand-palm", "player-camera"]) assert.ok(graphicsFixture.includes(`<option>${view}</option>`), `missing actual ${view} review view`);
 for (const weaponId of ["blaster", "rocket_launcher", "energy_sword"]) for (const pose of ["aim", "reload", "reacquire-early", "reacquire-complete"]) {
   const hero = new Fighter(new THREE.Scene(), { id: "hand-qa", color: 0x129dba, accent: 0x6ff6ff }, [weaponId], new THREE.Vector3());
   const world = { resolve: position => { position.y = 0; return { grounded: true }; }, boostAt: () => null };
@@ -398,7 +463,7 @@ for (const height of [0, Math.sqrt(3), -Math.sqrt(3)]) {
 // Execute the exact capture block: later frame counters must not alter evidence.
 const handViewSource = graphicsFixture.slice(graphicsFixture.indexOf("function setView()"), graphicsFixture.indexOf("async function reset()"));
 const weaponSelectSource = graphicsFixture.slice(graphicsFixture.indexOf('select("weapon").onchange ='), graphicsFixture.indexOf('select("pose").onchange ='));
-for (const view of ["hand-front", "hand-side", "hand-palm"]) for (const previousPose of ["aim", "reload", "reacquire-early"]) {
+for (const view of ["hand-front", "hand-side", "hand-opposite", "hand-palm"]) for (const previousPose of ["aim", "reload", "reacquire-early"]) {
   const hero = new Fighter(new THREE.Scene(), { id: "hand-view", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
   const controls = { view: { value: view }, weapon: { value: "blaster" }, pose: { value: "aim" }, "aim-height": { value: "0" } };
   const game = { players: [hero], camera: new THREE.PerspectiveCamera(62, 16 / 9, .1, 300), clearTransientNetworkCombat() {},
@@ -497,6 +562,25 @@ const shellControlSource = graphicsFixture.slice(graphicsFixture.indexOf("async 
 assert.ok(graphicsFixture.includes("async function withElbowSilhouette("), "elbow silhouette comparison needs an isolated restoring geometry control");
 const elbowControlSource = graphicsFixture.slice(graphicsFixture.indexOf("async function withElbowSilhouette("), graphicsFixture.indexOf("async function withHelmetShellDiagnostic("));
 const elbowControl = new Function("THREE", `${elbowControlSource}; return withElbowSilhouette;`)(THREE);
+{
+  const fighter = new Fighter(new THREE.Scene(), { id: "elbow-qa", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  for (const arm of [fighter.leftForearm, fighter.rightForearm]) for (const fail of [false, true]) {
+    const elbow = arm.children[3], original = elbow.geometry, hand = arm.children[2].geometry;
+    let temporaryDisposals = 0;
+    const capture = async () => {
+      assert.equal(elbow.geometry.parameters.widthSegments, 10);
+      assert.equal(elbow.geometry.parameters.heightSegments, 6);
+      assert.equal(arm.children[2].geometry, hand);
+      assert.equal(elbow.material, fighter.elbowMaterial);
+      elbow.geometry.addEventListener("dispose", () => temporaryDisposals++);
+      if (fail) throw new Error("isolated elbow capture failure");
+    };
+    if (fail) await assert.rejects(elbowControl(elbow, capture), /isolated elbow capture failure/);
+    else await elbowControl(elbow, capture);
+    assert.equal(elbow.geometry, original); assert.equal(temporaryDisposals, 1);
+  }
+  fighter.dispose();
+}
 const shellOriginal = new THREE.MeshPhysicalMaterial({ roughness: .4, metalness: .68, clearcoat: .32, clearcoatRoughness: .2, envMapIntensity: 1.2 });
 const shellEnvironment = new THREE.Texture(), shellOutput = {}, shellRawOutput = {};
 const shellGame = { players: [{ helmet: { material: shellOriginal } }], renderer: { toneMapping: THREE.ACESFilmicToneMapping },
@@ -554,7 +638,7 @@ await shellControl("previous-finish", async () => {
 assert.ok(shellGame.players[0].helmetShell.material === shellOriginal);
 // A forearm diagnostic targets the existing whole dark batch (elbow AND fist),
 // without replacing any other mesh that shares its production material.
-const armDiagnosticProbe = new Fighter(new THREE.Scene(), { id: "arm-diagnostic", color: 0x129dba, accent: 0x6ff6ff }, ["energy_sword"], new THREE.Vector3());
+const armDiagnosticProbe = new BeforeElbowFighter(new THREE.Scene(), { id: "arm-diagnostic", color: 0x129dba, accent: 0x6ff6ff }, ["energy_sword"], new THREE.Vector3());
 const armTarget = armDiagnosticProbe.rightForearm.children[2], armOriginal = armTarget.material;
 const armOriginalJSON = armOriginal.toJSON(), otherArmMaterials = new Map();
 armDiagnosticProbe.group.traverse(mesh => { if (mesh.isMesh && mesh !== armTarget) otherArmMaterials.set(mesh, mesh.material); });
@@ -732,6 +816,16 @@ for (const [finish, forearm] of [[false, true], [true, false]]) {
   await armRunHarness.run(finish, forearm, true);
   assert.match(armRunState.error, /satin forearm route/); assert.equal(armWaits, 40); assert.equal(armGeometryCalls, 1);
 }
+// The production layout targets the extra elbow mesh, not the hand batch.
+armRunGame.players[0].elbowMaterial = armRunMaterial;
+armRunGame.players[0].rightForearm.children = [null, null, { isMesh: true, material: {} }, armRunTarget];
+armRunModes.length = 0;
+await armRunHarness.run(true, true, true);
+assert.equal(armRunState.error, null); assert.equal(armWaits, 49); assert.equal(armGeometryCalls, 2);
+assert.deepEqual(armRunModes, ["previous-finish"]);
+assert.deepEqual(armRunState.samples.map(sample => sample.mode), ["previous-elbow", "previous-elbow", "previous-elbow", "elbow-silhouette", "elbow-silhouette", "elbow-silhouette", "restored", "restored", "restored"]);
+assert.ok(armRunState.samples.every(sample => sample.diagnosticTarget === "right elbow only"));
+assert.deepEqual(armRunControls.map(control => control.disabled), [false, true]);
 const geometryNormalToken = {}, colorOutputToken = {};
 const makeAOWrapper = new Function("mrt", "normalViewGeometry", "output", "geometryAONormals", "aoOutput", "vec3", "vec4", "depthAONormals", "legacyAONormals", "normalView", "materialBlendAONormals", "THREE", "recoverAONormals", "singleSampleAO", "emulateCompatibilityAO", `${aoWrapperSource}; return withAODiagnostics;`);
 const wrapAONormals = makeAOWrapper(value => value, geometryNormalToken, colorOutputToken, true, "final");

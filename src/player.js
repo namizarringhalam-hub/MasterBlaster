@@ -148,7 +148,7 @@ function alignArmGrip(upper, forearm, grip, forward) {
   forearm.quaternion.copy(upper.quaternion).invert().multiply(handRotation);
 }
 
-function articulatedArm(dark, armor, accent, x) {
+function articulatedArm(dark, armor, accent, x, elbowMaterial, elbowGeometry) {
   const upper = new THREE.Group();
   upper.position.set(x, 1.67, 0);
   const upperArmor = part(new THREE.CapsuleGeometry(.145, .27, 3, 8), dark, 0, -.28, 0);
@@ -169,8 +169,8 @@ function articulatedArm(dark, armor, accent, x) {
   // Flush luminous insets sit on each finger's flat face, leaving its bevel and
   // the three shallow separations readable instead of bridging them with a bar.
   const knuckles = fingerCenters.map(center => part(new THREE.PlaneGeometry(.026, .02), accent, center, -.654, .184, false));
-  const elbowJoint = part(new THREE.SphereGeometry(.135, 10, 6), dark, 0, .015, 0);
-  forearm.add(bracer, mergeStaticParts(accent, [wristLight, ...knuckles]), mergeStaticParts(dark, [hand, thumb, ...curledFingers, elbowJoint]));
+  const elbowJoint = part(elbowGeometry, elbowMaterial, 0, .015, 0);
+  forearm.add(bracer, mergeStaticParts(accent, [wristLight, ...knuckles]), mergeStaticParts(dark, [hand, thumb, ...curledFingers]), elbowJoint);
   upper.add(mergeStaticParts(dark, [upperArmor, shoulderJoint]), upperStripe, forearm);
   // The visible hand is baked into the forearm; keep only its grip anchor,
   // not the disposed source mesh and its redundant per-fighter CPU buffers.
@@ -272,6 +272,10 @@ export class Fighter {
     this.armorMaterial = armor;
     this.accentMaterial = accent;
     this.darkMaterial = dark;
+    // Both moving elbows share one owned finish; the approved fist stays unchanged.
+    this.elbowMaterial = dark.clone();
+    this.elbowMaterial.roughness = .56;
+    this.elbowMaterial.clearcoatRoughness = .4;
     this.shellMaterial = dark;
     accent.color.multiplyScalar(.38);
 
@@ -325,8 +329,9 @@ export class Fighter {
     const rightEar = part(new THREE.CylinderGeometry(.12, .12, .09, 8), accent, .47, 2.08, 0, false);
     leftEar.rotation.z = rightEar.rotation.z = Math.PI / 2;
 
-    const leftArmRig = articulatedArm(dark, armor, accent, -.61);
-    const rightArmRig = articulatedArm(dark, armor, accent, .61);
+    const elbowGeometry = new THREE.SphereGeometry(.135, 16, 10);
+    const leftArmRig = articulatedArm(dark, armor, accent, -.61, this.elbowMaterial, elbowGeometry);
+    const rightArmRig = articulatedArm(dark, armor, accent, .61, this.elbowMaterial, elbowGeometry);
     this.leftArm = leftArmRig.upper;
     this.rightArm = rightArmRig.upper;
     this.leftForearm = leftArmRig.forearm;
@@ -928,7 +933,7 @@ export class Fighter {
     this.group.scale.setScalar(1 + burst * .1 - progress * .78);
     this.armorMaterial.emissiveIntensity = 1.65 * fade;
     this.accentMaterial.emissiveIntensity = 2.8 * fade;
-    this.darkMaterial.emissiveIntensity = this.shellMaterial.emissiveIntensity = .5 * burst;
+    this.darkMaterial.emissiveIntensity = this.shellMaterial.emissiveIntensity = this.elbowMaterial.emissiveIntensity = .5 * burst;
     this.identityRing.material.opacity = .62 * fade;
     this.identityBeacon.material.opacity = fade;
     if (this.deathTimer === 0) this.group.visible = false;
@@ -953,7 +958,7 @@ export class Fighter {
     this.rightLeg.rotation.set(0, 0, 0);
     this.armorMaterial.emissiveIntensity = .16;
     this.accentMaterial.emissiveIntensity = .25;
-    this.darkMaterial.emissiveIntensity = this.shellMaterial.emissiveIntensity = .025;
+    this.darkMaterial.emissiveIntensity = this.shellMaterial.emissiveIntensity = this.elbowMaterial.emissiveIntensity = .025;
     this.identityRing.material.opacity = .46;
     this.identityBeacon.material.opacity = .94;
     this.ammo = Object.fromEntries(this.loadout.map((id) => [id, WEAPONS[id].ammo]));
@@ -1206,7 +1211,7 @@ export class Fighter {
     const hitFlash = hit ? .55 + hitWave * .95 : 0;
     this.armorMaterial.emissiveIntensity = .16 + hitFlash * 1.45;
     this.accentMaterial.emissiveIntensity = .25 + hitFlash * 1.15;
-    this.darkMaterial.emissiveIntensity = this.shellMaterial.emissiveIntensity = .025 + hitFlash * .44;
+    this.darkMaterial.emissiveIntensity = this.shellMaterial.emissiveIntensity = this.elbowMaterial.emissiveIntensity = .025 + hitFlash * .44;
     const pulse = .5 + Math.sin(time * .55 + this.id.length) * .5;
     const frozen = this.slowTimer > 0;
     const freezePulse = .5 + Math.sin(time * 1.8) * .5;

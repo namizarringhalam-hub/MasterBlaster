@@ -78,10 +78,12 @@ for (const weaponId of Object.keys(WEAPONS)) for (let variant = 0; variant < 4; 
   let count = 0;
   fighter.group.traverse((object) => { if (object.isMesh || object.isLine || object.isPoints) count++; });
   maximumFighterRenderables = Math.max(maximumFighterRenderables, count);
-  assert.ok(count <= 30, `${weaponId} costume ${variant} stays within the fighter render budget`);
+  const elbows = [fighter.leftForearm.children[3], fighter.rightForearm.children[3]];
+  assert.ok(elbows.every(elbow => elbow.isMesh && elbow.material === fighter.elbowMaterial));
+  assert.ok(count - elbows.length <= 30, `${weaponId} costume ${variant}: unchanged body budget plus two isolated elbow draws`);
   fighter.dispose();
 }
-assert.ok(maximumFighterRenderables <= 30, "all forty-seven weapons and four costume variants preserve the full-quality draw budget");
+assert.ok(maximumFighterRenderables <= 32, "all forty-seven weapons and four costumes: original30 plus two explicitly accounted elbow draws");
 
 const scene = new THREE.Scene();
 const world = new ArenaWorld(scene, "PERFORMANCE-GRID");
@@ -257,6 +259,17 @@ Object.assign(decoyHarness, { scene: new THREE.Scene(), world: { surfaceHeightAt
 const decoyOwner = new Fighter(decoyHarness.scene, { id: "helmet-2", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
 const decoyDisposals = new Map();
 function trackDecoy(mesh) {
+  const elbows = [];
+  mesh.traverse(child => { if (child.geometry?.parameters?.radius === .135) elbows.push(child); });
+  assert.equal(elbows.length, 2, "every hologram retains both elbow meshes");
+  for (const elbow of elbows) {
+    assert.equal(elbow.geometry.parameters.widthSegments, 16);
+    assert.equal(elbow.geometry.parameters.heightSegments, 10);
+    assert.equal(elbow.material.roughness, .56);
+    assert.equal(elbow.material.clearcoatRoughness, .4);
+    assert.notEqual(elbow.material, decoyOwner.elbowMaterial);
+    for (const arm of [decoyOwner.leftForearm, decoyOwner.rightForearm]) assert.notEqual(elbow.geometry, arm.children[3].geometry);
+  }
   mesh.traverse(child => {
     for (const resource of [child.geometry, ...(Array.isArray(child.material) ? child.material : [child.material])].filter(Boolean)) {
       decoyDisposals.set(resource, 0);
