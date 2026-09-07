@@ -28,7 +28,15 @@ const beforeElbowSource = playerMergeSource.replace(/^import .*;\r?\n/gm, "").re
   .replace("[hand, thumb, ...curledFingers]), elbowJoint", "[hand, thumb, ...curledFingers, elbowJoint])");
 const BeforeElbowFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
   `${beforeElbowSource}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
+const beforeShoulderSource = playerMergeSource.replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "")
+  .replace("mergeStaticParts(elbowMaterial, [upperArmor, shoulderJoint])", "mergeStaticParts(dark, [upperArmor, shoulderJoint])");
+const BeforeShoulderFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
+  `${beforeShoulderSource}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
 const elbowProbe = new Fighter(new THREE.Scene(), { id: "helmet-2", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+for (const arm of [elbowProbe.leftArm, elbowProbe.rightArm]) {
+  assert.ok(arm.children[0].material === elbowProbe.elbowMaterial, "upper-arm finish reuses the existing owned satin material");
+  assert.ok(arm.children[1].material === elbowProbe.accentMaterial, "upper stripe remains unchanged");
+}
 for (const arm of [elbowProbe.leftForearm, elbowProbe.rightForearm]) {
   const elbow = arm.children[3];
   assert.ok(elbow?.isMesh, "elbow finish must be isolated from the approved fist");
@@ -163,6 +171,20 @@ for (const weapon of Object.values(WEAPONS)) {
   const config = { id: "fist-parity", color: 0x129dba, accent: 0x6ff6ff }, scene = new THREE.Scene();
   const after = new Fighter(scene, config, [weapon.id], new THREE.Vector3());
   const oldElbow = new BeforeElbowFighter(scene, config, [weapon.id], new THREE.Vector3());
+  // Keep the newer shoulder finish fixed while reconstructing the older elbow-only change.
+  for (const arm of [oldElbow.leftArm, oldElbow.rightArm]) arm.children[0].material = after.elbowMaterial.clone();
+  const oldShoulder = new BeforeShoulderFighter(scene, config, [weapon.id], new THREE.Vector3());
+  const shoulders = fighter => new Set([fighter.leftArm.children[0], fighter.rightArm.children[0]]);
+  assert.deepEqual(mergedFighterSnapshot(after, shoulders(after)), mergedFighterSnapshot(oldShoulder, shoulders(oldShoulder)),
+    `${weapon.id}: shoulder finish preserves every other mesh, material, grip and muzzle`);
+  assert.equal(mergedFighterSnapshot(after).meshes.length, mergedFighterSnapshot(oldShoulder).meshes.length);
+  for (const side of ["leftArm", "rightArm"]) {
+    const current = after[side].children[0], previous = oldShoulder[side].children[0];
+    for (const key of Object.keys(current.geometry.attributes)) assert.deepEqual(current.geometry.attributes[key].array, previous.geometry.attributes[key].array);
+    assert.deepEqual(current.matrix.toArray(), previous.matrix.toArray());
+    const actual = current.material.toJSON(), expected = { ...previous.material.toJSON(), roughness: .56, clearcoatRoughness: .4 };
+    delete actual.uuid; delete expected.uuid; assert.deepEqual(actual, expected);
+  }
   const elbowBatches = fighter => new Set([fighter.leftForearm, fighter.rightForearm].flatMap(arm => arm.children.slice(2)));
   assert.deepEqual(mergedFighterSnapshot(after, elbowBatches(after)), mergedFighterSnapshot(oldElbow, elbowBatches(oldElbow)),
     `${weapon.id}: elbow shaping preserves all other meshes, weapon anchors and materials`);
@@ -188,7 +210,7 @@ for (const weapon of Object.values(WEAPONS)) {
   }
   const world = { resolve: p => { p.y = 0; return { grounded: true }; }, boostAt: () => null }, move = new THREE.Vector3();
   for (const pose of ["aim", "reload", "fire"]) for (let i = 0; i < 24; i++) {
-    for (const fighter of [before, after, oldElbow]) {
+    for (const fighter of [before, after, oldElbow, oldShoulder]) {
       fighter.reloadTimer = pose === "reload" ? 1 : 0; fighter.attackTimer = pose === "fire" ? weapon.cooldown : 0;
       fighter.update(1 / 60, move, new THREE.Vector3(0, .4, -1), {}, world);
     }
@@ -196,6 +218,8 @@ for (const weapon of Object.values(WEAPONS)) {
     for (const key of ["leftArm", "rightArm", "leftForearm", "rightForearm"]) assert.deepEqual(after[key].quaternion.toArray(), before[key].quaternion.toArray());
     for (const key of ["leftArm", "rightArm", "leftForearm", "rightForearm"]) assert.deepEqual(after[key].quaternion.toArray(), oldElbow[key].quaternion.toArray());
     assert.deepEqual(after.weaponGroup.matrix.toArray(), oldElbow.weaponGroup.matrix.toArray());
+    assert.deepEqual(after.weaponGroup.matrix.toArray(), oldShoulder.weaponGroup.matrix.toArray());
+    for (const key of ["leftArm", "rightArm", "leftForearm", "rightForearm"]) assert.deepEqual(after[key].quaternion.toArray(), oldShoulder[key].quaternion.toArray());
     assert.equal(after.elbowMaterial.emissiveIntensity, after.darkMaterial.emissiveIntensity);
   }
   after.takeHit(100);
@@ -203,7 +227,7 @@ for (const weapon of Object.values(WEAPONS)) {
     after.updateDeath(1 / 60);
     assert.equal(after.elbowMaterial.emissiveIntensity, after.darkMaterial.emissiveIntensity);
   }
-  after.dispose(); before.dispose(); oldElbow.dispose(); assert.equal(scene.children.length, 0);
+  after.dispose(); before.dispose(); oldElbow.dispose(); oldShoulder.dispose(); assert.equal(scene.children.length, 0);
 }
 for (let variant = 0; variant < 4; variant++) {
   const config = { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff };
@@ -463,7 +487,7 @@ for (const height of [0, Math.sqrt(3), -Math.sqrt(3)]) {
 // Execute the exact capture block: later frame counters must not alter evidence.
 const handViewSource = graphicsFixture.slice(graphicsFixture.indexOf("function setView()"), graphicsFixture.indexOf("async function reset()"));
 const weaponSelectSource = graphicsFixture.slice(graphicsFixture.indexOf('select("weapon").onchange ='), graphicsFixture.indexOf('select("pose").onchange ='));
-for (const view of ["hand-front", "hand-side", "hand-opposite", "hand-palm", "hand-shoulder"]) for (const previousPose of ["aim", "reload", "reacquire-early"]) {
+for (const view of ["hand-front", "hand-side", "hand-opposite", "hand-palm", "hand-shoulder", "hand-shoulder-opposite"]) for (const previousPose of ["aim", "reload", "reacquire-early"]) {
   const hero = new Fighter(new THREE.Scene(), { id: "hand-view", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
   const controls = { view: { value: view }, weapon: { value: "blaster" }, pose: { value: "aim" }, "aim-height": { value: "0" } };
   const game = { players: [hero], camera: new THREE.PerspectiveCamera(62, 16 / 9, .1, 300), clearTransientNetworkCombat() {},
@@ -478,7 +502,7 @@ for (const view of ["hand-front", "hand-side", "hand-opposite", "hand-palm", "ha
   controls.weapon.onchange();
   assert.equal(controls.pose.value, "aim", "hand view/weapon changes visibly reset to ready pose before framing");
   game.updateCamera(); game.camera.updateMatrixWorld(true);
-  const target = (view === "hand-shoulder" ? new THREE.Vector3(0, -.16, 0).applyMatrix4(hero.rightArm.matrixWorld)
+  const target = (view.startsWith("hand-shoulder") ? new THREE.Vector3(0, -.16, 0).applyMatrix4((view === "hand-shoulder-opposite" ? hero.leftArm : hero.rightArm).matrixWorld)
     : view === "hand-palm" ? hero.leftHand.position.clone().applyMatrix4(hero.leftForearm.matrixWorld)
     : hero.weaponGrip.clone().applyMatrix4(hero.weaponGroup.matrixWorld)).project(game.camera);
   assert.ok(Math.abs(target.x) < 1e-6 && Math.abs(target.y) < 1e-6, "weapon switching must reframe the current grip, not retain the old anchor");
@@ -720,7 +744,7 @@ const shoulderProbe = new Fighter(new THREE.Scene(), { id: "shoulder-diagnostic"
 const shoulderTarget = shoulderProbe.rightArm.children[0], shoulderOriginal = shoulderTarget.material;
 const shoulderOriginalJSON = shoulderOriginal.toJSON(), untouchedShoulderMeshes = new Map();
 shoulderProbe.group.traverse(mesh => { if (mesh.isMesh && mesh !== shoulderTarget) untouchedShoulderMeshes.set(mesh, [mesh.material, mesh.geometry]); });
-for (const mode of ["baseline", "explicit-environment", "no-environment", "normals", "restored"]) for (const fail of [false, true]) {
+for (const mode of ["baseline", "explicit-environment", "no-environment", "normals", "satin-trial", "restored"]) for (const fail of [false, true]) {
   let disposals = 0;
   const geometry = shoulderTarget.geometry;
   const capture = async () => {
@@ -731,6 +755,11 @@ for (const mode of ["baseline", "explicit-environment", "no-environment", "norma
     if (!["baseline", "restored"].includes(mode)) {
       assert.notEqual(shoulderTarget.material, shoulderOriginal);
       shoulderTarget.material.addEventListener("dispose", () => disposals++);
+      if (mode === "satin-trial") {
+        const trial = shoulderTarget.material.toJSON(), expected = { ...shoulderOriginalJSON, roughness: .56, clearcoatRoughness: .4 };
+        delete trial.uuid; delete expected.uuid;
+        assert.deepEqual(trial, expected, "shoulder satin control changes only two finish properties, not lighting or adjacent surfaces");
+      }
     }
     if (fail) throw new Error("shoulder capture interruption");
   };
@@ -870,9 +899,17 @@ armRunView = "hand-shoulder"; shoulderRunTarget.material = {};
 await armRunHarness.run(false, false, false, true);
 assert.match(armRunState.error, /shoulder batch layout/); assert.equal(armWaits, 62);
 shoulderRunTarget.material = armRunMaterial;
-for (const args of [[true, false, false, true], [false, true, false, true], [false, false, true, true]]) {
+for (const args of [[false, true, false, true], [false, false, true, true], [true, true, false, true]]) {
   await armRunHarness.run(...args); assert.match(armRunState.error, /cannot run/); assert.equal(armWaits, 62);
 }
+delete armRunGame.players[0].helmetShell; armRunModes.length = 0;
+await armRunHarness.run(true, false, false, true);
+assert.equal(armRunState.error, null); assert.equal(armWaits, 71); assert.equal(armRunLinks.length, 9);
+assert.deepEqual(armRunModes, ["baseline", "satin-trial", "restored"], "shoulder trial cannot accidentally use the helmet finish");
+assert.ok(armRunState.samples.every(sample => sample.output === "final" && sample.diagnosticTarget.startsWith("right upper-arm")));
+assert.deepEqual(armRunState.samples.map(sample => sample.offset), [-.04, 0, .04, -.04, 0, .04, -.04, 0, .04]);
+assert.equal(armRunHarness.offset(), .31); assert.equal(armRunState.running, false); assert.equal(armRunState.shell, false);
+assert.deepEqual(armRunControls.map(control => control.disabled), [false, true]);
 const geometryNormalToken = {}, colorOutputToken = {};
 const makeAOWrapper = new Function("mrt", "normalViewGeometry", "output", "geometryAONormals", "aoOutput", "vec3", "vec4", "depthAONormals", "legacyAONormals", "normalView", "materialBlendAONormals", "THREE", "recoverAONormals", "singleSampleAO", "emulateCompatibilityAO", `${aoWrapperSource}; return withAODiagnostics;`);
 const wrapAONormals = makeAOWrapper(value => value, geometryNormalToken, colorOutputToken, true, "final");

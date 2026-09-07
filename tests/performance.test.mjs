@@ -268,6 +268,10 @@ function trackDecoy(mesh) {
     assert.equal(elbow.material.roughness, .56);
     assert.equal(elbow.material.clearcoatRoughness, .4);
     assert.notEqual(elbow.material, decoyOwner.elbowMaterial);
+    const shoulder = elbow.parent.parent.children[0];
+    assert.equal(shoulder.material.roughness, .56);
+    assert.equal(shoulder.material.clearcoatRoughness, .4);
+    assert.notEqual(shoulder.material, decoyOwner.elbowMaterial, "hologram upper-arm finish has independent flicker ownership");
     for (const arm of [decoyOwner.leftForearm, decoyOwner.rightForearm]) assert.notEqual(elbow.geometry, arm.children[3].geometry);
   }
   mesh.traverse(child => {

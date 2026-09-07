@@ -171,7 +171,7 @@ function articulatedArm(dark, armor, accent, x, elbowMaterial, elbowGeometry) {
   const knuckles = fingerCenters.map(center => part(new THREE.PlaneGeometry(.026, .02), accent, center, -.654, .184, false));
   const elbowJoint = part(elbowGeometry, elbowMaterial, 0, .015, 0);
   forearm.add(bracer, mergeStaticParts(accent, [wristLight, ...knuckles]), mergeStaticParts(dark, [hand, thumb, ...curledFingers]), elbowJoint);
-  upper.add(mergeStaticParts(dark, [upperArmor, shoulderJoint]), upperStripe, forearm);
+  upper.add(mergeStaticParts(elbowMaterial, [upperArmor, shoulderJoint]), upperStripe, forearm);
   // The visible hand is baked into the forearm; keep only its grip anchor,
   // not the disposed source mesh and its redundant per-fighter CPU buffers.
   return { upper, forearm, hand: { position: hand.position.clone() } };
@@ -272,7 +272,7 @@ export class Fighter {
     this.armorMaterial = armor;
     this.accentMaterial = accent;
     this.darkMaterial = dark;
-    // Both moving elbows share one owned finish; the approved fist stays unchanged.
+    // Upper-arm connectors and elbows share one owned finish; the fist stays unchanged.
     this.elbowMaterial = dark.clone();
     this.elbowMaterial.roughness = .56;
     this.elbowMaterial.clearcoatRoughness = .4;

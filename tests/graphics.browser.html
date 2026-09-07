@@ -9,7 +9,7 @@
 <nav style="position:fixed;z-index:100;inset:auto 0 0;background:#07111def;padding:8px;display:flex;gap:8px;flex-wrap:wrap;font:12px monospace">
 <label>Tier <select id="tier"><option>high</option><option>medium</option><option>low</option></select></label>
 <label>Theme <select id="seed"><option>BLAST-01</option><option>SOLAR-01</option><option>ION-01</option></select></label>
-<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>helmet-three-quarter</option><option>helmet-profile</option><option>thrusters</option><option>weapon</option><option>hand-front</option><option>hand-side</option><option>hand-opposite</option><option>hand-palm</option><option>hand-shoulder</option><option>player-camera</option><option>effects</option><option>rope-corner</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option><option>boost-top</option><option>boost-side</option><option>boost-raised</option></select></label>
+<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>helmet-three-quarter</option><option>helmet-profile</option><option>thrusters</option><option>weapon</option><option>hand-front</option><option>hand-side</option><option>hand-opposite</option><option>hand-palm</option><option>hand-shoulder</option><option>hand-shoulder-opposite</option><option>player-camera</option><option>effects</option><option>rope-corner</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option><option>boost-top</option><option>boost-side</option><option>boost-raised</option></select></label>
 <label>Weapon <select id="weapon"></select></label>
 <label>Pose <select id="pose"><option>aim</option><option>reload</option><option>reacquire-early</option><option>reacquire-complete</option><option>fire</option></select></label>
 <label>Helmet variant <select id="costume"><option value="">Current player</option><option value="0">0 · Dodecahedral</option><option value="1">1 · Round</option><option value="2">2 · Capsule</option><option value="3">3 · Faceted</option></select></label>
@@ -35,6 +35,7 @@
 <button id="shell-comparison">Compare capsule shell finish</button>
 <button id="arm-diagnosis">Diagnose elbow finish</button>
 <button id="shoulder-diagnosis">Diagnose shoulder and upper arm</button>
+<button id="shoulder-comparison">Check shoulder finish restoration</button>
 <button id="arm-comparison">Check elbow finish restoration</button>
 <button id="elbow-comparison">Compare elbow silhouette</button>
 <button id="boost-passage">Test boost passage</button>
@@ -527,13 +528,13 @@ function setView() {
   }
   // Hold this ready-view framing through subsequent pose selections: following
   // the moving grip would visually cancel weapon travel during reload.
-  const handFocus = view === "hand-shoulder"
-    ? new THREE.Vector3(0, -.16, 0).applyMatrix4(hero.rightArm.matrixWorld)
+  const handFocus = view.startsWith("hand-shoulder")
+    ? new THREE.Vector3(0, -.16, 0).applyMatrix4((view === "hand-shoulder-opposite" ? hero.leftArm : hero.rightArm).matrixWorld)
     : view === "hand-palm"
     ? hero.leftHand.position.clone().applyMatrix4(hero.leftForearm.matrixWorld)
     : hero.weaponGrip.clone().applyMatrix4(hero.weaponGroup.matrixWorld);
-  const handOffset = view === "hand-shoulder"
-    ? new THREE.Vector3(1.5, .24, .12).applyQuaternion(hero.group.quaternion)
+  const handOffset = view.startsWith("hand-shoulder")
+    ? new THREE.Vector3(view === "hand-shoulder-opposite" ? -1.5 : 1.5, .24, .12).applyQuaternion(hero.group.quaternion)
     : view === "hand-palm"
     ? new THREE.Vector3(0, 0, 1).transformDirection(hero.leftForearm.matrixWorld).multiplyScalar(.8)
       .addScaledVector(new THREE.Vector3(1, 0, 0).transformDirection(hero.leftForearm.matrixWorld), .22)
@@ -843,7 +844,7 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
   const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
   const originalOffset = cameraOffset, serial = sceneSerial, initialErrors = errorCount;
   try {
-    if (shoulder && (compareFinish || forearm || elbowSilhouette)) throw new Error("Shoulder diagnosis cannot run a finish or elbow comparison");
+    if (shoulder && (forearm || elbowSilhouette)) throw new Error("Shoulder diagnosis cannot run an elbow comparison");
     if (elbowSilhouette && (!compareFinish || !forearm)) throw new Error("Elbow silhouette comparison requires the satin forearm route");
     // Preserve the archived merged-batch control, but target only the elbow in
     // the integrated model. The approved hand never receives a trial material.
@@ -851,7 +852,7 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
     const target = shoulder ? game.players[0].rightArm.children[0]
       : forearm ? game.players[0].rightForearm.children[separateElbow ? 3 : 2] : undefined;
     if (shoulder && (game.players[0].rightArm.children.length !== 3 || !target?.isMesh ||
-        target.material !== game.players[0].darkMaterial || game.players[0].rightArm.children[2] !== game.players[0].rightForearm))
+        !target.material || ![game.players[0].darkMaterial, game.players[0].elbowMaterial].includes(target.material) || game.players[0].rightArm.children[2] !== game.players[0].rightForearm))
       throw new Error("Unexpected shoulder batch layout; update the diagnostic target before capturing");
     if (forearm && (![3, 4].includes(game.players[0].rightForearm.children.length) || !target?.isMesh ||
         target.material !== (separateElbow ? game.players[0].elbowMaterial : game.players[0].darkMaterial)))
@@ -863,11 +864,11 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
       throw new Error("Surface diagnosis needs a ready paused High matching view with the ordinary pipeline");
     if (game.combatVisuals.combatLights.some(light => light.intensity !== 0 || light.userData.life !== 0))
       throw new Error("Wait for all combat lights to expire before shell diagnosis");
-    if (compareFinish && !forearm && !game.players[0].helmetShell) throw new Error("Select the capsule helmet for its finish comparison");
+    if (compareFinish && !forearm && !shoulder && !game.players[0].helmetShell) throw new Error("Select the capsule helmet for its finish comparison");
     for (const [control] of controls) control.disabled = true;
     const modes = elbowSilhouette && separateElbow ? ["previous-elbow", "elbow-silhouette", "restored"]
       : elbowSilhouette ? ["satin-baseline", "elbow-silhouette", "satin-restored"]
-      : compareFinish ? ["baseline", forearm ? "satin-trial" : "previous-finish", "restored"] : ["baseline", "explicit-environment", "no-environment", "normals", "restored"];
+      : compareFinish ? ["baseline", forearm || shoulder ? "satin-trial" : "previous-finish", "restored"] : ["baseline", "explicit-environment", "no-environment", "normals", "restored"];
     for (const mode of modes) {
       const capture = async () => {
         for (const offset of mode === "explicit-environment" ? [0] : forearm || shoulder ? [-.04, 0, .04] : [-.16, 0, .16]) {
@@ -902,6 +903,7 @@ select("shell-diagnosis").onclick = () => runShellReview();
 select("shell-comparison").onclick = () => runShellReview(true);
 select("arm-diagnosis").onclick = () => runShellReview(false, true);
 select("shoulder-diagnosis").onclick = () => runShellReview(false, false, false, true);
+select("shoulder-comparison").onclick = () => runShellReview(true, false, false, true);
 select("arm-comparison").onclick = () => runShellReview(true, true);
 select("elbow-comparison").onclick = () => runShellReview(true, true, true);
 async function runDecoyReview(crossTier = false, overlap = false) {
