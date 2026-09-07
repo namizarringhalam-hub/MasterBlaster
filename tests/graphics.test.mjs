@@ -15,6 +15,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { weaponUsesAmmo } from "../src/gameData.js";
 import { weaponPresentation } from "../src/weaponPresentation.js";
+import { shoulderChamferGeometry } from "./shoulderChamferGeometry.js";
 
 // Execute the previous clone path against the same complete fighter/weapon builder.
 // Only the three transient merge copies differ; no frozen art data to maintain.
@@ -525,7 +526,7 @@ for (const height of [0, Math.sqrt(3), -Math.sqrt(3)]) {
 // Execute the exact capture block: later frame counters must not alter evidence.
 const handViewSource = graphicsFixture.slice(graphicsFixture.indexOf("function setView()"), graphicsFixture.indexOf("async function reset()"));
 const weaponSelectSource = graphicsFixture.slice(graphicsFixture.indexOf('select("weapon").onchange ='), graphicsFixture.indexOf('select("pose").onchange ='));
-for (const view of ["hand-front", "hand-side", "hand-opposite", "hand-palm", "hand-shoulder", "hand-shoulder-opposite"]) for (const previousPose of ["aim", "reload", "reacquire-early"]) {
+for (const view of ["hand-front", "hand-side", "hand-opposite", "hand-palm", "hand-shoulder", "hand-shoulder-opposite", "hand-shoulder-oblique"]) for (const previousPose of ["aim", "reload", "reacquire-early"]) {
   const hero = new Fighter(new THREE.Scene(), { id: "hand-view", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
   const controls = { view: { value: view }, weapon: { value: "blaster" }, pose: { value: "aim" }, "aim-height": { value: "0" } };
   const game = { players: [hero], camera: new THREE.PerspectiveCamera(62, 16 / 9, .1, 300), clearTransientNetworkCombat() {},
@@ -544,6 +545,12 @@ for (const view of ["hand-front", "hand-side", "hand-opposite", "hand-palm", "ha
     : view === "hand-palm" ? hero.leftHand.position.clone().applyMatrix4(hero.leftForearm.matrixWorld)
     : hero.weaponGrip.clone().applyMatrix4(hero.weaponGroup.matrixWorld)).project(game.camera);
   assert.ok(Math.abs(target.x) < 1e-6 && Math.abs(target.y) < 1e-6, "weapon switching must reframe the current grip, not retain the old anchor");
+  if (view === "hand-shoulder-oblique") {
+    const focus = new THREE.Vector3(0, -.16, 0).applyMatrix4(hero.rightArm.matrixWorld);
+    const offset = new THREE.Vector3(1.5, .24, .12).applyAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 9).applyQuaternion(hero.group.quaternion);
+    assert.ok(game.camera.position.clone().sub(focus).distanceTo(offset) < 1e-8, "oblique view orbits exactly 20 degrees without changing focus or distance");
+    assert.equal(game.camera.fov, 62);
+  }
   const cameraPosition = game.camera.position.clone();
   controls.pose.value = "fire";
   // A weapon transform change must NOT be followed after the view is established.
@@ -839,7 +846,7 @@ for (const arm of [shoulderProbe.leftArm, shoulderProbe.rightArm]) for (const fa
 }
 await assert.rejects(elbowControl(shoulderTarget, () => assert.fail("shoulder accepted as elbow")), /Unexpected elbow/);
 await assert.rejects(elbowControl(shoulderTarget, () => assert.fail("invalid envelope route"), false, true), /shoulder-only/);
-const capAlignment = new Function("THREE", "game", `${elbowControlSource}; return withShoulderCapAlignment;`)(THREE, shellGame);
+const capAlignment = new Function("THREE", "game", "shoulderChamferGeometry", `${elbowControlSource}; return withShoulderCapAlignment;`)(THREE, shellGame, shoulderChamferGeometry);
 const capHeroBefore = shellGame.players[0];
 {
   const hero = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
@@ -874,6 +881,71 @@ const capHeroBefore = shellGame.players[0];
   }
   await assert.rejects(capAlignment(target, () => assert.fail("mixed cap controls"), true, true), /cannot be combined/);
   hero.dispose(); shellGame.players[0] = capHeroBefore;
+}
+{
+  const geometry = shoulderChamferGeometry(), indexed = new THREE.CylinderGeometry(.2, .25, .42, 6), original = indexed.toNonIndexed();
+  const vertices = [], planes = [], position = original.attributes.position;
+  for (let i = 0; i < position.count; i++) {
+    const point = new THREE.Vector3().fromBufferAttribute(position, i);
+    if (!vertices.some(old => old.distanceTo(point) < 1e-7)) vertices.push(point);
+  }
+  for (let i = 0; i < position.count; i += 3) {
+    const plane = new THREE.Plane().setFromCoplanarPoints(...[0, 1, 2].map(j => new THREE.Vector3().fromBufferAttribute(position, i + j)));
+    if (!planes.some(old => old.normal.distanceTo(plane.normal) < 1e-6 && Math.abs(old.constant - plane.constant) < 1e-6)) planes.push(plane);
+  }
+  assert.equal(planes.length, 8);
+  const broadPlanes = planes.slice();
+  for (let i = 0; i < broadPlanes.length; i++) for (let j = i + 1; j < broadPlanes.length; j++) {
+    const a = broadPlanes[i], b = broadPlanes[j];
+    if (vertices.filter(point => Math.abs(a.distanceToPoint(point)) < 1e-7 && Math.abs(b.distanceToPoint(point)) < 1e-7).length < 2) continue;
+    const normal = a.normal.clone().add(b.normal), length = normal.length();
+    planes.push(new THREE.Plane(normal.divideScalar(length), (a.constant + b.constant) / length + .005 * Math.sqrt((1 - a.normal.dot(b.normal)) / 2)));
+  }
+  assert.equal(planes.length, 26);
+  assert.equal(geometry.attributes.position.count, 276, "authored chamfer is exactly 92 triangles");
+  assert.equal(Object.values(geometry.attributes).reduce((sum, attribute) => sum + attribute.array.byteLength, 0) - Object.values(original.attributes).reduce((sum, attribute) => sum + attribute.array.byteLength, 0), 6528);
+  const edges = new Map(), covered = new Set();
+  for (let i = 0; i < 276; i += 3) {
+    const points = [0, 1, 2].map(j => new THREE.Vector3().fromBufferAttribute(geometry.attributes.position, i + j));
+    const normal = points[1].clone().sub(points[0]).cross(points[2].clone().sub(points[0])).normalize();
+    assert.ok(normal.dot(points[0]) > 0, "all faces point outward");
+    for (const [j, plane] of planes.entries()) {
+      assert.ok(points.every(point => plane.distanceToPoint(point) < 1e-7), "chamfer never grows the housing or violates its edge cuts");
+      if (points.every(point => Math.abs(plane.distanceToPoint(point)) < 1e-7)) covered.add(j);
+    }
+    for (let j = 0; j < 3; j++) {
+      assert.ok(normal.distanceTo(new THREE.Vector3().fromBufferAttribute(geometry.attributes.normal, i + j)) < 1e-7);
+      const a = points[j].toArray().join(","), b = points[(j + 1) % 3].toArray().join(","), key = [a, b].sort().join("/");
+      const entry = edges.get(key) ?? { count: 0, winding: 0 }; entry.count++; entry.winding += a < b ? 1 : -1; edges.set(key, entry);
+    }
+  }
+  assert.equal(covered.size, 26, "all original broad planes and new bevel planes are present");
+  assert.ok([...edges.values()].every(edge => edge.count === 2 && edge.winding === 0), "closed, consistently wound chamfer");
+  assert.ok([...geometry.attributes.uv.array].every(Number.isFinite));
+  indexed.dispose(); original.dispose(); geometry.dispose();
+  const hero = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  shellGame.players[0] = hero;
+  const target = hero.rig.children[1], owned = target.geometry;
+  const expected = shoulderChamferGeometry().applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(.61, 1.62, -.02), new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, .16)), new THREE.Vector3(1, 1, 1)));
+  for (const fail of [false, true]) {
+    const originalDispose = THREE.BufferGeometry.prototype.dispose, disposed = new Map();
+    THREE.BufferGeometry.prototype.dispose = function () { disposed.set(this, (disposed.get(this) || 0) + 1); return originalDispose.call(this); };
+    try {
+      const capture = () => {
+        for (const [name, attribute] of Object.entries(owned.attributes)) {
+          const start = attribute.array.length - 72 * attribute.itemSize, actual = target.geometry.attributes[name].array;
+          assert.deepEqual(actual.slice(0, start), attribute.array.slice(0, start), "all left-cap and armor-prefix attributes preserved");
+          assert.deepEqual(actual.slice(start), expected.attributes[name].array);
+        }
+        assert.equal(target.material, hero.armorMaterial);
+        if (fail) throw new Error("chamfer interrupted");
+      };
+      if (fail) await assert.rejects(capAlignment(target, capture, false, "chamfer"), /chamfer interrupted/);
+      else await capAlignment(target, capture, false, "chamfer");
+      assert.equal(target.geometry, owned); assert.equal(disposed.size, 7); assert.ok([...disposed.values()].every(count => count === 1)); assert.ok(!disposed.has(owned));
+    } finally { THREE.BufferGeometry.prototype.dispose = originalDispose; }
+  }
+  expected.dispose(); hero.dispose(); shellGame.players[0] = capHeroBefore;
 }
 const bearingControl = new Function("THREE", "game", `${elbowControlSource}; return withElbowSilhouette;`)(THREE, shellGame);
 for (const variant of [0, 1, 2, 3]) {
@@ -1215,6 +1287,14 @@ armRunView = "hand-shoulder-opposite";
 await armRunHarness.run(true, false, false, true, "cap-normals");
 assert.match(armRunState.error, /requires the right shoulder view/); assert.equal(armWaits, 143);
 assert.equal(armRunState.running, false); assert.equal(armRunState.shell, false); assert.equal(armRunHarness.offset(), .31);
+armRunView = "hand-shoulder";
+await armRunHarness.run(true, false, false, true, "cap-chamfer");
+assert.equal(armRunState.error, null); assert.equal(armWaits, 152); assert.equal(capCalls, 4);
+assert.deepEqual(armRunState.samples.map(sample => sample.mode), ["baseline", "baseline", "baseline", "right-cap-chamfer", "right-cap-chamfer", "right-cap-chamfer", "restored", "restored", "restored"]);
+assert.ok(armRunState.samples.every(sample => sample.diagnosticTarget.startsWith("right static cap inward edge chamfer")));
+armRunView = "hand-shoulder-oblique";
+await armRunHarness.run(true, false, false, true, "cap-chamfer");
+assert.equal(armRunState.error, null); assert.equal(armWaits, 161); assert.equal(capCalls, 5);
 const geometryNormalToken = {}, colorOutputToken = {};
 const makeAOWrapper = new Function("mrt", "normalViewGeometry", "output", "geometryAONormals", "aoOutput", "vec3", "vec4", "depthAONormals", "legacyAONormals", "normalView", "materialBlendAONormals", "THREE", "recoverAONormals", "singleSampleAO", "emulateCompatibilityAO", `${aoWrapperSource}; return withAODiagnostics;`);
 const wrapAONormals = makeAOWrapper(value => value, geometryNormalToken, colorOutputToken, true, "final");
