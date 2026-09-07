@@ -1,6 +1,15 @@
 # Graphics overhaul checkpoint
 
-Updated: 2026-09-07 22:12 local. Pass34 elbow-only integration is COMPLETE with all three actual independent98/100PASS, saved LOCAL in commit titled "Refine elbow finish and share joint geometry" (verify Git log). Pass33 resize correction remains intact in local d523051. User chose to KEEP automatic production deployments: every main push is publication, so do not push until the overall graphics gate passes or a fresh interim release exception is requested. The graphics project is NOT complete.
+Updated: 2026-09-07. Pass33 and Pass34 are PUBLISHED as an interim testing release. The graphics project is NOT complete.
+
+## Current publication policy and verified release (supersedes historical holds below)
+
+- User now explicitly authorizes publishing every validated partial improvement that earns an actual independent critic rating increase before proceeding to the next task, even while the overall overhaul is below98. Continue without requesting "continue". Keep automatic production deployments enabled, candid scoped scores, relevant tests and functional-regression gates. Full-category/overall98 remains the objective, not a claim about interim releases. Existing recovery automation was updated and verified ACTIVE with this policy; local app/computer must be running.
+- Published source60c43491bdf7b668ae6ef980911820b1146f839d, including resize parentd523051, pushed to origin/main and existing Sites source main. Primary https://masterblaster.se/ Pages deploymentaf391465-4ddb-4c91-b635-1a364bf01a55; Sites mirror https://blaster-battle-namir.nami-zarringhalam.chatgpt.site version102, saved versionappgprj_6a6378a267348191a15d7e0faf662c64~appgver_f354b5b7251c8191942ac3dde8cdfe0e, deploymentappgdep_6a9f1bc400888191954d987279ba5b4d succeeded. Existing public audience unchanged.
+- Worker unchanged at active versione79ad4a2-f74a-42bc-9c18-e1ea58af707c; backend/config/dependencies diff empty, so no unnecessary backend redeploy. Production health200/ok/protocol1/arenaRevision2. Release rerun19standalone+15WorkerPASS22:13:17local, buildPASS, Worker dry runPASS113.43KiB/29.24gzip. Local and production multiplayer lifecycle and all-four-corner-pillar suites PASS. Temporary local Worker intentionally stopped after passing; retained Vite untouched.
+- Both public hosting targets serve exact local main-woYIZfco.js SHA256509d0e0b3fa328b7d909de4d703c7d0a16abf1bd88c3f34aada598b610b9618d and three-qFsCeRD-.js SHA256646b2b7b508a4334d13e566dda7d000877fa0768a47aa9195580bf8d7c5c64c2. Primary HTML also matches dist. Existing chunk-size warning retained.
+- Production Training smoke:16fighters, native High/WebGPU Ultra, desktop→390x844 phone viewport→1280x720 desktop renders successfully; return HUD60FPS/396draws. Evidence Temp/master-blaster-graphics-review/interim-v102-{phone,desktop-return}.{jpg,dom.txt}. Viewport emulation is not physical mobile/touch certification or universal FPS evidence.
+- Actual Pass34 independent scores: all three98/100PASS for elbow integration only. Full fighter84/arena89 and broader gates remain open. NEXT is Pass35 shoulder-only diagnostic described below; do not repeat approved elbow work. Historical local-only/global-hold notes below record earlier decisions and are superseded by this section.
 
 ## Current Pass34 — scoped complete, global release withheld
 
