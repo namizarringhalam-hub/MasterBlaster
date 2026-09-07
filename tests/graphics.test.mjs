@@ -482,6 +482,36 @@ await shellControl("previous-finish", async () => {
   assert.notEqual(shellGame.players[0].helmetShell.material, shellOriginal);
 });
 assert.ok(shellGame.players[0].helmetShell.material === shellOriginal);
+// A forearm diagnostic targets the existing whole dark batch (elbow AND fist),
+// without replacing any other mesh that shares its production material.
+const armDiagnosticProbe = new Fighter(new THREE.Scene(), { id: "arm-diagnostic", color: 0x129dba, accent: 0x6ff6ff }, ["energy_sword"], new THREE.Vector3());
+const armTarget = armDiagnosticProbe.rightForearm.children[2], armOriginal = armTarget.material;
+const armOriginalJSON = armOriginal.toJSON(), otherArmMaterials = new Map();
+armDiagnosticProbe.group.traverse(mesh => { if (mesh.isMesh && mesh !== armTarget) otherArmMaterials.set(mesh, mesh.material); });
+for (const mode of ["baseline", "explicit-environment", "no-environment", "normals", "restored"]) for (const fail of [false, true]) {
+  let disposed = 0;
+  const action = async () => {
+    assert.ok(shellGame.players[0].helmetShell.material === shellOriginal, "forearm diagnosis must not replace the helmet material");
+    assert.ok(shellGame.players[0].helmet.material === hardwareMaterial);
+    for (const [mesh, original] of otherArmMaterials) assert.ok(mesh.material === original,
+      "temporary material is isolated to the selected batch, not every shared dark surface");
+    if (["baseline", "restored"].includes(mode)) assert.ok(armTarget.material === armOriginal);
+    else {
+      assert.ok(armTarget.material !== armOriginal);
+      armTarget.material.addEventListener("dispose", () => disposed++);
+      if (mode === "normals") assert.equal(armTarget.material.isMeshNormalMaterial, true);
+      else assert.equal(armTarget.material.envMapIntensity, mode === "no-environment" ? 0 : .82);
+    }
+    if (fail) throw new Error("deliberate arm capture failure");
+  };
+  if (fail) await assert.rejects(shellControl(mode, action, armTarget), /deliberate arm capture failure/);
+  else await shellControl(mode, action, armTarget);
+  assert.ok(armTarget.material === armOriginal);
+  assert.deepEqual(armOriginal.toJSON(), armOriginalJSON);
+  assert.equal(disposed, ["baseline", "restored"].includes(mode) ? 0 : 1);
+  assert.equal(sharedShellDisposals, 0);
+}
+armDiagnosticProbe.dispose();
 hardwareMaterial.dispose();
 shellOriginal.dispose(); shellEnvironment.dispose();
 const shellRunSource = graphicsFixture.slice(graphicsFixture.indexOf("async function runShellReview("), graphicsFixture.indexOf('select("shell-diagnosis").onclick'));
@@ -521,6 +551,40 @@ assert.match(shellRunState.error, /paused/, "Escape can resume simulation despit
 assert.equal(shellRunState.running, false); assert.equal(shellRunState.shell, false);
 assert.equal(shellRunGame.paused, false, "cleanup preserves the user's new pause choice");
 assert.deepEqual(shellControlElements.map(control => control.disabled), [false, true]);
+const armRunState = { running: false }, armRunMaterial = {}, armRunTarget = { isMesh: true, material: armRunMaterial }, armRunLinks = [], armRunModes = [];
+const armRunControls = [{ disabled: false }, { disabled: true }];
+const armRunGame = { ...shellRunGame, paused: true, players: [{ darkMaterial: armRunMaterial, rightForearm: { children: [null, null, armRunTarget] } }] };
+let armRunView = "hand-side", armWaits = 0;
+const armRunHarness = new Function("game", "cameraReview", "document", "select", "waitForReviewFrame", "withHelmetShellDiagnostic", "shellReviewState", `
+  const resetReview={}, cacheReview={}, decoyReview={}, resetPhase="ready", sceneSerial=1, errorCount=0, renderedFrames=0, aoOutput="final";
+  let stress=false, cameraOffset=.31;
+  ${shellRunSource}
+  return { run: runShellReview, offset: () => cameraOffset };
+`)(armRunGame, armRunState, { querySelectorAll: () => armRunControls, createElement: () => ({}),
+  querySelector: () => ({ toDataURL: type => { assert.equal(type, "image/png"); return "data:image/png;base64,test"; } }) },
+  id => id === "view" ? { value: armRunView } : { replaceChildren() { armRunLinks.length = 0; }, append(link) { armRunLinks.push(link); } },
+  async () => { armWaits++; assert.equal(armRunState.shell, true, "freeze flag spans every forearm capture");
+    assert.deepEqual(armRunControls.map(control => control.disabled), [true, true]); },
+  async (mode, action, target) => { assert.ok(target === armRunTarget); armRunModes.push(mode); await action(); },
+  target => { assert.ok(target === armRunTarget, "every sample records the material target actually overridden"); return { targetName: "actual forearm batch" }; });
+await armRunHarness.run(false, true);
+assert.equal(armRunState.error, null); assert.equal(armWaits, 13); assert.equal(armRunLinks.length, 13);
+assert.ok(armRunLinks.every(link => link.download.startsWith("forearm-")), "download names disclose the actual diagnostic scope");
+assert.deepEqual(armRunModes, ["baseline", "explicit-environment", "no-environment", "normals", "restored"]);
+assert.deepEqual(armRunState.samples.map(sample => sample.offset), [-.04, 0, .04, 0, -.04, 0, .04, -.04, 0, .04, -.04, 0, .04]);
+assert.ok(armRunState.samples.every(sample => sample.diagnosticTarget === "right forearm dark batch: elbow and fist"));
+assert.deepEqual(armRunState.samples.filter(sample => sample.mode === "normals").map(sample => sample.output), ["scene-color", "scene-color", "scene-color"]);
+assert.equal(armRunHarness.offset(), .31); assert.equal(armRunState.running, false); assert.equal(armRunState.shell, false);
+assert.deepEqual(armRunControls.map(control => control.disabled), [false, true]);
+armRunView = "helmet-profile"; await armRunHarness.run(false, true);
+assert.match(armRunState.error, /matching view/); assert.equal(armWaits, 13, "wrong view cannot begin a forearm diagnostic");
+armRunView = "hand-side"; await armRunHarness.run(true, true);
+assert.match(armRunState.error, /capsule helmet/); assert.equal(armWaits, 13, "capsule finish comparison cannot accidentally target the forearm");
+armRunTarget.material = {};
+await armRunHarness.run(false, true);
+assert.match(armRunState.error, /forearm batch layout/, "a future child reorder must fail closed instead of silently diagnosing another surface");
+assert.equal(armWaits, 13);
+armRunTarget.material = armRunMaterial;
 const geometryNormalToken = {}, colorOutputToken = {};
 const makeAOWrapper = new Function("mrt", "normalViewGeometry", "output", "geometryAONormals", "aoOutput", "vec3", "vec4", "depthAONormals", "legacyAONormals", "normalView", "materialBlendAONormals", "THREE", "recoverAONormals", "singleSampleAO", "emulateCompatibilityAO", `${aoWrapperSource}; return withAODiagnostics;`);
 const wrapAONormals = makeAOWrapper(value => value, geometryNormalToken, colorOutputToken, true, "final");

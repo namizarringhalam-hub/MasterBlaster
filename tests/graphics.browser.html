@@ -31,6 +31,7 @@
 <button id="camera-sequence">Capture moving-camera sequence</button><span id="camera-captures"></span>
 <button id="shell-diagnosis">Diagnose helmet shell finish</button>
 <button id="shell-comparison">Compare capsule shell finish</button>
+<button id="arm-diagnosis">Diagnose forearm dark batch</button>
 <button id="boost-passage">Test boost passage</button>
 <button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
 <label><input id="follow-camera" type="checkbox" checked>Follow player camera</label>
@@ -687,10 +688,10 @@ async function runCameraReview(boostPassage = false) {
 }
 select("camera-sequence").onclick = () => runCameraReview();
 select("boost-passage").onclick = () => runCameraReview(true);
-async function withHelmetShellDiagnostic(mode, capture) {
+async function withHelmetShellDiagnostic(mode, capture, target = game.players[0].helmetShell ?? game.players[0].helmet) {
   if (mode === "baseline" || mode === "restored") return capture();
   if (!["explicit-environment", "no-environment", "normals", "previous-finish"].includes(mode)) throw new Error("Unknown shell diagnostic mode");
-  const helmet = game.players[0].helmetShell ?? game.players[0].helmet, original = helmet.material;
+  const helmet = target, original = helmet.material;
   const pipeline = game.renderPipeline.pipeline, originalOutput = pipeline.outputNode;
   const originalToneMapping = game.renderer.toneMapping;
   const temporary = mode === "normals" ? new THREE.MeshNormalMaterial({ side: original.side }) : original.clone();
@@ -716,8 +717,8 @@ async function withHelmetShellDiagnostic(mode, capture) {
     temporary.dispose(); // Never dispose original material or its shared environment texture.
   }
 }
-function shellReviewState() {
-  const hero = game.players[0], helmet = hero.helmetShell ?? hero.helmet, material = helmet.material, lights = [];
+function shellReviewState(target = game.players[0].helmetShell ?? game.players[0].helmet) {
+  const hero = game.players[0], helmet = target, material = helmet.material, lights = [];
   game.scene.traverse(object => {
     if (!object.isLight) return;
     lights.push({ id: object.id, type: object.type, color: object.color.toArray(), intensity: object.intensity,
@@ -725,7 +726,8 @@ function shellReviewState() {
       groundColor: object.groundColor?.toArray(), distance: object.distance, decay: object.decay, castShadow: object.castShadow });
   });
   return { fighterId: hero.id, aim: hero.aim.toArray(), helmetMatrix: hero.helmet.matrixWorld.toArray(), rigMatrix: hero.rig.matrixWorld.toArray(),
-    targetName: helmet.name, geometryId: helmet.geometry.uuid, cameraMatrix: game.camera.matrixWorld.toArray(), projection: game.camera.projectionMatrix.toArray(),
+    targetName: helmet.name, targetMatrix: helmet.matrixWorld.toArray(), geometryId: helmet.geometry.uuid,
+    cameraMatrix: game.camera.matrixWorld.toArray(), projection: game.camera.projectionMatrix.toArray(),
     viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio }, sceneSerial, paused: game.paused,
     material: { type: material.type, uuid: material.uuid, color: material.color?.toArray(), emissive: material.emissive?.toArray(),
       emissiveIntensity: material.emissiveIntensity, roughness: material.roughness, metalness: material.metalness,
@@ -737,36 +739,43 @@ function shellReviewState() {
     effects: { projectiles: game.projectiles.length, hazards: game.hazards.length, decoys: game.decoys.length, effects: game.effects.length },
     exposure: game.renderer.toneMappingExposure, toneMapping: game.renderer.toneMapping };
 }
-async function runShellReview(compareFinish = false) {
+async function runShellReview(compareFinish = false, forearm = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.error = null;
   select("camera-captures").replaceChildren();
   const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
   const originalOffset = cameraOffset, serial = sceneSerial, initialErrors = errorCount;
   try {
+    // This target includes the elbow AND the approved fist. It is a whole-batch
+    // diagnostic, not an isolated elbow material or a production finish change.
+    const target = forearm ? game.players[0].rightForearm.children[2] : undefined;
+    if (forearm && (game.players[0].rightForearm.children.length !== 3 || !target?.isMesh || target.material !== game.players[0].darkMaterial))
+      throw new Error("Unexpected forearm batch layout; update the diagnostic target before capturing");
+    const validView = forearm ? select("view").value === "hand-side" : select("view").value.startsWith("helmet-");
     if (stress || !game.paused || resetPhase !== "ready" || game.settings.graphics !== "high" ||
-        !select("view").value.startsWith("helmet-") || game.renderPipeline.direct || aoOutput !== "final")
-      throw new Error("Shell diagnosis needs a ready paused High helmet view with the ordinary pipeline");
+        !validView || game.renderPipeline.direct || aoOutput !== "final")
+      throw new Error("Surface diagnosis needs a ready paused High matching view with the ordinary pipeline");
     if (game.combatVisuals.combatLights.some(light => light.intensity !== 0 || light.userData.life !== 0))
       throw new Error("Wait for all combat lights to expire before shell diagnosis");
-    if (compareFinish && !game.players[0].helmetShell) throw new Error("Select the capsule helmet for its finish comparison");
+    if (compareFinish && (forearm || !game.players[0].helmetShell)) throw new Error("Select the capsule helmet for its finish comparison");
     for (const [control] of controls) control.disabled = true;
     for (const mode of compareFinish ? ["baseline", "previous-finish", "restored"] : ["baseline", "explicit-environment", "no-environment", "normals", "restored"]) {
       await withHelmetShellDiagnostic(mode, async () => {
-        for (const offset of mode === "explicit-environment" ? [0] : [-.16, 0, .16]) {
+        for (const offset of mode === "explicit-environment" ? [0] : forearm ? [-.04, 0, .04] : [-.16, 0, .16]) {
           cameraOffset = offset; game.updateCamera();
           const readyFrame = renderedFrames + 4;
           await waitForReviewFrame(serial, () => renderedFrames >= readyFrame);
           if (!game.paused) throw new Error("Shell diagnosis must remain paused; comparison interrupted");
           if (errorCount !== initialErrors || game.renderPipeline.direct) throw new Error("Shell diagnosis encountered a renderer failure");
           const index = cameraReview.samples.length, link = document.createElement("a");
-          link.textContent = `Camera frame ${index}`; link.download = `shell-${mode}-${offset}.png`;
+          link.textContent = `Camera frame ${index}`; link.download = `${forearm ? "forearm" : "shell"}-${mode}-${offset}.png`;
           link.href = document.querySelector("#game-canvas").toDataURL("image/png");
           select("camera-captures").append(link, " ");
           cameraReview.samples.push({ index, mode, offset, output: mode === "normals" ? "scene-color" : "final",
-            ...shellReviewState(), renderedFrames, errorCount, directFallback: game.renderPipeline.direct });
+            diagnosticTarget: forearm ? "right forearm dark batch: elbow and fist" : "helmet shell",
+            ...shellReviewState(target), renderedFrames, errorCount, directFallback: game.renderPipeline.direct });
         }
-      });
+      }, target);
     }
   } catch (error) { cameraReview.error = String(error); }
   finally {
@@ -776,6 +785,7 @@ async function runShellReview(compareFinish = false) {
 }
 select("shell-diagnosis").onclick = () => runShellReview();
 select("shell-comparison").onclick = () => runShellReview(true);
+select("arm-diagnosis").onclick = () => runShellReview(false, true);
 async function runDecoyReview(crossTier = false, overlap = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   decoyReview.running = true; decoyReview.samples = []; decoyReview.error = null;
