@@ -285,9 +285,18 @@ const interruptedWait = waitReview(3, () => false);
 serial = 4; frameCallback();
 await assert.rejects(interruptedWait, /scene change/);
 const coldResetWait = waitReview(4, () => false, 60000);
-assert.equal(timeoutDelay, 60000, "only cold reset readiness receives the longer bounded window");
+assert.equal(timeoutDelay, 60000, "cold lifecycle readiness can request a longer bounded window");
 timeoutCallback();
 await assert.rejects(coldResetWait, /60 seconds/, "a stalled reset still terminates independently of rAF");
+const decoySampleStart = graphicsFixture.indexOf("    const sample = async (cycle, phase) => {", graphicsFixture.indexOf("async function runDecoyReview"));
+const decoySampleSource = graphicsFixture.slice(decoySampleStart, graphicsFixture.indexOf("    if (overlap) {", decoySampleStart));
+const decoyWaits = [], decoySampleReview = { samples: [] };
+const decoySample = new Function("game", "waitForReviewFrame", "decoyReview", "renderedFrames", "serial", "pipelineCreations", "errorCount",
+  decoySampleSource + "; return sample;")({ settings: { graphics: "high" }, decoys: [], renderer: { info: { memory: {} } }, renderPipeline: { direct: false } },
+  async (scene, ready, timeout) => { assert.equal(scene, 4); assert.equal(ready(), false); decoyWaits.push(timeout); }, decoySampleReview, 0, 4, 0, 0);
+await decoySample(-1, "baseline"); await decoySample(0, "spawned"); await decoySample(0, "removed"); await decoySample(3, "cleanup");
+assert.deepEqual(decoyWaits, [60000, 20000, 20000, 20000], "only cold decoy baseline gets reset readiness budget; warmed phases keep their original deadline");
+assert.deepEqual(decoySampleReview.samples.map(sample => sample.phase), ["baseline", "spawned", "removed", "cleanup"]);
 
 const botTraceSource = graphicsFixture.slice(graphicsFixture.indexOf("function traceBotMethod("), graphicsFixture.indexOf("if (traceFrames) for"));
 let botTraceClock = 0, botTraceContext = null, botTraceCpu = {}, projectileTraceActive = false;
@@ -1095,6 +1104,102 @@ for (const variant of [0, 1, 2, 3]) for (const weapon of Object.values(WEAPONS))
     assert.ok(Array.from(object.geometry.attributes.position.array).every(Number.isFinite), `${weapon.id}: finite authored geometry`);
   });
   fighter.dispose();
+}
+// The narrow capsule shell used to end before the common visor frame began.
+// Probe the actual merged geometry from both sides, not an analytic capsule.
+const socketFighter = new Fighter(scene, { id: "helmet-2", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+const socketHead = new THREE.Mesh(socketFighter.helmet.geometry, socketFighter.darkMaterial);
+socketHead.updateMatrixWorld(true);
+const socketRay = new THREE.Raycaster();
+for (const side of [-1, 1]) for (const y of [-.04, .02, .08]) for (const z of [.35, .37, .39]) {
+  socketRay.set(new THREE.Vector3(side * 2, y, z), new THREE.Vector3(-side, 0, 0));
+  assert.ok(socketRay.intersectObject(socketHead, false).length > 0, `capsule visor backing must close the side gap at ${side}/${y}/${z}`);
+}
+for (const side of [-1, 1]) for (const x of [-.22, 0, .22]) for (const z of [.35, .37, .39]) {
+  socketRay.set(new THREE.Vector3(x, side * 2, z), new THREE.Vector3(0, -side, 0));
+  assert.ok(socketRay.intersectObject(socketHead, false).length > 0, "the backing also closes the upper and lower gap");
+}
+for (const side of [-1, 1]) for (const y of [-.05, 0, .05]) for (const x of [.39, .41, .423]) {
+  socketRay.set(new THREE.Vector3(side * x, y, 2), new THREE.Vector3(0, 0, -1));
+  assert.ok(socketRay.intersectObject(socketHead, false).length > 0, "capsule ear mounts must bridge shell to existing ear caps");
+}
+socketFighter.dispose();
+
+const socketStart = playerMergeSource.indexOf("    // Close the capsule's shell-to-frame gap");
+const socketEnd = playerMergeSource.indexOf("    const helmetAssembly", socketStart);
+assert.ok(socketStart >= 0 && socketEnd > socketStart);
+const withoutSocketSource = (playerMergeSource.slice(0, socketStart) + playerMergeSource.slice(socketEnd))
+  .replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "");
+const WithoutSocketFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
+  `${withoutSocketSource}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
+for (let variant = 0; variant < 4; variant++) {
+  const config = { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff };
+  const fighter = new Fighter(scene, config, ["blaster"], new THREE.Vector3());
+  const before = new WithoutSocketFighter(new THREE.Scene(), config, ["blaster"], new THREE.Vector3());
+  if (variant !== 2) assert.deepEqual(mergedFighterSnapshot(fighter), mergedFighterSnapshot(before), "other helmet variants remain byte-identical");
+  else {
+    assert.deepEqual(mergedFighterSnapshot(fighter, new Set([fighter.helmet])), mergedFighterSnapshot(before, new Set([before.helmet])),
+      "only the capsule housing changes; lens, pivot, armor, weapons and materials stay intact");
+    const added = {};
+    for (const name of ["position", "normal", "uv"]) {
+      const current = fighter.helmet.geometry.attributes[name], old = before.helmet.geometry.attributes[name];
+      assert.equal(current.count - old.count, 228, "socket and two closed eight-sided ear mounts add exactly 76 triangles and no draw");
+      assert.deepEqual(current.array.slice(0, old.array.length), old.array, "existing shell and frame buffers stay byte-identical");
+      added[name] = new THREE.BufferAttribute(current.array.slice(old.array.length), current.itemSize);
+    }
+    for (const fighterGeometry of [fighter.helmet.geometry, before.helmet.geometry]) {
+      fighterGeometry.computeBoundingBox(); fighterGeometry.computeBoundingSphere();
+    }
+    assert.deepEqual(new THREE.Box3().setFromObject(fighter.group), new THREE.Box3().setFromObject(before.group), "mounts stay inside the existing complete fighter bounds");
+    const headBounds = fighter.helmet.geometry.boundingBox, oldBounds = before.helmet.geometry.boundingBox;
+    assert.ok(Math.abs(headBounds.max.x - .44) < 1e-7 && Math.abs(headBounds.min.x + .44) < 1e-7, "head culling bounds include both mounts");
+    for (const axis of ["y", "z"]) { assert.equal(headBounds.min[axis], oldBounds.min[axis]); assert.equal(headBounds.max[axis], oldBounds.max[axis]); }
+    assert.deepEqual(fighter.helmet.geometry.boundingSphere, before.helmet.geometry.boundingSphere);
+    const vertices = Array.from({ length: 36 }, (_, i) => new THREE.Vector3().fromBufferAttribute(added.position, i));
+    const edges = new Map(), center = new THREE.Vector3(0, .02, (.13 + .405) / 2);
+    const pointKey = point => point.toArray().map(value => value.toFixed(6)).join(",");
+    for (let i = 0; i < vertices.length; i += 3) {
+      const [a, b, c] = vertices.slice(i, i + 3), normal = b.clone().sub(a).cross(c.clone().sub(a)).normalize();
+      assert.ok(normal.dot(a.clone().add(b).add(c).divideScalar(3).sub(center)) > 0, "each face winds outward");
+      for (let corner = 0; corner < 3; corner++) {
+        const stored = new THREE.Vector3().fromBufferAttribute(added.normal, i + corner);
+        assert.ok(stored.distanceTo(normal) < 1e-6, "deformed box retains correct hard face normals");
+      }
+      for (const [start, end] of [[a, b], [b, c], [c, a]]) {
+        const ka = pointKey(start), kb = pointKey(end), key = [ka, kb].sort().join("|");
+        const entry = edges.get(key) || { count: 0, winding: 0 };
+        entry.count++; entry.winding += ka < kb ? 1 : -1; edges.set(key, entry);
+      }
+    }
+    assert.ok([...edges.values()].every(edge => edge.count === 2 && edge.winding === 0), "backing is closed with no missing face or duplicate triangle");
+    assert.ok([...added.uv.array].every(value => value >= 0 && value <= 1));
+    fighter.visor.geometry.computeBoundingBox();
+    const front = Math.max(...vertices.map(point => point.z));
+    assert.ok(fighter.visor.position.z + fighter.visor.geometry.boundingBox.min.z - front > .0464, "backing stays behind every lens");
+    const oldHead = new THREE.Mesh(before.helmet.geometry, before.darkMaterial); oldHead.updateMatrixWorld(true);
+    for (const vertex of vertices.filter(point => point.z < .14)) for (const side of [-1, 1]) {
+      socketRay.set(new THREE.Vector3(side * 2, vertex.y, vertex.z), new THREE.Vector3(-side, 0, 0));
+      const hit = socketRay.intersectObject(oldHead, false)[0];
+      assert.ok(hit && side * hit.point.x > Math.abs(vertex.x) + .005, "each rear corner overlaps the actual faceted capsule shell");
+    }
+    for (let i = 36; i < added.position.count; i++) {
+      const vertex = new THREE.Vector3().fromBufferAttribute(added.position, i);
+      assert.ok(Math.abs(Math.abs(vertex.x) - .25) < 1e-7 || Math.abs(Math.abs(vertex.x) - .44) < 1e-7, "closed mounts run from inside shell into the ear caps");
+      if (Math.abs(vertex.x) < .3) {
+        // CapsuleGeometry's duplicated angular seam can miss rays at z ~= -1e-17.
+        // Probe both sides of that numerical seam; retain the full 5 mm overlap margin.
+        for (const z of Math.abs(vertex.z) < 1e-8 ? [-1e-8, 1e-8] : [vertex.z]) {
+          socketRay.set(new THREE.Vector3(Math.sign(vertex.x) * 2, vertex.y, z), new THREE.Vector3(-Math.sign(vertex.x), 0, 0));
+          const hit = socketRay.intersectObject(oldHead, false)[0];
+          assert.ok(hit && Math.abs(hit.point.x) > Math.abs(vertex.x) + .005, `inner mount vertex ${i} must overlap the actual shell`);
+        }
+      } else {
+        assert.ok(Math.hypot(vertex.y, vertex.z) < .12 * Math.cos(Math.PI / 8), "outer mount stays inside the existing ear disc at every pitch");
+        assert.ok(Math.abs(vertex.x) > .425 && Math.abs(vertex.x) < .515, "outer mount overlaps the unchanged ear cap depth");
+      }
+    }
+  }
+  fighter.dispose(); before.dispose();
 }
 const outsideSprite = new THREE.Sprite();
 for (const batch of world.destructibleBatches) {

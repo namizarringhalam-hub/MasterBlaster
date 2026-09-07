@@ -374,6 +374,28 @@ export class Fighter {
       ...[-.354, .354].map(x => part(new THREE.BoxGeometry(.052, .17, .12), dark, x, 2.1, .45)),
       ...[-.1125, .1125].map(x => part(new THREE.BoxGeometry(.027, .11, .09), dark, x, 2.1, .45))
     ];
+    // Close the capsule's shell-to-frame gap with a tapered, closed socket.
+    // Its rear is inside the shell; its front stays behind all three lenses.
+    if (costumeVariant === 2) {
+      const socket = new THREE.BoxGeometry(1, 1, 1);
+      const positions = socket.attributes.position;
+      for (let i = 0; i < positions.count; i++) {
+        const front = positions.getZ(i) > 0;
+        positions.setXYZ(i, positions.getX(i) * (front ? .75 : .52),
+          positions.getY(i) * (front ? .21 : .15), front ? .405 : .13);
+      }
+      socket.computeVertexNormals();
+      const backing = new THREE.Mesh(socket, dark);
+      backing.position.y = 2.1;
+      visorFrame.push(backing);
+      // The narrow shell also needs a physical seat for the unchanged ear caps.
+      const mountGeometry = new THREE.CylinderGeometry(.09, .09, .19, 8);
+      for (const side of [-1, 1]) {
+        const mount = part(mountGeometry, dark, side * .345, 2.08, 0);
+        mount.rotation.z = Math.PI / 2;
+        visorFrame.push(mount);
+      }
+    }
     const helmetAssembly = mergeStaticParts(dark, [helmet, ...visorFrame]);
     helmetAssembly.geometry.translate(0, -2.08, 0);
     helmetAssembly.position.y = 2.08;

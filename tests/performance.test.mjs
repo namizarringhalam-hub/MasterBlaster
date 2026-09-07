@@ -253,7 +253,8 @@ const transientMethod = mainSource.slice(mainSource.indexOf("\n  clearTransientN
 const decoyHarness = new Function("THREE", `return new (class {${decoyMethods}${removeObjectMethod}${transientMethod}})();`)(THREE);
 Object.assign(decoyHarness, { scene: new THREE.Scene(), world: { surfaceHeightAt: () => 0 },
   decoys: [], projectiles: [], hazards: [], effects: [], decoyRenderAnchor: null, spawnBurst() {}, renderPipeline: { quality: "high", direct: false } });
-const decoyOwner = new Fighter(decoyHarness.scene, { id: "decoy-qa", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+// Exercise the capsule housing as well as the shared head pivot in holograms.
+const decoyOwner = new Fighter(decoyHarness.scene, { id: "helmet-2", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
 const decoyDisposals = new Map();
 function trackDecoy(mesh) {
   mesh.traverse(child => {

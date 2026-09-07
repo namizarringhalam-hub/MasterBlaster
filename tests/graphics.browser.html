@@ -657,7 +657,9 @@ async function runDecoyReview(crossTier = false, overlap = false) {
     const weapon = Object.values(WEAPONS).find(weapon => weapon.decoyDuration);
     const sample = async (cycle, phase) => {
       const readyFrame = renderedFrames + 30;
-      await waitForReviewFrame(serial, () => renderedFrames >= readyFrame);
+      // The cold baseline includes scene compilation, just like reset readiness.
+      // This is a lifecycle check, not a startup-speed pass; warmed phases stay bounded at 20s.
+      await waitForReviewFrame(serial, () => renderedFrames >= readyFrame, cycle === -1 ? 60000 : 20000);
       decoyReview.samples.push({ cycle, phase, tier: game.settings.graphics, active: game.decoys.length, retained: Boolean(game.decoyRenderAnchor),
         anchorContext: game.decoyRenderAnchor?.userData.decoyRenderContext,
         pipelineCreations, ...game.renderer.info.memory, errorCount, directFallback: game.renderPipeline.direct });
