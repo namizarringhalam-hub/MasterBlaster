@@ -372,6 +372,21 @@ assert.equal(finishStartup(() => {}, [{}, {}], { close: () => startupClosures++ 
 assert.equal(startupClosures, 1, "third successful frame releases transient shader-source identities");
 assert.throws(() => finishStartup(() => { throw expectedFailure; }, [], { close: () => startupClosures++ }), error => error === expectedFailure);
 assert.equal(startupClosures, 2, "render failure releases transient identities without swallowing the original error");
+const destroyReviewSource = graphicsFixture.slice(graphicsFixture.indexOf("function destroyReviewCovers("), graphicsFixture.indexOf('select("destroy-cover").onclick'));
+for (const all of [false, true]) {
+  const items = [{ x: 1, z: 2, baseY: 0, h: 4 }, { x: 2, z: 3, baseY: 1, h: 6 }];
+  const reviewWorld = { destructibles: [...items], detachedDestructibleMeshes: [], districtIndexAt: x => x,
+    destroy(point, radius, context) {
+      assert.equal(radius, .001); assert.equal(context.partId, "qa-cover-only");
+      const item = this.destructibles.find(item => item.x === point.x);
+      assert.equal(point.y, item.baseY + item.h / 2);
+      this.detachedDestructibleMeshes.push(item); this.destructibles.splice(this.destructibles.indexOf(item), 1);
+    } };
+  const review = new Function("THREE", "game", "select", `let coverDestruction, sceneSerial=2; ${destroyReviewSource}; return {run:destroyReviewCovers,state:()=>coverDestruction};`)(THREE, { world: reviewWorld }, () => ({ value: "cover-shield" }));
+  assert.equal(review.run(all), all ? 2 : 1);
+  assert.deepEqual(review.state().targets, all ? [[1, 2], [2, 3]] : [[1, 2]]);
+  items[0].x = 99; assert.equal(review.state().targets[0][0], 1, "destruction evidence keeps owned numeric positions");
+}
 
 for (const [seed, expected] of [
   ["GRAPHICS-QA-structure", ["3fcaf9d84ec4401241287fef3d3288259e9493dd3171fc3d3bd7ccf8cec086ec", "39cdd4e5bbe8932bb96e6b805f99647f9c5723cf63edace962550765be1769f5", "183e544aca3ae4ebc7b6ada691287b7adfd03daeab38bd51a0c6056b5153a381"]],
@@ -678,11 +693,47 @@ assert.ok(world.boostAt(trigger) === triggerPad);
 assert.equal(world.boostAt(trigger.clone().add(new THREE.Vector3(2.5, 0, 0))), undefined);
 assert.equal(world.boostAt(trigger.clone().add(new THREE.Vector3(0, .35, 0))), undefined);
 assertCompatibleAONormals(world.group);
-const coverLights = world.destructibles.map(obstacle => obstacle.mesh.children.find(child => child.isInstancedMesh));
+const coverSource = readFileSync(new URL("../src/world.js", import.meta.url), "utf8");
+const legacyLightGeometry = new Function("THREE", `${coverSource.slice(coverSource.indexOf("function coverLightGeometry("), coverSource.indexOf("function segmentCircle("))}; return coverLightGeometry;`)(THREE);
+const legacyDecorateSource = coverSource.slice(coverSource.indexOf("  decorateBreakable("), coverSource.indexOf("  addBox(", coverSource.indexOf("  decorateBreakable(")))
+  .replace(/^\s*if \(inset\) slats = bakeCoverSlats\(slats\);\r?\n/m, "");
+const legacyDecorate = new Function("THREE", "coverLightGeometry", `return function ${legacyDecorateSource};`)(THREE, legacyLightGeometry);
+const legacyCoverRoots = world.destructibles.map(obstacle => {
+  const root = new THREE.Mesh(obstacle.mesh.geometry, obstacle.mesh.material);
+  legacyDecorate.call(world, root, obstacle.x, obstacle.z, true); return root;
+});
+const legacyCoverLights = legacyCoverRoots.map(root => root.children.find(child => child.isInstancedMesh));
+const coverLights = world.destructibles.map((obstacle, index) => obstacle.mesh.getObjectByName(legacyCoverLights[index].name));
 assert.equal(coverLights.length, 34);
-assert.equal(createHash("sha256").update(Buffer.concat(coverLights.map(mesh => Buffer.from(mesh.instanceMatrix.array.buffer)))).digest("hex"),
+assert.equal(createHash("sha256").update(Buffer.concat(legacyCoverLights.map(mesh => Buffer.from(mesh.instanceMatrix.array.buffer)))).digest("hex"),
   "79e8a017067ce8ec1fed7ae87de457878322758c2d9d4c73c0128e90df5d8849", "symbol instances keep their authored positions, rotations and illuminated scale");
-for (const light of coverLights) {
+for (const [coverIndex, light] of legacyCoverLights.entries()) {
+  const baked = coverLights[coverIndex], { geometry } = baked;
+  assert.ok(baked.isMesh && !baked.isInstancedMesh, "opaque cover symbols use one locally baked mesh without object-specific instance bindings");
+  assert.equal(geometry.index, null); assert.equal(geometry.attributes.position.count, 240);
+  assert.ok(baked.material === light.material && baked.parent === world.destructibles[coverIndex].mesh);
+  for (const flag of ["castShadow", "receiveShadow", "renderOrder", "frustumCulled", "visible"]) assert.equal(baked[flag], light[flag]);
+  assert.equal(baked.layers.mask, light.layers.mask);
+  assert.deepEqual(baked.matrix.toArray(), light.matrix.toArray());
+  assert.deepEqual(geometry.boundingSphere, light.boundingSphere, "baked symbols retain the original conservative culling volume");
+  const storedMatrix = new THREE.Matrix4(), storedNormal = new THREE.Matrix3(), point = new THREE.Vector3();
+  for (let piece = 0; piece < 4; piece++) {
+    light.getMatrixAt(piece, storedMatrix); storedNormal.getNormalMatrix(storedMatrix);
+    for (let vertex = 0; vertex < light.geometry.attributes.position.count; vertex++) {
+      const bakedIndex = piece * 60 + vertex;
+      for (const name of ["position", "normal"]) {
+        point.fromBufferAttribute(light.geometry.attributes[name], vertex);
+        if (name === "position") point.applyMatrix4(storedMatrix); else point.applyNormalMatrix(storedNormal);
+        const actual = new THREE.Vector3().fromBufferAttribute(geometry.attributes[name], bakedIndex);
+        assert.ok(actual.distanceTo(point) < 3e-7, `${light.name}: stored Float32 transform and ${name} remain within rounding tolerance`);
+        if (name === "position") assert.ok(actual.distanceTo(geometry.boundingSphere.center) <= geometry.boundingSphere.radius + 3e-7);
+      }
+      for (const name of ["uv", "color"]) {
+        const before = light.geometry.attributes[name], after = geometry.attributes[name];
+        for (let axis = 0; axis < before.itemSize; axis++) assert.equal(after.array[bakedIndex * before.itemSize + axis], before.array[vertex * before.itemSize + axis]);
+      }
+    }
+  }
   const { position, normal, uv, color } = light.geometry.attributes;
   assert.equal((light.geometry.index?.count ?? position.count) / 3, 20, "closed light housing uses ten planar quads within its existing draw");
   assert.equal(light.count, 4);
@@ -702,6 +753,24 @@ for (const light of coverLights) {
     assert.ok(Math.abs(normal[axis](i) - normal[axis](i + 3)) < 1e-6, "light housing corners are planar without diagonal patches");
   }
 }
+const bakeSource = coverSource.slice(coverSource.indexOf("function bakeCoverSlats("), coverSource.indexOf("// Three owns and reuses"));
+const temporaryBakes = new Map();
+const actualBake = new Function("THREE", "mergeGeometries", `${bakeSource}; return bakeCoverSlats;`)(THREE, (pieces, groups) => {
+  pieces.forEach(piece => { temporaryBakes.set(piece, 0); piece.addEventListener("dispose", () => temporaryBakes.set(piece, temporaryBakes.get(piece) + 1)); });
+  return mergeGeometries(pieces, groups);
+});
+const bakeInput = new THREE.InstancedMesh(legacyCoverLights[0].geometry.clone(), legacyCoverLights[0].material.clone(), 4);
+bakeInput.instanceMatrix.copy(legacyCoverLights[0].instanceMatrix); bakeInput.computeBoundingSphere();
+let inputGeometryDisposals = 0, instanceDisposals = 0, bakeMaterialDisposals = 0;
+bakeInput.geometry.addEventListener("dispose", () => inputGeometryDisposals++);
+bakeInput.addEventListener("dispose", () => instanceDisposals++);
+bakeInput.material.addEventListener("dispose", () => bakeMaterialDisposals++);
+const bakeOutput = actualBake(bakeInput);
+assert.equal(temporaryBakes.size, 4); assert.ok([...temporaryBakes.values()].every(count => count === 1));
+assert.equal(inputGeometryDisposals, 1); assert.equal(instanceDisposals, 1);
+assert.equal(bakeMaterialDisposals, 0, "baking cannot dispose the material still used by the new mesh and other covers");
+bakeOutput.geometry.dispose(); bakeOutput.material.dispose();
+for (const root of legacyCoverRoots) for (const child of root.children) { child.geometry.dispose(); child.dispose?.(); }
 assert.ok(scene.backgroundNode?.isNode, "arena sky has a continuous horizon-to-zenith background");
 assert.equal(scene.fog.density, .0044, "sky treatment cannot hide content with extra fog");
 assert.ok(scene.environment === lightingEnvironment, "background must not replace the scene lighting environment");
@@ -948,7 +1017,26 @@ for (const arena of [world, new ArenaWorld(scene, "RESET-2"), new ArenaWorld(sce
     if (object.isSprite) object.material.addEventListener("dispose", () => spriteMaterialsDisposed++);
     else if (object.geometry) object.geometry.addEventListener("dispose", () => ownedGeometryDisposed++);
   });
+  const victim = arena.destructibles[0], neighbor = arena.destructibles.at(-1);
+  const secondVictim = arena.destructibles.find(item => item !== victim && item !== neighbor && arena.districtIndexAt(item.x, item.z) === arena.districtIndexAt(victim.x, victim.z));
+  const removedCases = arena.seed === "RESET-3" ? [] : [victim, secondVictim];
+  const detachedResources = new Map();
+  for (const removed of removedCases) removed.mesh.traverse(object => {
+    for (const resource of [object.geometry, ...[].concat(object.material || [])].filter(Boolean)) detachedResources.set(resource, 0);
+  });
+  for (const resource of detachedResources.keys()) resource.addEventListener("dispose", () => detachedResources.set(resource, detachedResources.get(resource) + 1));
+  for (const removed of removedCases) {
+    const point = new THREE.Vector3(removed.x, removed.baseY + removed.h / 2, removed.z), eventId = `cover-disposal-${removed.x}-${removed.z}`;
+    arena.destroy(point, .001, { eventId, structuralDamage: .01 });
+    arena.destroy(point, .001, { eventId, structuralDamage: .01 });
+  }
+  for (const removed of removedCases) assert.equal(removed.mesh.parent, null);
+  assert.equal(arena.detachedDestructibleMeshes.length, removedCases.length, "duplicate destruction cannot enqueue a detached cover twice");
+  assert.ok(neighbor.mesh.parent === arena.group && arena.destructibles.includes(neighbor), "removing one cover cannot remove its neighbor");
+  assert.ok([...detachedResources.values()].every(count => count === 0), "shared resources remain valid for surviving covers until world teardown");
   arena.dispose();
+  assert.equal(arena.detachedDestructibleMeshes.length, 0, "teardown releases its detached-root references");
+  assert.ok([...detachedResources.values()].every(count => count === 1), "destroyed cover buffers and shared materials still dispose exactly once at teardown");
   assert.ok([...boostDisposals.values()].every(count => count === 1), "all boost geometry and materials dispose exactly once, including shared route marks");
   assert.ok([...coverDisposals.values()].every(count => count === 1), "shared cover textures dispose exactly once per arena");
   assert.ok(scene.backgroundNode === arena.previousBackgroundNode, "teardown restores the previous sky expression without disposing Three's owned sky mesh");

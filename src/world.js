@@ -264,6 +264,21 @@ function segmentCircle(a, b, c, radius) {
   return a.clone().addScaledVector(ab, t).distanceTo(c) <= radius;
 }
 
+function bakeCoverSlats(slats) {
+  const matrix = new THREE.Matrix4(), pieces = [];
+  for (let i = 0; i < slats.count; i++) {
+    // Preserve the stored Float32 transforms used by the instanced renderer.
+    slats.getMatrixAt(i, matrix);
+    pieces.push(new THREE.BufferGeometry().copy(slats.geometry).applyMatrix4(matrix));
+  }
+  const baked = new THREE.Mesh(mergeGeometries(pieces, false), slats.material);
+  baked.name = slats.name;
+  baked.geometry.boundingSphere = slats.boundingSphere.clone();
+  pieces.forEach(piece => piece.dispose());
+  slats.geometry.dispose(); slats.dispose();
+  return baked;
+}
+
 // Three owns and reuses the scene's background mesh. Retain just the three
 // theme expressions instead of rebuilding a background shader on every rematch.
 const skyBackgrounds = new Map();
@@ -294,6 +309,7 @@ export class ArenaWorld {
     this.group.name = "Neon Parkour Arena";
     this.obstacles = [];
     this.destructibles = [];
+    this.detachedDestructibleMeshes = [];
     this.destructibleBatches = [];
     this.anchors = [];
     this.platforms = [];
@@ -1452,7 +1468,7 @@ export class ArenaWorld {
     mesh.add(edges);
 
     const { width, height, depth } = mesh.geometry.parameters;
-    const slats = new THREE.InstancedMesh(inset ? coverLightGeometry(this.districtColors[district], district === 2) : new THREE.BoxGeometry(1, 1, 1),
+    let slats = new THREE.InstancedMesh(inset ? coverLightGeometry(this.districtColors[district], district === 2) : new THREE.BoxGeometry(1, 1, 1),
       inset ? this.coverMarkMaterials[district] : this.routeMaterials[district], 4);
     const marker = new THREE.Object3D();
     for (let index = 0; index < 4; index++) {
@@ -1487,6 +1503,7 @@ export class ArenaWorld {
     slats.name = ["Capacitor cover ribs", "Shield-crate diagonals", "Vent cover louvers", "Reactor cover lattice"][district];
     slats.instanceMatrix.needsUpdate = true;
     slats.computeBoundingSphere();
+    if (inset) slats = bakeCoverSlats(slats);
     mesh.name = ["Cyan capacitor cover", "Rose shield cover", "Amber vent machinery", "Violet reactor cover"][district];
     mesh.add(slats);
   }
@@ -2969,6 +2986,7 @@ export class ArenaWorld {
         item.batch.mesh.instanceMatrix.needsUpdate = true;
       }
       this.group.remove(item.mesh);
+      this.detachedDestructibleMeshes.push(item.mesh);
       this.obstacles.splice(this.obstacles.indexOf(item), 1);
       this.destructibles.splice(this.destructibles.indexOf(item), 1);
       item.removed = true;
@@ -3109,7 +3127,7 @@ export class ArenaWorld {
     this.scene.fog = this.previousFog;
     this.scene.remove(this.group);
     const resources = new Set(this.textures);
-    this.group.traverse((child) => {
+    for (const root of [this.group, ...this.detachedDestructibleMeshes]) root.traverse((child) => {
       // Three owns one shared quad for every Sprite, including the next arena.
       if (!child.isSprite && child.geometry) resources.add(child.geometry);
       for (const material of Array.isArray(child.material) ? child.material : [child.material]) {
@@ -3117,5 +3135,6 @@ export class ArenaWorld {
       }
     });
     for (const resource of resources) resource.dispose();
+    this.detachedDestructibleMeshes.length = 0;
   }
 }

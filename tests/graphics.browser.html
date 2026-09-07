@@ -14,11 +14,13 @@
 <label>Pose <select id="pose"><option>aim</option><option>reload</option><option>fire</option></select></label>
 <label>Boost pad <select id="boost-pad"><option value="0">1</option><option value="1">2</option><option value="2" selected>3</option><option value="3">4</option><option value="4">5</option><option value="5">6</option><option value="6">7</option><option value="7">8</option></select></label>
 <button id="burst">Fire / impact</button><button id="destroy">Collapse tower</button><button id="grapple">Toggle grapple</button>
+<button id="destroy-cover">Destroy viewed cover</button><label><input type="checkbox" id="cover-edge">Cover at frustum edge</label>
 <button id="inspect-surface">Inspect footing material</button>
 <button id="thruster-sort">Toggle thruster sort control</button><button id="thruster-dust">Overlap structural dust</button>
 <button id="stress">Run 16-fighter stress</button><button id="reset">Reset scene</button>
 <button id="reset-ten">Test ten resets</button>
 <button id="reset-decoys">Test ten decoy resets</button>
+<button id="reset-covers">Test ten destroyed-cover resets</button>
 <button id="loader-transitions">Test loader transitions</button>
 <button id="cache-cycle">Test weapon cache</button>
 <button id="decoy-cycle">Test separated decoys</button>
@@ -335,6 +337,7 @@ if (traceStartup) {
 }
 const resetReview = { running: false, samples: [], error: null };
 const cacheReview = { running: false, samples: [], error: null };
+let coverDestruction = null;
 const cameraReview = { running: false, samples: [], error: null };
 const decoyReview = { running: false, samples: [], error: null };
 let loaderReview = null;
@@ -440,6 +443,7 @@ function setView() {
     const cover = game.world.destructibles.find(obstacle => game.world.districtIndexAt(obstacle.x, obstacle.z) === coverDistrict);
     const span = Math.max(cover.w, cover.h), centerY = cover.baseY + cover.h / 2, faceZ = cover.z + cover.d / 2;
     poses[view] = [[cover.x + span * .55, centerY + span * .13, faceZ + span * 1.2], [cover.x, centerY, faceZ]];
+    if (select("cover-edge").checked) poses[view][1][0] += span * 1.08;
   }
   if (view.startsWith("boost-")) {
     const pad = view === "boost-raised" ? game.world.boostPads.find(pad => pad.support) : game.world.boostPads[Number(select("boost-pad").value)];
@@ -458,6 +462,7 @@ function setView() {
 async function reset() {
   clearThrusterSortControl();
   sceneSerial++;
+  coverDestruction = null;
   cameraOffset = 0;
   stress = false; game.mode = "training"; game.seed = select("seed").value;
   game.settings.botCount = 15; game.timeLimitMinutes = 30; game.targetScore = 10000;
@@ -479,6 +484,7 @@ async function reset() {
 }
 select("view").onchange = setView;
 select("boost-pad").onchange = setView;
+select("cover-edge").onchange = setView;
 select("capture-canvas").onclick = () => { captureCanvas = true; };
 select("tier").onchange = () => { game.settings.graphics = select("tier").value; game.applyGraphicsSettings(); resetSamples(); };
 select("seed").onchange = reset;
@@ -509,11 +515,25 @@ select("loader-transitions").onclick = async () => {
   } catch (error) { loaderReview.error = String(error); }
   finally { resetReview.running = false; }
 };
-async function runResetReview(warmDecoy = false) {
+function destroyReviewCovers(all = false) {
+  const before = game.world.destructibles.length;
+  const district = ["cover-capacitor", "cover-shield", "cover-vent", "cover-reactor"].indexOf(select("view").value);
+  const targets = all ? [...game.world.destructibles] : game.world.destructibles.filter(item => game.world.districtIndexAt(item.x, item.z) === district).slice(0, 1);
+  for (const item of targets) game.world.destroy(new THREE.Vector3(item.x, item.baseY + item.h / 2, item.z), .001,
+    { eventId: `qa-cover-${sceneSerial}-${item.x}-${item.z}`, partId: "qa-cover-only" });
+  coverDestruction = { before, after: game.world.destructibles.length, targets: targets.map(item => [item.x, item.z]),
+    detached: game.world.detachedDestructibleMeshes.length };
+  return before - coverDestruction.after;
+}
+select("destroy-cover").onclick = () => {
+  if (!resetReview.running && !cacheReview.running && !cameraReview.running && !decoyReview.running && !stress) destroyReviewCovers();
+};
+async function runResetReview(warmDecoy = false, destroyCovers = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   resetReview.running = true; resetReview.samples = []; resetReview.error = null;
   try {
     for (let i = 0; i < 10; i++) {
+      let destroyedCovers = 0;
       if (warmDecoy) {
         const hero = game.players[0];
         game.spawnDecoy(hero.position.clone().add(new THREE.Vector3(1.5, 0, 0)), hero, WEAPONS.decoy_launcher);
@@ -522,20 +542,30 @@ async function runResetReview(warmDecoy = false) {
         game.removeDecoy(game.decoys.at(-1));
         if (!game.decoyRenderAnchor) throw new Error("Decoy reset test did not warm a complete render anchor");
       }
+      if (destroyCovers) {
+        const readyFrame = renderedFrames + 30;
+        await waitForReviewFrame(sceneSerial, () => renderedFrames >= readyFrame);
+        destroyedCovers = destroyReviewCovers(true);
+        if (!destroyedCovers || game.world.destructibles.length) throw new Error("Cover reset test did not destroy its covers");
+        const removedFrame = renderedFrames + 2;
+        await waitForReviewFrame(sceneSerial, () => renderedFrames >= removedFrame);
+      }
       await reset();
       const serial = sceneSerial;
       // Lifecycle readiness is not a startup-speed pass: cold rendering can
       // consume most of 20s before the 60-frame sample and metrics publication.
       await waitForReviewFrame(serial, () => stats.sceneSerial === serial && stats.frames >= 60, 60000);
-      resetReview.samples.push({ sceneSerial, warmDecoy, anchorRetained: Boolean(game.decoyRenderAnchor), programs: stats.programs, attributes: stats.attributes, attributesSize: stats.attributesSize,
+      resetReview.samples.push({ sceneSerial, warmDecoy, destroyedCovers, anchorRetained: Boolean(game.decoyRenderAnchor), programs: stats.programs, attributes: stats.attributes, attributesSize: stats.attributesSize,
         geometries: stats.geometries, textures: stats.textures, renderTargets: stats.renderTargets,
-        uniformBuffers: stats.uniformBuffers, total: stats.total, errorCount, directFallback: stats.directFallback });
+        uniformBuffers: stats.uniformBuffers, total: stats.total, errorCount, directFallback: stats.directFallback,
+        viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio } });
     }
   } catch (error) { resetReview.error = String(error); }
   finally { resetReview.running = false; }
 }
 select("reset-ten").onclick = () => runResetReview();
 select("reset-decoys").onclick = () => runResetReview(true);
+select("reset-covers").onclick = () => runResetReview(false, true);
 select("cache-cycle").onclick = async () => {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cacheReview.running = true; cacheReview.samples = []; cacheReview.error = null;
@@ -765,7 +795,7 @@ game.frame = time => {
       radius: game.renderPipeline.aoPass.radius.value, thickness: game.renderPipeline.aoPass.thickness.value,
       distanceExponent: game.renderPipeline.aoPass.distanceExponent.value, distanceFallOff: game.renderPipeline.aoPass.distanceFallOff.value
     } : null,
-    resetReview, cacheReview, cameraReview, decoyReview, decoyPipelines, loaderReview,
+    resetReview, cacheReview, cameraReview, decoyReview, decoyPipelines, loaderReview, coverDestruction,
     compiles: compiles.map(s => ({ pending: s.completed === null, durationMs: +( (s.completed ?? now) - s.started).toFixed(1) })),
     frames: frames.length, medianMs: percentile(.5), p95Ms: percentile(.95), p99Ms: percentile(.99), maxMs: percentile(1),
     over33Ms: frames.filter(ms => ms > 33.3).length, over50Ms: frames.filter(ms => ms > 50).length,
