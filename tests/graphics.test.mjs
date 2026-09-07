@@ -524,8 +524,45 @@ for (const height of [0, Math.sqrt(3), -Math.sqrt(3)]) {
   assert.ok(aims.every(aim => Math.abs(aim.length() - 1) < 1e-12 && Math.abs(aim.y - height / Math.hypot(height, 1)) < 1e-12 && aim.z < 0));
 }
 // Execute the exact capture block: later frame counters must not alter evidence.
+for (const pose of ["gait-positive", "gait-negative", "landing"]) {
+  const hero = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3(0, 15.01, 8));
+  const world = { resolve: position => { const grounded = position.y <= 15.01; if (grounded) position.y = 15.01; return { grounded }; }, boostAt: () => null };
+  const poseState = new Function("THREE", "game", "select", `${settleReviewSource}; settlePose(); return poseReview;`)(THREE,
+    { players: [hero], world, clearTransientNetworkCombat() {} }, name => ({ value: name === "aim-height" ? "0" : pose }));
+  const sample = poseState.locomotion;
+  assert.ok(sample.sampledFrames > 0 && sample.sampledFrames <= 180); assert.equal(sample.grounded, true);
+  assert.ok(sample.maxHorizontalCorrection < 1e-12);
+  assert.deepEqual(sample.position, hero.position.toArray()); assert.deepEqual(sample.velocity, hero.velocity.toArray());
+  if (pose === "landing") {
+    assert.ok(sample.landTimer > 0 && sample.landTimer <= .12); assert.ok(sample.landStrength > 0);
+  } else {
+    assert.ok(sample.sampledFrames > 60); assert.ok(sample.velocity[2] < -8.9);
+    if (pose === "gait-positive") assert.ok(sample.previousDelta > 0 && sample.delta <= 0 && sample.angle > .3);
+    else assert.ok(sample.previousDelta < 0 && sample.delta >= 0 && sample.angle < -.3);
+    const resolve = world.resolve;
+    world.resolve = position => { position.z = Math.max(position.z, 7.9); return resolve(position); };
+    assert.throws(() => new Function("THREE", "game", "select", `${settleReviewSource}; settlePose();`)(THREE,
+      { players: [hero], world, clearTransientNetworkCombat() {} }, name => ({ value: name === "aim-height" ? "0" : pose })), /route obstructed/);
+  }
+  hero.dispose();
+}
 const handViewSource = graphicsFixture.slice(graphicsFixture.indexOf("function setView()"), graphicsFixture.indexOf("async function reset()"));
 const weaponSelectSource = graphicsFixture.slice(graphicsFixture.indexOf('select("weapon").onchange ='), graphicsFixture.indexOf('select("pose").onchange ='));
+for (const view of ["lower-body-front", "lower-body-side"]) {
+  assert.ok(graphicsFixture.includes(`<option>${view}</option>`));
+  const hero = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const game = { players: [hero], camera: new THREE.PerspectiveCamera(62, 16 / 9, .1, 300), clearTransientNetworkCombat() {},
+    world: { resolve: position => { position.y = 15.01; return { grounded: true }; }, boostAt: () => null } };
+  new Function("THREE", "game", "select", `let stress=false, cameraOffset=0; const clearThrusterSortControl=()=>{}, resetSamples=()=>{}, cameraUpdate=()=>{};
+    ${settleReviewSource}; ${handViewSource}; setView();`)(THREE, game, name => ({ value: name === "view" ? view : name === "aim-height" ? "0" : "aim" }));
+  game.camera.updateMatrixWorld(true);
+  assert.equal(hero.position.x, 8, "lower-body route clears the central seven-metre spire");
+  const center = new THREE.Vector3(8, 15.55, 8).project(game.camera);
+  assert.ok(Math.abs(center.x) < 1e-6 && Math.abs(center.y) < 1e-6);
+  assert.equal(game.camera.fov, 62);
+  const before = game.camera.position.clone(); hero.weaponGroup.position.x += .3; game.updateCamera();
+  assert.deepEqual(game.camera.position, before); hero.dispose();
+}
 for (const view of ["hand-front", "hand-side", "hand-opposite", "hand-palm", "hand-shoulder", "hand-shoulder-opposite", "hand-shoulder-oblique"]) for (const previousPose of ["aim", "reload", "reacquire-early"]) {
   const hero = new Fighter(new THREE.Scene(), { id: "hand-view", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
   const controls = { view: { value: view }, weapon: { value: "blaster" }, pose: { value: "aim" }, "aim-height": { value: "0" } };
@@ -559,7 +596,7 @@ for (const view of ["hand-front", "hand-side", "hand-opposite", "hand-palm", "ha
   hero.dispose();
 }
 const captureSource = graphicsFixture.slice(graphicsFixture.indexOf("    const grapple = game.players[0]?.grapple;"), graphicsFixture.indexOf('    const link = select("canvas-capture");'));
-const captureFrame = new Function("game", "renderedFrames", "sceneSerial", "select", "ropeRenders", "ropeRendersBefore", "errorCount", "thrusterSortControl", "thrusterRenderOrder", "poseReview", `let canvasCapture; ${captureSource}; return canvasCapture;`);
+const captureFrame = new Function("THREE", "game", "renderedFrames", "sceneSerial", "select", "ropeRenders", "ropeRendersBefore", "errorCount", "thrusterSortControl", "thrusterRenderOrder", "poseReview", `let canvasCapture; ${captureSource}; return canvasCapture;`).bind(null, THREE);
 {
   const hero = new Fighter(new THREE.Scene(), { id: "hand-metadata", color: 0x129dba, accent: 0x6ff6ff }, ["rocket_launcher"], new THREE.Vector3());
   hero.group.updateMatrixWorld(true);
@@ -569,6 +606,9 @@ const captureFrame = new Function("game", "renderedFrames", "sceneSerial", "sele
   const review = { requested: "aim", reloadAccepted: null, additionalReacquireFrames: 0 };
   const captured = captureFrame(game, 10, 3, () => ({ value: "hand-front" }), 0, 0, 0, null, [], review);
   assert.equal(captured.handPose.weapon, "rocket_launcher"); assert.equal(captured.tier, "high"); assert.equal(captured.profile, "WEBGPU ULTRA");
+  assert.equal(captured.lowerBody.floorAtFighter, null);
+  assert.deepEqual(captured.lowerBody.legs[0].matrix, hero.leftLeg.matrixWorld.toArray());
+  assert.deepEqual(captured.lowerBody.legs[0].bounds.min, new THREE.Box3().setFromObject(hero.leftLeg, true).min.toArray());
   assert.equal(captured.camera.gameplay, false);
   assert.deepEqual(captured.handPose.rightForearmMatrix, hero.rightForearm.matrixWorld.toArray());
   assert.deepEqual(captured.handPose.leftForearmMatrix, hero.leftForearm.matrixWorld.toArray());
