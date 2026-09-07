@@ -40,6 +40,7 @@
 <button id="shoulder-envelope">Compare ellipsoidal shoulder Z envelope</button>
 <button id="shoulder-cap-alignment">Compare previous shoulder cap alignment</button>
 <button id="shoulder-bearing-fit">Compare previous shoulder bearing fit</button>
+<button id="shoulder-cap-normals">Compare right cap face normals</button>
 <button id="arm-comparison">Check elbow finish restoration</button>
 <button id="elbow-comparison">Compare elbow silhouette</button>
 <button id="boost-passage">Test boost passage</button>
@@ -798,7 +799,8 @@ async function withElbowSilhouette(target, capture, shoulder = false, preserveZE
     temporary?.dispose(); fine?.dispose(); coarse.dispose();
   }
 }
-async function withShoulderCapAlignment(target, capture, restorePrevious = false) {
+async function withShoulderCapAlignment(target, capture, restorePrevious = false, faceNormals = false) {
+  if (restorePrevious && faceNormals) throw new Error("Cap normal and position controls cannot be combined");
   const hero = game.players[0], original = target?.geometry;
   if ([...hero.id].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % 4 !== 1 ||
       target !== hero.rig.children[1] || target.material !== hero.armorMaterial || !original ||
@@ -807,7 +809,7 @@ async function withShoulderCapAlignment(target, capture, restorePrevious = false
   const indexed = new THREE.CylinderGeometry(.2, .25, .42, 6), base = indexed.toNonIndexed(); indexed.dispose();
   const cap = (side, x) => base.clone().applyMatrix4(new THREE.Matrix4().compose(
     new THREE.Vector3(side * x, 1.62, -.02), new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, side * .16)), new THREE.Vector3(1, 1, 1)));
-  const previous = [-1, 1].map(side => cap(side, restorePrevious ? .61 : .57));
+  const previous = [-1, 1].map(side => cap(side, restorePrevious || faceNormals ? .61 : .57));
   let aligned = [], temporary;
   try {
     for (const name of Object.keys(original.attributes)) {
@@ -819,6 +821,7 @@ async function withShoulderCapAlignment(target, capture, restorePrevious = false
         throw new Error(`Unexpected static shoulder cap ${name} suffix`);
     }
     aligned = [-1, 1].map(side => cap(side, restorePrevious ? .57 : .61)); temporary = original.clone();
+    if (faceNormals) aligned[1].computeVertexNormals(); // Right cap only, never the merged armor prefix.
     for (const [name, attribute] of Object.entries(temporary.attributes)) {
       const count = aligned[0].attributes[name].array.length, start = attribute.array.length - count * 2;
       aligned.forEach((part, side) => attribute.array.set(part.attributes[name].array, start + side * count));
@@ -895,7 +898,7 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
   const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
   const originalOffset = cameraOffset, serial = sceneSerial, initialErrors = errorCount;
   try {
-    if (![false, true, "envelope", "cap-alignment", "bearing-fit"].includes(shoulderSilhouette)) throw new Error("Unknown shoulder silhouette control");
+    if (![false, true, "envelope", "cap-alignment", "bearing-fit", "cap-normals"].includes(shoulderSilhouette)) throw new Error("Unknown shoulder silhouette control");
     if (shoulderSilhouette && (!shoulder || !compareFinish)) throw new Error("Shoulder silhouette requires the shoulder comparison route");
     if (shoulder && (forearm || elbowSilhouette)) throw new Error("Shoulder diagnosis cannot run an elbow comparison");
     if (elbowSilhouette && (!compareFinish || !forearm)) throw new Error("Elbow silhouette comparison requires the satin forearm route");
@@ -913,11 +916,13 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
       throw new Error("Shoulder silhouette must preserve the published satin material");
     if (shoulderSilhouette === "bearing-fit" && [...game.players[0].id].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % 4 !== 1)
       throw new Error("Bearing fit is restricted to costume variant 1");
-    if (shoulderSilhouette === "cap-alignment") {
+    if (["cap-alignment", "cap-normals"].includes(shoulderSilhouette)) {
       if ([...game.players[0].id].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % 4 !== 1)
         throw new Error("Static cap alignment is restricted to costume variant 1");
       target = game.players[0].rig.children[1];
     }
+    if (shoulderSilhouette === "cap-normals" && select("view").value !== "hand-shoulder")
+      throw new Error("Right cap normal comparison requires the right shoulder view");
     if (forearm && (![3, 4].includes(game.players[0].rightForearm.children.length) || !target?.isMesh ||
         target.material !== (separateElbow ? game.players[0].elbowMaterial : game.players[0].darkMaterial)))
       throw new Error("Unexpected forearm batch layout; update the diagnostic target before capturing");
@@ -932,6 +937,7 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
     if (compareFinish && !forearm && !shoulder && !game.players[0].helmetShell) throw new Error("Select the capsule helmet for its finish comparison");
     for (const [control] of controls) control.disabled = true;
     const modes = shoulderSilhouette === "cap-alignment" ? ["previous-cap-x-alignment", "aligned-cap-x", "restored"]
+      : shoulderSilhouette === "cap-normals" ? ["baseline", "right-cap-face-normals", "restored"]
       : shoulderSilhouette === "bearing-fit" ? ["previous-bearing-fit", "bearing-fit", "restored"]
       : shoulderSilhouette ? ["baseline", shoulderSilhouette === "envelope" ? "ellipsoidal-z-envelope" : shoulderSilhouette === "bearing-fit" ? "bearing-fit" : "shoulder-silhouette", "restored"]
       : elbowSilhouette && separateElbow ? ["previous-elbow", "elbow-silhouette", "restored"]
@@ -950,7 +956,8 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
           link.href = document.querySelector("#game-canvas").toDataURL("image/png");
           select("camera-captures").append(link, " ");
           cameraReview.samples.push({ index, mode, offset, output: mode === "normals" ? "scene-color" : "final",
-            diagnosticTarget: shoulderSilhouette === "bearing-fit" && select("view").value === "fighter" ? "whole-fighter view of both variant-1 shoulder bearings; capsule prefixes preserved"
+            diagnosticTarget: shoulderSilhouette === "cap-normals" ? "right static cap normals only; all positions, UVs, left cap and other armor unchanged"
+              : shoulderSilhouette === "bearing-fit" && select("view").value === "fighter" ? "whole-fighter view of both variant-1 shoulder bearings; capsule prefixes preserved"
               : shoulderSilhouette === "cap-alignment" ? `${select("view").value === "fighter" ? "whole-fighter" : oppositeShoulder ? "left" : "right"} view of variant-1 static shoulder caps; other armor prefix preserved`
               : shoulder ? `${oppositeShoulder ? "left" : "right"} upper-arm dark batch: shoulder ball and capsule; excludes elbow, fist and static armor`
               : separateElbow ? "right elbow only" : forearm ? "right forearm dark batch: elbow and fist" : "helmet shell",
@@ -960,6 +967,7 @@ async function runShellReview(compareFinish = false, forearm = false, elbowSilho
       };
       if (shoulderSilhouette) {
         if (mode === "previous-cap-x-alignment") await withShoulderCapAlignment(target, capture, true);
+        else if (mode === "right-cap-face-normals") await withShoulderCapAlignment(target, capture, false, true);
         else if (mode === "previous-bearing-fit") await withElbowSilhouette(target,
           () => select("view").value === "fighter" ? withElbowSilhouette(game.players[0].leftArm.children[0], capture, true, false, "previous") : capture(), true, false, "previous");
         else if (mode === "shoulder-silhouette" || mode === "ellipsoidal-z-envelope") await withElbowSilhouette(target, capture, true, shoulderSilhouette === "envelope");
@@ -985,6 +993,7 @@ select("shoulder-silhouette").onclick = () => runShellReview(true, false, false,
 select("shoulder-envelope").onclick = () => runShellReview(true, false, false, true, "envelope");
 select("shoulder-cap-alignment").onclick = () => runShellReview(true, false, false, true, "cap-alignment");
 select("shoulder-bearing-fit").onclick = () => runShellReview(true, false, false, true, "bearing-fit");
+select("shoulder-cap-normals").onclick = () => runShellReview(true, false, false, true, "cap-normals");
 select("arm-comparison").onclick = () => runShellReview(true, true);
 select("elbow-comparison").onclick = () => runShellReview(true, true, true);
 async function runDecoyReview(crossTier = false, overlap = false) {

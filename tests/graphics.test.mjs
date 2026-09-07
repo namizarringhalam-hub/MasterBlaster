@@ -841,6 +841,40 @@ await assert.rejects(elbowControl(shoulderTarget, () => assert.fail("shoulder ac
 await assert.rejects(elbowControl(shoulderTarget, () => assert.fail("invalid envelope route"), false, true), /shoulder-only/);
 const capAlignment = new Function("THREE", "game", `${elbowControlSource}; return withShoulderCapAlignment;`)(THREE, shellGame);
 const capHeroBefore = shellGame.players[0];
+{
+  const hero = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  shellGame.players[0] = hero;
+  const target = hero.rig.children[1], original = target.geometry, material = target.material;
+  const cap = new THREE.CylinderGeometry(.2, .25, .42, 6), count = cap.index.count; cap.dispose();
+  const untouched = new Map(); hero.group.traverse(mesh => { if (mesh.isMesh && mesh !== target) untouched.set(mesh, [mesh.geometry, mesh.material]); });
+  for (const fail of [false, true]) {
+    const originalDispose = THREE.BufferGeometry.prototype.dispose, disposed = new Map();
+    THREE.BufferGeometry.prototype.dispose = function () { disposed.set(this, (disposed.get(this) || 0) + 1); return originalDispose.call(this); };
+    try {
+      const capture = () => {
+        const geometry = target.geometry, positions = geometry.attributes.position, normals = geometry.attributes.normal, start = positions.count - count;
+        assert.deepEqual(positions.array, original.attributes.position.array);
+        assert.deepEqual(geometry.attributes.uv.array, original.attributes.uv.array);
+        assert.deepEqual(normals.array.slice(0, start * 3), original.attributes.normal.array.slice(0, start * 3), "left cap and armor-prefix normals unchanged");
+        assert.notDeepEqual(normals.array.slice(start * 3), original.attributes.normal.array.slice(start * 3));
+        for (let i = start; i < positions.count; i += 3) {
+          const a = new THREE.Vector3().fromBufferAttribute(positions, i), b = new THREE.Vector3().fromBufferAttribute(positions, i + 1), c = new THREE.Vector3().fromBufferAttribute(positions, i + 2);
+          const expected = b.sub(a).cross(c.sub(a)).normalize();
+          for (let j = 0; j < 3; j++) assert.ok(expected.distanceTo(new THREE.Vector3().fromBufferAttribute(normals, i + j)) < 1e-7);
+        }
+        assert.equal(target.material, material);
+        for (const [mesh, [geometry, material]] of untouched) assert.ok(mesh.geometry === geometry && mesh.material === material);
+        if (fail) throw new Error("cap normals interrupted");
+      };
+      if (fail) await assert.rejects(capAlignment(target, capture, false, true), /cap normals interrupted/);
+      else await capAlignment(target, capture, false, true);
+      assert.equal(target.geometry, original); assert.equal(disposed.size, 7);
+      assert.ok([...disposed.values()].every(count => count === 1)); assert.ok(!disposed.has(original));
+    } finally { THREE.BufferGeometry.prototype.dispose = originalDispose; }
+  }
+  await assert.rejects(capAlignment(target, () => assert.fail("mixed cap controls"), true, true), /cannot be combined/);
+  hero.dispose(); shellGame.players[0] = capHeroBefore;
+}
 const bearingControl = new Function("THREE", "game", `${elbowControlSource}; return withElbowSilhouette;`)(THREE, shellGame);
 for (const variant of [0, 1, 2, 3]) {
   const hero = new BeforeBearingFighter(new THREE.Scene(), { id: String.fromCharCode(100 + variant), color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
@@ -1028,7 +1062,7 @@ const armRunHarness = new Function("game", "cameraReview", "document", "select",
     if (preserveZ) envelopeCalls++;
     if (bearingFit) { assert.equal(shoulder, true); assert.equal(preserveZ, false); assert.equal(bearingFit, "previous"); bearingCalls++; }
     return capture();
-  }, async (target, capture, previous) => { assert.ok(target === expectedDiagnosticTarget); assert.equal(previous, true); capCalls++; return capture(); });
+  }, async (target, capture, previous, faceNormals) => { assert.ok(target === expectedDiagnosticTarget); assert.equal(previous, !faceNormals); capCalls++; return capture(); });
 await armRunHarness.run(false, true);
 assert.equal(armRunState.error, null); assert.equal(armWaits, 13); assert.equal(armRunLinks.length, 13);
 assert.ok(armRunLinks.every(link => link.download.startsWith("forearm-")), "download names disclose the actual diagnostic scope");
@@ -1171,6 +1205,16 @@ armRunGame.players[0].id = "p1"; armRunView = "fighter"; expectedDiagnosticTarge
 await armRunHarness.run(true, false, false, true, "bearing-fit");
 assert.equal(armRunState.error, null); assert.equal(armWaits, 134); assert.equal(bearingCalls, 3, "whole-fighter trial swaps both bearings");
 assert.ok(armRunState.samples.every(sample => sample.diagnosticTarget.includes("both variant-1 shoulder bearings")));
+armRunView = "hand-shoulder"; expectedDiagnosticTarget = capRunTarget;
+await armRunHarness.run(true, false, false, true, "cap-normals");
+assert.equal(armRunState.error, null); assert.equal(armWaits, 143); assert.equal(capCalls, 3);
+assert.deepEqual(armRunState.samples.map(sample => sample.mode), ["baseline", "baseline", "baseline", "right-cap-face-normals", "right-cap-face-normals", "right-cap-face-normals", "restored", "restored", "restored"]);
+assert.ok(armRunState.samples.every(sample => sample.diagnosticTarget.startsWith("right static cap normals only")));
+assert.deepEqual(armRunModes, []);
+armRunView = "hand-shoulder-opposite";
+await armRunHarness.run(true, false, false, true, "cap-normals");
+assert.match(armRunState.error, /requires the right shoulder view/); assert.equal(armWaits, 143);
+assert.equal(armRunState.running, false); assert.equal(armRunState.shell, false); assert.equal(armRunHarness.offset(), .31);
 const geometryNormalToken = {}, colorOutputToken = {};
 const makeAOWrapper = new Function("mrt", "normalViewGeometry", "output", "geometryAONormals", "aoOutput", "vec3", "vec4", "depthAONormals", "legacyAONormals", "normalView", "materialBlendAONormals", "THREE", "recoverAONormals", "singleSampleAO", "emulateCompatibilityAO", `${aoWrapperSource}; return withAODiagnostics;`);
 const wrapAONormals = makeAOWrapper(value => value, geometryNormalToken, colorOutputToken, true, "final");
