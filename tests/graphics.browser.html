@@ -32,6 +32,7 @@
 <button id="shell-diagnosis">Diagnose helmet shell finish</button>
 <button id="shell-comparison">Compare capsule shell finish</button>
 <button id="arm-diagnosis">Diagnose forearm dark batch</button>
+<button id="arm-comparison">Compare forearm satin trial</button>
 <button id="boost-passage">Test boost passage</button>
 <button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
 <label><input id="follow-camera" type="checkbox" checked>Follow player camera</label>
@@ -690,14 +691,15 @@ select("camera-sequence").onclick = () => runCameraReview();
 select("boost-passage").onclick = () => runCameraReview(true);
 async function withHelmetShellDiagnostic(mode, capture, target = game.players[0].helmetShell ?? game.players[0].helmet) {
   if (mode === "baseline" || mode === "restored") return capture();
-  if (!["explicit-environment", "no-environment", "normals", "previous-finish"].includes(mode)) throw new Error("Unknown shell diagnostic mode");
+  if (!["explicit-environment", "no-environment", "normals", "previous-finish", "satin-trial"].includes(mode)) throw new Error("Unknown shell diagnostic mode");
   const helmet = target, original = helmet.material;
   const pipeline = game.renderPipeline.pipeline, originalOutput = pipeline.outputNode;
   const originalToneMapping = game.renderer.toneMapping;
   const temporary = mode === "normals" ? new THREE.MeshNormalMaterial({ side: original.side }) : original.clone();
   try {
-    if (mode === "previous-finish") {
-      temporary.roughness = .4; temporary.clearcoatRoughness = .2;
+    if (mode === "previous-finish" || mode === "satin-trial") {
+      temporary.roughness = mode === "satin-trial" ? .56 : .4;
+      temporary.clearcoatRoughness = mode === "satin-trial" ? .4 : .2;
     } else if (mode !== "normals") {
       // An intensity alone is ignored by pinned Three when material.envMap is null.
       temporary.envMap = game.scene.environment;
@@ -757,9 +759,9 @@ async function runShellReview(compareFinish = false, forearm = false) {
       throw new Error("Surface diagnosis needs a ready paused High matching view with the ordinary pipeline");
     if (game.combatVisuals.combatLights.some(light => light.intensity !== 0 || light.userData.life !== 0))
       throw new Error("Wait for all combat lights to expire before shell diagnosis");
-    if (compareFinish && (forearm || !game.players[0].helmetShell)) throw new Error("Select the capsule helmet for its finish comparison");
+    if (compareFinish && !forearm && !game.players[0].helmetShell) throw new Error("Select the capsule helmet for its finish comparison");
     for (const [control] of controls) control.disabled = true;
-    for (const mode of compareFinish ? ["baseline", "previous-finish", "restored"] : ["baseline", "explicit-environment", "no-environment", "normals", "restored"]) {
+    for (const mode of compareFinish ? ["baseline", forearm ? "satin-trial" : "previous-finish", "restored"] : ["baseline", "explicit-environment", "no-environment", "normals", "restored"]) {
       await withHelmetShellDiagnostic(mode, async () => {
         for (const offset of mode === "explicit-environment" ? [0] : forearm ? [-.04, 0, .04] : [-.16, 0, .16]) {
           cameraOffset = offset; game.updateCamera();
@@ -786,6 +788,7 @@ async function runShellReview(compareFinish = false, forearm = false) {
 select("shell-diagnosis").onclick = () => runShellReview();
 select("shell-comparison").onclick = () => runShellReview(true);
 select("arm-diagnosis").onclick = () => runShellReview(false, true);
+select("arm-comparison").onclick = () => runShellReview(true, true);
 async function runDecoyReview(crossTier = false, overlap = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   decoyReview.running = true; decoyReview.samples = []; decoyReview.error = null;

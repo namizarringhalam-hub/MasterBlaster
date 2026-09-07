@@ -488,7 +488,7 @@ const armDiagnosticProbe = new Fighter(new THREE.Scene(), { id: "arm-diagnostic"
 const armTarget = armDiagnosticProbe.rightForearm.children[2], armOriginal = armTarget.material;
 const armOriginalJSON = armOriginal.toJSON(), otherArmMaterials = new Map();
 armDiagnosticProbe.group.traverse(mesh => { if (mesh.isMesh && mesh !== armTarget) otherArmMaterials.set(mesh, mesh.material); });
-for (const mode of ["baseline", "explicit-environment", "no-environment", "normals", "restored"]) for (const fail of [false, true]) {
+for (const mode of ["baseline", "explicit-environment", "no-environment", "normals", "satin-trial", "restored"]) for (const fail of [false, true]) {
   let disposed = 0;
   const action = async () => {
     assert.ok(shellGame.players[0].helmetShell.material === shellOriginal, "forearm diagnosis must not replace the helmet material");
@@ -500,6 +500,12 @@ for (const mode of ["baseline", "explicit-environment", "no-environment", "norma
       assert.ok(armTarget.material !== armOriginal);
       armTarget.material.addEventListener("dispose", () => disposed++);
       if (mode === "normals") assert.equal(armTarget.material.isMeshNormalMaterial, true);
+      else if (mode === "satin-trial") {
+        assert.equal(armTarget.material.roughness, .56); assert.equal(armTarget.material.clearcoatRoughness, .4);
+        const trialJSON = armTarget.material.toJSON(), expectedJSON = { ...armOriginalJSON };
+        for (const key of ["uuid", "roughness", "clearcoatRoughness"]) { delete trialJSON[key]; delete expectedJSON[key]; }
+        assert.deepEqual(trialJSON, expectedJSON, "satin trial changes only two finish values, preserving full lighting and every other material property");
+      }
       else assert.equal(armTarget.material.envMapIntensity, mode === "no-environment" ? 0 : .82);
     }
     if (fail) throw new Error("deliberate arm capture failure");
@@ -554,7 +560,7 @@ assert.deepEqual(shellControlElements.map(control => control.disabled), [false, 
 const armRunState = { running: false }, armRunMaterial = {}, armRunTarget = { isMesh: true, material: armRunMaterial }, armRunLinks = [], armRunModes = [];
 const armRunControls = [{ disabled: false }, { disabled: true }];
 const armRunGame = { ...shellRunGame, paused: true, players: [{ darkMaterial: armRunMaterial, rightForearm: { children: [null, null, armRunTarget] } }] };
-let armRunView = "hand-side", armWaits = 0;
+let armRunView = "hand-side", armWaits = 0, expectedDiagnosticTarget = armRunTarget;
 const armRunHarness = new Function("game", "cameraReview", "document", "select", "waitForReviewFrame", "withHelmetShellDiagnostic", "shellReviewState", `
   const resetReview={}, cacheReview={}, decoyReview={}, resetPhase="ready", sceneSerial=1, errorCount=0, renderedFrames=0, aoOutput="final";
   let stress=false, cameraOffset=.31;
@@ -565,8 +571,8 @@ const armRunHarness = new Function("game", "cameraReview", "document", "select",
   id => id === "view" ? { value: armRunView } : { replaceChildren() { armRunLinks.length = 0; }, append(link) { armRunLinks.push(link); } },
   async () => { armWaits++; assert.equal(armRunState.shell, true, "freeze flag spans every forearm capture");
     assert.deepEqual(armRunControls.map(control => control.disabled), [true, true]); },
-  async (mode, action, target) => { assert.ok(target === armRunTarget); armRunModes.push(mode); await action(); },
-  target => { assert.ok(target === armRunTarget, "every sample records the material target actually overridden"); return { targetName: "actual forearm batch" }; });
+  async (mode, action, target) => { assert.ok(target === expectedDiagnosticTarget); armRunModes.push(mode); await action(); },
+  target => { assert.ok(target === expectedDiagnosticTarget, "every sample records the material target actually overridden"); return { targetName: "actual forearm batch" }; });
 await armRunHarness.run(false, true);
 assert.equal(armRunState.error, null); assert.equal(armWaits, 13); assert.equal(armRunLinks.length, 13);
 assert.ok(armRunLinks.every(link => link.download.startsWith("forearm-")), "download names disclose the actual diagnostic scope");
@@ -578,13 +584,27 @@ assert.equal(armRunHarness.offset(), .31); assert.equal(armRunState.running, fal
 assert.deepEqual(armRunControls.map(control => control.disabled), [false, true]);
 armRunView = "helmet-profile"; await armRunHarness.run(false, true);
 assert.match(armRunState.error, /matching view/); assert.equal(armWaits, 13, "wrong view cannot begin a forearm diagnostic");
-armRunView = "hand-side"; await armRunHarness.run(true, true);
-assert.match(armRunState.error, /capsule helmet/); assert.equal(armWaits, 13, "capsule finish comparison cannot accidentally target the forearm");
+armRunView = "hand-side"; armRunModes.length = 0; await armRunHarness.run(true, true);
+assert.equal(armRunState.error, null); assert.equal(armWaits, 22); assert.equal(armRunLinks.length, 9);
+assert.deepEqual(armRunModes, ["baseline", "satin-trial", "restored"], "forearm trial never applies the previous capsule finish");
+assert.deepEqual(armRunState.samples.map(sample => sample.offset), [-.04, 0, .04, -.04, 0, .04, -.04, 0, .04]);
+assert.ok(armRunState.samples.every(sample => sample.output === "final" && sample.diagnosticTarget.includes("elbow and fist")));
+assert.equal(armRunState.running, false); assert.equal(armRunState.shell, false); assert.equal(armRunHarness.offset(), .31);
+assert.deepEqual(armRunControls.map(control => control.disabled), [false, true]);
 armRunTarget.material = {};
 await armRunHarness.run(false, true);
 assert.match(armRunState.error, /forearm batch layout/, "a future child reorder must fail closed instead of silently diagnosing another surface");
-assert.equal(armWaits, 13);
+assert.equal(armWaits, 22);
 armRunTarget.material = armRunMaterial;
+armRunView = "helmet-profile"; expectedDiagnosticTarget = undefined; armRunModes.length = 0;
+await armRunHarness.run(true);
+assert.match(armRunState.error, /capsule helmet/); assert.equal(armWaits, 22, "original capsule comparison still rejects other helmets");
+armRunGame.players[0].helmetShell = {};
+await armRunHarness.run(true);
+assert.equal(armRunState.error, null); assert.equal(armWaits, 31); assert.equal(armRunLinks.length, 9);
+assert.deepEqual(armRunModes, ["baseline", "previous-finish", "restored"]);
+assert.deepEqual(armRunState.samples.map(sample => sample.offset), [-.16, 0, .16, -.16, 0, .16, -.16, 0, .16]);
+assert.ok(armRunLinks.every(link => link.download.startsWith("shell-")));
 const geometryNormalToken = {}, colorOutputToken = {};
 const makeAOWrapper = new Function("mrt", "normalViewGeometry", "output", "geometryAONormals", "aoOutput", "vec3", "vec4", "depthAONormals", "legacyAONormals", "normalView", "materialBlendAONormals", "THREE", "recoverAONormals", "singleSampleAO", "emulateCompatibilityAO", `${aoWrapperSource}; return withAODiagnostics;`);
 const wrapAONormals = makeAOWrapper(value => value, geometryNormalToken, colorOutputToken, true, "final");
