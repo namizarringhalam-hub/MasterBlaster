@@ -49,6 +49,9 @@
 <button id="landing-hard-sequence">Compare hard landing recovery</button>
 <button id="landing-contact">Compare landing foot contact</button>
 <button id="landing-hard-contact">Compare hard landing foot contact</button>
+<button id="landing-exit-grapple">Inspect landing grapple pose transition</button>
+<button id="landing-exit-move">Inspect landing movement transition</button>
+<button id="landing-exit-hit">Inspect landing hit-pose transition</button>
 <button id="landing-shot">Compare hard landing shot</button>
 <button id="muzzle-neutral">Compare neutral muzzle origin</button>
 <button id="muzzle-landing">Compare landing muzzle origin</button>
@@ -866,11 +869,22 @@ async function withTrailShading(entries, mode, capture) {
     return await capture();
   } finally { entries.forEach(({ trail }, i) => { [trail.geometry, trail.material] = originals[i]; }); }
 }
-async function runLandingReview(sequence = false, fallHeight = 0, shot = false, muzzle = null, contactReview = false) {
+function withLandingClock(time, update) {
+  const descriptor = Object.getOwnPropertyDescriptor(performance, "now");
+  try {
+    Object.defineProperty(performance, "now", { configurable: true, value: () => time });
+    return update();
+  } finally {
+    if (descriptor) Object.defineProperty(performance, "now", descriptor);
+    else delete performance.now;
+  }
+}
+async function runLandingReview(sequence = false, fallHeight = 0, shot = false, muzzle = null, contactReview = false, transition = null) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.landingFrames = []; cameraReview.error = null;
   select("camera-captures").replaceChildren();
   const serial = sceneSerial, initialErrors = errorCount, originalHero = game.players[0], originalVisible = originalHero.group.visible;
+  const initialCameraOffset = cameraOffset, initialHeroX = originalHero.position.x;
   let hero = originalHero;
   const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
   let shotState = null;
@@ -878,6 +892,12 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
   let trailShading = [], trailEdgeMaterials = [];
   let standingPose = null;
   cameraReview.standingReference = null;
+  cameraReview.transition = transition;
+  cameraReview.transitionKind = transition ? "pose-branch-control-before-update" : null;
+  let reviewStep = 0;
+  const stepHero = (move, actions) => transition
+    ? withLandingClock(1000 + reviewStep++ * 1000 / 60, () => hero.update(1 / 60, move, reviewAim, actions, game.world))
+    : hero.update(1 / 60, move, reviewAim, actions, game.world);
   const trailReview = muzzle?.endsWith("-tail"), shadeReview = muzzle?.endsWith("-shade"), edgeReview = muzzle?.endsWith("-edge"), followMuzzle = trailReview || shadeReview || edgeReview || muzzle?.endsWith("-follow"), neutralMuzzle = muzzle?.startsWith("neutral");
   const clearShot = () => {
     game.clearTransientNetworkCombat();
@@ -891,7 +911,7 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
       throw new Error("Landing comparison needs the ready paused lower-body landing view");
     controls.forEach(([control]) => { control.disabled = true; });
     if (shot && hero.weapon.id !== "blaster") throw new Error("Landing shot comparison requires Blaster");
-    if (muzzle) {
+    if (muzzle || transition) {
       hero = new Fighter(game.scene, { id: originalHero.id, name: originalHero.name, color: originalHero.color, accent: originalHero.accent },
         [...originalHero.loadout], originalHero.position.clone());
       hero.aim.copy(originalHero.aim); hero.group.rotation.set(0, Math.atan2(hero.aim.x, hero.aim.z), 0);
@@ -899,7 +919,7 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
     }
     if (shot) clearShot();
     const state = () => ({ fighterPosition: hero.position.toArray(), velocity: hero.velocity.toArray(), rigY: hero.rig.position.y,
-      rigScale: hero.rig.scale.toArray(), landTimer: hero.landTimer, landStrength: hero.landStrength,
+      rigScale: hero.rig.scale.toArray(), landTimer: hero.landTimer, landStrength: hero.landStrength, hitTimer: hero.hitTimer, reviewStep, cameraOffset, grounded: hero.grounded, grappled: Boolean(hero.grapple),
       floor: game.world.surfaceHeightAt(hero.position, hero.position.y + .35),
       logicalMuzzle: hero.muzzlePoint().toArray(), logicalProjectileOrigin: hero.forwardPoint(.08).toArray(),
       weaponMatrix: hero.weaponGroup.matrixWorld.toArray(),
@@ -918,6 +938,10 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
       const ready = renderedFrames + 4;
       await waitForReviewFrame(serial, () => renderedFrames >= ready);
       if (!game.paused || errorCount !== initialErrors || game.renderPipeline.direct) throw new Error("Landing comparison interrupted");
+      if (transition && game.camera) {
+        const subject = hero.position.clone().add(new THREE.Vector3(0, .5, 0)).project(game.camera);
+        if (Math.abs(subject.x) > 1 || Math.abs(subject.y) > 1 || Math.abs(subject.z) > 1) throw new Error("Transition subject left the review frame");
+      }
       const index = cameraReview.samples.length, link = document.createElement("a");
       link.textContent = `Camera frame ${index}`; link.download = `landing-${mode}.png`;
       link.href = document.querySelector("#game-canvas").toDataURL("image/png"); select("camera-captures").append(link, " ");
@@ -943,7 +967,7 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
     if (!sequence) await compare(null);
     else {
       hero.velocity.set(0, 0, 0);
-      for (let i = 0; i < 60; i++) hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
+      for (let i = 0; i < 60; i++) stepHero(stillMove, {});
       if (contactReview) {
         if (!hero.grounded || hero.landTimer !== 0 || Math.abs(hero.velocity.y) > 1e-8) throw new Error("Foot contact reference must be settled and grounded");
         standingPose = landingReference(hero); hero.group.updateMatrixWorld(true);
@@ -955,7 +979,11 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
       let landingFrame = -1;
       for (let i = 0; i < 240; i++) {
         const stepTime = performance.now();
-        hero.update(1 / 60, stillMove, reviewAim, { jump: !neutralMuzzle && !fallHeight && i === 0 }, game.world); hero.group.updateMatrixWorld(true);
+        if (transition === "grapple" && landingFrame === 6) hero.grapple = { anchor: hero.position.clone().add(new THREE.Vector3(4, 25, 0)) };
+        if (transition === "hit" && landingFrame === 6) hero.hitTimer = .3;
+        const move = transition === "move" && landingFrame >= 6 ? new THREE.Vector3(1, 0, 0) : stillMove;
+        stepHero(move, { jump: !neutralMuzzle && !fallHeight && i === 0 }); hero.group.updateMatrixWorld(true);
+        if (transition === "move") cameraOffset = initialCameraOffset + hero.position.x - initialHeroX;
         if (landingFrame < 0 && (neutralMuzzle || hero.landTimer > 0)) landingFrame = 0;
         if (landingFrame >= 0) {
           const baseline = state(), candidate = contactReview ? await withLandingContact(hero, standingPose, () => state())
@@ -992,7 +1020,10 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
             }
             break;
           }
-          if (!shot && [0, 2, 4, 6, 8, 10, 13, 21, 45].includes(landingFrame)) await compare(landingFrame);
+          const captureFrames = transition === "move" ? [5, 6, 7, 21, 22, 23, 24, 25, 45]
+            : transition === "hit" ? [5, 6, 8, 10, 11, 12, 13, 15, 45]
+              : transition ? [4, 5, 6, 7, 8, 10, 13, 21, 45] : [0, 2, 4, 6, 8, 10, 13, 21, 45];
+          if (!shot && captureFrames.includes(landingFrame)) await compare(landingFrame);
           if (landingFrame === 45) break;
           landingFrame++;
         }
@@ -1011,6 +1042,7 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
     }
     cameraReview.running = false; cameraReview.shell = false; controls.forEach(([control, disabled]) => { control.disabled = disabled; });
     if (hero !== originalHero) { hero.dispose(); game.players[0] = originalHero; originalHero.group.visible = originalVisible; }
+    cameraOffset = initialCameraOffset; game.updateCamera?.();
   }
 }
 select("landing-translation").onclick = () => runLandingReview();
@@ -1018,6 +1050,9 @@ select("landing-sequence").onclick = () => runLandingReview(true);
 select("landing-hard-sequence").onclick = () => runLandingReview(true, 8);
 select("landing-contact").onclick = () => runLandingReview(true, 0, false, null, true);
 select("landing-hard-contact").onclick = () => runLandingReview(true, 8, false, null, true);
+select("landing-exit-grapple").onclick = () => runLandingReview(true, 8, false, null, false, "grapple");
+select("landing-exit-move").onclick = () => runLandingReview(true, 8, false, null, false, "move");
+select("landing-exit-hit").onclick = () => runLandingReview(true, 8, false, null, false, "hit");
 select("landing-shot").onclick = () => runLandingReview(true, 8, true);
 select("muzzle-neutral").onclick = () => runLandingReview(true, 0, true, "neutral");
 select("muzzle-landing").onclick = () => runLandingReview(true, 8, true, "landing");
@@ -1582,7 +1617,7 @@ game.frame = time => {
         helmetMatrix: game.players[0].helmet?.matrixWorld.toArray() ?? null, visorMatrix: game.players[0].visor?.matrixWorld.toArray() ?? null } : null,
       grappleLines: game.scene.children.filter(object => object.isLine2).length,
       draws: game.renderer.info.render.drawCalls, triangles: game.renderer.info.render.triangles,
-      rope: grapple ? { anchor: grapple.anchor.toArray(), wraps: grapple.wraps?.map(point => point.toArray()) || [], segments: grapple.line.geometry.instanceCount,
+      rope: grapple?.line ? { anchor: grapple.anchor.toArray(), wraps: grapple.wraps?.map(point => point.toArray()) || [], segments: grapple.line.geometry.instanceCount,
         rendersThisFrame: ropeRenders - ropeRendersBefore, blending: grapple.line.material.blending } : null,
       thrusterSort: thrusterSortControl ? { mode: thrusterSortControl.mode, legacyZ: thrusterSortControl.legacyZ,
         modernZ: thrusterSortControl.modernZ, quadZ: thrusterSortControl.quadZ, order: [...thrusterRenderOrder] } : null,
@@ -1616,7 +1651,7 @@ game.frame = time => {
     aoRecoveryApplied: Boolean(game.renderPipeline.aoPass && game.renderPipeline.aoPass.normalNode !== null &&
       game.renderPipeline.aoPass.normalNode !== game.renderPipeline.scenePass.getTextureNode("normal")),
     ropeShader, ropeRender, canvasCapture,
-    grapple: game.players[0]?.grapple ? { anchor: game.players[0].grapple.anchor.toArray(), blending: game.players[0].grapple.line.material.blending } : null,
+    grapple: game.players[0]?.grapple ? { anchor: game.players[0].grapple.anchor.toArray(), blending: game.players[0].grapple.line?.material.blending ?? null } : null,
     aoGeometryApplied: game.renderPipeline.scenePass?.getMRT()?.outputNodes.normal === normalViewGeometry,
     aoDepthNormalsApplied: Boolean(game.renderPipeline.aoPass && game.renderPipeline.aoPass.normalNode === null),
     aoSettings: game.renderPipeline.aoPass ? {

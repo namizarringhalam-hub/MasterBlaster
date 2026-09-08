@@ -207,6 +207,33 @@ for (const reducedMotion of [false, true]) {
   }
   hero.dispose();
 }
+// The advancing-clock hit pose caught a floor-crossing regression missed by a fixed clock.
+{
+  let clock = 1000, landingFrame = -1, checked = false;
+  const plain = playerMergeSource.replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "");
+  const Type = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation", "performance",
+    `${plain}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation, { now: () => clock });
+  const p = new Type(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3(0, 15, 8));
+  const still = new THREE.Vector3(), aim = new THREE.Vector3(0, 0, -1);
+  const world = { resolve(position) { const grounded = position.y <= 15; if (grounded) position.y = 15; return { grounded }; }, boostAt: () => null };
+  try {
+    for (let step = 0; step < 60; step++) { clock = 1000 + step * 1000 / 60; p.update(1 / 60, still, aim, {}, world); }
+    p.position.y += 8; p.grounded = false;
+    for (let step = 60; step < 180; step++) {
+      clock = 1000 + step * 1000 / 60;
+      if (landingFrame === 6) p.hitTimer = .3;
+      p.update(1 / 60, still, aim, {}, world); p.group.updateMatrixWorld(true);
+      if (landingFrame < 0 && p.landTimer > 0) landingFrame = 0;
+      if (landingFrame === 13) {
+        checked = true;
+        for (const leg of [p.leftLeg, p.rightLeg]) assert.ok(new THREE.Box3().setFromObject(leg, true).min.y >= 15,
+          "advancing-clock hit frame 13 must not introduce the rejected pitch trial's floor crossing");
+      }
+      if (landingFrame >= 0) landingFrame++;
+    }
+    assert.ok(checked); assert.equal(p.landTimer, 0);
+  } finally { p.dispose(); }
+}
 const beforeBearingSource = playerMergeSource.replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "")
   .replace("const shoulderRadius = costumeVariant === 1 ? .16 : .18;", "const shoulderRadius = .18;");
 const BeforeBearingFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
@@ -743,6 +770,25 @@ const shadeTrail = new Function(`${landingDropSource}; return withTrailShading;`
 const landingReference = new Function(`${landingDropSource}; return landingReference;`)();
 const plantLanding = new Function("THREE", `${landingDropSource}; return withLandingContact;`)(THREE);
 {
+  const start = graphicsFixture.indexOf("    grapple: game.players[0]?.grapple ?");
+  const end = graphicsFixture.indexOf("    aoGeometryApplied:", start);
+  const readGrapple = new Function("game", `return ({${graphicsFixture.slice(start, end)}}).grapple;`);
+  const pose = { anchor: new THREE.Vector3(4, 40, 0) };
+  assert.deepEqual(readGrapple({ players: [{ grapple: pose }] }), { anchor: [4, 40, 0], blending: null });
+  pose.line = { material: { blending: THREE.AdditiveBlending } };
+  assert.equal(readGrapple({ players: [{ grapple: pose }] }).blending, THREE.AdditiveBlending);
+  assert.equal(readGrapple({ players: [{}] }), null);
+}
+const clockLanding = new Function(`${landingDropSource}; return withLandingClock;`)();
+{
+  const descriptor = Object.getOwnPropertyDescriptor(performance, "now"), nativeNow = performance.now;
+  for (const fail of [false, true]) {
+    const update = () => { assert.equal(performance.now(), 1234); if (fail) throw new Error("landing clock interrupted"); };
+    if (fail) assert.throws(() => clockLanding(1234, update), /landing clock interrupted/); else clockLanding(1234, update);
+    assert.equal(performance.now, nativeNow); assert.deepEqual(Object.getOwnPropertyDescriptor(performance, "now"), descriptor);
+  }
+}
+{
   const fighter = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3(8, 15, 8));
   fighter.rig.position.y = .012;
   fighter.leftLeg.rotation.z = .025; fighter.rightLeg.rotation.z = -.025;
@@ -905,14 +951,29 @@ for (const weaponId of Object.keys(WEAPONS)) {
     for (const entry of entries) for (const asset of [entry.control, entry.trial]) asset.addEventListener("dispose", () => shadingDisposals.push(asset.uuid));
     return entries;
   };
-  const run = new Function("THREE", "Fighter", "game", "cameraReview", "document", "select", "waitForReviewFrame", "shellReviewState", "withPreviousLandingDrop", "withTranslatedMuzzle", "withReversedTrail", "makeTrailShading", "withTrailShading", "withFrozenShaderTime", "makeTrailEdgeMaterials", "withTrailEdgeMaterials", "landingReference", "withLandingContact", `
-    const resetReview={},cacheReview={},decoyReview={},sceneSerial=1,errorCount=0,stress=false,resetPhase="ready",renderedFrames=0,stillMove=new THREE.Vector3(),reviewAim=new THREE.Vector3(0,0,-1);
+  const nativeNow = performance.now;
+  const run = new Function("THREE", "Fighter", "game", "cameraReview", "document", "select", "waitForReviewFrame", "shellReviewState", "withPreviousLandingDrop", "withTranslatedMuzzle", "withReversedTrail", "makeTrailShading", "withTrailShading", "withFrozenShaderTime", "makeTrailEdgeMaterials", "withTrailEdgeMaterials", "landingReference", "withLandingContact", "withLandingClock", `
+    const resetReview={},cacheReview={},decoyReview={},sceneSerial=1,errorCount=0,stress=false,resetPhase="ready",renderedFrames=0,stillMove=new THREE.Vector3(),reviewAim=new THREE.Vector3(0,0,-1); let cameraOffset=0;
     ${source};return runLandingReview;`)(THREE, Fighter, Object.assign(shotGame, { players: [hero], paused: true, renderPipeline: { direct: false }, world: {
       surfaceHeightAt: () => 15, resolve: position => { const grounded = position.y <= 15; if (grounded) position.y = 15; return { grounded }; }, boostAt: () => null } }), state,
     { querySelectorAll: () => controls, createElement: () => ({}), querySelector: () => ({ toDataURL: () => "data:image/png;base64,test" }) },
     name => name === "view" ? { value: "lower-body-side" } : name === "pose" ? { value: "landing" } : { replaceChildren: () => { links.length = 0; }, append: link => links.push(link) },
-    async () => { assert.equal(state.shell, true); assert.ok(controls.every(control => control.disabled)); if (interrupted && state.samples.length === 1) throw new Error("landing frame timeout"); },
-    () => ({}), removeLandingDrop, translateMuzzle, reverseTrail, trackedShading, shadeTrail, freezeShaderTime, trackedEdges, fadeTrail, landingReference, plantLanding);
+    async () => { assert.equal(performance.now, nativeNow); assert.equal(state.shell, true); assert.ok(controls.every(control => control.disabled)); if (interrupted && state.samples.length === 1) throw new Error("landing frame timeout"); },
+    () => ({}), removeLandingDrop, translateMuzzle, reverseTrail, trackedShading, shadeTrail, freezeShaderTime, trackedEdges, fadeTrail, landingReference, plantLanding, clockLanding);
+  for (const transition of ["grapple", "move", "hit"]) {
+    await run(true, 8, false, null, false, transition);
+    assert.equal(state.error, null); assert.equal(state.samples.length, 27); assert.equal(state.landingFrames.length, 46);
+    assert.equal(shotGame.players[0], hero); assert.equal(hero.group.visible, true);
+    assert.equal(state.transitionKind, "pose-branch-control-before-update");
+    assert.equal(state.landingFrames[5].baseline.grappled, false);
+    assert.equal(state.landingFrames[6].baseline.grappled, transition === "grapple");
+    if (transition === "hit") assert.ok(state.landingFrames[6].baseline.hitTimer > 0);
+    if (transition === "move") for (const sample of state.samples) assert.ok(Math.abs(sample.cameraOffset - sample.fighterPosition[0] + hero.position.x) < 1e-12);
+    assert.ok(state.samples.every(sample => sample.reviewStep > 60));
+    interrupted = true; await run(true, 8, false, null, false, transition);
+    assert.match(state.error, /landing frame timeout/); assert.equal(shotGame.players[0], hero); assert.equal(hero.group.visible, true);
+    assert.equal(performance.now, nativeNow); interrupted = false;
+  }
   await run(); assert.equal(state.error, null); assert.equal(links.length, 3);
   assert.deepEqual(state.samples.map(sample => sample.mode), ["current", "previous-drop", "current-restored"]);
   assert.equal(state.samples[0].rigY, state.samples[2].rigY); assert.ok(state.samples[1].rigY < state.samples[0].rigY);
