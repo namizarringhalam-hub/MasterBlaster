@@ -33,6 +33,7 @@
 <button id="camera-sequence">Capture moving-camera sequence</button><span id="camera-captures"></span>
 <button id="shell-diagnosis">Diagnose helmet shell finish</button>
 <button id="shell-comparison">Compare capsule shell finish</button>
+<button id="knee-comparison">Compare contained knee taper</button>
 <button id="arm-diagnosis">Diagnose elbow finish</button>
 <button id="shoulder-diagnosis">Diagnose shoulder and upper arm</button>
 <button id="shoulder-comparison">Check shoulder finish restoration</button>
@@ -78,6 +79,7 @@ import { materialOpacity, mrt, normalView, normalViewGeometry, output, positionV
 import { WEAPONS, MAP_THEMES, seedFromText } from "../src/gameData.js";
 import { Fighter } from "../src/player.js";
 import { shoulderChamferGeometry } from "./shoulderChamferGeometry.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { ArenaWorld } from "../src/world.js";
 import { CombatVisuals } from "../src/combatVisuals.js";
 import { NeonRenderPipeline, recoverInvalidAONormals } from "../src/renderPipeline.js";
@@ -1314,6 +1316,46 @@ function shellReviewState(target = game.players[0].helmetShell ?? game.players[0
     effects: { projectiles: game.projectiles.length, hazards: game.hazards.length, decoys: game.decoys.length, effects: game.effects.length },
     exposure: game.renderer.toneMappingExposure, toneMapping: game.renderer.toneMapping };
 }
+async function withPreviousKnees(hero, capture) {
+  const knees = [hero.leftLeg.children[2], hero.rightLeg.children[2]];
+  if (knees.some(knee => !knee?.isMesh || knee.position.y !== -.39 || knee.position.z !== .23) || knees[0].geometry !== knees[1].geometry)
+    throw new Error("Unexpected knee layout; update diagnostic before capturing");
+  const original = knees[0].geometry, trial = new RoundedBoxGeometry(.29, .18, .13, 1, .0182);
+  try { for (const knee of knees) knee.geometry = trial; await capture(); }
+  finally { for (const knee of knees) knee.geometry = original; trial.dispose(); }
+}
+select("knee-comparison").onclick = async () => {
+  if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
+  cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.error = null;
+  const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
+  const serial = sceneSerial, initialErrors = errorCount;
+  select("camera-captures").replaceChildren();
+  try {
+    if (stress || !game.paused || resetPhase !== "ready" || !["fighter", "lower-body-front", "lower-body-side"].includes(select("view").value))
+      throw new Error("Knee comparison needs a ready paused fighter or lower-body view");
+    for (const [control] of controls) control.disabled = true;
+    const capture = async mode => {
+      const frame = renderedFrames + 4;
+      await waitForReviewFrame(serial, () => renderedFrames >= frame);
+      if (!game.paused || errorCount !== initialErrors || game.renderPipeline.direct) throw new Error("Knee comparison interrupted or renderer failed");
+      const index = cameraReview.samples.length, link = document.createElement("a");
+      link.textContent = `Camera frame ${index}`; link.download = `knee-${mode}.png`;
+      link.href = document.querySelector("#game-canvas").toDataURL("image/png");
+      select("camera-captures").append(link, " ");
+      cameraReview.samples.push({ index, mode, view: select("view").value, pose: select("pose").value,
+        ...shellReviewState(game.players[0].leftLeg.children[2]), errorCount, directFallback: game.renderPipeline.direct });
+    };
+    await withFrozenShaderTime(async () => {
+      await capture("integrated-taper");
+      await withPreviousKnees(game.players[0], () => capture("previous-rounded"));
+      await capture("restored");
+    });
+  } catch (error) { cameraReview.error = String(error); }
+  finally {
+    cameraReview.running = false; cameraReview.shell = false;
+    for (const [control, disabled] of controls) control.disabled = disabled;
+  }
+};
 async function runShellReview(compareFinish = false, forearm = false, elbowSilhouette = false, shoulder = false, shoulderSilhouette = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.error = null;

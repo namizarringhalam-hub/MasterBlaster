@@ -8,6 +8,34 @@ const clamp = THREE.MathUtils.clamp;
 export const PROJECTILE_SPAWN_OFFSET = .08;
 const roundedParts = new Map();
 
+export function kneeTaperGeometry(original) {
+  const geometry = new THREE.BufferGeometry().copy(original);
+  geometry.userData = {};
+  const positions = geometry.getAttribute("position"), normals = geometry.getAttribute("normal");
+  const slope = (1 - .22 / .29) / .18, normal = new THREE.Vector3();
+  for (let i = 0; i < positions.count; i++) {
+    const x = positions.getX(i), y = positions.getY(i), scale = 1 + slope * (y - .09);
+    positions.setX(i, x * scale);
+    // Inverse-transpose preserves the rounded bevels under the varying X scale.
+    normal.set(normals.getX(i) / scale,
+      normals.getY(i) - slope * x * normals.getX(i) / scale, normals.getZ(i)).normalize();
+    normals.setXYZ(i, normal.x, normal.y, normal.z);
+  }
+  geometry.computeBoundingBox(); geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function kneeGeometry() {
+  if (!roundedParts.has("knee-taper")) {
+    const source = new RoundedBoxGeometry(.29, .18, .13, 1, .0182);
+    const geometry = kneeTaperGeometry(source);
+    source.dispose();
+    geometry.userData.sharedFighterGeometry = true;
+    roundedParts.set("knee-taper", geometry);
+  }
+  return roundedParts.get("knee-taper");
+}
+
 function disposeGeometry(geometry) {
   if (!geometry?.userData?.sharedFighterGeometry) geometry?.dispose();
 }
@@ -343,8 +371,8 @@ export class Fighter {
     this.rightLeg = limb(new THREE.BoxGeometry(.3, .78, .34), dark, .23, .82, 0);
     this.leftLeg.add(part(new THREE.BoxGeometry(.255, .4, .39), armor, 0, -.54, .035));
     this.rightLeg.add(part(new THREE.BoxGeometry(.255, .4, .39), armor, 0, -.54, .035));
-    const leftKnee = part(new THREE.BoxGeometry(.29, .18, .13), accent, 0, -.39, .23, false);
-    const rightKnee = part(new THREE.BoxGeometry(.29, .18, .13), accent, 0, -.39, .23, false);
+    const leftKnee = part(kneeGeometry(), accent, 0, -.39, .23, false);
+    const rightKnee = part(kneeGeometry(), accent, 0, -.39, .23, false);
     this.leftLeg.add(leftKnee);
     this.rightLeg.add(rightKnee);
     const shoulderGeometry = costumeVariant === 1

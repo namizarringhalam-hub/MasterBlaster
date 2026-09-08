@@ -4,7 +4,7 @@ import { getCurrentStack, getNormalFromDepth, materialOpacity, normalView, norma
 import NodeMaterialObserver from "../node_modules/three/src/materials/nodes/manager/NodeMaterialObserver.js";
 import WebGPUPipelineUtils from "../node_modules/three/src/renderers/webgpu/utils/WebGPUPipelineUtils.js";
 import { ArenaWorld, structuralPanelGeometry, structuralRouteGeometry } from "../src/world.js";
-import { Fighter } from "../src/player.js";
+import { Fighter, kneeTaperGeometry } from "../src/player.js";
 import { graphicsProfile, swapStolenWeapon, WEAPONS } from "../src/gameData.js";
 import { CombatVisuals } from "../src/combatVisuals.js";
 import { NeonRenderPipeline, recoverInvalidAONormals } from "../src/renderPipeline.js";
@@ -16,10 +16,84 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { weaponUsesAmmo } from "../src/gameData.js";
 import { weaponPresentation } from "../src/weaponPresentation.js";
 import { shoulderChamferGeometry } from "./shoulderChamferGeometry.js";
+import { ConvexHull } from "three/addons/math/ConvexHull.js";
+
+{
+  const original = new RoundedBoxGeometry(.29, .18, .13, 1, .0182);
+  const before = original.attributes.position.array.slice(), normalBefore = original.attributes.normal.array.slice();
+  const trial = kneeTaperGeometry(original), points = [];
+  for (let i = 0; i < original.attributes.position.count; i++) points.push(new THREE.Vector3().fromBufferAttribute(original.attributes.position, i));
+  const hull = new ConvexHull().setFromPoints(points), point = new THREE.Vector3(), normal = new THREE.Vector3();
+  let changed = 0;
+  for (let i = 0; i < trial.attributes.position.count; i++) {
+    point.fromBufferAttribute(trial.attributes.position, i);
+    assert.ok(hull.faces.every(face => face.distanceToPoint(point) <= 2e-8), "taper remains inside original hull within Float32 precision");
+    assert.equal(point.y, original.attributes.position.getY(i));
+    assert.equal(point.z, original.attributes.position.getZ(i));
+    normal.fromBufferAttribute(trial.attributes.normal, i);
+    assert.ok(Math.abs(normal.length() - 1) < 1e-7, "transformed rounded normal remains normalized");
+    const old = points[i], slope = (1 - .22 / .29) / .18, scale = 1 + slope * (old.y - .09);
+    assert.ok(Math.abs(point.x - old.x * scale) < 1e-8, "authored taper width is applied");
+    const expected = new THREE.Vector3().fromBufferAttribute(original.attributes.normal, i);
+    expected.set(expected.x / scale, expected.y - slope * old.x * expected.x / scale, expected.z).normalize();
+    assert.ok(normal.distanceTo(expected) < 1e-7, "smooth normals follow the taper Jacobian");
+    if (point.x !== old.x) changed++;
+  }
+  assert.ok(changed > 250, "identity geometry cannot pass the taper test");
+  assert.deepEqual(original.attributes.position.array, before);
+  assert.deepEqual(original.attributes.normal.array, normalBefore);
+  assert.deepEqual(trial.attributes.uv.array, original.attributes.uv.array);
+  assert.equal(trial.attributes.position.count, original.attributes.position.count);
+  assert.equal(trial.userData.sharedFighterGeometry, undefined);
+  trial.dispose(); original.dispose();
+}
+
+{
+  const fixture = readFileSync(new URL("./graphics.browser.html", import.meta.url), "utf8");
+  const source = fixture.slice(fixture.indexOf("async function withPreviousKnees("), fixture.indexOf('select("knee-comparison").onclick'));
+  const run = new Function("RoundedBoxGeometry", `${source}; return withPreviousKnees;`)(RoundedBoxGeometry);
+  const original = new RoundedBoxGeometry(.29, .18, .13, 1, .0182);
+  const knees = [new THREE.Mesh(original), new THREE.Mesh(original)];
+  for (const knee of knees) knee.position.set(0, -.39, .23);
+  const hero = { leftLeg: { children: [null, null, knees[0]] }, rightLeg: { children: [null, null, knees[1]] } };
+  let originalDisposals = 0;
+  original.addEventListener("dispose", () => originalDisposals++);
+  for (const fail of [false, true]) {
+    let trialDisposals = 0;
+    const capture = async () => {
+      assert.ok(knees[0].geometry !== original);
+      assert.ok(knees[0].geometry === knees[1].geometry, "both knees share one owned trial");
+      knees[0].geometry.addEventListener("dispose", () => trialDisposals++);
+      if (fail) throw new Error("capture interrupted");
+    };
+    if (fail) await assert.rejects(run(hero, capture), /capture interrupted/); else await run(hero, capture);
+    assert.ok(knees.every(knee => knee.geometry === original), "both originals restored");
+    assert.equal(trialDisposals, 1); assert.equal(originalDisposals, 0);
+  }
+  original.dispose();
+}
 
 // Execute the previous clone path against the same complete fighter/weapon builder.
 // Only the three transient merge copies differ; no frozen art data to maintain.
 const playerMergeSource = readFileSync(new URL("../src/player.js", import.meta.url), "utf8");
+{
+  const original = new RoundedBoxGeometry(.29, .18, .13, 1, .0182), expected = kneeTaperGeometry(original);
+  const fighters = Array.from({ length: 16 }, (_, i) => new Fighter(new THREE.Scene(), { id: `knee-${i}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3()));
+  const shared = fighters[0].leftLeg.children[2].geometry;
+  let disposals = 0; const onDispose = () => disposals++;
+  shared.addEventListener("dispose", onDispose);
+  for (const fighter of fighters) {
+    for (const leg of [fighter.leftLeg, fighter.rightLeg]) {
+      assert.ok(leg.children[2].geometry === shared, "all 32 knees reuse one immutable geometry");
+      assert.deepEqual(leg.children[2].position.toArray(), [0, -.39, .23]);
+    }
+    fighter.dispose();
+  }
+  assert.equal(disposals, 0, "fighter disposal cannot destroy shared knees");
+  assert.equal(shared.userData.sharedFighterGeometry, true);
+  for (const name of ["position", "normal", "uv"]) assert.deepEqual(shared.attributes[name].array, expected.attributes[name].array);
+  shared.removeEventListener("dispose", onDispose); expected.dispose(); original.dispose();
+}
 {
   const effects = new CombatVisuals(new THREE.Scene());
   for (const weapon of Object.values(WEAPONS)) {
