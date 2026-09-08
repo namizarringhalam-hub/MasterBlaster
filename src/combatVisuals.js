@@ -317,7 +317,15 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
   );
 
   const trailParts = group.children.filter((mesh) => mesh.userData.trail);
-  if (weapon.id === "blaster") for (const trail of trailParts) trail.rotation.x = -Math.PI / 2;
+  if (weapon.id === "blaster") for (const trail of trailParts) {
+    trail.rotation.x = -Math.PI / 2;
+    if (!trail.geometry.getAttribute("color")) {
+      const uv = trail.geometry.getAttribute("uv"), colors = new Float32Array(uv.count * 3);
+      for (let i = 0; i < uv.count; i++) colors.fill(1 - uv.getY(i), i * 3, i * 3 + 3);
+      trail.geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    }
+    trail.material.vertexColors = true;
+  }
   group.userData.combatVisual = {
     family, profile,
     time: 0,
