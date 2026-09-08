@@ -9,7 +9,7 @@
 <nav style="position:fixed;z-index:100;inset:auto 0 0;background:#07111def;padding:8px;display:flex;gap:8px;flex-wrap:wrap;font:12px monospace">
 <label>Tier <select id="tier"><option>high</option><option>medium</option><option>low</option></select></label>
 <label>Theme <select id="seed"><option>BLAST-01</option><option>SOLAR-01</option><option>ION-01</option></select></label>
-<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>muzzle-whole</option><option>muzzle-side</option><option>muzzle-rear</option><option>muzzle-distant</option><option>lower-body-front</option><option>lower-body-side</option><option>helmet-three-quarter</option><option>helmet-profile</option><option>thrusters</option><option>weapon</option><option>hand-front</option><option>hand-side</option><option>hand-opposite</option><option>hand-palm</option><option>hand-shoulder</option><option>hand-shoulder-opposite</option><option>hand-shoulder-oblique</option><option>player-camera</option><option>effects</option><option>rope-corner</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option><option>boost-top</option><option>boost-side</option><option>boost-raised</option></select></label>
+<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>muzzle-whole</option><option>muzzle-side</option><option>muzzle-rear</option><option>muzzle-distant</option><option>muzzle-shallow-front</option><option>muzzle-shallow-rear</option><option>muzzle-shallow-distant</option><option>lower-body-front</option><option>lower-body-side</option><option>helmet-three-quarter</option><option>helmet-profile</option><option>thrusters</option><option>weapon</option><option>hand-front</option><option>hand-side</option><option>hand-opposite</option><option>hand-palm</option><option>hand-shoulder</option><option>hand-shoulder-opposite</option><option>hand-shoulder-oblique</option><option>player-camera</option><option>effects</option><option>rope-corner</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option><option>boost-top</option><option>boost-side</option><option>boost-raised</option></select></label>
 <label>Weapon <select id="weapon"></select></label>
 <label>Pose <select id="pose"><option>aim</option><option>reload</option><option>reacquire-early</option><option>reacquire-complete</option><option>fire</option><option>gait-positive</option><option>gait-negative</option><option>landing</option></select></label>
 <label>Helmet variant <select id="costume"><option value="">Current player</option><option value="0">0 · Dodecahedral</option><option value="1">1 · Round</option><option value="2">2 · Capsule</option><option value="3">3 · Faceted</option></select></label>
@@ -56,6 +56,8 @@
 <button id="trail-landing">Compare landing trail taper</button>
 <button id="trail-shade-neutral">Compare neutral trail shading</button>
 <button id="trail-shade-landing">Compare landing trail shading</button>
+<button id="trail-edge-neutral">Compare neutral trail edge fade</button>
+<button id="trail-edge-landing">Compare landing trail edge fade</button>
 <button id="arm-comparison">Check elbow finish restoration</button>
 <button id="elbow-comparison">Compare elbow silhouette</button>
 <button id="boost-passage">Test boost passage</button>
@@ -67,7 +69,7 @@
 // Development-only visual review surface; it uses the production controller,
 // assets and renderer. No test instrumentation is included in the client build.
 import * as THREE from "three/webgpu";
-import { mrt, normalView, normalViewGeometry, output, time as shaderTime, uniform, vec3, vec4 } from "three/tsl";
+import { materialOpacity, mrt, normalView, normalViewGeometry, output, positionViewDirection, time as shaderTime, uniform, vec3, vec4 } from "three/tsl";
 import { WEAPONS, MAP_THEMES, seedFromText } from "../src/gameData.js";
 import { Fighter } from "../src/player.js";
 import { shoulderChamferGeometry } from "./shoulderChamferGeometry.js";
@@ -577,6 +579,9 @@ function setView() {
     "muzzle-side": [[10.8, 16.5, 7.2], [7.6, 16.3, 7.2]],
     "muzzle-rear": [[11.5, 17.3, 11.5], [8, 16.35, 7.2]],
     "muzzle-distant": [[18, 20, 22], [8, 16.35, 5]],
+    "muzzle-shallow-front": [[10.68, 16.4, -2], [8, 16.35, 8]],
+    "muzzle-shallow-rear": [[10.68, 16.4, 18], [8, 16.35, 8]],
+    "muzzle-shallow-distant": [[13.36, 16.8, 28], [8, 16.35, 8]],
     "lower-body-front": [[hero.position.x + .9, hero.position.y + .64, hero.position.z - 1.2], [hero.position.x, hero.position.y + .54, hero.position.z]],
     "lower-body-side": [[hero.position.x + 1.5, hero.position.y + .64, hero.position.z], [hero.position.x, hero.position.y + .54, hero.position.z]],
     weapon: [[1.8, 16.9, 6.1], [.4, 16.4, 8.7]], effects: [[7, 19, 17], [0, 16, 8]],
@@ -796,6 +801,20 @@ async function withReversedTrail(projectile, capture) {
     return await capture();
   } finally { trails.forEach((trail, i) => { trail.quaternion.copy(rotations[i]); trail.updateWorldMatrix(true, false); }); }
 }
+function makeTrailEdgeMaterials(projectile) {
+  return (projectile.mesh.userData.combatVisual?.trailParts || []).map(trail => {
+    const control = new THREE.MeshBasicNodeMaterial().copy(trail.material), trial = control.clone();
+    trial.opacityNode = materialOpacity.mul(normalViewGeometry.dot(positionViewDirection).abs().smoothstep(0, .35).mul(.8).add(.2));
+    return { trail, control, trial };
+  });
+}
+async function withTrailEdgeMaterials(entries, mode, capture) {
+  const originals = entries.map(({ trail }) => trail.material);
+  try {
+    entries.forEach(entry => { entry[mode].opacity = entry.trail.material.opacity; entry.trail.material = entry[mode]; });
+    return await capture();
+  } finally { entries.forEach(({ trail }, i) => { trail.material = originals[i]; }); }
+}
 async function withFrozenShaderTime(capture) {
   const update = shaderTime.update;
   shaderTime.update = () => {};
@@ -831,8 +850,8 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
   const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
   let shotState = null;
   let muzzleEvent = null, muzzleDelta = null;
-  let trailShading = [];
-  const trailReview = muzzle?.endsWith("-tail"), shadeReview = muzzle?.endsWith("-shade"), followMuzzle = trailReview || shadeReview || muzzle?.endsWith("-follow"), neutralMuzzle = muzzle?.startsWith("neutral");
+  let trailShading = [], trailEdgeMaterials = [];
+  const trailReview = muzzle?.endsWith("-tail"), shadeReview = muzzle?.endsWith("-shade"), edgeReview = muzzle?.endsWith("-edge"), followMuzzle = trailReview || shadeReview || edgeReview || muzzle?.endsWith("-follow"), neutralMuzzle = muzzle?.startsWith("neutral");
   const clearShot = () => {
     game.clearTransientNetworkCombat();
     const effects = game.combatVisuals;
@@ -881,7 +900,10 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
     const compare = async landingFrame => withFrozenShaderTime(async () => {
       if (followMuzzle) muzzleDelta = muzzleEvent.initialPositions[0].clone().sub(muzzleEvent.flash.position);
       await capture("current", 0, landingFrame);
-      if (shadeReview) {
+      if (edgeReview) {
+        await withTrailEdgeMaterials(trailEdgeMaterials, "control", () => capture("node-material-control", 0, landingFrame));
+        await withTrailEdgeMaterials(trailEdgeMaterials, "trial", () => capture("edge-trial", 0, landingFrame));
+      } else if (shadeReview) {
         await withTrailShading(trailShading, "white", () => capture("white-vertex-control", 0, landingFrame));
         await withTrailShading(trailShading, "gradient", () => capture("gradient-trial", 0, landingFrame));
       } else if (trailReview) await withReversedTrail(game.projectiles[0], () => capture("reversed-tail", 0, landingFrame));
@@ -911,6 +933,7 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
             game.tryFire(hero, true, false); game.combatVisuals.update(0);
             if (game.projectiles.length !== 1) throw new Error("Landing shot did not create one projectile");
             if (shadeReview) trailShading = makeTrailShading(game.projectiles[0]);
+            if (edgeReview) trailEdgeMaterials = makeTrailEdgeMaterials(game.projectiles[0]);
             if (muzzle) {
               const effects = game.combatVisuals;
               if (new THREE.Vector3(0, 0, 1).transformDirection(hero.weaponGroup.matrixWorld).dot(hero.aim) < .95)
@@ -929,7 +952,7 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
                 game.updateProjectiles(1 / 60); game.combatVisuals.update(1 / 60);
               }
               // Ordinary projectiles receive their heading in the first real update.
-              if (!followMuzzle || (trailReview || shadeReview ? shotFrame >= 1 && shotFrame <= 9 : shotFrame <= 8) || [12, 18, 30].includes(shotFrame)) await compare(landingFrame);
+              if (!followMuzzle || (trailReview || shadeReview || edgeReview ? shotFrame >= 1 && shotFrame <= 9 : shotFrame <= 8) || [12, 18, 30].includes(shotFrame)) await compare(landingFrame);
             }
             break;
           }
@@ -938,10 +961,11 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
           landingFrame++;
         }
       }
-      if (shot ? cameraReview.samples.length !== (shadeReview ? 48 : followMuzzle ? 36 : muzzle ? 27 : 9) : cameraReview.landingFrames.length !== 46 || hero.landTimer !== 0) throw new Error("Landing recovery did not complete within 240 frames");
+      if (shot ? cameraReview.samples.length !== (shadeReview || edgeReview ? 48 : followMuzzle ? 36 : muzzle ? 27 : 9) : cameraReview.landingFrames.length !== 46 || hero.landTimer !== 0) throw new Error("Landing recovery did not complete within 240 frames");
     }
   } catch (error) { cameraReview.error = String(error); }
   finally {
+    for (const entry of trailEdgeMaterials) { entry.control.dispose(); entry.trial.dispose(); }
     for (const entry of trailShading) { entry.white.dispose(); entry.gradient.dispose(); entry.material.dispose(); }
     if (shot) {
       clearShot();
@@ -965,6 +989,8 @@ select("trail-neutral").onclick = () => runLandingReview(true, 0, true, "neutral
 select("trail-landing").onclick = () => runLandingReview(true, 8, true, "landing-tail");
 select("trail-shade-neutral").onclick = () => runLandingReview(true, 0, true, "neutral-shade");
 select("trail-shade-landing").onclick = () => runLandingReview(true, 8, true, "landing-shade");
+select("trail-edge-neutral").onclick = () => runLandingReview(true, 0, true, "neutral-edge");
+select("trail-edge-landing").onclick = () => runLandingReview(true, 8, true, "landing-edge");
 async function runCameraReview(boostPassage = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cameraReview.running = true; cameraReview.samples = []; cameraReview.error = null;

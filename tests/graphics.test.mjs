@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import * as THREE from "three/webgpu";
-import { getCurrentStack, getNormalFromDepth, materialOpacity, normalView, setCurrentStack, stack, time as shaderTime, uniform, vec2, vec4 } from "three/tsl";
+import { getCurrentStack, getNormalFromDepth, materialOpacity, normalView, normalViewGeometry, positionViewDirection, setCurrentStack, stack, time as shaderTime, uniform, vec2, vec4 } from "three/tsl";
 import NodeMaterialObserver from "../node_modules/three/src/materials/nodes/manager/NodeMaterialObserver.js";
 import WebGPUPipelineUtils from "../node_modules/three/src/renderers/webgpu/utils/WebGPUPipelineUtils.js";
 import { ArenaWorld, structuralPanelGeometry, structuralRouteGeometry } from "../src/world.js";
@@ -740,6 +740,29 @@ const translateMuzzle = new Function(`${landingDropSource}; return withTranslate
 const reverseTrail = new Function(`${landingDropSource}; return withReversedTrail;`)();
 const makeTrailShading = new Function("THREE", `${landingDropSource}; return makeTrailShading;`)(THREE);
 const shadeTrail = new Function(`${landingDropSource}; return withTrailShading;`)();
+const makeTrailEdgeMaterials = new Function("THREE", "materialOpacity", "normalViewGeometry", "positionViewDirection", `${landingDropSource}; return makeTrailEdgeMaterials;`)(THREE, materialOpacity, normalViewGeometry, positionViewDirection);
+const fadeTrail = new Function(`${landingDropSource}; return withTrailEdgeMaterials;`)();
+{
+  const effects = new CombatVisuals(new THREE.Scene()), mesh = effects.createProjectile({ accent: 0xff3388 }, WEAPONS.blaster, .11);
+  const entries = makeTrailEdgeMaterials({ mesh }); assert.equal(entries.length, 1);
+  const { trail, control, trial } = entries[0], geometry = trail.geometry, material = trail.material;
+  assert.equal(control.opacityNode, null); assert.ok(trial.opacityNode?.isNode);
+  for (const candidate of [control, trial]) {
+    for (const field of ["transparent", "blending", "depthWrite", "toneMapped", "vertexColors", "side"]) assert.equal(candidate[field], material[field]);
+    assert.ok(candidate.color.equals(material.color));
+  }
+  for (const mode of ["control", "trial"]) for (const fail of [false, true]) {
+    material.opacity = .17;
+    const capture = async () => {
+      assert.equal(trail.geometry, geometry); assert.equal(trail.material, entries[0][mode]); assert.equal(trail.material.opacity, .17);
+      if (fail) throw new Error("edge capture interrupted");
+    };
+    if (fail) await assert.rejects(fadeTrail(entries, mode, capture), /edge capture interrupted/);
+    else await fadeTrail(entries, mode, capture);
+    assert.equal(trail.material, material); assert.equal(trail.geometry, geometry);
+  }
+  control.dispose(); trial.dispose(); mesh.traverse(child => child.material?.dispose()); effects.dispose();
+}
 const freezeShaderTime = new Function("shaderTime", `${landingDropSource}; return withFrozenShaderTime;`)(shaderTime);
 for (const fail of [false, true]) {
   const update = shaderTime.update;
@@ -847,14 +870,19 @@ for (const weaponId of Object.keys(WEAPONS)) {
     for (const entry of entries) for (const asset of [entry.white, entry.gradient, entry.material]) asset.addEventListener("dispose", () => shadingDisposals.push(asset.uuid));
     return entries;
   };
-  const run = new Function("THREE", "Fighter", "game", "cameraReview", "document", "select", "waitForReviewFrame", "shellReviewState", "withPreviousLandingDrop", "withTranslatedMuzzle", "withReversedTrail", "makeTrailShading", "withTrailShading", "withFrozenShaderTime", `
+  const trackedEdges = projectile => {
+    const entries = makeTrailEdgeMaterials(projectile);
+    for (const entry of entries) for (const asset of [entry.control, entry.trial]) asset.addEventListener("dispose", () => shadingDisposals.push(asset.uuid));
+    return entries;
+  };
+  const run = new Function("THREE", "Fighter", "game", "cameraReview", "document", "select", "waitForReviewFrame", "shellReviewState", "withPreviousLandingDrop", "withTranslatedMuzzle", "withReversedTrail", "makeTrailShading", "withTrailShading", "withFrozenShaderTime", "makeTrailEdgeMaterials", "withTrailEdgeMaterials", `
     const resetReview={},cacheReview={},decoyReview={},sceneSerial=1,errorCount=0,stress=false,resetPhase="ready",renderedFrames=0,stillMove=new THREE.Vector3(),reviewAim=new THREE.Vector3(0,0,-1);
     ${source};return runLandingReview;`)(THREE, Fighter, Object.assign(shotGame, { players: [hero], paused: true, renderPipeline: { direct: false }, world: {
       surfaceHeightAt: () => 15, resolve: position => { const grounded = position.y <= 15; if (grounded) position.y = 15; return { grounded }; }, boostAt: () => null } }), state,
     { querySelectorAll: () => controls, createElement: () => ({}), querySelector: () => ({ toDataURL: () => "data:image/png;base64,test" }) },
     name => name === "view" ? { value: "lower-body-side" } : name === "pose" ? { value: "landing" } : { replaceChildren: () => { links.length = 0; }, append: link => links.push(link) },
     async () => { assert.equal(state.shell, true); assert.ok(controls.every(control => control.disabled)); if (interrupted && state.samples.length === 1) throw new Error("landing frame timeout"); },
-    () => ({}), removeLandingDrop, translateMuzzle, reverseTrail, trackedShading, shadeTrail, freezeShaderTime);
+    () => ({}), removeLandingDrop, translateMuzzle, reverseTrail, trackedShading, shadeTrail, freezeShaderTime, trackedEdges, fadeTrail);
   await run(); assert.equal(state.error, null); assert.equal(links.length, 3);
   assert.deepEqual(state.samples.map(sample => sample.mode), ["current", "previous-drop", "current-restored"]);
   assert.equal(state.samples[0].rigY, state.samples[2].rigY); assert.ok(state.samples[1].rigY < state.samples[0].rigY);
@@ -903,15 +931,15 @@ for (const weaponId of Object.keys(WEAPONS)) {
     return { fields, transforms, ammo: { ...hero.ammo } };
   };
   const original = originalSnapshot();
-  for (const mode of ["neutral", "landing", "neutral-follow", "landing-follow", "neutral-tail", "landing-tail", "neutral-shade", "landing-shade"]) {
-    const following = mode.endsWith("-follow"), tail = mode.endsWith("-tail"), shade = mode.endsWith("-shade");
+  for (const mode of ["neutral", "landing", "neutral-follow", "landing-follow", "neutral-tail", "landing-tail", "neutral-shade", "landing-shade", "neutral-edge", "landing-edge"]) {
+    const following = mode.endsWith("-follow"), tail = mode.endsWith("-tail"), shade = mode.endsWith("-shade"), edge = mode.endsWith("-edge"), quartet = shade || edge;
     shadingDisposals.length = 0;
-    await run(true, mode.startsWith("neutral") ? 0 : 8, true, mode); assert.equal(state.error, null); assert.equal(state.samples.length, shade ? 48 : following || tail ? 36 : 27);
-    assert.equal(shadingDisposals.length, shade ? 3 : 0); assert.equal(new Set(shadingDisposals).size, shadingDisposals.length);
+    await run(true, mode.startsWith("neutral") ? 0 : 8, true, mode); assert.equal(state.error, null); assert.equal(state.samples.length, quartet ? 48 : following || tail ? 36 : 27);
+    assert.equal(shadingDisposals.length, shade ? 3 : edge ? 2 : 0); assert.equal(new Set(shadingDisposals).size, shadingDisposals.length);
     assert.ok(shotGame.players[0] === hero); assert.deepEqual(originalSnapshot(), original); assert.equal(shotGame.scene.children.length, 0);
-    if (tail || shade) assert.ok(Math.abs(state.samples[0].shotEvidence.muzzleEvent.age - 1 / 60) < 1e-12, "trail review starts after the real heading update, not construction state");
-    for (let index = 0; index < state.samples.length; index += shade ? 4 : 3) {
-      const before = state.samples[index], trial = state.samples[index + (shade ? 2 : 1)], restored = state.samples[index + (shade ? 3 : 2)];
+    if (tail || quartet) assert.ok(Math.abs(state.samples[0].shotEvidence.muzzleEvent.age - 1 / 60) < 1e-12, "trail review starts after the real heading update, not construction state");
+    for (let index = 0; index < state.samples.length; index += quartet ? 4 : 3) {
+      const before = state.samples[index], trial = state.samples[index + (quartet ? 2 : 1)], restored = state.samples[index + (quartet ? 3 : 2)];
       assert.ok(new THREE.Vector3(0, 0, 1).transformDirection(new THREE.Matrix4().fromArray(before.weaponMatrix)).dot(new THREE.Vector3(0, 0, -1)) > .95,
         "temporary fighter barrel must face the shot direction throughout recoil");
       assert.deepEqual(before.shotEvidence, restored.shotEvidence);
@@ -930,7 +958,7 @@ for (const weaponId of Object.keys(WEAPONS)) {
       const event = before.shotEvidence.muzzleEvent, moved = trial.shotEvidence.muzzleEvent;
       if (following && event.flashLife > 0) assert.ok(new THREE.Vector3().fromArray(event.flash).distanceTo(new THREE.Vector3().fromArray(before.blasterAperture)) < 1e-12);
       for (const field of ["flash", "tracerStart", "tracerEnd", "lightPosition"]) {
-        const expected = tail || shade ? new THREE.Vector3().fromArray(event[field]) : following ? new THREE.Vector3().fromArray(state.samples[0].shotEvidence.muzzleEvent[field])
+        const expected = tail || quartet ? new THREE.Vector3().fromArray(event[field]) : following ? new THREE.Vector3().fromArray(state.samples[0].shotEvidence.muzzleEvent[field])
           : new THREE.Vector3().fromArray(event[field]).add(new THREE.Vector3().fromArray(event.delta));
         assert.ok(expected.distanceTo(new THREE.Vector3().fromArray(moved[field])) < 1e-12);
       }
@@ -941,11 +969,13 @@ for (const weaponId of Object.keys(WEAPONS)) {
       assert.ok(Math.abs(state.samples.at(-1).shotEvidence.muzzleEvent.age - .5) < 1e-12);
       assert.ok(state.samples.at(-1).shotEvidence.muzzleEvent.lightIntensity < .001, "include the damped light tail");
     }
-    assert.notDeepEqual(state.samples[0].weaponMatrix, state.samples[shade ? 4 : 3].weaponMatrix, "recoil must actually animate");
+    assert.notDeepEqual(state.samples[0].weaponMatrix, state.samples[quartet ? 4 : 3].weaponMatrix, "recoil must actually animate");
   }
   interrupted = true; await run(true, 8, true, "landing"); assert.match(state.error, /landing frame timeout/);
   shadingDisposals.length = 0; await run(true, 8, true, "landing-shade"); assert.match(state.error, /landing frame timeout/);
   assert.equal(shadingDisposals.length, 3); assert.equal(new Set(shadingDisposals).size, 3);
+  shadingDisposals.length = 0; await run(true, 8, true, "landing-edge"); assert.match(state.error, /landing frame timeout/);
+  assert.equal(shadingDisposals.length, 2); assert.equal(new Set(shadingDisposals).size, 2);
   assert.ok(shotGame.players[0] === hero); assert.deepEqual(originalSnapshot(), original); assert.equal(shotGame.scene.children.length, 0);
   assert.equal(shotGame.projectiles.length, 0); assert.ok(shotGame.combatVisuals.flashes.every(slot => slot.life === 0));
   shotGame.combatVisuals.dispose();
