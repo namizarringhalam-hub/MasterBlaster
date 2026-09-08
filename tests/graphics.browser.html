@@ -38,6 +38,7 @@
 <button id="leg-assembly-comparison">Compare separate ankle and boot</button>
 <button id="leg-environment-diagnosis">Diagnose boot environment highlights</button>
 <button id="shin-clearcoat-diagnosis">Diagnose toe clearcoat highlight</button>
+<button id="shin-roughness-trial">Compare shin satin base finish</button>
 <button id="arm-diagnosis">Diagnose elbow finish</button>
 <button id="shoulder-diagnosis">Diagnose shoulder and upper arm</button>
 <button id="shoulder-comparison">Check shoulder finish restoration</button>
@@ -1261,7 +1262,7 @@ async function withCapMaterialSplit(target, capture) {
 }
 async function withHelmetShellDiagnostic(mode, capture, target = game.players[0].helmetShell ?? game.players[0].helmet) {
   if (mode === "baseline" || mode === "restored") return capture();
-  if (!["explicit-environment", "no-environment", "normals", "previous-finish", "satin-trial", "material-control", "no-clearcoat"].includes(mode)) throw new Error("Unknown shell diagnostic mode");
+  if (!["explicit-environment", "no-environment", "normals", "previous-finish", "satin-trial", "material-control", "no-clearcoat", "base-roughness-trial"].includes(mode)) throw new Error("Unknown shell diagnostic mode");
   const helmet = target, original = helmet.material;
   const pipeline = game.renderPipeline.pipeline, originalOutput = pipeline.outputNode;
   const originalToneMapping = game.renderer.toneMapping;
@@ -1271,6 +1272,7 @@ async function withHelmetShellDiagnostic(mode, capture, target = game.players[0]
       temporary.roughness = mode === "satin-trial" ? .56 : .4;
       temporary.clearcoatRoughness = mode === "satin-trial" ? .4 : .2;
     } else if (mode === "no-clearcoat") temporary.clearcoat = 0;
+    else if (mode === "base-roughness-trial") temporary.roughness = .56;
     else if (mode === "explicit-environment" || mode === "no-environment") {
       // An intensity alone is ignored by pinned Three when material.envMap is null.
       temporary.envMap = game.scene.environment;
@@ -1327,15 +1329,20 @@ function shellReviewState(target = game.players[0].helmetShell ?? game.players[0
 async function withLegEnvironment(hero, mode, capture) {
   const [body, shin] = hero.leftLeg.children;
   if (!body?.isMesh || !shin?.isMesh || body.position.y !== -.39 || shin.position.y !== -.54 || shin.position.z !== .035 ||
-      body.material !== hero.darkMaterial || shin.material !== hero.armorMaterial)
+      body.material !== hero.darkMaterial || shin.material !== hero.shinMaterial)
     throw new Error("Unexpected leg targets for environment diagnostic");
   return withHelmetShellDiagnostic(mode, () => withHelmetShellDiagnostic(mode, capture, shin), body);
 }
-async function withShinClearcoat(hero, mode, capture) {
+async function withShinFinish(hero, mode, capture, both = false) {
   const shin = hero.leftLeg.children[1];
-  if (!shin?.isMesh || shin.position.y !== -.54 || shin.position.z !== .035 || shin.material !== hero.armorMaterial ||
-      !["material-control", "no-clearcoat"].includes(mode)) throw new Error("Unexpected shin clearcoat diagnostic target or mode");
-  return withHelmetShellDiagnostic(mode, capture, shin);
+  const targets = both ? [shin, hero.rightLeg.children[1]] : [shin];
+  if (targets.some(mesh => !mesh?.isMesh || mesh.position.y !== -.54 || mesh.position.z !== .035 || mesh.material !== hero.shinMaterial) ||
+      !["material-control", "no-clearcoat", "base-roughness-trial", "previous-shin-base"].includes(mode)) throw new Error("Unexpected shin finish diagnostic target or mode");
+  const apply = (target, next) => withHelmetShellDiagnostic(mode === "previous-shin-base" ? "material-control" : mode, () => {
+    if (mode === "previous-shin-base") target.material.roughness = hero.armorMaterial.roughness;
+    return next();
+  }, target);
+  return apply(shin, () => both ? apply(targets[1], capture) : capture());
 }
 async function withAnkleRelief(hero, capture, assembly = false) {
   const legs = [hero.leftLeg, hero.rightLeg], meshes = legs.flatMap(leg => leg.children.slice(0, 2));
@@ -1376,6 +1383,7 @@ select("ankle-comparison").onclick = () => runLowerBodyReview(true);
 select("leg-assembly-comparison").onclick = () => runLowerBodyReview("assembly");
 select("leg-environment-diagnosis").onclick = () => runLowerBodyReview("environment");
 select("shin-clearcoat-diagnosis").onclick = () => runLowerBodyReview("clearcoat");
+select("shin-roughness-trial").onclick = () => runLowerBodyReview("roughness");
 async function runLowerBodyReview(ankle = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.error = null;
@@ -1401,16 +1409,16 @@ async function runLowerBodyReview(ankle = false) {
             metalness: mesh.material.metalness, emissiveIntensity: mesh.material.emissiveIntensity,
             envMap: mesh.material.envMap?.uuid ?? null, envMapIntensity: mesh.material.envMapIntensity,
             envMapRotation: mesh.material.envMapRotation?.toArray() ?? null } }))),
-        ...shellReviewState(game.players[0].leftLeg.children[ankle === "clearcoat" ? 1 : ankle ? 0 : 2]), errorCount, directFallback: game.renderPipeline.direct });
+        ...shellReviewState(game.players[0].leftLeg.children[["clearcoat", "roughness"].includes(ankle) ? 1 : ankle ? 0 : 2]), errorCount, directFallback: game.renderPipeline.direct });
     };
     await withFrozenShaderTime(async () => {
       await capture(ankle === "assembly" ? "integrated-ankle-boot" : ankle ? "baseline" : "integrated-taper");
       if (ankle === "environment") {
         for (const mode of ["explicit-environment", "no-environment"])
           await withLegEnvironment(game.players[0], mode, () => capture(mode));
-      } else if (ankle === "clearcoat") {
-        for (const mode of ["material-control", "no-clearcoat"])
-          await withShinClearcoat(game.players[0], mode, () => capture(mode));
+      } else if (ankle === "clearcoat" || ankle === "roughness") {
+        for (const mode of ["material-control", ankle === "roughness" ? "previous-shin-base" : "no-clearcoat"])
+          await withShinFinish(game.players[0], mode, () => capture(mode), ankle === "roughness");
       } else if (ankle) await withAnkleRelief(game.players[0], () => capture(ankle === "assembly" ? "previous-continuous-leg" : "ankle-relief-local-bevels"), ankle === "assembly");
       else await withPreviousKnees(game.players[0], () => capture("previous-rounded"));
       await capture("restored");

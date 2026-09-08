@@ -489,6 +489,9 @@ export class Fighter {
     }
     armor.roughness += costumeVariant * .025;
     armor.clearcoat = .68 - costumeVariant * .08;
+    this.shinMaterial = armor.clone();
+    this.shinMaterial.roughness = .56;
+    this.leftLeg.children[1].material = this.rightLeg.children[1].material = this.shinMaterial;
     const visorFrame = [
       part(new THREE.BoxGeometry(.76, .055, .12), dark, 0, 2.185, .45),
       part(new THREE.BoxGeometry(.76, .055, .12), dark, 0, 2.015, .45),
@@ -1026,7 +1029,7 @@ export class Fighter {
     this.leftLeg.rotation.x = .35 + progress * .9;
     this.rightLeg.rotation.x = -.2 - progress * .7;
     this.group.scale.setScalar(1 + burst * .1 - progress * .78);
-    this.armorMaterial.emissiveIntensity = 1.65 * fade;
+    this.armorMaterial.emissiveIntensity = this.shinMaterial.emissiveIntensity = 1.65 * fade;
     this.accentMaterial.emissiveIntensity = 2.8 * fade;
     this.darkMaterial.emissiveIntensity = this.shellMaterial.emissiveIntensity = this.elbowMaterial.emissiveIntensity = .5 * burst;
     this.identityRing.material.opacity = .62 * fade;
@@ -1052,7 +1055,7 @@ export class Fighter {
     this.rightArm.rotation.set(0, 0, 0);
     this.leftLeg.rotation.set(0, 0, 0);
     this.rightLeg.rotation.set(0, 0, 0);
-    this.armorMaterial.emissiveIntensity = .16;
+    this.armorMaterial.emissiveIntensity = this.shinMaterial.emissiveIntensity = .16;
     this.accentMaterial.emissiveIntensity = .25;
     this.darkMaterial.emissiveIntensity = this.shellMaterial.emissiveIntensity = this.elbowMaterial.emissiveIntensity = .025;
     this.identityRing.material.opacity = .46;
@@ -1305,7 +1308,7 @@ export class Fighter {
     if (this.thrusterMaterial) this.thrusterMaterial.opacity = .32 + clamp(thrust / 2.4, 0, 1) * .48;
     const hit = this.hitTimer > 0;
     const hitFlash = hit ? .55 + hitWave * .95 : 0;
-    this.armorMaterial.emissiveIntensity = .16 + hitFlash * 1.45;
+    this.armorMaterial.emissiveIntensity = this.shinMaterial.emissiveIntensity = .16 + hitFlash * 1.45;
     this.accentMaterial.emissiveIntensity = .25 + hitFlash * 1.15;
     this.darkMaterial.emissiveIntensity = this.shellMaterial.emissiveIntensity = this.elbowMaterial.emissiveIntensity = .025 + hitFlash * .44;
     const pulse = .5 + Math.sin(time * .55 + this.id.length) * .5;

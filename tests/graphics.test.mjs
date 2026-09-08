@@ -20,6 +20,31 @@ import { ConvexHull } from "three/addons/math/ConvexHull.js";
 import { ankleReliefGeometry } from "./ankleReliefGeometry.js";
 
 {
+  const owned = new Set();
+  for (let variant = 0; variant < 4; variant++) {
+    const hero = new Fighter(new THREE.Scene(), { id: `p${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+    const shin = hero.shinMaterial, armor = hero.armorMaterial;
+    assert.ok(shin !== armor && !owned.has(shin)); owned.add(shin);
+    assert.equal(shin.roughness, .56); assert.equal(armor.roughness, .24 + variant * .025);
+    assert.equal(shin.clearcoat, .68 - variant * .08);
+    const expected = armor.toJSON(), actual = shin.toJSON(); actual.uuid = expected.uuid; actual.roughness = expected.roughness;
+    assert.deepEqual(actual, expected, "shin finish clones final costume armor and changes only base roughness");
+    let users = 0;
+    hero.group.traverse(mesh => { if (mesh.material === shin) { users++; assert.ok(mesh === hero.leftLeg.children[1] || mesh === hero.rightLeg.children[1]); } });
+    assert.equal(users, 2, "one owned material serves only the two existing shin batches");
+    let released = 0; shin.addEventListener("dispose", () => released++);
+    hero.takeHit(10);
+    hero.update(1 / 60, new THREE.Vector3(), new THREE.Vector3(0, 0, -1), {}, { resolve: () => ({ grounded: true }), boostAt: () => null });
+    assert.ok(armor.emissiveIntensity > .16); assert.equal(shin.emissiveIntensity, armor.emissiveIntensity);
+    hero.takeHit(100); hero.updateDeath(.25);
+    assert.equal(shin.emissiveIntensity, armor.emissiveIntensity);
+    hero.respawn(new THREE.Vector3());
+    assert.equal(shin.emissiveIntensity, .16); assert.equal(shin.roughness, .56);
+    hero.dispose(); assert.equal(released, 1);
+  }
+}
+
+{
   const fixture = readFileSync(new URL("./graphics.browser.html", import.meta.url), "utf8");
   const source = fixture.slice(fixture.indexOf("async function withAnkleRelief("), fixture.indexOf("async function withPreviousKnees("));
   const run = new Function("THREE", "ankleReliefGeometry", "RoundedBoxGeometry", `${source}; return withAnkleRelief;`)(THREE, ankleReliefGeometry, RoundedBoxGeometry);
@@ -1486,27 +1511,32 @@ const shellControl = new Function("THREE", "game", `${shellControlSource}; retur
   fighter.dispose();
 }
 {
-  const source = graphicsFixture.slice(graphicsFixture.indexOf("async function withShinClearcoat("), graphicsFixture.indexOf("async function withAnkleRelief("));
-  const run = new Function("withHelmetShellDiagnostic", `${source}; return withShinClearcoat;`)(shellControl);
+  const source = graphicsFixture.slice(graphicsFixture.indexOf("async function withShinFinish("), graphicsFixture.indexOf("async function withAnkleRelief("));
+  const run = new Function("withHelmetShellDiagnostic", `${source}; return withShinFinish;`)(shellControl);
   const fighter = new Fighter(new THREE.Scene(), { id: "shin-coat", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
   const shin = fighter.leftLeg.children[1], original = shin.material, saved = original.toJSON(), peers = new Map();
   fighter.group.traverse(mesh => { if (mesh.isMesh) peers.set(mesh, [mesh.geometry, mesh.material]); });
-  for (const mode of ["material-control", "no-clearcoat"]) for (const fail of [false, true]) {
+  for (const both of [false, true]) for (const mode of ["material-control", "no-clearcoat", "base-roughness-trial", "previous-shin-base"]) for (const fail of [false, true]) {
+    const targets = both ? [shin, fighter.rightLeg.children[1]] : [shin];
     let disposed = 0;
     const capture = async () => {
       for (const [mesh, [geometry, material]] of peers) {
         assert.ok(mesh.geometry === geometry);
-        if (mesh !== shin) assert.ok(mesh.material === material);
+        if (!targets.includes(mesh)) assert.ok(mesh.material === material);
       }
-      assert.ok(shin.material !== original);
-      const current = shin.material.toJSON(); current.uuid = saved.uuid;
-      assert.equal(current.clearcoat, mode === "no-clearcoat" ? 0 : saved.clearcoat);
-      current.clearcoat = saved.clearcoat; assert.deepEqual(current, saved, "only clearcoat scalar differs from identical clone control");
-      shin.material.addEventListener("dispose", () => disposed++);
+      for (const target of targets) {
+        assert.ok(target.material !== original);
+        const current = target.material.toJSON(); current.uuid = saved.uuid;
+        assert.equal(current.clearcoat, mode === "no-clearcoat" ? 0 : saved.clearcoat);
+        assert.equal(current.roughness, mode === "previous-shin-base" ? fighter.armorMaterial.roughness : mode === "base-roughness-trial" ? .56 : saved.roughness);
+        current.clearcoat = saved.clearcoat; current.roughness = saved.roughness;
+        assert.deepEqual(current, saved, "only the selected finish scalar differs from identical clone control");
+        target.material.addEventListener("dispose", () => disposed++);
+      }
       if (fail) throw new Error("shin coating interrupted");
     };
-    if (fail) await assert.rejects(run(fighter, mode, capture), /shin coating interrupted/); else await run(fighter, mode, capture);
-    assert.ok(shin.material === original); assert.deepEqual(original.toJSON(), saved); assert.equal(disposed, 1);
+    if (fail) await assert.rejects(run(fighter, mode, capture, both), /shin coating interrupted/); else await run(fighter, mode, capture, both);
+    assert.ok(targets.every(target => target.material === original)); assert.deepEqual(original.toJSON(), saved); assert.equal(disposed, targets.length);
     assert.ok(shellGame.renderPipeline.pipeline.outputNode === shellOutput);
     assert.equal(shellGame.renderer.toneMapping, THREE.ACESFilmicToneMapping);
   }

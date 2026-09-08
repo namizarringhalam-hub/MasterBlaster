@@ -259,6 +259,16 @@ Object.assign(decoyHarness, { scene: new THREE.Scene(), world: { surfaceHeightAt
 const decoyOwner = new Fighter(decoyHarness.scene, { id: "helmet-2", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
 const decoyDisposals = new Map();
 function trackDecoy(mesh) {
+  const shins = [];
+  mesh.traverse(child => { if (child.geometry?.userData?.legAssembly && child.position.y === -.54) shins.push(child); });
+  assert.equal(shins.length, 2, "holograms preserve both shin finish batches");
+  for (const shin of shins) {
+    assert.ok(shin.material !== decoyOwner.shinMaterial && shin.geometry !== decoyOwner.leftLeg.children[1].geometry);
+    for (const key of ["roughness", "clearcoat", "clearcoatRoughness", "metalness"])
+      assert.equal(shin.material[key], decoyOwner.shinMaterial[key]);
+    for (const key of ["position", "normal", "uv"])
+      assert.deepEqual(shin.geometry.attributes[key].array, decoyOwner.leftLeg.children[1].geometry.attributes[key].array);
+  }
   const elbows = [];
   mesh.traverse(child => { if (child.geometry?.parameters?.radius === .135) elbows.push(child); });
   assert.equal(elbows.length, 2, "every hologram retains both elbow meshes");
