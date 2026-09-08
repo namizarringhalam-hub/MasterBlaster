@@ -905,8 +905,11 @@ assert.deepEqual(clearedCapture, { resetPhase: "starting", captureCanvas: false,
 assert.equal(staleLink.hidden, true); assert.equal(staleLink.href, undefined);
 const requestCaptureSource = graphicsFixture.match(/select\("capture-canvas"\)\.onclick = ([^\n]+);/)[1];
 for (const phase of ["starting", "started", "ready"]) {
-  const requested = new Function("resetPhase", `let captureCanvas=false; (${requestCaptureSource})(); return captureCanvas;`)(phase);
+  let checked = false;
+  const requested = new Function("resetPhase", "validateExhaustView", `let captureCanvas=false; (${requestCaptureSource})(); return captureCanvas;`)(phase, () => { checked = true; });
+  assert.equal(checked, true);
   assert.equal(requested, phase === "ready");
+  assert.throws(() => new Function("resetPhase", "validateExhaustView", `let captureCanvas=false; (${requestCaptureSource})();`)(phase, () => { throw Error("unsupported view"); }), /unsupported view/);
 }
 let deferredReset, resetCalls = 0;
 const costumeChangeSource = graphicsFixture.match(/select\("costume"\)\.onchange = ([^\n]+);/)[1];
@@ -940,6 +943,32 @@ for (const variant of ["", "0", "1", "2", "3"]) {
   selected.dispose(); assert.equal(scene.children.length, 0);
 }
 const settleReviewSource = graphicsFixture.slice(graphicsFixture.indexOf("const stillMove"), graphicsFixture.indexOf("function replaceReviewCostume("));
+for (const active of [true, false]) {
+  const hero = new Fighter(new THREE.Scene(), { id: "helmet-2", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const pad = { position: new THREE.Vector3(0, 0, 0), strength: 24, active };
+  const world = { boostPads: [pad], resolve: position => {
+    const grounded = position.y <= 0; if (grounded) position.y = 0; return { grounded };
+  }, boostAt: () => active ? pad : null };
+  const geometry = hero.thrusterLights.geometry, material = hero.thrusterMaterial;
+  const run = () => new Function("THREE", "game", "select", `${settleReviewSource}; settlePose(); return poseReview;`)(THREE,
+    { players: [hero], world, clearTransientNetworkCombat() {} }, name => ({ value: name === "view" ? "thrusters" : ["aim-height", "boost-pad"].includes(name) ? "0" : "boost" }));
+  if (active) {
+    const review = run();
+    assert.equal(review.boost.sampledFrames, 30); assert.equal(review.boost.launched, true);
+    assert.equal(hero.grounded, false); assert.ok(hero.position.y > 5 && hero.velocity.y > 0);
+    assert.deepEqual(review.boost.position, hero.position.toArray());
+    assert.equal(review.boost.scale, hero.thrusterScale); assert.equal(review.boost.opacity, material.opacity);
+    assert.ok(hero.thrusterScale > 1.19 && hero.thrusterScale < 1.21);
+  } else assert.throws(run, /active pad/);
+  assert.equal(hero.thrusterLights.geometry, geometry); assert.equal(hero.thrusterMaterial, material);
+  hero.dispose();
+}
+for (const view of ["fighter", "helmet-profile", "weapon", "hand-front", "lower-body-front", "arena"]) {
+  let touched = false;
+  assert.throws(() => new Function("THREE", "game", "select", `${settleReviewSource}; settlePose();`)(THREE,
+    { clearTransientNetworkCombat() { touched = true; } }, name => ({ value: name === "view" ? view : "boost" })), /requires a thruster or player-camera view/);
+  assert.equal(touched, false, "unsupported boost framing fails before touching the scene");
+}
 for (const view of ["hand-front", "hand-side", "hand-opposite", "hand-palm", "player-camera"]) assert.ok(graphicsFixture.includes(`<option>${view}</option>`), `missing actual ${view} review view`);
 for (const weaponId of ["blaster", "rocket_launcher", "energy_sword"]) for (const pose of ["aim", "reload", "reacquire-early", "reacquire-complete"]) {
   const hero = new Fighter(new THREE.Scene(), { id: "hand-qa", color: 0x129dba, accent: 0x6ff6ff }, [weaponId], new THREE.Vector3());
@@ -995,6 +1024,50 @@ for (const pose of ["gait-positive", "gait-negative", "landing"]) {
   hero.dispose();
 }
 const handViewSource = graphicsFixture.slice(graphicsFixture.indexOf("function setView()"), graphicsFixture.indexOf("async function reset()"));
+for (const view of ["fighter", "helmet-profile", "hand-front", "lower-body-front"]) for (const pose of ["boost", "exhaust-hard-landing"]) {
+  const game = { players: [{ position: new THREE.Vector3(4, 5, 6), group: { rotation: { y: .4 } } }],
+    camera: new THREE.PerspectiveCamera() };
+  const controls = { view: { value: view }, pose: { value: pose } }, before = JSON.stringify(game);
+  let touched = false;
+  const review = new Function("THREE", "game", "select", "touch", `let stress=false, cameraOffset=0;
+    const clearThrusterSortControl=touch, resetSamples=touch, cameraUpdate=touch;
+    ${settleReviewSource}; ${handViewSource}; poseReview={requested:"aim"}; return {setView,state:()=>poseReview};`)(THREE, game, name => controls[name], () => { touched = true; });
+  assert.throws(review.setView, /requires a thruster or player-camera view/);
+  assert.equal(touched, false); assert.equal(JSON.stringify(game), before);
+  assert.deepEqual(review.state(), { requested: "aim" }); assert.equal(controls.pose.value, pose);
+}
+for (const view of ["thrusters", "thrusters-low"]) for (const pose of ["boost", "exhaust-hard-landing"]) {
+  const hero = new Fighter(new THREE.Scene(), { id: "helmet-2", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const pad = { position: new THREE.Vector3(-66, 0, 22), strength: 29, active: true };
+  const game = { players: [hero], camera: new THREE.PerspectiveCamera(62, 16 / 9, .1, 300), clearTransientNetworkCombat() {},
+    world: { boostPads: [pad], boostAt: position => Math.abs(position.x - pad.position.x) < 1 ? pad : null,
+      resolve: position => { const floor = position.x === -66 ? 0 : 15; const grounded = position.y <= floor;
+        if (grounded) position.y = floor; return { grounded }; } } };
+  const controls = { view: { value: view }, pose: { value: pose }, "aim-height": { value: "0" }, "boost-pad": { value: "0" } };
+  const state = new Function("THREE", "game", "select", `let stress=false, cameraOffset=0; const clearThrusterSortControl=()=>{}, resetSamples=()=>{}, cameraUpdate=()=>{};
+    ${settleReviewSource}; ${handViewSource}; setView(); return poseReview;`)(THREE, game, name => controls[name]);
+  game.camera.updateMatrixWorld(true);
+  const target = hero.position.clone().add(new THREE.Vector3(0, view === "thrusters" ? 1.14 : 1.16, .49)).project(game.camera);
+  assert.ok(Math.abs(target.x) < 1e-6 && Math.abs(target.y) < 1e-6 && target.z > 0 && target.z < 1, "final dynamic exhaust target stays centred and in clip range");
+  if (pose === "boost") assert.equal(state.boost.launched, true);
+  else {
+    assert.equal(state.exhaustLanding.landStrength, 1);
+    assert.ok(state.exhaustLanding.peakScale > 1.9 && state.exhaustLanding.peakScale < 2.4);
+    assert.ok(state.exhaustLanding.capturedScale < state.exhaustLanding.peakScale);
+    assert.ok(state.exhaustLanding.peakScale - state.exhaustLanding.capturedScale < .05);
+  }
+  hero.dispose();
+}
+{
+  const routing = graphicsFixture.match(/select\("pose"\)\.onchange = ([^\n]+)/)[0];
+  for (const view of ["thrusters", "thrusters-low", "player-camera", "lower-body-front", "fighter", "hand-front"]) {
+    const controls = { pose: {}, view: { value: view } }; let framed = 0, settled = 0;
+    new Function("select", "setView", "settlePose", routing)(name => controls[name], () => framed++, () => settled++);
+    controls.pose.onchange();
+    assert.equal(framed, ["thrusters", "thrusters-low", "player-camera", "lower-body-front"].includes(view) ? 1 : 0);
+    assert.equal(settled, 1 - framed);
+  }
+}
 const landingDropSource = graphicsFixture.slice(graphicsFixture.indexOf("async function withPreviousLandingDrop("), graphicsFixture.indexOf("async function runLandingReview("));
 const removeLandingDrop = new Function(`${landingDropSource}; return withPreviousLandingDrop;`)();
 const translateMuzzle = new Function(`${landingDropSource}; return withTranslatedMuzzle;`)();
@@ -1390,6 +1463,12 @@ const captureFrame = new Function("THREE", "game", "renderedFrames", "sceneSeria
   assert.deepEqual(captured.lowerBody.legs[0].matrix, hero.leftLeg.matrixWorld.toArray());
   assert.deepEqual(captured.lowerBody.legs[0].bounds.min, new THREE.Box3().setFromObject(hero.leftLeg, true).min.toArray());
   assert.equal(captured.camera.gameplay, false);
+  assert.deepEqual(captured.exhaust.position, hero.position.toArray());
+  assert.deepEqual(captured.exhaust.velocity, hero.velocity.toArray());
+  assert.deepEqual(captured.exhaust.scale, hero.thrusterLights.scale.toArray());
+  assert.deepEqual(captured.exhaust.matrix, hero.thrusterLights.matrixWorld.toArray());
+  assert.equal(captured.exhaust.opacity, hero.thrusterMaterial.opacity);
+  assert.equal(captured.exhaust.vertices, hero.thrusterLights.geometry.attributes.position.count);
   assert.deepEqual(captured.handPose.rightForearmMatrix, hero.rightForearm.matrixWorld.toArray());
   assert.deepEqual(captured.handPose.leftForearmMatrix, hero.leftForearm.matrixWorld.toArray());
   assert.deepEqual(captured.handPose.weaponMatrix, hero.weaponGroup.matrixWorld.toArray());
@@ -1397,6 +1476,8 @@ const captureFrame = new Function("THREE", "game", "renderedFrames", "sceneSeria
   const stored = JSON.stringify(captured);
   hero.rightHand.position.x = 8; hero.rightForearm.matrixWorld.elements[12] = 9; hero.weaponGrip.y = 8;
   camera.matrixWorld.elements[12] = 10; review.requested = "reload";
+  hero.position.x = 15; hero.velocity.y = 20; hero.thrusterLights.scale.y = 2;
+  hero.thrusterLights.matrixWorld.elements[12] = 13; hero.thrusterMaterial.opacity = .9;
   assert.equal(JSON.stringify(captured), stored, "later pose/camera changes cannot rewrite saved evidence");
   hero.dispose();
 }
@@ -2321,10 +2402,12 @@ for (const mode of ["raw", "color"]) {
 }
 const waitSource = graphicsFixture.slice(graphicsFixture.indexOf("function waitForReviewFrame("), graphicsFixture.indexOf("const stillMove"));
 let timeoutCallback, timeoutDelay, frameCallback, cleared = 0, cancelled = 0, serial = 3;
-const makeWait = new Function("setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "getSerial",
+const makeWait = new Function("setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "getSerial", "validateExhaustView",
   waitSource.replaceAll("sceneSerial", "getSerial()") + "; return waitForReviewFrame;");
 const waitReview = makeWait((callback, delay) => { timeoutCallback = callback; timeoutDelay = delay; return 9; }, () => cleared++,
-  callback => { frameCallback = callback; return 7; }, () => cancelled++, () => serial);
+  callback => { frameCallback = callback; return 7; }, () => cancelled++, () => serial, capture => assert.equal(capture, true));
+assert.throws(() => makeWait(() => { throw Error("must not start timer"); }, () => {}, () => {}, () => {}, () => serial,
+  () => { throw Error("unsupported capture"); })(3, () => true), /unsupported capture/);
 const stalledWait = waitReview(3, () => false);
 assert.equal(timeoutDelay, 20000);
 timeoutCallback();
