@@ -1,8 +1,10 @@
 # Graphics overhaul checkpoint
 
-Updated: 2026-09-08. Pass58 ankle/boot assembly is PUBLISHED as v113 after visual78→80 improvement, technical98/98PASS and production verification. The graphics project is NOT complete; newest entries below override older handoffs.
+Updated: 2026-09-08. Pass62 shin finish is PUBLISHED as v114 after visual80→82 improvement, technical98/98PASS and production verification. The graphics project is NOT complete; newest entries below override older handoffs.
 
-## Latest publication — Pass58 separate ankle/boot v113 verified
+## Latest publication — Pass62 isolated shin finish v114 verified
+
+- Pass62 PUBLISHED/VERIFIED v114 source7c13184268a90596abadce882aea96c08f262eb1. Visual80→82/technical98+98PASS/no scopedblockers; full19+15/build/dryrun/local+productionbothlive/native+GLresetrecovery/desktop+actual390mobile evidence asbelow. Primary https://masterblaster.se/ Pages31ad7f21-95c6-46ad-9b79-24ba4752dca2. Sites version appgprj_6a6378a267348191a15d7e0faf662c64~appgver_683afee67f888191bd66e7ed4ebf3bdd, deployment appgdep_6a9faf28615c8191aeba49879b544a06 SUCCEEDED/revision0/public unchanged. ArchiveC:/Users/namir/AppData/Local/Temp/master-blaster-pass62.tar.gz SHAadb29a1ebad97fe2318463c2c80ed43096d755ffdb2d8f2660d5982f6150a423. Bothorigins exactmain-BSeBcO3F.jsSHA1253b7724f059cb309993b897e06759e75bb8769de4d7e9d1453065302f21d43/Threeunchanged0d4ca7307685042392fe48a2cd080f6c614ee935cfb7aaaa70065d4c702e4fc9; bothHTMLindex-X21NrKNQ→mainverified. Primaryhealth200/protocol1/arena2/backend100% unchanged e79ad4a2-f74a-42bc-9c18-e1ea58af707c. ProductionbothlivesuitesPASS87844exit0/canonicalmenubrowserverified. Existingpanel8(provider7)canonical/viewportreset; QA7about:blank/noarena. Vite13885retained/noWorker/CPU/capture. NEXT independentreviewerchooseboundedunfinishedcraftfocus after82shinrelease; no candidateyet. Continueautonomously/no overall98/FPSclaim/no pause.
 
 - Pass62 mobile COMPLETE: pass62-active16-mobile-390.json actual390x844High/16fighters/1068framesAFTERconfirmedactivebaseline/stress=true/paused=false/errors0. Independentvisualnative390image sanityPASS82unchanged; no physicalphone/FPS/HUDclaim. Existingpanel8 restoredcanonicalproduction andviewportoverridereset; QA7about:blank/noarena. Allscopedreviews82/98/98+fullsuite/build/dryrun/localbothlive/nativeGLresources/desktop+mobilecomplete. NOWcommitexact5ownedfiles,pushorigin/main+Sites,savedversiondeployandproductionverification. No furtherproducteditsbeforepublication; v113currentlylive. Continueaftervalidatedpartialrelease.
 
