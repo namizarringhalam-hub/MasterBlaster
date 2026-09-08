@@ -19,6 +19,52 @@ import { shoulderChamferGeometry } from "./shoulderChamferGeometry.js";
 import { ConvexHull } from "three/addons/math/ConvexHull.js";
 import { ankleReliefGeometry } from "./ankleReliefGeometry.js";
 import { exhaustBody, exhaustShroudGeometry, previousExhaustGeometries, withExhaustShrouds, withPreviousExhaust } from "./exhaustShroudGeometry.js";
+import { shortenedTorsoGeometry, withShortenedTorso } from "./torsoShape.js";
+
+for (let variant = 0; variant < 4; variant++) {
+  const hero = new Fighter(new THREE.Scene(), { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const body = exhaustBody(hero), source = body.geometry, children = [...hero.rig.children];
+  const candidate = shortenedTorsoGeometry(source), capsule = new THREE.CapsuleGeometry(.39, .68, 4, 8);
+  const count = capsule.index.count, p = source.attributes.position, q = candidate.attributes.position;
+  let changed = 0, minimum = Infinity;
+  assert.equal(q.count, p.count); assert.equal(candidate.index, source.index);
+  assert.deepEqual(candidate.attributes.uv.array, source.attributes.uv.array);
+  for (let i = 0; i < p.count; i++) {
+    const lower = i < count && p.getY(i) < .91;
+    assert.equal(q.getX(i), p.getX(i)); assert.equal(q.getZ(i), p.getZ(i));
+    if (i < count) minimum = Math.min(minimum, q.getY(i));
+    if (!lower) {
+      assert.equal(q.getY(i), p.getY(i));
+      for (let axis = 0; axis < 3; axis++) assert.equal(candidate.attributes.normal.array[i * 3 + axis], source.attributes.normal.array[i * 3 + axis]);
+    } else {
+      changed++;
+      assert.ok(Math.abs(q.getY(i) - (.91 + (p.getY(i) - .91) * .11 / .39)) < 1e-7);
+      const expected = new THREE.Vector3().fromBufferAttribute(source.attributes.normal, i);
+      expected.y *= .39 / .11; expected.normalize();
+      assert.ok(expected.distanceTo(new THREE.Vector3().fromBufferAttribute(candidate.attributes.normal, i)) < 1e-7);
+    }
+    assert.ok(candidate.boundingBox.containsPoint(new THREE.Vector3().fromBufferAttribute(q, i)));
+  }
+  assert.ok(changed > 0); assert.ok(Math.abs(minimum - .8) < 1e-7);
+  candidate.dispose(); capsule.dispose();
+  const corrupt = source.clone(); corrupt.attributes.position.setX(0, 99);
+  assert.throws(() => shortenedTorsoGeometry(corrupt), /Unexpected torso position/); corrupt.dispose();
+  for (const fail of [false, true]) {
+    let disposed = 0;
+    const run = () => withShortenedTorso(hero, async target => {
+      target.geometry.addEventListener("dispose", () => disposed++);
+      assert.equal(body.geometry, source); assert.equal(body.visible, false);
+      assert.equal(target.material, body.material); assert.equal(target.geometry.attributes.position.count, p.count);
+      assert.deepEqual(target.matrixWorld.elements, body.matrixWorld.elements);
+      if (fail) throw Error("torso capture failed");
+    });
+    hero.group.updateWorldMatrix(true, true);
+    if (fail) await assert.rejects(run, /torso capture failed/); else await run();
+    assert.equal(disposed, 1); assert.equal(body.geometry, source); assert.equal(body.visible, true);
+    assert.deepEqual(hero.rig.children, children);
+  }
+  hero.dispose();
+}
 
 function previousFighter(...args) {
   // CPU-only reconstruction, before any renderer has seen these owned meshes.
@@ -1220,20 +1266,20 @@ for (const pose of ["gait-positive", "gait-negative", "landing"]) {
 }
 const handViewSource = graphicsFixture.slice(graphicsFixture.indexOf("function setView()"), graphicsFixture.indexOf("async function reset()"));
 const settledCameraSource = graphicsFixture.slice(graphicsFixture.indexOf("async function withSettledReviewCamera("), graphicsFixture.indexOf("async function runLowerBodyReview("));
-for (const mode of ["exhaust", "exhaust-raised", "exhaust-integrated"]) {
+for (const mode of ["exhaust", "exhaust-raised", "exhaust-integrated", "torso"]) {
   const source = graphicsFixture.slice(graphicsFixture.indexOf("async function runLowerBodyReview("), graphicsFixture.indexOf("async function runShellReview("));
-  const hero = (mode === "exhaust-integrated" ? (...args) => new Fighter(...args) : previousFighter)(new THREE.Scene(), { id: "helmet-1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const hero = (["exhaust-integrated", "torso"].includes(mode) ? (...args) => new Fighter(...args) : previousFighter)(new THREE.Scene(), { id: "helmet-1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
   const target = hero.rig.children.find(mesh => mesh.isMesh && mesh.material === hero.darkMaterial), original = target.geometry;
   const game = { players: [hero], paused: true, renderPipeline: { direct: false } }, captured = [];
-  const controls = { view: { value: "thrusters" }, pose: { value: "aim" }, "camera-captures": { replaceChildren() {}, append() {} } };
+  const controls = { view: { value: mode === "torso" ? "waist-front" : "thrusters" }, pose: { value: "aim" }, "camera-captures": { replaceChildren() {}, append() {} } };
   const document = { querySelectorAll: () => [], createElement: () => ({}), querySelector: () => ({ toDataURL: () => "unit-test-only" }) };
-  const review = new Function("game", "select", "document", "withExhaustShrouds", "shellReviewState", "exhaustBody", "withPreviousExhaust", `
+  const review = new Function("game", "select", "document", "withExhaustShrouds", "shellReviewState", "exhaustBody", "withPreviousExhaust", "withShortenedTorso", `
     const resetReview={},cacheReview={},decoyReview={},cameraReview={},sceneSerial=1,errorCount=0,stress=false,resetPhase="ready",poseReview={requested:"aim"};
     let renderedFrames=0; const waitForReviewFrame=async()=>{renderedFrames+=4;},withFrozenShaderTime=async capture=>capture();
     ${settledCameraSource}; ${source}; return {run:runLowerBodyReview,state:cameraReview};
   `)(game, name => controls[name], document, withExhaustShrouds, mesh => {
     captured.push(mesh); return { targetGeometry: mesh.geometry.uuid, targetVertices: mesh.geometry.attributes.position.count };
-  }, exhaustBody, withPreviousExhaust);
+  }, exhaustBody, withPreviousExhaust, withShortenedTorso);
   await review.run(mode);
   assert.equal(review.state.error, null); assert.equal(review.state.running, false);
   const count = mode === "exhaust-raised" ? 4 : 3;
@@ -1241,6 +1287,11 @@ for (const mode of ["exhaust", "exhaust-raised", "exhaust-integrated"]) {
   assert.notEqual(captured[1], target); assert.equal(captured[1].material, target.material);
   assert.equal(review.state.samples[0].targetGeometry, original.uuid);
   assert.equal(review.state.samples[count - 1].targetGeometry, original.uuid);
+  if (mode === "torso") {
+    assert.equal(review.state.samples[1].targetVertices, review.state.samples[0].targetVertices);
+    assert.deepEqual(review.state.samples.map(s => s.mode), ["published-lower-core", "shortened-lower-core", "restored"]);
+    hero.dispose(); continue;
+  }
   assert.ok(mode === "exhaust-integrated" ? review.state.samples[1].targetVertices < review.state.samples[0].targetVertices
     : review.state.samples[1].targetVertices > review.state.samples[0].targetVertices, "metadata uses the intended previous or candidate body, never another dark helmet mesh");
   if (count === 4) assert.ok(review.state.samples[2].targetVertices > review.state.samples[1].targetVertices, "raised candidate includes the actual pedestal");

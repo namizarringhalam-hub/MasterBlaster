@@ -75,6 +75,7 @@
 <button id="exhaust-shroud-trial">Compare exhaust shrouds</button>
 <button id="exhaust-raised-trial">Compare supported exhaust panel</button>
 <button id="exhaust-integrated">Compare integrated exhaust</button>
+<button id="torso-shape">Compare lower torso silhouette</button>
 <button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
 <label><input id="follow-camera" type="checkbox" checked>Follow player camera</label>
 <output id="metrics" style="flex-basis:100%;min-width:0;max-height:100px;overflow:auto;white-space:pre-wrap">Loading actual game…</output>
@@ -90,8 +91,10 @@ import { shoulderChamferGeometry } from "./shoulderChamferGeometry.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { ankleReliefGeometry } from "./ankleReliefGeometry.js";
 import { exhaustBody, withExhaustShrouds, withPreviousExhaust } from "./exhaustShroudGeometry.js";
+import { withShortenedTorso } from "./torsoShape.js";
 document.querySelector("#view").add(new Option("lower-body-oblique", "lower-body-oblique"));
 document.querySelector("#view").add(new Option("thrusters-low", "thrusters-low"));
+for (const view of ["waist-front", "waist-profile"]) document.querySelector("#view").add(new Option(view, view));
 document.querySelector("#pose").add(new Option("boost", "boost"));
 document.querySelector("#pose").add(new Option("exhaust-hard-landing", "exhaust-hard-landing"));
 import { ArenaWorld } from "../src/world.js";
@@ -633,6 +636,8 @@ function setView() {
   const poses = { arena: [[70, 47, 98], [0, 25, 0]], grazing: [[3, 1.8, 65], [0, 4, -40]],
     "helmet-three-quarter": [[1.2, 17.35, 6.4], [0, 17.19, 7.85]], "helmet-profile": [[2, 17.24, 8.15], [0, 17.19, 7.95]],
     fighter: [[3.7, 17.1, 3.3], [0, 16.35, 8]],
+    "waist-front": [[hero.position.x + .9, hero.position.y + 1, hero.position.z - 1.6], [hero.position.x, hero.position.y + .91, hero.position.z]],
+    "waist-profile": [[hero.position.x + 1.8, hero.position.y + 1, hero.position.z], [hero.position.x, hero.position.y + .91, hero.position.z]],
     thrusters: [[hero.position.x + 1.6, hero.position.y + 1.69, hero.position.z + 2.3], [hero.position.x, hero.position.y + 1.14, hero.position.z + .49]],
     "thrusters-low": [[hero.position.x + .8, hero.position.y + .65, hero.position.z + 1.8], [hero.position.x, hero.position.y + 1.16, hero.position.z + .49]],
     "muzzle-whole": [[11.7, 17.1, 3.3], [8, 16.35, 8]],
@@ -1433,6 +1438,7 @@ select("shin-roughness-trial").onclick = () => runLowerBodyReview("roughness");
 select("exhaust-shroud-trial").onclick = () => runLowerBodyReview("exhaust");
 select("exhaust-raised-trial").onclick = () => runLowerBodyReview("exhaust-raised");
 select("exhaust-integrated").onclick = () => runLowerBodyReview("exhaust-integrated");
+select("torso-shape").onclick = () => runLowerBodyReview("torso");
 async function withSettledReviewCamera(capture) {
   if (select("view").value !== "player-camera") return await capture();
   const update = game.updateCamera;
@@ -1450,7 +1456,7 @@ async function runLowerBodyReview(ankle = false) {
   const serial = sceneSerial, initialErrors = errorCount;
   select("camera-captures").replaceChildren();
   try {
-    if (stress || !game.paused || resetPhase !== "ready" || !(exhaust ? ["thrusters", "thrusters-low", "player-camera"] : ["fighter", "lower-body-front", "lower-body-side", "lower-body-oblique"]).includes(select("view").value))
+    if (stress || !game.paused || resetPhase !== "ready" || !(ankle === "torso" ? ["waist-front", "waist-profile", "fighter", "player-camera"] : exhaust ? ["thrusters", "thrusters-low", "player-camera"] : ["fighter", "lower-body-front", "lower-body-side", "lower-body-oblique"]).includes(select("view").value))
       throw new Error("Knee comparison needs a ready paused fighter or lower-body view");
     for (const [control] of controls) control.disabled = true;
     const capture = async (mode, exhaustTarget = null, lightTarget = null) => {
@@ -1475,10 +1481,16 @@ async function runLowerBodyReview(ankle = false) {
             matrix: lightTarget.matrixWorld.toArray(), material: lightTarget.material.toJSON(),
             shiftZ: mode === "previous-published" ? .060 : mode === "supported-light-shrouds" ? -.060 : 0,
             reference: ankle === "exhaust-integrated" ? "integrated" : "previous-published" } : null } } : {}),
-        ...shellReviewState(exhaust ? exhaustTarget || exhaustBody(game.players[0])
+        ...shellReviewState(exhaust || ankle === "torso" ? exhaustTarget || exhaustBody(game.players[0])
           : game.players[0].leftLeg.children[["clearcoat", "roughness"].includes(ankle) ? 1 : ankle ? 0 : 2]), errorCount, directFallback: game.renderPipeline.direct });
     };
     await withSettledReviewCamera(() => withFrozenShaderTime(async () => {
+      if (ankle === "torso") {
+        await capture("published-lower-core");
+        await withShortenedTorso(game.players[0], target => capture("shortened-lower-core", target));
+        await capture("restored");
+        return;
+      }
       if (ankle === "exhaust-integrated") {
         await capture("integrated");
         await withPreviousExhaust(game.players[0], (target, light) => capture("previous-published", target, light));
