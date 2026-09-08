@@ -528,6 +528,7 @@ export class CombatVisuals {
     const profile = weaponPresentation(weapon);
     slot.life = slot.maxLife = this.reducedMotion ? .075 : profile.precision ? .15 : profile.tempo === "heavy" ? .135 : profile.rapid ? .115 : .1;
     slot.position = owner.visualMuzzlePoint?.(slot.position || new THREE.Vector3()) || owner.muzzlePoint?.(slot.position || new THREE.Vector3()) || owner.forwardPoint(.9);
+    this.bindMuzzle(slot, weapon.id === "blaster" ? owner : null, slot.position);
     slot.direction = (slot.direction || new THREE.Vector3()).copy(direction).normalize();
     slot.weaponColor = (slot.weaponColor || new THREE.Color()).set(weapon.color);
     slot.ownerColor = (slot.ownerColor || new THREE.Color()).copy(ownerColor(owner, weapon));
@@ -538,7 +539,8 @@ export class CombatVisuals {
     if (!this.reducedMotion) {
       this.position.copy(slot.position).addScaledVector(slot.direction, slot.length * .32);
       this.color.copy(slot.weaponColor).lerp(slot.ownerColor, .24);
-      this.pulseLight(this.position, this.color, profile.tempo === "heavy" ? 5.8 : profile.energy ? 4.8 : 3.4, profile.tempo === "heavy" ? 14 : 10, .085);
+      const light = this.pulseLight(this.position, this.color, profile.tempo === "heavy" ? 5.8 : profile.energy ? 4.8 : 3.4, profile.tempo === "heavy" ? 14 : 10, .085);
+      this.bindMuzzle(light, slot.muzzleOwner, slot.position);
     }
     if (slot.closeRapid) {
       slot.length *= .68;
@@ -553,7 +555,8 @@ export class CombatVisuals {
     }
     if (weapon.type !== "mine" && weapon.type !== "melee" && weapon.type !== "flame") {
       const end = slot.position.clone().addScaledVector(slot.direction, slot.length * 1.45);
-      this.addTracer(slot.position, end, weapon, owner, this.reducedMotion ? .06 : .085, profile.rapid ? .072 : .06);
+      const tracer = this.addTracer(slot.position, end, weapon, owner, this.reducedMotion ? .06 : .085, profile.rapid ? .072 : .06);
+      this.bindMuzzle(tracer, slot.muzzleOwner, slot.position);
     }
   }
 
@@ -692,6 +695,7 @@ export class CombatVisuals {
 
   addTracer(start, end, weapon, owner, life, width) {
     const slot = this.tracers[this.cursors.tracer++ % this.tracers.length];
+    slot.muzzleOwner = null;
     const profile = weaponPresentation(weapon);
     slot.life = slot.maxLife = profile.rapid ? Math.max(.1, life) : life;
     slot.start = (slot.start || new THREE.Vector3()).copy(start);
@@ -703,6 +707,7 @@ export class CombatVisuals {
     slot.width = Math.max(width, profile.trailWidth * .52)
       * (profile.delivery === "rail" ? 1.25 : profile.delivery === "beam" ? 1.08 : slot.closeRapid ? 1.18 : 1);
     slot.outerWidth = profile.precision ? 4.6 : slot.closeRapid ? 3.55 : profile.rapid ? 4.15 : profile.delivery === "melee" ? 2.25 : 3;
+    return slot;
   }
 
   impact(position, weapon, owner, { size = 1.5, normal = null, explosive = false } = {}) {
@@ -797,11 +802,34 @@ export class CombatVisuals {
 
   pulseLight(position, color, intensity, distance, life) {
     const light = this.combatLights[this.combatLightCursor++ % (this.lightLimit || this.combatLights.length)];
+    light.muzzleOwner = null;
     light.position.copy(position);
     light.color.copy(color);
     light.intensity = intensity;
     light.distance = distance;
     light.userData.life = life;
+    return light;
+  }
+
+  bindMuzzle(slot, owner, origin) {
+    slot.muzzleOwner = owner?.visualMuzzlePoint ? owner : null;
+    if (!slot.muzzleOwner) return;
+    slot.muzzleRevision = owner.muzzleRevision;
+    slot.muzzleOrigin = (slot.muzzleOrigin || new THREE.Vector3()).copy(origin);
+  }
+
+  followMuzzle(slot, live) {
+    const owner = slot.muzzleOwner;
+    if (!owner) return;
+    if (!live || !owner.alive || owner.muzzleRevision !== slot.muzzleRevision || !owner.group?.parent) {
+      slot.muzzleOwner = null;
+      return;
+    }
+    owner.visualMuzzlePoint(this.position);
+    this.normal.copy(this.position).sub(slot.muzzleOrigin);
+    slot.muzzleOrigin.copy(this.position);
+    (slot.position || slot.start).add(this.normal);
+    slot.end?.add(this.normal);
   }
 
   setGraphicsProfile(profile) {
@@ -810,6 +838,7 @@ export class CombatVisuals {
     for (let i = this.lightLimit; i < this.combatLights.length; i++) {
       this.combatLights[i].intensity = 0;
       this.combatLights[i].userData.life = 0;
+      this.combatLights[i].muzzleOwner = null;
     }
   }
 
@@ -823,6 +852,8 @@ export class CombatVisuals {
     this.updateBlood(dt);
     for (const light of this.combatLights) {
       light.userData.life = Math.max(0, light.userData.life - dt);
+      // Follow only the authored pulse; its existing damped fade stays in place.
+      this.followMuzzle(light, light.userData.life > 0);
       light.intensity = THREE.MathUtils.damp(light.intensity, light.userData.life > 0 ? light.intensity : 0, 22, dt);
     }
   }
@@ -921,6 +952,7 @@ export class CombatVisuals {
     for (let index = 0; index < this.flashes.length; index++) {
       const slot = this.flashes[index];
       slot.life -= dt;
+      this.followMuzzle(slot, slot.life > 0);
       if (slot.life <= 0) {
         if (slot.visible) {
           this.flashOuter.setMatrixAt(index, HIDDEN);
@@ -956,6 +988,7 @@ export class CombatVisuals {
     for (let index = 0; index < this.tracers.length; index++) {
       const slot = this.tracers[index];
       slot.life -= dt;
+      this.followMuzzle(slot, slot.life > 0);
       if (slot.life <= 0) {
         if (slot.visible) {
           this.tracerOuter.setMatrixAt(index, HIDDEN);
@@ -1203,6 +1236,7 @@ export class CombatVisuals {
   }
 
   dispose() {
+    for (const pool of [this.flashes, this.tracers, this.combatLights]) for (const slot of pool) slot.muzzleOwner = null;
     this.fireballs.clear();
     this.scene.remove(this.group);
     this.group.traverse((child) => {

@@ -504,6 +504,7 @@ export class Fighter {
   }
 
   updateWeaponModel() {
+    this.muzzleRevision = (this.muzzleRevision || 0) + 1;
     const weapon = this.weapon;
     const previous = this.weaponModels.get(this.weaponModelId);
     if (previous) previous.group.add(...this.weaponGroup.children);
@@ -942,6 +943,7 @@ export class Fighter {
   }
 
   respawn(position) {
+    this.muzzleRevision = (this.muzzleRevision || 0) + 1;
     this.position.copy(position);
     this.velocity.set(0, 0, 0);
     this.health = 100;
@@ -1249,6 +1251,7 @@ export class Fighter {
   }
 
   dispose() {
+    this.muzzleRevision = (this.muzzleRevision || 0) + 1;
     this.scene.remove(this.group);
     for (const model of this.weaponModels.values()) disposeChildren(model.group);
     this.weaponModels.clear();

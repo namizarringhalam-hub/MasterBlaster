@@ -21,6 +21,97 @@ import { shoulderChamferGeometry } from "./shoulderChamferGeometry.js";
 // Only the three transient merge copies differ; no frozen art data to maintain.
 const playerMergeSource = readFileSync(new URL("../src/player.js", import.meta.url), "utf8");
 {
+  const scene = new THREE.Scene(), effects = new CombatVisuals(scene);
+  const hero = new Fighter(scene, { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster", "rocket_launcher"], new THREE.Vector3(8, 15, 8));
+  effects.muzzle(hero, hero.weapon);
+  const flash = effects.flashes[0], tracer = effects.tracers[0], light = effects.combatLights[0];
+  const origin = flash.position.clone(), end = tracer.end.clone(), lamp = light.position.clone(), direction = flash.direction.clone();
+  hero.weaponGroup.position.z -= .2;
+  const delta = hero.visualMuzzlePoint().sub(origin);
+  effects.update(1 / 60);
+  assert.ok(flash.position.distanceTo(origin.clone().add(delta)) < 1e-12, "live Blaster flash must follow its animated aperture");
+  assert.ok(tracer.end.distanceTo(end.clone().add(delta)) < 1e-12);
+  assert.ok(light.position.distanceTo(lamp.clone().add(delta)) < 1e-12);
+  assert.ok(flash.direction.equals(direction));
+  const held = flash.position.clone();
+  hero.switchSlot(1); hero.switchSlot(0); hero.weaponGroup.position.z += 3;
+  effects.update(1 / 60);
+  assert.ok(flash.position.equals(held), "cached switch-away/back must detach the previous event without killing its fade");
+  assert.ok(flash.life > 0);
+  hero.dispose(); effects.dispose();
+}
+for (const action of ["death", "respawn", "dispose", "model", "expiry", "reuse", "quality", "effects-dispose"]) {
+  const scene = new THREE.Scene(), effects = new CombatVisuals(scene);
+  const hero = new Fighter(scene, { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster", "rocket_launcher"], new THREE.Vector3());
+  effects.muzzle(hero, hero.weapon);
+  const flash = effects.flashes[0], tracer = effects.tracers[0], light = effects.combatLights[0];
+  const held = flash.position.clone(), originalLife = flash.life;
+  if (action === "death") hero.takeHit(100);
+  if (action === "respawn") hero.respawn(new THREE.Vector3(100, 0, 0));
+  if (action === "dispose") hero.dispose();
+  if (action === "model") hero.updateWeaponModel();
+  if (action === "quality") effects.setGraphicsProfile({ combatQuality: "low", combatLights: 0 });
+  if (action === "effects-dispose") effects.dispose();
+  if (action === "reuse") {
+    effects.cursors.tracer = 0; effects.combatLightCursor = 0;
+    effects.addTracer(new THREE.Vector3(2, 3, 4), new THREE.Vector3(5, 6, 7), hero.weapon, hero, .2, .1);
+    effects.pulseLight(new THREE.Vector3(9, 8, 7), new THREE.Color(), 4, 10, .2);
+    assert.equal(tracer.muzzleOwner, null); assert.equal(light.muzzleOwner, null);
+  }
+  hero.weaponGroup.position.x += 2;
+  if (action !== "effects-dispose") effects.update(action === "expiry" ? .11 : 0);
+  if (["death", "respawn", "dispose", "model", "expiry", "effects-dispose"].includes(action)) {
+    assert.equal(flash.muzzleOwner, null); assert.equal(tracer.muzzleOwner, null); assert.equal(light.muzzleOwner, null);
+    assert.ok(flash.position.equals(held));
+    if (action !== "expiry") assert.equal(flash.life, originalLife, "detachment preserves the existing fade");
+  }
+  if (action === "expiry") assert.ok(light.intensity > 0, "detach the pulse without deleting its damped tail");
+  if (action === "quality") assert.equal(light.muzzleOwner, null);
+  if (action === "reuse") { assert.deepEqual(tracer.start.toArray(), [2, 3, 4]); assert.deepEqual(light.position.toArray(), [9, 8, 7]); }
+  if (action !== "dispose") hero.dispose();
+  if (action !== "effects-dispose") effects.dispose();
+}
+for (const tier of ["low", "medium", "high"]) {
+  const scene = new THREE.Scene(), effects = new CombatVisuals(scene);
+  effects.setGraphicsProfile(graphicsProfile(tier));
+  const fighters = Array.from({ length: 16 }, (_, i) => new Fighter(scene, { id: `p${i}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster", "rocket_launcher"], new THREE.Vector3(i, 0, 0)));
+  for (let round = 0; round < 12; round++) {
+    for (const hero of fighters) {
+      hero.switchSlot(round % 2); effects.muzzle(hero, hero.weapon);
+      effects.impact(new THREE.Vector3(50, 0, 0), hero.weapon, hero);
+    }
+    for (const hero of fighters) hero.weaponGroup.position.z -= .1;
+    effects.update(1 / 60);
+    for (const flash of effects.flashes) if (flash.muzzleOwner) assert.ok(flash.position.distanceTo(flash.muzzleOwner.visualMuzzlePoint()) < 1e-12);
+    for (const light of effects.combatLights) if (!light.muzzleOwner && light.intensity > 0) assert.ok(Number.isFinite(light.position.x));
+  }
+  effects.setGraphicsProfile(graphicsProfile("low"));
+  for (const light of effects.combatLights.slice(1)) assert.equal(light.muzzleOwner, null);
+  effects.setGraphicsProfile(graphicsProfile("high"));
+  for (const light of effects.combatLights.slice(1)) assert.equal(light.muzzleOwner, null);
+  for (const hero of fighters) hero.dispose();
+  effects.update(0);
+  for (const pool of [effects.flashes, effects.tracers, effects.combatLights]) assert.ok(pool.every(slot => !slot.muzzleOwner));
+  effects.dispose();
+}
+for (const reducedMotion of [false, true]) {
+  const scene = new THREE.Scene(), current = new CombatVisuals(scene, { reducedMotion }), previous = new CombatVisuals(new THREE.Scene(), { reducedMotion });
+  previous.bindMuzzle = () => {};
+  const hero = new Fighter(scene, { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  current.muzzle(hero, hero.weapon); previous.muzzle(hero, hero.weapon);
+  const timeline = effects => ({ flash: effects.flashes.map(slot => slot.life), tracer: effects.tracers.map(slot => slot.life),
+    lights: effects.combatLights.map(light => [light.userData.life, light.intensity]), counts: [effects.flashOuter.count, effects.flashInner.count, effects.tracerOuter.count, effects.tracerInner.count] });
+  const direction = current.flashes[0].direction.clone(), segment = current.tracers[0].end.clone().sub(current.tracers[0].start);
+  for (let frame = 0; frame < 60; frame++) {
+    hero.weaponGroup.position.z -= .005;
+    current.update(1 / 60); previous.update(1 / 60);
+    assert.deepEqual(timeline(current), timeline(previous));
+    assert.ok(current.flashes[0].direction.equals(direction));
+    assert.ok(current.tracers[0].end.clone().sub(current.tracers[0].start).distanceTo(segment) < 1e-12);
+  }
+  hero.dispose(); current.dispose(); previous.dispose();
+}
+{
   const target = new THREE.Vector3(), effects = new CombatVisuals(new THREE.Scene());
   for (const id of Object.keys(WEAPONS)) {
     const hero = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, [id], new THREE.Vector3(8, 15, 8));
@@ -32,6 +123,12 @@ const playerMergeSource = readFileSync(new URL("../src/player.js", import.meta.u
       const expected = id === "blaster" ? new THREE.Vector3(.05, .06, .994).applyMatrix4(hero.weaponGroup.matrixWorld) : hero.muzzlePoint();
       assert.ok(target.distanceTo(expected) < 1e-12);
       assert.deepEqual(hero.muzzlePoint().toArray(), logical); assert.deepEqual(hero.forwardPoint(.08).toArray(), projectile);
+    }
+    if (id !== "blaster") {
+      const index = effects.cursors.flash % effects.flashes.length;
+      effects.muzzle(hero, hero.weapon);
+      assert.equal(effects.flashes[index].muzzleOwner, null);
+      assert.ok(effects.flashes[index].position.distanceTo(hero.muzzlePoint()) < 1e-12);
     }
     if (id === "blaster") {
       effects.muzzle(hero, hero.weapon); const flash = effects.flashes[0], tracer = effects.tracers[0], light = effects.combatLights[0];
@@ -686,10 +783,11 @@ for (const weaponId of Object.keys(WEAPONS)) {
     return { fields, transforms, ammo: { ...hero.ammo } };
   };
   const original = originalSnapshot();
-  for (const mode of ["neutral", "landing"]) {
-    await run(true, mode === "neutral" ? 0 : 8, true, mode); assert.equal(state.error, null); assert.equal(state.samples.length, 27);
+  for (const mode of ["neutral", "landing", "neutral-follow", "landing-follow"]) {
+    const following = mode.endsWith("-follow");
+    await run(true, mode.startsWith("neutral") ? 0 : 8, true, mode); assert.equal(state.error, null); assert.equal(state.samples.length, following ? 36 : 27);
     assert.ok(shotGame.players[0] === hero); assert.deepEqual(originalSnapshot(), original); assert.equal(shotGame.scene.children.length, 0);
-    for (let index = 0; index < 27; index += 3) {
+    for (let index = 0; index < state.samples.length; index += 3) {
       const [before, trial, restored] = state.samples.slice(index, index + 3);
       assert.ok(new THREE.Vector3(0, 0, 1).transformDirection(new THREE.Matrix4().fromArray(before.weaponMatrix)).dot(new THREE.Vector3(0, 0, -1)) > .95,
         "temporary fighter barrel must face the shot direction throughout recoil");
@@ -697,13 +795,19 @@ for (const weaponId of Object.keys(WEAPONS)) {
       assert.deepEqual(before.shotEvidence.projectiles, trial.shotEvidence.projectiles);
       assert.deepEqual(before.weaponMatrix, trial.weaponMatrix);
       const event = before.shotEvidence.muzzleEvent, moved = trial.shotEvidence.muzzleEvent;
+      if (following && event.flashLife > 0) assert.ok(new THREE.Vector3().fromArray(event.flash).distanceTo(new THREE.Vector3().fromArray(before.blasterAperture)) < 1e-12);
       for (const field of ["flash", "tracerStart", "tracerEnd", "lightPosition"]) {
-        const expected = new THREE.Vector3().fromArray(event[field]).add(new THREE.Vector3().fromArray(event.delta));
+        const expected = following ? new THREE.Vector3().fromArray(state.samples[0].shotEvidence.muzzleEvent[field])
+          : new THREE.Vector3().fromArray(event[field]).add(new THREE.Vector3().fromArray(event.delta));
         assert.ok(expected.distanceTo(new THREE.Vector3().fromArray(moved[field])) < 1e-12);
       }
       assert.equal(event.flashLife, moved.flashLife); assert.equal(event.lightIntensity, moved.lightIntensity);
     }
     assert.ok(state.samples.at(-1).shotEvidence.muzzleEvent.flashLife <= 0, "capture must include flash expiry");
+    if (following) {
+      assert.ok(Math.abs(state.samples.at(-1).shotEvidence.muzzleEvent.age - .5) < 1e-12);
+      assert.ok(state.samples.at(-1).shotEvidence.muzzleEvent.lightIntensity < .001, "include the damped light tail");
+    }
     assert.notDeepEqual(state.samples[0].weaponMatrix, state.samples[3].weaponMatrix, "recoil must actually animate");
   }
   interrupted = true; await run(true, 8, true, "landing"); assert.match(state.error, /landing frame timeout/);

@@ -50,6 +50,8 @@
 <button id="landing-shot">Compare hard landing shot</button>
 <button id="muzzle-neutral">Compare neutral muzzle origin</button>
 <button id="muzzle-landing">Compare landing muzzle origin</button>
+<button id="muzzle-follow-neutral">Compare neutral muzzle attachment</button>
+<button id="muzzle-follow-landing">Compare landing muzzle attachment</button>
 <button id="arm-comparison">Check elbow finish restoration</button>
 <button id="elbow-comparison">Compare elbow silhouette</button>
 <button id="boost-passage">Test boost passage</button>
@@ -773,10 +775,12 @@ async function withPreviousLandingDrop(hero, capture) {
 async function withTranslatedMuzzle(event, delta, effects, capture) {
   const positions = [event.flash.position, event.tracer.start, event.tracer.end, event.light.position];
   const originals = positions.map(position => position.clone());
+  const slots = [event.flash, event.tracer, event.light], owners = slots.map(slot => slot.muzzleOwner);
   try {
-    positions.forEach(position => position.add(delta)); effects.update(0);
+    slots.forEach(slot => { slot.muzzleOwner = null; });
+    positions.forEach((position, i) => Array.isArray(delta) ? position.copy(delta[i]) : position.add(delta)); effects.update(0);
     return await capture();
-  } finally { positions.forEach((position, i) => position.copy(originals[i])); effects.update(0); }
+  } finally { positions.forEach((position, i) => position.copy(originals[i])); slots.forEach((slot, i) => { slot.muzzleOwner = owners[i]; }); effects.update(0); }
 }
 async function runLandingReview(sequence = false, fallHeight = 0, shot = false, muzzle = null) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
@@ -787,6 +791,7 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
   const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
   let shotState = null;
   let muzzleEvent = null, muzzleDelta = null;
+  const followMuzzle = muzzle?.endsWith("-follow"), neutralMuzzle = muzzle?.startsWith("neutral");
   const clearShot = () => {
     game.clearTransientNetworkCombat();
     const effects = game.combatVisuals;
@@ -814,7 +819,7 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
       blasterAperture: hero.weapon.id === "blaster" ? hero.weaponGroup.localToWorld(new THREE.Vector3(.05, .06, .994)).toArray() : null,
       shotEvidence: shot ? { projectiles: game.projectiles.map(projectile => ({ position: projectile.mesh.position.toArray(), age: projectile.age })),
         flashes: game.combatVisuals.flashes.filter(flash => flash.life > 0).map(flash => ({ position: flash.position.toArray(), direction: flash.direction.toArray(), life: flash.life })),
-        muzzleEvent: muzzleEvent ? { delta: muzzleDelta.toArray(), flash: muzzleEvent.flash.position.toArray(), flashLife: muzzleEvent.flash.life,
+        muzzleEvent: muzzleEvent ? { delta: muzzleDelta.toArray(), age: muzzleEvent.flash.maxLife - muzzleEvent.flash.life, flash: muzzleEvent.flash.position.toArray(), flashLife: muzzleEvent.flash.life,
           tracerStart: muzzleEvent.tracer.start.toArray(), tracerEnd: muzzleEvent.tracer.end.toArray(), tracerLife: muzzleEvent.tracer.life,
           lightPosition: muzzleEvent.light.position.toArray(), lightIntensity: muzzleEvent.light.intensity } : null } : null,
       legs: [hero.leftLeg, hero.rightLeg].map(leg => ({ localMatrix: leg.matrix.toArray(), matrix: leg.matrixWorld.toArray(), minY: new THREE.Box3().setFromObject(leg, true).min.y,
@@ -830,8 +835,9 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
         renderedFrames, errorCount, directFallback: game.renderPipeline.direct });
     };
     const compare = async landingFrame => {
+      if (followMuzzle) muzzleDelta = muzzleEvent.initialPositions[0].clone().sub(muzzleEvent.flash.position);
       await capture("current", 0, landingFrame);
-      if (muzzle) await withTranslatedMuzzle(muzzleEvent, muzzleDelta, game.combatVisuals, () => capture("previous-logical-origin", 0, landingFrame));
+      if (muzzle) await withTranslatedMuzzle(muzzleEvent, followMuzzle ? muzzleEvent.initialPositions : muzzleDelta, game.combatVisuals, () => capture(followMuzzle ? "previous-snapshot" : "previous-logical-origin", 0, landingFrame));
       else if (hero.landTimer > 0) await withPreviousLandingDrop(hero, drop => capture("previous-drop", drop, landingFrame));
       else await capture("previous-drop", 0, landingFrame);
       await capture("current-restored", 0, landingFrame);
@@ -844,12 +850,12 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
       let landingFrame = -1;
       for (let i = 0; i < 240; i++) {
         const stepTime = performance.now();
-        hero.update(1 / 60, stillMove, reviewAim, { jump: muzzle !== "neutral" && !fallHeight && i === 0 }, game.world); hero.group.updateMatrixWorld(true);
-        if (landingFrame < 0 && (muzzle === "neutral" || hero.landTimer > 0)) landingFrame = 0;
+        hero.update(1 / 60, stillMove, reviewAim, { jump: !neutralMuzzle && !fallHeight && i === 0 }, game.world); hero.group.updateMatrixWorld(true);
+        if (landingFrame < 0 && (neutralMuzzle || hero.landTimer > 0)) landingFrame = 0;
         if (landingFrame >= 0) {
           const baseline = state(), candidate = hero.landTimer > 0 ? await withPreviousLandingDrop(hero, () => state()) : state();
           cameraReview.landingFrames.push({ simulationFrame: i, landingFrame, stepTime, fallHeight, baseline, candidate });
-          if (shot && landingFrame === (muzzle === "neutral" ? 0 : 6)) {
+          if (shot && landingFrame === (neutralMuzzle ? 0 : 6)) {
             shotState = { ammo: hero.ammo[hero.weapon.id], attackTimer: hero.attackTimer, velocity: hero.velocity.clone(),
               recoilVisual: hero.recoilVisual, musicPulse: game.combatMusicPulse,
               cursors: { ...game.combatVisuals.cursors }, lightCursor: game.combatVisuals.combatLightCursor };
@@ -866,13 +872,14 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
                 tracer: effects.tracers[shotState.cursors.tracer % effects.tracers.length],
                 light: effects.combatLights[shotState.lightCursor % (effects.lightLimit || effects.combatLights.length)] };
               muzzleDelta = hero.muzzlePoint().sub(muzzleEvent.flash.position);
+              muzzleEvent.initialPositions = [muzzleEvent.flash.position, muzzleEvent.tracer.start, muzzleEvent.tracer.end, muzzleEvent.light.position].map(position => position.clone());
             }
-            for (let shotFrame = 0; shotFrame < (muzzle ? 9 : 3); shotFrame++) {
+            for (let shotFrame = 0; shotFrame < (followMuzzle ? 31 : muzzle ? 9 : 3); shotFrame++) {
               if (shotFrame) {
                 if (muzzle) { hero.update(1 / 60, stillMove, reviewAim, {}, game.world); hero.group.updateMatrixWorld(true); }
                 game.updateProjectiles(1 / 60); game.combatVisuals.update(1 / 60);
               }
-              await compare(landingFrame);
+              if (!followMuzzle || shotFrame <= 8 || [12, 18, 30].includes(shotFrame)) await compare(landingFrame);
             }
             break;
           }
@@ -881,7 +888,7 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
           landingFrame++;
         }
       }
-      if (shot ? cameraReview.samples.length !== (muzzle ? 27 : 9) : cameraReview.landingFrames.length !== 46 || hero.landTimer !== 0) throw new Error("Landing recovery did not complete within 240 frames");
+      if (shot ? cameraReview.samples.length !== (followMuzzle ? 36 : muzzle ? 27 : 9) : cameraReview.landingFrames.length !== 46 || hero.landTimer !== 0) throw new Error("Landing recovery did not complete within 240 frames");
     }
   } catch (error) { cameraReview.error = String(error); }
   finally {
@@ -901,6 +908,8 @@ select("landing-hard-sequence").onclick = () => runLandingReview(true, 8);
 select("landing-shot").onclick = () => runLandingReview(true, 8, true);
 select("muzzle-neutral").onclick = () => runLandingReview(true, 0, true, "neutral");
 select("muzzle-landing").onclick = () => runLandingReview(true, 8, true, "landing");
+select("muzzle-follow-neutral").onclick = () => runLandingReview(true, 0, true, "neutral-follow");
+select("muzzle-follow-landing").onclick = () => runLandingReview(true, 8, true, "landing-follow");
 async function runCameraReview(boostPassage = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cameraReview.running = true; cameraReview.samples = []; cameraReview.error = null;
