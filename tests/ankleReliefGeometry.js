@@ -1,20 +1,8 @@
 import { BufferGeometry, Float32BufferAttribute, Vector3 } from "three/webgpu";
+import { clipLegPolygon } from "../src/player.js";
 
 // QA-only section cuts preserve the original rounded shell and every extremum.
 export function ankleReliefGeometry(original, centerY, widthRatio, depthRatio, shiftZ, bevel = false) {
-  const clip = (polygon, plane, above) => {
-    const out = [];
-    for (let i = 0; i < polygon.length; i++) {
-      const a = polygon[i], b = polygon[(i + 1) % polygon.length];
-      const da = a[1] - plane, db = b[1] - plane;
-      if (above ? da >= 0 : da <= 0) out.push(a);
-      if (da * db < 0) {
-        const t = da / (da - db), point = a.map((v, j) => v + (b[j] - v) * t);
-        point[1] = plane; out.push(point);
-      }
-    }
-    return out;
-  };
   const position = [], normal = [], uv = [], n = new Vector3();
   const p = original.attributes.position, normals = original.attributes.normal, tex = original.attributes.uv;
   const cuts = bevel ? [0, .008, .016, .072, .08, .088, .144, .152, .16].map(u => -.70 + u) : [-.70, -.62, -.54];
@@ -34,8 +22,8 @@ export function ankleReliefGeometry(original, centerY, widthRatio, depthRatio, s
       normals.getX(i + k), normals.getY(i + k), normals.getZ(i + k), tex.getX(i + k), tex.getY(i + k)]);
     for (let section = 0; section + 1 < planes.length; section++) {
       let polygon = triangle;
-      if (section > 0) polygon = clip(polygon, planes[section], true);
-      if (section + 2 < planes.length) polygon = clip(polygon, planes[section + 1], false);
+      if (section > 0) polygon = clipLegPolygon(polygon, planes[section], true);
+      if (section + 2 < planes.length) polygon = clipLegPolygon(polygon, planes[section + 1], false);
       const emit = v => {
         const [t, derivative] = profile(v[1] + centerY, section);
         const sx = 1 + (widthRatio - 1) * t, sz = 1 + (depthRatio - 1) * t;

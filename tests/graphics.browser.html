@@ -35,6 +35,7 @@
 <button id="shell-comparison">Compare capsule shell finish</button>
 <button id="knee-comparison">Compare contained knee taper</button>
 <button id="ankle-comparison">Compare contained ankle relief</button>
+<button id="leg-assembly-comparison">Compare separate ankle and boot</button>
 <button id="arm-diagnosis">Diagnose elbow finish</button>
 <button id="shoulder-diagnosis">Diagnose shoulder and upper arm</button>
 <button id="shoulder-comparison">Check shoulder finish restoration</button>
@@ -82,6 +83,7 @@ import { Fighter } from "../src/player.js";
 import { shoulderChamferGeometry } from "./shoulderChamferGeometry.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { ankleReliefGeometry } from "./ankleReliefGeometry.js";
+document.querySelector("#view").add(new Option("lower-body-oblique", "lower-body-oblique"));
 import { ArenaWorld } from "../src/world.js";
 import { CombatVisuals } from "../src/combatVisuals.js";
 import { NeonRenderPipeline, recoverInvalidAONormals } from "../src/renderPipeline.js";
@@ -593,6 +595,7 @@ function setView() {
     "muzzle-shallow-distant": [[13.36, 16.8, 28], [8, 16.35, 8]],
     "lower-body-front": [[hero.position.x + .9, hero.position.y + .64, hero.position.z - 1.2], [hero.position.x, hero.position.y + .54, hero.position.z]],
     "lower-body-side": [[hero.position.x + 1.5, hero.position.y + .64, hero.position.z], [hero.position.x, hero.position.y + .54, hero.position.z]],
+    "lower-body-oblique": [[hero.position.x - 1.1, hero.position.y + .8, hero.position.z + 1.2], [hero.position.x, hero.position.y + .54, hero.position.z]],
     weapon: [[1.8, 16.9, 6.1], [.4, 16.4, 8.7]], effects: [[7, 19, 17], [0, 16, 8]],
     "rope-corner": [[-10, 27, -22], [0, 20, 0]],
     underpass: [[12, 3, 37], [0, 13, -10]], collapse: [[-49, 22, -29], [-72, 17, -66]] };
@@ -1318,7 +1321,7 @@ function shellReviewState(target = game.players[0].helmetShell ?? game.players[0
     effects: { projectiles: game.projectiles.length, hazards: game.hazards.length, decoys: game.decoys.length, effects: game.effects.length },
     exposure: game.renderer.toneMappingExposure, toneMapping: game.renderer.toneMapping };
 }
-async function withAnkleRelief(hero, capture) {
+async function withAnkleRelief(hero, capture, assembly = false) {
   const legs = [hero.leftLeg, hero.rightLeg], meshes = legs.flatMap(leg => leg.children.slice(0, 2));
   if (meshes.some(mesh => !mesh?.isMesh) || meshes[0].geometry !== meshes[2].geometry || meshes[1].geometry !== meshes[3].geometry)
     throw new Error("Unexpected leg layout; update ankle diagnostic");
@@ -1332,9 +1335,11 @@ async function withAnkleRelief(hero, capture) {
       throw new Error("Unexpected authored leg dimensions or transform");
   }
   const originals = meshes.map(mesh => mesh.geometry), trials = [];
+  if (!assembly && originals.some(geometry => geometry.userData.legAssembly))
+    throw new Error("Archived relief trial requires the previous continuous leg shell");
   try {
-    trials.push(ankleReliefGeometry(originals[0], -.39, .9, .30 / .34, .02, true));
-    trials.push(ankleReliefGeometry(originals[1], -.54, .23 / .255, .33 / .39, .01, true));
+    trials.push(assembly ? new RoundedBoxGeometry(.3, .78, .34, 1, .042) : ankleReliefGeometry(originals[0], -.39, .9, .30 / .34, .02, true));
+    trials.push(assembly ? new RoundedBoxGeometry(.255, .4, .39, 1, .0357) : ankleReliefGeometry(originals[1], -.54, .23 / .255, .33 / .39, .01, true));
     meshes.forEach((mesh, i) => { mesh.geometry = trials[i % 2]; });
     await capture();
   } finally {
@@ -1352,6 +1357,7 @@ async function withPreviousKnees(hero, capture) {
 }
 select("knee-comparison").onclick = () => runLowerBodyReview();
 select("ankle-comparison").onclick = () => runLowerBodyReview(true);
+select("leg-assembly-comparison").onclick = () => runLowerBodyReview("assembly");
 async function runLowerBodyReview(ankle = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.error = null;
@@ -1359,7 +1365,7 @@ async function runLowerBodyReview(ankle = false) {
   const serial = sceneSerial, initialErrors = errorCount;
   select("camera-captures").replaceChildren();
   try {
-    if (stress || !game.paused || resetPhase !== "ready" || !["fighter", "lower-body-front", "lower-body-side"].includes(select("view").value))
+    if (stress || !game.paused || resetPhase !== "ready" || !["fighter", "lower-body-front", "lower-body-side", "lower-body-oblique"].includes(select("view").value))
       throw new Error("Knee comparison needs a ready paused fighter or lower-body view");
     for (const [control] of controls) control.disabled = true;
     const capture = async mode => {
@@ -1376,8 +1382,8 @@ async function runLowerBodyReview(ankle = false) {
         ...shellReviewState(game.players[0].leftLeg.children[ankle ? 0 : 2]), errorCount, directFallback: game.renderPipeline.direct });
     };
     await withFrozenShaderTime(async () => {
-      await capture(ankle ? "baseline" : "integrated-taper");
-      if (ankle) await withAnkleRelief(game.players[0], () => capture("ankle-relief-local-bevels"));
+      await capture(ankle === "assembly" ? "integrated-ankle-boot" : ankle ? "baseline" : "integrated-taper");
+      if (ankle) await withAnkleRelief(game.players[0], () => capture(ankle === "assembly" ? "previous-continuous-leg" : "ankle-relief-local-bevels"), ankle === "assembly");
       else await withPreviousKnees(game.players[0], () => capture("previous-rounded"));
       await capture("restored");
     });

@@ -4,7 +4,7 @@ import { getCurrentStack, getNormalFromDepth, materialOpacity, normalView, norma
 import NodeMaterialObserver from "../node_modules/three/src/materials/nodes/manager/NodeMaterialObserver.js";
 import WebGPUPipelineUtils from "../node_modules/three/src/renderers/webgpu/utils/WebGPUPipelineUtils.js";
 import { ArenaWorld, structuralPanelGeometry, structuralRouteGeometry } from "../src/world.js";
-import { Fighter, kneeTaperGeometry } from "../src/player.js";
+import { Fighter, kneeTaperGeometry, legAssemblyGeometry } from "../src/player.js";
 import { graphicsProfile, swapStolenWeapon, WEAPONS } from "../src/gameData.js";
 import { CombatVisuals } from "../src/combatVisuals.js";
 import { NeonRenderPipeline, recoverInvalidAONormals } from "../src/renderPipeline.js";
@@ -22,7 +22,7 @@ import { ankleReliefGeometry } from "./ankleReliefGeometry.js";
 {
   const fixture = readFileSync(new URL("./graphics.browser.html", import.meta.url), "utf8");
   const source = fixture.slice(fixture.indexOf("async function withAnkleRelief("), fixture.indexOf("async function withPreviousKnees("));
-  const run = new Function("THREE", "ankleReliefGeometry", `${source}; return withAnkleRelief;`)(THREE, ankleReliefGeometry);
+  const run = new Function("THREE", "ankleReliefGeometry", "RoundedBoxGeometry", `${source}; return withAnkleRelief;`)(THREE, ankleReliefGeometry, RoundedBoxGeometry);
   const dark = new RoundedBoxGeometry(.3, .78, .34, 1, .042), shin = new RoundedBoxGeometry(.255, .4, .39, 1, .0357);
   const legs = [new THREE.Group(), new THREE.Group()];
   for (const leg of legs) {
@@ -31,7 +31,7 @@ import { ankleReliefGeometry } from "./ankleReliefGeometry.js";
   }
   const hero = { leftLeg: legs[0], rightLeg: legs[1] }; let originalsDisposed = 0;
   dark.addEventListener("dispose", () => originalsDisposed++); shin.addEventListener("dispose", () => originalsDisposed++);
-  for (const fail of [false, true]) {
+  for (const assembly of [false, true]) for (const fail of [false, true]) {
     const disposed = [0, 0];
     const capture = async () => {
       for (let i = 0; i < 2; i++) {
@@ -41,7 +41,7 @@ import { ankleReliefGeometry } from "./ankleReliefGeometry.js";
       }
       if (fail) throw new Error("ankle capture interrupted");
     };
-    if (fail) await assert.rejects(run(hero, capture), /ankle capture interrupted/); else await run(hero, capture);
+    if (fail) await assert.rejects(run(hero, capture, assembly), /ankle capture interrupted/); else await run(hero, capture, assembly);
     for (const leg of legs) assert.ok(leg.children[0].geometry === dark && leg.children[1].geometry === shin);
     assert.deepEqual(disposed, [1, 1]); assert.equal(originalsDisposed, 0);
   }
@@ -92,9 +92,10 @@ for (const [sample, curve] of [[.008, u => [12.5 * u * u / .032, 25 * u / .032]]
   trial.dispose(); geometry.dispose();
 }
 
-for (const bevel of [false, true]) for (const [w, h, d, cy, wr, dr, shift] of [[.3, .78, .34, -.39, .9, .30 / .34, .02], [.255, .4, .39, -.54, .23 / .255, .33 / .39, .01]]) {
+for (const bevel of [false, true, "assembly"]) for (const [w, h, d, cy, wr, dr, shift] of [[.3, .78, .34, -.39, .9, .30 / .34, .02], [.255, .4, .39, -.54, .23 / .255, .33 / .39, .01]]) {
   const original = new RoundedBoxGeometry(w, h, d, 1, Math.min(.045, w * .14, h * .14, d * .14));
-  const trial = ankleReliefGeometry(original, cy, wr, dr, shift, bevel), points = [];
+  const trial = bevel === "assembly" ? legAssemblyGeometry(original, cy, cy === -.39 ? -.65 : -.70, cy === -.39)
+    : ankleReliefGeometry(original, cy, wr, dr, shift, bevel), points = [];
   const p = original.attributes.position, q = trial.attributes.position;
   for (let i = 0; i < p.count; i++) points.push(new THREE.Vector3().fromBufferAttribute(p, i));
   const hull = new ConvexHull().setFromPoints(points), point = new THREE.Vector3(), retained = new Set();
@@ -103,8 +104,37 @@ for (const bevel of [false, true]) for (const [w, h, d, cy, wr, dr, shift] of [[
     assert.ok(hull.faces.every(face => face.distanceToPoint(point) <= 2e-8), "ankle relief stays inside its original hull");
   }
   for (const point of points) assert.ok(retained.has(point.toArray().join(",")), "every old support extremum is retained exactly");
+  if (bevel === "assembly") {
+    const edges = new Map(), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), face = new THREE.Vector3(), average = new THREE.Vector3();
+    for (let i = 0; i < q.count; i += 3) {
+      a.fromBufferAttribute(q, i); b.fromBufferAttribute(q, i + 1); c.fromBufferAttribute(q, i + 2);
+      const keys = [a, b, c].map(v => v.toArray().map(value => Math.round(value * 1e6)).join(","));
+      face.crossVectors(b.clone().sub(a), c.clone().sub(a));
+      average.set(0, 0, 0);
+      for (let k = 0; k < 3; k++) average.add(new THREE.Vector3().fromBufferAttribute(trial.attributes.normal, i + k));
+      assert.ok(face.lengthSq() > 1e-16 && face.dot(average) > 0, "closed assembly faces are nondegenerate and correctly wound");
+      for (let k = 0; k < 3; k++) {
+        const key = [keys[k], keys[(k + 1) % 3]].sort().join("|"); edges.set(key, (edges.get(key) || 0) + 1);
+      }
+    }
+    assert.ok([...edges.values()].every(count => count === 2), "each welded assembly edge has exactly two faces");
+  }
   assert.ok(q.count > p.count, "authored ankle rings are added");
   trial.dispose(); original.dispose();
+}
+
+{
+  const original = new RoundedBoxGeometry(.3, .78, .34, 1, .042), released = [];
+  const dispose = THREE.BufferGeometry.prototype.dispose;
+  let assembly;
+  try {
+    THREE.BufferGeometry.prototype.dispose = function () { released.push(this); return dispose.call(this); };
+    assembly = legAssemblyGeometry(original, -.39, -.65, true);
+  } finally { THREE.BufferGeometry.prototype.dispose = dispose; }
+  assert.equal(released.length, 3, "indexed connector, expanded connector and temporary shell are released");
+  assert.equal(new Set(released).size, 3);
+  assert.ok(!released.includes(original) && !released.includes(assembly));
+  assembly.dispose(); original.dispose();
 }
 
 {
@@ -169,12 +199,21 @@ const playerMergeSource = readFileSync(new URL("../src/player.js", import.meta.u
   const original = new RoundedBoxGeometry(.29, .18, .13, 1, .0182), expected = kneeTaperGeometry(original);
   const fighters = Array.from({ length: 16 }, (_, i) => new Fighter(new THREE.Scene(), { id: `knee-${i}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3()));
   const shared = fighters[0].leftLeg.children[2].geometry;
+  const assemblies = fighters[0].leftLeg.children.slice(0, 2).map(mesh => mesh.geometry);
+  const oldBody = new RoundedBoxGeometry(.3, .78, .34, 1, .042), oldShin = new RoundedBoxGeometry(.255, .4, .39, 1, .0357);
+  const expectedAssemblies = [legAssemblyGeometry(oldBody, -.39, -.65, true), legAssemblyGeometry(oldShin, -.54, -.70)];
   let disposals = 0; const onDispose = () => disposals++;
   shared.addEventListener("dispose", onDispose);
+  for (const geometry of assemblies) geometry.addEventListener("dispose", onDispose);
   for (const fighter of fighters) {
     for (const leg of [fighter.leftLeg, fighter.rightLeg]) {
       assert.ok(leg.children[2].geometry === shared, "all 32 knees reuse one immutable geometry");
       assert.deepEqual(leg.children[2].position.toArray(), [0, -.39, .23]);
+      assert.equal(leg.children.length, 3, "construction preserves the existing three material batches per leg");
+      for (let i = 0; i < 2; i++) {
+        assert.ok(leg.children[i].geometry === assemblies[i], "all fighters reuse the two immutable assembly geometries");
+        assert.deepEqual(leg.children[i].position.toArray(), i ? [0, -.54, .035] : [0, -.39, 0]);
+      }
     }
     fighter.dispose();
   }
@@ -182,6 +221,13 @@ const playerMergeSource = readFileSync(new URL("../src/player.js", import.meta.u
   assert.equal(shared.userData.sharedFighterGeometry, true);
   for (const name of ["position", "normal", "uv"]) assert.deepEqual(shared.attributes[name].array, expected.attributes[name].array);
   shared.removeEventListener("dispose", onDispose); expected.dispose(); original.dispose();
+  for (let i = 0; i < 2; i++) {
+    assemblies[i].removeEventListener("dispose", onDispose);
+    assert.equal(assemblies[i].userData.sharedFighterGeometry, true);
+    for (const name of ["position", "normal", "uv"]) assert.deepEqual(assemblies[i].attributes[name].array, expectedAssemblies[i].attributes[name].array);
+    expectedAssemblies[i].dispose();
+  }
+  oldBody.dispose(); oldShin.dispose();
 }
 {
   const effects = new CombatVisuals(new THREE.Scene());

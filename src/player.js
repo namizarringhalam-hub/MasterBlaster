@@ -8,6 +8,70 @@ const clamp = THREE.MathUtils.clamp;
 export const PROJECTILE_SPAWN_OFFSET = .08;
 const roundedParts = new Map();
 
+export function clipLegPolygon(polygon, plane, above) {
+  const out = [];
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i], b = polygon[(i + 1) % polygon.length];
+    const da = a[1] - plane, db = b[1] - plane;
+    if (above ? da >= 0 : da <= 0) out.push(a);
+    if (da * db < 0) {
+      const t = da / (da - db), point = a.map((v, j) => v + (b[j] - v) * t);
+      point[1] = plane; out.push(point);
+    }
+  }
+  return out;
+}
+
+export function legAssemblyGeometry(original, centerY, lowerCut, connector = false) {
+  const position = [], normal = [], uv = [];
+  const p = original.attributes.position, n = original.attributes.normal, tex = original.attributes.uv;
+  const emit = v => { position.push(...v.slice(0, 3)); normal.push(...v.slice(3, 6)); uv.push(...v.slice(6, 8)); };
+  for (const [level, above] of [[-.60, true], [lowerCut, false]]) {
+    const plane = level - centerY, rim = new Map();
+    for (let i = 0; i < p.count; i += 3) {
+      const triangle = [0, 1, 2].map(k => [p.getX(i + k), p.getY(i + k), p.getZ(i + k),
+        n.getX(i + k), n.getY(i + k), n.getZ(i + k), tex.getX(i + k), tex.getY(i + k)]);
+      const polygon = clipLegPolygon(triangle, plane, above);
+      for (const v of polygon) if (v[1] === plane) {
+        const x = Math.fround(v[0]), z = Math.fround(v[2]); rim.set(`${x}:${z}`, [x, plane, z]);
+      }
+      for (let j = 1; j + 1 < polygon.length; j++) { emit(polygon[0]); emit(polygon[j]); emit(polygon[j + 1]); }
+    }
+    const ring = [...rim.values()].sort((a, b) => Math.atan2(a[2], a[0]) - Math.atan2(b[2], b[0]));
+    const cap = v => [...v, 0, above ? -1 : 1, 0, v[0] + .5, v[2] + .5];
+    for (let i = 0; i < ring.length; i++) {
+      const a = cap(ring[i]), b = cap(ring[(i + 1) % ring.length]);
+      emit(cap([0, plane, 0])); emit(above ? a : b); emit(above ? b : a);
+    }
+  }
+  const shell = new THREE.BufferGeometry();
+  shell.setAttribute("position", new THREE.Float32BufferAttribute(position, 3));
+  shell.setAttribute("normal", new THREE.Float32BufferAttribute(normal, 3));
+  shell.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  let geometry = shell;
+  if (connector) {
+    const indexed = new THREE.CylinderGeometry(.105, .105, .09, 8, 1);
+    const ankle = indexed.toNonIndexed().translate(0, -.625 - centerY, 0);
+    geometry = mergeGeometries([shell, ankle], false);
+    indexed.dispose(); ankle.dispose(); shell.dispose();
+  }
+  geometry.computeBoundingBox(); geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function legGeometry(shin = false) {
+  const key = shin ? "leg-assembly-shin" : "leg-assembly-body";
+  if (!roundedParts.has(key)) {
+    const source = shin ? new RoundedBoxGeometry(.255, .4, .39, 1, .0357) : new RoundedBoxGeometry(.3, .78, .34, 1, .042);
+    const geometry = legAssemblyGeometry(source, shin ? -.54 : -.39, shin ? -.70 : -.65, !shin);
+    source.dispose();
+    geometry.userData.sharedFighterGeometry = true;
+    geometry.userData.legAssembly = true;
+    roundedParts.set(key, geometry);
+  }
+  return roundedParts.get(key);
+}
+
 export function kneeTaperGeometry(original) {
   const geometry = new THREE.BufferGeometry().copy(original);
   geometry.userData = {};
@@ -75,10 +139,10 @@ function part(geometry, mat, x, y, z, shadows = false) {
   return mesh;
 }
 
-function limb(geometry, mat, x, y, z) {
+function limb(geometry, mat, x, y, z, height) {
   const pivot = new THREE.Group();
   pivot.position.set(x, y, z);
-  pivot.add(part(geometry, mat, 0, -geometry.parameters.height / 2, 0));
+  pivot.add(part(geometry, mat, 0, -height / 2, 0));
   return pivot;
 }
 
@@ -367,10 +431,10 @@ export class Fighter {
     this.rightForearm = rightArmRig.forearm;
     this.leftHand = leftArmRig.hand;
     this.rightHand = rightArmRig.hand;
-    this.leftLeg = limb(new THREE.BoxGeometry(.3, .78, .34), dark, -.23, .82, 0);
-    this.rightLeg = limb(new THREE.BoxGeometry(.3, .78, .34), dark, .23, .82, 0);
-    this.leftLeg.add(part(new THREE.BoxGeometry(.255, .4, .39), armor, 0, -.54, .035));
-    this.rightLeg.add(part(new THREE.BoxGeometry(.255, .4, .39), armor, 0, -.54, .035));
+    this.leftLeg = limb(legGeometry(), dark, -.23, .82, 0, .78);
+    this.rightLeg = limb(legGeometry(), dark, .23, .82, 0, .78);
+    this.leftLeg.add(part(legGeometry(true), armor, 0, -.54, .035));
+    this.rightLeg.add(part(legGeometry(true), armor, 0, -.54, .035));
     const leftKnee = part(kneeGeometry(), accent, 0, -.39, .23, false);
     const rightKnee = part(kneeGeometry(), accent, 0, -.39, .23, false);
     this.leftLeg.add(leftKnee);
