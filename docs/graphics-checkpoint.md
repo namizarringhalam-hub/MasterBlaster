@@ -1,8 +1,10 @@
 # Graphics overhaul checkpoint
 
-Updated: 2026-09-08. Pass63 exhaust assembly is PUBLISHED as v115 after visual72→80 improvement, technical98/98PASS and production verification. The graphics project is NOT complete; newest entries below override older handoffs.
+Updated: 2026-09-08. Pass64 torso/hip silhouette is PUBLISHED as v116 after visual74→80 improvement, technical98/98PASS and production verification. **INTENTIONALLY PAUSED BY USER.** Do not resume until the user asks to continue **graphics improvements**. The project is not complete; newest entries override older handoffs.
 
-## Latest publication — Pass63 exhaust assembly v115 verified
+## Latest publication — Pass64 torso/hip silhouette v116 verified; work paused
+
+- Pass64 PUBLISHED/VERIFIED v116 sourcee2126f9415b5896f3885b1268a7dc570df25f5c6. Visual80PASS(up74), Ramanujan98PASS, independentverification98PASS/no scopedblockers. Full19+15/build/dryrun/local+productionbothlive/allnativeGLtiers/ordinaryresets/freshresourcematch/active16/390mobile PASS asbelow. Primary https://masterblaster.se/ Pages313fc2d3-7929-4bf9-bfcf-6f3333a3b957. Sites version appgprj_6a6378a267348191a15d7e0faf662c64~appgver_b90eece9becc8191b2930339957e0cef; deployment appgdep_6a9fd203b63c81919a60af6145df67cf SUCCEEDED/revision0/publicunchanged. Archive master-blaster-pass64.tar.gz SHA28a132875a693c80c3b0f76cef3233cf54aade98f56ec2ce1047493266ba5588. Bothorigins exactmain-BwfxPk2X.jsSHA60d32aa114f97a4a4fbcec10ff5703cf646dcc3077889a3869f523676a744125/Threeunchanged0d4ca7307685042392fe48a2cd080f6c614ee935cfb7aaaa70065d4c702e4fc9; HTMLindex-B4XgHrTS→mainverified. Primaryhealth200/protocol1/arena2/backend100%unchanged e79ad4a2-f74a-42bc-9c18-e1ea58af707c. Productionbothlive35923PASSexit0, livecanonicalmenubrowserverified. AllownedWorker/test/Vite13885processes stopped, QA7blank, panel8canonicalproduction/viewportreset. Allcriticsfinished; NO nexttaskselected. RecoveryautomationPAUSEDverified. Remainingwork retained in Paused-work memory below; restartservicesonlyafterexplicituserresume. There is no verified current whole-game total score, and scoped80visual/98technical must not be averaged.
 
 - Pass64 ALL THREE finalreviews approvepublication: visual80/100PASS(up74), Ramanujan98/100PASS, independentverification98/100PASS, no scopedblockers. Exactvalidatedsource nowbeingcommitted/pushed/deployed; afterwardrecordproductionproofandSTOP underuserpause. No nextcandidate/noautomaticresume.
 
