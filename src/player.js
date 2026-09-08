@@ -8,6 +8,44 @@ const clamp = THREE.MathUtils.clamp;
 export const PROJECTILE_SPAWN_OFFSET = .08;
 const roundedParts = new Map();
 
+export function exhaustShroudGeometry(variant = 0) {
+  if (![0, 1, 2, 3].includes(variant)) throw new Error("Unknown fighter variant");
+  const large = variant === 2, y = large ? .9974 : 1.055;
+  const profile = [[large ? .056 : .075, y], [large ? .062 : .081, y],
+    [.113, 1.137], [.113, 1.460], [0, 1.460], [0, 1.456], [.110, 1.456], [.110, 1.137]];
+  const positions = [], normals = [], uvs = [], sides = 12;
+  for (let edge = 0; edge < profile.length; edge++) {
+    const [r0, y0] = profile[edge], [r1, y1] = profile[(edge + 1) % profile.length];
+    if (r0 === 0 && r1 === 0) continue;
+    for (let side = 0; side < sides; side++) {
+      const a = side * Math.PI * 2 / sides, b = (side + 1) * Math.PI * 2 / sides;
+      const point = (r, y, angle) => [r * Math.cos(angle), y, r * Math.sin(angle)];
+      const p = point(r0, y0, a), q = point(r1, y1, a), r = point(r1, y1, b), s = point(r0, y0, b);
+      const triangles = r0 === 0 ? [[p, q, r]] : r1 === 0 ? [[p, q, s]] : [[p, q, r], [p, r, s]];
+      for (const triangle of triangles) {
+        const normal = new THREE.Vector3().subVectors(new THREE.Vector3(...triangle[1]), new THREE.Vector3(...triangle[0]))
+          .cross(new THREE.Vector3().subVectors(new THREE.Vector3(...triangle[2]), new THREE.Vector3(...triangle[0]))).normalize();
+        for (const vertex of triangle) { positions.push(...vertex); normals.push(...normal.toArray()); uvs.push(0, 0); }
+      }
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  return geometry;
+}
+
+function sharedExhaustGeometry(variant) {
+  const key = `exhaust:${variant === 2 ? "large" : "standard"}`;
+  if (!roundedParts.has(key)) {
+    const geometry = exhaustShroudGeometry(variant);
+    geometry.userData.sharedFighterGeometry = true;
+    roundedParts.set(key, geometry);
+  }
+  return roundedParts.get(key);
+}
+
 export function clipLegPolygon(polygon, plane, above) {
   const out = [];
   for (let i = 0; i < polygon.length; i++) {
@@ -455,7 +493,11 @@ export class Fighter {
     leftFin.rotation.z = -.42;
     rightFin.rotation.z = .42;
     const backpack = part(new THREE.BoxGeometry(.58, .72, .25), dark, 0, 1.42, -.43);
-    const packLight = part(new THREE.BoxGeometry(.38, .32, .055), accent, 0, 1.42, -.58, false);
+    const packLight = part(new THREE.BoxGeometry(.38, .32, .055), accent, 0, 1.42, -.64, false);
+    const leftNozzle = part(sharedExhaustGeometry(costumeVariant), dark, -.2, 0, -.49);
+    const rightNozzle = part(sharedExhaustGeometry(costumeVariant), dark, .2, 0, -.49);
+    const packMount = part(new THREE.BoxGeometry(.38 * (costumeVariant === 3 ? .72 : 1) - .020,
+      .32 * (costumeVariant === 3 ? 1.28 : 1) - .020, .075), dark, 0, 1.42, -.58);
     const thrusterMaterial = new THREE.MeshBasicMaterial({
       color: new THREE.Color(this.accent).multiplyScalar(2.1), transparent: true, opacity: .5,
       blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false
@@ -541,7 +583,7 @@ export class Fighter {
     headArmor.geometry.translate(0, -2.08, 0);
     headArmor.name = "Helmet brow and crest";
     helmetAssembly.add(visor, headArmor);
-    const staticDark = mergeStaticParts(dark, [torso, spine, backpack]);
+    const staticDark = mergeStaticParts(dark, [torso, spine, backpack, leftNozzle, rightNozzle, packMount]);
     const staticArmor = mergeStaticParts(armor, [chest, breastplate, pelvis, leftShoulder, rightShoulder]);
     const staticAccent = mergeStaticParts(accent, [sternum, chestLight, leftEar, rightEar, leftFin, rightFin, packLight]);
     this.rig.add(

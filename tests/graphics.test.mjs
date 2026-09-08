@@ -18,7 +18,140 @@ import { weaponPresentation } from "../src/weaponPresentation.js";
 import { shoulderChamferGeometry } from "./shoulderChamferGeometry.js";
 import { ConvexHull } from "three/addons/math/ConvexHull.js";
 import { ankleReliefGeometry } from "./ankleReliefGeometry.js";
-import { exhaustShroudGeometry, withExhaustShrouds } from "./exhaustShroudGeometry.js";
+import { exhaustBody, exhaustShroudGeometry, previousExhaustGeometries, withExhaustShrouds, withPreviousExhaust } from "./exhaustShroudGeometry.js";
+
+function previousFighter(...args) {
+  // CPU-only reconstruction, before any renderer has seen these owned meshes.
+  const hero = new Fighter(...args), { body, light, bodyGeometry, lightGeometry } = previousExhaustGeometries(hero);
+  body.geometry.dispose(); light.geometry.dispose(); body.geometry = bodyGeometry; light.geometry = lightGeometry;
+  return hero;
+}
+
+for (let variant = 0; variant < 4; variant++) for (const fail of [false, true]) {
+  const hero = new Fighter(new THREE.Scene(), { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const body = exhaustBody(hero), geometry = body.geometry, children = [...hero.rig.children];
+  const light = hero.rig.children.find(mesh => mesh.isMesh && mesh.material === hero.accentMaterial && mesh.position.lengthSq() === 0), lightGeometry = light.geometry;
+  assert.equal(geometry.attributes.position.count, 2268);
+  const run = () => withPreviousExhaust(hero, async previous => {
+    assert.equal(body.geometry, geometry); assert.equal(body.visible, false);
+    assert.equal(previous.geometry.attributes.position.count, 1080);
+    assert.equal(previous.material, body.material);
+    for (const [name, attribute] of Object.entries(previous.geometry.attributes))
+      assert.deepEqual(attribute.array, geometry.attributes[name].array.slice(0, attribute.array.length), "integrated original body prefix is unchanged");
+    await withExhaustShrouds(hero, async (reviewed, panel) => {
+      for (const [actual, expected] of [[geometry, reviewed.geometry], [lightGeometry, panel.geometry]]) for (const [name, attribute] of Object.entries(actual.attributes)) {
+        const reference = expected.attributes[name]; assert.equal(attribute.count, reference.count);
+        for (let i = 0; i < attribute.array.length; i++) assert.ok(Math.abs(attribute.array[i] - reference.array[i]) < 1e-7,
+          `integrated ${name} matches the reviewed geometry within Float32 transform rounding`);
+      }
+      assert.equal(panel.material, light.material);
+    }, true);
+    if (fail) throw Error("previous capture failed");
+  });
+  if (fail) await assert.rejects(run, /previous capture failed/); else await run();
+  assert.equal(body.geometry, geometry); assert.equal(light.geometry, lightGeometry);
+  assert.equal(body.visible, true); assert.equal(light.visible, true); assert.deepEqual(hero.rig.children, children);
+  hero.dispose();
+}
+{
+  const source = readFileSync(new URL("../src/player.js", import.meta.url), "utf8");
+  const cacheSource = source.slice(source.indexOf("function sharedExhaustGeometry("), source.indexOf("export function clipLegPolygon("));
+  const cache = new Map(); let builds = 0;
+  const get = new Function("roundedParts", "exhaustShroudGeometry", `${cacheSource}; return sharedExhaustGeometry;`)(cache, variant => { builds++; return exhaustShroudGeometry(variant); });
+  const geometries = Array.from({ length: 16 }, (_, i) => get(i % 4));
+  assert.equal(builds, 2); assert.equal(new Set(geometries).size, 2);
+  assert.ok(geometries.every(geometry => geometry.userData.sharedFighterGeometry));
+  for (const geometry of new Set(geometries)) geometry.dispose();
+}
+
+// Corresponding real rounded-light surfaces, not stale screen pixels. The
+// original body filters buried samples; the candidate includes its pedestal.
+for (let variant = 0; variant < 4; variant++) {
+  const hero = previousFighter(new THREE.Scene(), { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const body = exhaustBody(hero), accent = hero.rig.children.find(mesh => mesh.isMesh && mesh.material === hero.accentMaterial && mesh.position.lengthSq() === 0);
+  const reference = new RoundedBoxGeometry(.38, .32, .055, 1, .055 * .14), count = reference.attributes.position.count;
+  reference.dispose();
+  const geometry = new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(accent.geometry.attributes.position.array.slice(-count * 3), 3));
+  const light = new THREE.Mesh(geometry, accent.material), positions = geometry.attributes.position;
+  await withExhaustShrouds(hero, async candidate => {
+    for (const camera of [[-.7476635514, .6345527576, -1.6822430005], [-1.4953271028, 1.6093531652, -2.1495327353]]) {
+      const origin = new THREE.Vector3(...camera), ray = new THREE.Raycaster(), hits = [];
+      const blocked = (mesh, point) => {
+        hits.length = 0; ray.set(origin, point.clone().sub(origin).normalize()); ray.far = point.distanceTo(origin) - 1e-5;
+        ray.intersectObject(mesh, false, hits); return hits.length > 0;
+      };
+      let visible = 0;
+      for (let i = 0; i < positions.count; i += 3) {
+        const [a, b, c] = [0, 1, 2].map(j => new THREE.Vector3().fromBufferAttribute(positions, i + j));
+        const normal = b.clone().sub(a).cross(c.clone().sub(a));
+        if (normal.dot(origin.clone().sub(a)) <= 0) continue;
+        for (let u = 0; u <= 12; u++) for (let v = 0; v <= 12 - u; v++) {
+          const point = a.clone().multiplyScalar(1 - (u + v) / 12).addScaledVector(b, u / 12).addScaledVector(c, v / 12);
+          if (blocked(light, point) || blocked(body, point)) continue;
+          visible++;
+          assert.equal(blocked(candidate, point.add(new THREE.Vector3(0, 0, -.060))), false, `variant ${variant}: supported panel cannot lose an originally visible surface sample`);
+        }
+      }
+      assert.ok(visible > 2000, "visibility check must cover the actual rounded panel, not an empty sample set");
+    }
+  }, true);
+  geometry.dispose(); hero.dispose();
+}
+
+for (let variant = 0; variant < 4; variant++) for (const fail of [false, true]) {
+  const hero = previousFighter(new THREE.Scene(), { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const body = exhaustBody(hero), light = hero.rig.children.find(mesh => mesh.isMesh && mesh.material === hero.accentMaterial && mesh.position.lengthSq() === 0);
+  hero.rig.children.reverse(); assert.equal(exhaustBody(hero), body, "target identity does not depend on child order");
+  const children = [...hero.rig.children], originalBody = body.geometry, originalLight = light.geometry;
+  originalLight.computeBoundingBox(); originalLight.computeBoundingSphere();
+  const originalBounds = JSON.stringify([originalLight.boundingBox, originalLight.boundingSphere]);
+  const dispose = THREE.BufferGeometry.prototype.dispose, released = new Map();
+  THREE.BufferGeometry.prototype.dispose = function () { released.set(this, (released.get(this) || 0) + 1); return dispose.call(this); };
+  try {
+    const run = () => withExhaustShrouds(hero, async (candidate, panel) => {
+      assert.equal(body.geometry, originalBody); assert.equal(light.geometry, originalLight);
+      assert.equal(body.visible, false); assert.equal(light.visible, false);
+      assert.equal(candidate.material, body.material); assert.equal(panel.material, light.material);
+      assert.deepEqual(panel.matrix, light.matrix);
+      const reference = new RoundedBoxGeometry(.38, .32, .055, 1, .055 * .14), count = reference.attributes.position.count;
+      // Do not include this independent reference in the helper ownership count.
+      dispose.call(reference);
+      for (const [name, attribute] of Object.entries(originalLight.attributes)) {
+        const actual = panel.geometry.attributes[name]; assert.equal(actual.count, attribute.count);
+        for (let i = 0; i < attribute.array.length; i++) {
+          const moved = name === "position" && i >= attribute.array.length - count * 3 && i % 3 === 2;
+          assert.equal(actual.array[i], moved ? Math.fround(attribute.array[i] - .060) : attribute.array[i], "only existing pack-light suffix Z changes");
+        }
+      }
+      const points = panel.geometry.attributes.position;
+      assert.ok(Math.abs(panel.geometry.boundingBox.min.z - originalLight.boundingBox.min.z + .060) < 1e-7);
+      for (let i = 0; i < points.count; i++) {
+        const point = new THREE.Vector3().fromBufferAttribute(points, i);
+        assert.equal(panel.geometry.boundingBox.containsPoint(point), true);
+        assert.ok(panel.geometry.boundingSphere.distanceToPoint(point) <= 1e-7);
+      }
+      for (let i = points.count - count; i < points.count; i++) assert.ok(points.getZ(i) < -.61249, "every actual rounded light vertex is ahead of shrouds");
+      if (variant === 3) for (const [camera, point] of [
+        [[-.7476635514, .6345527576, -1.6822430005], [-.1351761967, 1.4849813382, -.5547552705]],
+        [[-1.4953271028, 1.6093531652, -2.1495327353], [-.1351761967, 1.2250560522, -.5547552705]]
+      ]) {
+        const origin = new THREE.Vector3(...camera), target = new THREE.Vector3(...point).add(new THREE.Vector3(0, 0, -.060));
+        const ray = new THREE.Ray(origin, target.clone().sub(origin).normalize()), hit = new THREE.Vector3(), positions = candidate.geometry.attributes.position;
+        for (let i = 0; i < positions.count; i += 3) {
+          if (ray.intersectTriangle(...[0, 1, 2].map(j => new THREE.Vector3().fromBufferAttribute(positions, i + j)), false, hit))
+            assert.ok(hit.distanceTo(origin) >= target.distanceTo(origin) - 1e-5, "known exposed-edge rays clear body, shrouds and pedestal at translated light surface");
+        }
+      }
+      if (fail) throw Error("raised capture failed");
+    }, true);
+    if (fail) await assert.rejects(run, /raised capture failed/); else await run();
+  } finally { THREE.BufferGeometry.prototype.dispose = dispose; }
+  assert.equal(released.size, 6); assert.ok([...released.values()].every(count => count === 1));
+  assert.equal(released.has(originalBody), false); assert.equal(released.has(originalLight), false);
+  assert.equal(JSON.stringify([originalLight.boundingBox, originalLight.boundingSphere]), originalBounds);
+  assert.equal(body.visible, true); assert.equal(light.visible, true); assert.deepEqual(hero.rig.children, children);
+  hero.dispose();
+}
 
 for (let variant = 0; variant < 4; variant++) {
   const geometry = exhaustShroudGeometry(variant), positions = geometry.attributes.position, normals = geometry.attributes.normal;
@@ -52,7 +185,7 @@ for (let variant = 0; variant < 4; variant++) {
   assert.ok([...edges.values()].every(([a, b]) => a === 1 && b === 1), "closed oriented shroud manifold, open cavity outlet remains annular");
   geometry.dispose();
   for (const fail of [false, true]) {
-    const hero = new Fighter(new THREE.Scene(), { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+    const hero = previousFighter(new THREE.Scene(), { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
     const target = hero.rig.children.find(mesh => mesh.isMesh && mesh.material === hero.darkMaterial), original = target.geometry;
     const children = [...hero.rig.children];
     const flame = hero.thrusterLights, flameState = JSON.stringify({ geometry: flame.geometry.toJSON(), material: flame.material.toJSON(), position: flame.position, scale: flame.scale });
@@ -1087,28 +1220,35 @@ for (const pose of ["gait-positive", "gait-negative", "landing"]) {
 }
 const handViewSource = graphicsFixture.slice(graphicsFixture.indexOf("function setView()"), graphicsFixture.indexOf("async function reset()"));
 const settledCameraSource = graphicsFixture.slice(graphicsFixture.indexOf("async function withSettledReviewCamera("), graphicsFixture.indexOf("async function runLowerBodyReview("));
-{
+for (const mode of ["exhaust", "exhaust-raised", "exhaust-integrated"]) {
   const source = graphicsFixture.slice(graphicsFixture.indexOf("async function runLowerBodyReview("), graphicsFixture.indexOf("async function runShellReview("));
-  const hero = new Fighter(new THREE.Scene(), { id: "helmet-1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const hero = (mode === "exhaust-integrated" ? (...args) => new Fighter(...args) : previousFighter)(new THREE.Scene(), { id: "helmet-1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
   const target = hero.rig.children.find(mesh => mesh.isMesh && mesh.material === hero.darkMaterial), original = target.geometry;
   const game = { players: [hero], paused: true, renderPipeline: { direct: false } }, captured = [];
   const controls = { view: { value: "thrusters" }, pose: { value: "aim" }, "camera-captures": { replaceChildren() {}, append() {} } };
   const document = { querySelectorAll: () => [], createElement: () => ({}), querySelector: () => ({ toDataURL: () => "unit-test-only" }) };
-  const review = new Function("game", "select", "document", "withExhaustShrouds", "shellReviewState", `
+  const review = new Function("game", "select", "document", "withExhaustShrouds", "shellReviewState", "exhaustBody", "withPreviousExhaust", `
     const resetReview={},cacheReview={},decoyReview={},cameraReview={},sceneSerial=1,errorCount=0,stress=false,resetPhase="ready",poseReview={requested:"aim"};
     let renderedFrames=0; const waitForReviewFrame=async()=>{renderedFrames+=4;},withFrozenShaderTime=async capture=>capture();
     ${settledCameraSource}; ${source}; return {run:runLowerBodyReview,state:cameraReview};
   `)(game, name => controls[name], document, withExhaustShrouds, mesh => {
     captured.push(mesh); return { targetGeometry: mesh.geometry.uuid, targetVertices: mesh.geometry.attributes.position.count };
-  });
-  await review.run("exhaust");
+  }, exhaustBody, withPreviousExhaust);
+  await review.run(mode);
   assert.equal(review.state.error, null); assert.equal(review.state.running, false);
-  assert.equal(captured.length, 3); assert.equal(captured[0], target); assert.equal(captured[2], target);
+  const count = mode === "exhaust-raised" ? 4 : 3;
+  assert.equal(captured.length, count); assert.equal(captured[0], target); assert.equal(captured[count - 1], target);
   assert.notEqual(captured[1], target); assert.equal(captured[1].material, target.material);
   assert.equal(review.state.samples[0].targetGeometry, original.uuid);
-  assert.equal(review.state.samples[2].targetGeometry, original.uuid);
-  assert.ok(review.state.samples[1].targetVertices > review.state.samples[0].targetVertices, "candidate metadata uses the actual replacement, never another dark helmet mesh");
-  assert.deepEqual(review.state.samples.map(s => s.exhaust), Array(3).fill(review.state.samples[0].exhaust));
+  assert.equal(review.state.samples[count - 1].targetGeometry, original.uuid);
+  assert.ok(mode === "exhaust-integrated" ? review.state.samples[1].targetVertices < review.state.samples[0].targetVertices
+    : review.state.samples[1].targetVertices > review.state.samples[0].targetVertices, "metadata uses the intended previous or candidate body, never another dark helmet mesh");
+  if (count === 4) assert.ok(review.state.samples[2].targetVertices > review.state.samples[1].targetVertices, "raised candidate includes the actual pedestal");
+  const flames = review.state.samples.map(s => { const { light, ...flame } = s.exhaust; return flame; });
+  assert.deepEqual(flames, Array(count).fill(flames[0]));
+  assert.deepEqual(review.state.samples.map(s => s.exhaust.light.shiftZ), mode === "exhaust-integrated" ? [0, .060, 0] : count === 3 ? [0, 0, 0] : [0, 0, -.060, 0]);
+  assert.equal(review.state.samples[0].exhaust.light.geometry, review.state.samples[count - 1].exhaust.light.geometry);
+  if (mode === "exhaust-integrated") assert.notEqual(review.state.samples[1].exhaust.light.geometry, review.state.samples[0].exhaust.light.geometry);
   hero.dispose();
 }
 for (const view of ["player-camera", "thrusters-low"]) for (const fail of [false, true]) {
