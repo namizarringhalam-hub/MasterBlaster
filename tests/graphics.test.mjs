@@ -1485,6 +1485,34 @@ const shellControl = new Function("THREE", "game", `${shellControlSource}; retur
   targets[0].material = wrong;
   fighter.dispose();
 }
+{
+  const source = graphicsFixture.slice(graphicsFixture.indexOf("async function withShinClearcoat("), graphicsFixture.indexOf("async function withAnkleRelief("));
+  const run = new Function("withHelmetShellDiagnostic", `${source}; return withShinClearcoat;`)(shellControl);
+  const fighter = new Fighter(new THREE.Scene(), { id: "shin-coat", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const shin = fighter.leftLeg.children[1], original = shin.material, saved = original.toJSON(), peers = new Map();
+  fighter.group.traverse(mesh => { if (mesh.isMesh) peers.set(mesh, [mesh.geometry, mesh.material]); });
+  for (const mode of ["material-control", "no-clearcoat"]) for (const fail of [false, true]) {
+    let disposed = 0;
+    const capture = async () => {
+      for (const [mesh, [geometry, material]] of peers) {
+        assert.ok(mesh.geometry === geometry);
+        if (mesh !== shin) assert.ok(mesh.material === material);
+      }
+      assert.ok(shin.material !== original);
+      const current = shin.material.toJSON(); current.uuid = saved.uuid;
+      assert.equal(current.clearcoat, mode === "no-clearcoat" ? 0 : saved.clearcoat);
+      current.clearcoat = saved.clearcoat; assert.deepEqual(current, saved, "only clearcoat scalar differs from identical clone control");
+      shin.material.addEventListener("dispose", () => disposed++);
+      if (fail) throw new Error("shin coating interrupted");
+    };
+    if (fail) await assert.rejects(run(fighter, mode, capture), /shin coating interrupted/); else await run(fighter, mode, capture);
+    assert.ok(shin.material === original); assert.deepEqual(original.toJSON(), saved); assert.equal(disposed, 1);
+    assert.ok(shellGame.renderPipeline.pipeline.outputNode === shellOutput);
+    assert.equal(shellGame.renderer.toneMapping, THREE.ACESFilmicToneMapping);
+  }
+  await assert.rejects(run(fighter, "unknown", () => assert.fail("invalid control")), /Unexpected shin/);
+  fighter.dispose();
+}
 let sharedShellDisposals = 0;
 shellOriginal.addEventListener("dispose", () => sharedShellDisposals++);
 shellEnvironment.addEventListener("dispose", () => sharedShellDisposals++);
