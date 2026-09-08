@@ -2,6 +2,12 @@
 
 Updated: 2026-09-08. Pass40 shoulder fit is PUBLISHED after actual visual92→96 improvement, technical99/98PASS, full validation and production verification. The graphics project is NOT complete.
 
+## Latest publication — Pass48 landing correction v107 verified
+
+- Exact source46b837c280c2a40439b03960d53375faa1d97cd7 pushed origin/main andSitesmain. Pages0d839da1-5274-4341-8bc0-4e618d95fc58 at https://masterblaster.se/; Sitesv107/appgprj_6a6378a267348191a15d7e0faf662c64~appgver_e13551c7ca7481919c5165327432ed23, deploymentappgdep_6a9f54233a30819197fc61d64a16341e succeededrevision0 existingpublicmirror. Archive1d044fe2fffade3f82c7e78d74936a7ec27276bd2b30bb98e4a5abc43933b283/96files16404480B. Bothorigins verifiedmain-DjHdtaAG.js SHA3ff08fe848559f4e1ecf2c2f5634b619f7d80b18e40b78e62f5bdf73a1a515cc/unchangedThreeSHA0d4ca7307685042392fe48a2cd080f6c614ee935cfb7aaaa70065d4c702e4fc9. Health200/ok/protocol1/arenaRevision2; backendunchanged e79ad4a2-f74a-42bc-9c18-e1ea58af707c.
+- Productionlive bothmultiplayerlifecycle andcornerdestruction/ammo/reconnect16fighter suitesPASS. NativeHighTraining rendered16fighters/clockprogress, savedpass48-production.jpg/-dom.txt, noFPSclaim. SessionendedMainMenu; QA7localordinarynative1280x720. Sitesexistingviewhandoffqueued. All3scopedreviewresults visual82approvedpartial(not98), technical98/98PASS. No scopedreleaseblockers; broaderart/FPSunfinished.
+- NEXT Pass49 bounded Blaster-only flash-at-visible-aperture QA experiment, preserving logical origins/brightness/lifetime/audio. Examine real shortrecoilsequence before expanding47weapons. Rootwillinspect actualCombatVisuals slot/tracer/lightposition ownership. Vitesession13885retained; no Worker/test/browserbatch active. Continuewithoutprompt; no userpause.
+
 ## Latest publication — Pass47 renderer correction v106 verified
 
 - Pass48 in progress after release: wholefighter pass48-whole-{normal,hard}-recovery.json/+0..26PNG all18 restoredpairs exact/errors0. Normalclearance−.07737→+.00593m, hard−.18216→+.01883m; visualreview sees retainedsquash/brace but floatingfeet9–14cm midcompression andrigidlegs remainunfinished. Productlandingunchanged.
