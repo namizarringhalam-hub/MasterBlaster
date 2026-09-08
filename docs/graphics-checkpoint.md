@@ -2,7 +2,13 @@
 
 Updated: 2026-09-08. Pass40 shoulder fit is PUBLISHED after actual visual92→96 improvement, technical99/98PASS, full validation and production verification. The graphics project is NOT complete.
 
-## Latest publication — Pass49 muzzle-origin correction v108 verified
+## Latest publication — Pass50 attachment v109 verified
+
+- Source fee10f469d0d3d6bab1af73f8394e711e1ca8aff pushed origin/main and Sitesmain. Pages9dffa21d-4d38-4413-ab47-074f615e2d4e at https://masterblaster.se/. Sitesv109 saved appgprj_6a6378a267348191a15d7e0faf662c64~appgver_6e5126bd18d481919798df03356739ce; deployment appgdep_6a9f63a0b2a88191976a716c5b36c380 succeededrevision0 existingpublicmirror. ArchiveSHA81bd88278d642626f225e1d41bcf26efde377f6f6cb555ab557f8351fae14458/96files16404480B. Bothorigins exact main-B_smgsB4.js SHA7bed148cd1040cedde13de508fcb884f2e307b6f7cec891ec7c7051c1b9d9ce4 and unchangedThreeSHA0d4ca7307685042392fe48a2cd080f6c614ee935cfb7aaaa70065d4c702e4fc9 verified.
+- Canonical production health200/ok/protocol1/arenaRevision2; Workerunchangedactive100% e79ad4a2-f74a-42bc-9c18-e1ea58af707c. Both productionlive multiplayer suitesPASS. Desktop/narrow390x844 nativeHigh16fighter Training rendered withclock/scores/healthprogress; pass50-production.jpg/-dom.txt and-mobile.jpg/-dom.txt. Smokeonly, notdeviceFPS/mobilecertification. TestsessionendedMainMenu; QA7restoredlocalordinarynative1280x720, existingSitesviewhandoffqueued. Mirror /api/health returns404: scripts/prepare-sites.mjs is static-only and multiplayer defaults tosameorigin; this is unchanged hosting limitation, not canonicalbackendfailure. Do notclaimmirroronlinemultiplayerverified; primary masterblaster.se is the testedgame target.
+- Allactualfinalscores86visual(up80)/98Ramanujan/98Bohr; no scopedreleaseblockers. NEXTbounded diagnosis of remainingBlaster broadprojectiletrail offset versus authoritative logicalprojectile origin, before any visual-only correction. Keep projectile physics/hits/audio origins unchanged; no snapshotattachment to alreadydepartedshots. Broadergraphics98stillunfinished. Vite13885retained/noWorker/test/capturerunning. Continuewithoutprompt/notpause/notcomplete.
+
+## Pass50 implementation and validation history
 
 - Pass50 FINAL all3actualscores: visual86(up80)approvedpartial, Ramanujan98PASS, Bohr98PASS, no scopedblockers. FullfinalbuildPASS main-B_smgsB4.js SHA7bed148cd1040cedde13de508fcb884f2e307b6f7cec891ec7c7051c1b9d9ce4; Threeunchanged. Commit/push/deploythisvalidated5fileincrementNOW before nextgraphicswork. Productionstillv108untilverification; no broader98/FPSclaim.
 
