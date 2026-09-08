@@ -21,6 +21,40 @@ import { shoulderChamferGeometry } from "./shoulderChamferGeometry.js";
 // Only the three transient merge copies differ; no frozen art data to maintain.
 const playerMergeSource = readFileSync(new URL("../src/player.js", import.meta.url), "utf8");
 {
+  const target = new THREE.Vector3(), effects = new CombatVisuals(new THREE.Scene());
+  for (const id of Object.keys(WEAPONS)) {
+    const hero = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, [id], new THREE.Vector3(8, 15, 8));
+    assert.equal(typeof hero.visualMuzzlePoint, "function", "visual muzzle origin must be distinct from gameplay origin");
+    for (const pitch of [0, Math.PI / 3, -Math.PI / 3]) {
+      hero.rig.position.y = -.08; hero.rig.rotation.x = .13; hero.weaponGroup.rotation.x = pitch; hero.weaponGroup.position.z = .15;
+      const logical = hero.muzzlePoint().toArray(), projectile = hero.forwardPoint(.08).toArray();
+      assert.ok(hero.visualMuzzlePoint(target) === target);
+      const expected = id === "blaster" ? new THREE.Vector3(.05, .06, .994).applyMatrix4(hero.weaponGroup.matrixWorld) : hero.muzzlePoint();
+      assert.ok(target.distanceTo(expected) < 1e-12);
+      assert.deepEqual(hero.muzzlePoint().toArray(), logical); assert.deepEqual(hero.forwardPoint(.08).toArray(), projectile);
+    }
+    if (id === "blaster") {
+      effects.muzzle(hero, hero.weapon); const flash = effects.flashes[0], tracer = effects.tracers[0], light = effects.combatLights[0];
+      assert.ok(flash.position.distanceTo(hero.visualMuzzlePoint(target)) < 1e-12);
+      assert.ok(tracer.start.distanceTo(flash.position) < 1e-12);
+      assert.ok(light.position.distanceTo(flash.position.clone().addScaledVector(flash.direction, flash.length * .32)) < 1e-12);
+      assert.equal(flash.life, .1); assert.equal(tracer.life, .085); assert.equal(light.userData.life, .085);
+    }
+    hero.dispose();
+  }
+  const cached = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster", "rocket_launcher"], new THREE.Vector3(8, 15, 8));
+  const blasterModel = cached.weaponModels.get("blaster");
+  cached.ammo.blaster = 2; cached.health = 73;
+  for (const slot of [1, 0, 1, 0]) {
+    cached.switchSlot(slot); assert.ok(cached.visualMuzzlePoint(target) === target);
+    const expected = slot ? cached.muzzlePoint() : new THREE.Vector3(.05, .06, .994).applyMatrix4(cached.weaponGroup.matrixWorld);
+    assert.ok(target.distanceTo(expected) < 1e-12); assert.ok(cached.weaponModels.get("blaster") === blasterModel);
+    assert.equal(cached.weaponModels.size, 2); assert.equal(cached.ammo.blaster, 2); assert.equal(cached.health, 73);
+  }
+  cached.dispose();
+  effects.dispose();
+}
+{
   const hero = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3(8, 15, 8));
   hero.grounded = true; hero.landTimer = .22; hero.landStrength = 1;
   const floor = { surfaceHeightAt: () => 15, resolve: position => { position.y = 15; return { grounded: true }; }, boostAt: () => null };
@@ -560,6 +594,7 @@ for (const pose of ["gait-positive", "gait-negative", "landing"]) {
 const handViewSource = graphicsFixture.slice(graphicsFixture.indexOf("function setView()"), graphicsFixture.indexOf("async function reset()"));
 const landingDropSource = graphicsFixture.slice(graphicsFixture.indexOf("async function withPreviousLandingDrop("), graphicsFixture.indexOf("async function runLandingReview("));
 const removeLandingDrop = new Function(`${landingDropSource}; return withPreviousLandingDrop;`)();
+const translateMuzzle = new Function(`${landingDropSource}; return withTranslatedMuzzle;`)();
 assert.ok(playerMergeSource.includes("this.rig.position.y = bob;"), "QA previous-drop control requires the corrected production translation");
 for (const weaponId of Object.keys(WEAPONS)) {
   const hero = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, [weaponId], new THREE.Vector3(8, 15, 8));
@@ -587,22 +622,22 @@ for (const weaponId of Object.keys(WEAPONS)) {
   hero.grounded = true; hero.landTimer = .11; hero.landStrength = .36; hero.rig.position.y = -.07; hero.group.updateMatrixWorld(true);
   const state = {}, controls = [{ disabled: false }, { disabled: true }], links = [];
   let beforeShot;
-  const shotCalls = [], shotGame = { projectiles: [], combatMusicPulse: .23, combatVisuals: new CombatVisuals(new THREE.Scene()),
+  const shotCalls = [], shotGame = { scene: new THREE.Scene(), projectiles: [], combatMusicPulse: .23, combatVisuals: new CombatVisuals(new THREE.Scene()),
     clearTransientNetworkCombat() { this.projectiles = []; shotCalls.push("clear"); },
     tryFire(player) { shotCalls.push("fire"); this.projectiles.push({ mesh: { position: player.forwardPoint(.08) }, age: 0 });
       beforeShot = { velocity: player.velocity.toArray(), recoilVisual: player.recoilVisual };
       player.recoil(); player.ammo[player.weapon.id]--; player.attackTimer = .3; this.combatMusicPulse = .52;
-      this.combatVisuals.muzzle(player, player.weapon); this.combatVisuals.addTracer(player.muzzlePoint(), player.forwardPoint(2), player.weapon, player, .085, .02); },
+      this.combatVisuals.muzzle(player, player.weapon); },
     updateProjectiles(dt) { shotCalls.push("step"); this.projectiles[0].age += dt; this.projectiles[0].mesh.position.addScaledVector(hero.aim, dt * 30); } };
   let interrupted = false;
-  const run = new Function("THREE", "game", "cameraReview", "document", "select", "waitForReviewFrame", "shellReviewState", "withPreviousLandingDrop", `
+  const run = new Function("THREE", "Fighter", "game", "cameraReview", "document", "select", "waitForReviewFrame", "shellReviewState", "withPreviousLandingDrop", "withTranslatedMuzzle", `
     const resetReview={},cacheReview={},decoyReview={},sceneSerial=1,errorCount=0,stress=false,resetPhase="ready",renderedFrames=0,stillMove=new THREE.Vector3(),reviewAim=new THREE.Vector3(0,0,-1);
-    ${source};return runLandingReview;`)(THREE, Object.assign(shotGame, { players: [hero], paused: true, renderPipeline: { direct: false }, world: {
+    ${source};return runLandingReview;`)(THREE, Fighter, Object.assign(shotGame, { players: [hero], paused: true, renderPipeline: { direct: false }, world: {
       surfaceHeightAt: () => 15, resolve: position => { const grounded = position.y <= 15; if (grounded) position.y = 15; return { grounded }; }, boostAt: () => null } }), state,
     { querySelectorAll: () => controls, createElement: () => ({}), querySelector: () => ({ toDataURL: () => "data:image/png;base64,test" }) },
     name => name === "view" ? { value: "lower-body-side" } : name === "pose" ? { value: "landing" } : { replaceChildren: () => { links.length = 0; }, append: link => links.push(link) },
     async () => { assert.equal(state.shell, true); assert.ok(controls.every(control => control.disabled)); if (interrupted && state.samples.length === 1) throw new Error("landing frame timeout"); },
-    () => ({}), removeLandingDrop);
+    () => ({}), removeLandingDrop, translateMuzzle);
   await run(); assert.equal(state.error, null); assert.equal(links.length, 3);
   assert.deepEqual(state.samples.map(sample => sample.mode), ["current", "previous-drop", "current-restored"]);
   assert.equal(state.samples[0].rigY, state.samples[2].rigY); assert.ok(state.samples[1].rigY < state.samples[0].rigY);
@@ -643,6 +678,37 @@ for (const weaponId of Object.keys(WEAPONS)) {
   assert.ok(shotGame.combatVisuals.combatLights.every(light => light.userData.life <= 0 && light.intensity === 0));
   for (const layer of ["flashOuter", "flashInner", "tracerOuter", "tracerInner", "ringOuter", "sparkLayer", "bloodLayer"])
     assert.equal(shotGame.combatVisuals[layer].count, 0, `${layer} must be empty after the shot check`);
+  interrupted = false;
+  const originalSnapshot = () => {
+    const fields = Object.fromEntries(Object.entries(hero).filter(([, value]) => value === null || ["number", "string", "boolean"].includes(typeof value) || value?.isVector3 || value?.isQuaternion)
+      .map(([key, value]) => [key, value?.toArray ? value.toArray() : value]));
+    const transforms = []; hero.group.traverse(object => transforms.push([object.uuid, object.position.toArray(), object.quaternion.toArray(), object.scale.toArray(), object.visible]));
+    return { fields, transforms, ammo: { ...hero.ammo } };
+  };
+  const original = originalSnapshot();
+  for (const mode of ["neutral", "landing"]) {
+    await run(true, mode === "neutral" ? 0 : 8, true, mode); assert.equal(state.error, null); assert.equal(state.samples.length, 27);
+    assert.ok(shotGame.players[0] === hero); assert.deepEqual(originalSnapshot(), original); assert.equal(shotGame.scene.children.length, 0);
+    for (let index = 0; index < 27; index += 3) {
+      const [before, trial, restored] = state.samples.slice(index, index + 3);
+      assert.ok(new THREE.Vector3(0, 0, 1).transformDirection(new THREE.Matrix4().fromArray(before.weaponMatrix)).dot(new THREE.Vector3(0, 0, -1)) > .95,
+        "temporary fighter barrel must face the shot direction throughout recoil");
+      assert.deepEqual(before.shotEvidence, restored.shotEvidence);
+      assert.deepEqual(before.shotEvidence.projectiles, trial.shotEvidence.projectiles);
+      assert.deepEqual(before.weaponMatrix, trial.weaponMatrix);
+      const event = before.shotEvidence.muzzleEvent, moved = trial.shotEvidence.muzzleEvent;
+      for (const field of ["flash", "tracerStart", "tracerEnd", "lightPosition"]) {
+        const expected = new THREE.Vector3().fromArray(event[field]).add(new THREE.Vector3().fromArray(event.delta));
+        assert.ok(expected.distanceTo(new THREE.Vector3().fromArray(moved[field])) < 1e-12);
+      }
+      assert.equal(event.flashLife, moved.flashLife); assert.equal(event.lightIntensity, moved.lightIntensity);
+    }
+    assert.ok(state.samples.at(-1).shotEvidence.muzzleEvent.flashLife <= 0, "capture must include flash expiry");
+    assert.notDeepEqual(state.samples[0].weaponMatrix, state.samples[3].weaponMatrix, "recoil must actually animate");
+  }
+  interrupted = true; await run(true, 8, true, "landing"); assert.match(state.error, /landing frame timeout/);
+  assert.ok(shotGame.players[0] === hero); assert.deepEqual(originalSnapshot(), original); assert.equal(shotGame.scene.children.length, 0);
+  assert.equal(shotGame.projectiles.length, 0); assert.ok(shotGame.combatVisuals.flashes.every(slot => slot.life === 0));
   shotGame.combatVisuals.dispose();
   hero.dispose();
 }

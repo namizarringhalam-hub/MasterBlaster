@@ -527,7 +527,7 @@ export class CombatVisuals {
     const slot = this.flashes[this.cursors.flash++ % this.flashes.length];
     const profile = weaponPresentation(weapon);
     slot.life = slot.maxLife = this.reducedMotion ? .075 : profile.precision ? .15 : profile.tempo === "heavy" ? .135 : profile.rapid ? .115 : .1;
-    slot.position = owner.muzzlePoint?.(slot.position || new THREE.Vector3()) || owner.forwardPoint(.9);
+    slot.position = owner.visualMuzzlePoint?.(slot.position || new THREE.Vector3()) || owner.muzzlePoint?.(slot.position || new THREE.Vector3()) || owner.forwardPoint(.9);
     slot.direction = (slot.direction || new THREE.Vector3()).copy(direction).normalize();
     slot.weaponColor = (slot.weaponColor || new THREE.Color()).set(weapon.color);
     slot.ownerColor = (slot.ownerColor || new THREE.Color()).copy(ownerColor(owner, weapon));

@@ -1232,6 +1232,12 @@ export class Fighter {
     return this.position.clone().add(new THREE.Vector3(0, 1.25, 0)).addScaledVector(this.aim, distance);
   }
 
+  visualMuzzlePoint(target = new THREE.Vector3()) {
+    if (this.weapon.id !== "blaster") return this.muzzlePoint(target);
+    this.weaponGroup.updateWorldMatrix(true, false);
+    return target.set(.05, .06, .994).applyMatrix4(this.weaponGroup.matrixWorld);
+  }
+
   muzzlePoint(target = new THREE.Vector3()) {
     const flatLength = Math.hypot(this.aim.x, this.aim.z);
     const rightX = flatLength > .001 ? this.aim.z / flatLength : Math.cos(this.group.rotation.y);

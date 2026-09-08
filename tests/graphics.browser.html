@@ -9,7 +9,7 @@
 <nav style="position:fixed;z-index:100;inset:auto 0 0;background:#07111def;padding:8px;display:flex;gap:8px;flex-wrap:wrap;font:12px monospace">
 <label>Tier <select id="tier"><option>high</option><option>medium</option><option>low</option></select></label>
 <label>Theme <select id="seed"><option>BLAST-01</option><option>SOLAR-01</option><option>ION-01</option></select></label>
-<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>lower-body-front</option><option>lower-body-side</option><option>helmet-three-quarter</option><option>helmet-profile</option><option>thrusters</option><option>weapon</option><option>hand-front</option><option>hand-side</option><option>hand-opposite</option><option>hand-palm</option><option>hand-shoulder</option><option>hand-shoulder-opposite</option><option>hand-shoulder-oblique</option><option>player-camera</option><option>effects</option><option>rope-corner</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option><option>boost-top</option><option>boost-side</option><option>boost-raised</option></select></label>
+<label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>muzzle-whole</option><option>muzzle-side</option><option>lower-body-front</option><option>lower-body-side</option><option>helmet-three-quarter</option><option>helmet-profile</option><option>thrusters</option><option>weapon</option><option>hand-front</option><option>hand-side</option><option>hand-opposite</option><option>hand-palm</option><option>hand-shoulder</option><option>hand-shoulder-opposite</option><option>hand-shoulder-oblique</option><option>player-camera</option><option>effects</option><option>rope-corner</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option><option>boost-top</option><option>boost-side</option><option>boost-raised</option></select></label>
 <label>Weapon <select id="weapon"></select></label>
 <label>Pose <select id="pose"><option>aim</option><option>reload</option><option>reacquire-early</option><option>reacquire-complete</option><option>fire</option><option>gait-positive</option><option>gait-negative</option><option>landing</option></select></label>
 <label>Helmet variant <select id="costume"><option value="">Current player</option><option value="0">0 · Dodecahedral</option><option value="1">1 · Round</option><option value="2">2 · Capsule</option><option value="3">3 · Faceted</option></select></label>
@@ -48,6 +48,8 @@
 <button id="landing-sequence">Compare full landing recovery</button>
 <button id="landing-hard-sequence">Compare hard landing recovery</button>
 <button id="landing-shot">Compare hard landing shot</button>
+<button id="muzzle-neutral">Compare neutral muzzle origin</button>
+<button id="muzzle-landing">Compare landing muzzle origin</button>
 <button id="arm-comparison">Check elbow finish restoration</button>
 <button id="elbow-comparison">Compare elbow silhouette</button>
 <button id="boost-passage">Test boost passage</button>
@@ -558,13 +560,15 @@ function setView() {
   // Start each hand-view/weapon comparison at visible Aim; then select its
   // transient pose without reframing. Control order cannot pick a reload anchor.
   if (view.startsWith("hand-")) select("pose").value = "aim";
-  hero.position.set(view.startsWith("lower-body-") ? 8 : 0, 15.01, 8); hero.group.rotation.y = Math.PI;
+  hero.position.set(view.startsWith("lower-body-") || view.startsWith("muzzle-") ? 8 : 0, 15.01, 8); hero.group.rotation.y = Math.PI;
   settlePose();
   if (view === "rope-corner") hero.position.set(-12, 18.6, 0);
   hero.rig.visible = true;
   const poses = { arena: [[70, 47, 98], [0, 25, 0]], grazing: [[3, 1.8, 65], [0, 4, -40]],
     "helmet-three-quarter": [[1.2, 17.35, 6.4], [0, 17.19, 7.85]], "helmet-profile": [[2, 17.24, 8.15], [0, 17.19, 7.95]],
     fighter: [[3.7, 17.1, 3.3], [0, 16.35, 8]], thrusters: [[1.6, 16.7, 10.3], [0, 16.15, 8.49]],
+    "muzzle-whole": [[11.7, 17.1, 3.3], [8, 16.35, 8]],
+    "muzzle-side": [[10.8, 16.5, 7.2], [7.6, 16.3, 7.2]],
     "lower-body-front": [[hero.position.x + .9, hero.position.y + .64, hero.position.z - 1.2], [hero.position.x, hero.position.y + .54, hero.position.z]],
     "lower-body-side": [[hero.position.x + 1.5, hero.position.y + .64, hero.position.z], [hero.position.x, hero.position.y + .54, hero.position.z]],
     weapon: [[1.8, 16.9, 6.1], [.4, 16.4, 8.7]], effects: [[7, 19, 17], [0, 16, 8]],
@@ -766,13 +770,23 @@ async function withPreviousLandingDrop(hero, capture) {
     return await capture(removedDrop);
   } finally { hero.rig.position.y = originalY; hero.group.updateMatrixWorld(true); }
 }
-async function runLandingReview(sequence = false, fallHeight = 0, shot = false) {
+async function withTranslatedMuzzle(event, delta, effects, capture) {
+  const positions = [event.flash.position, event.tracer.start, event.tracer.end, event.light.position];
+  const originals = positions.map(position => position.clone());
+  try {
+    positions.forEach(position => position.add(delta)); effects.update(0);
+    return await capture();
+  } finally { positions.forEach((position, i) => position.copy(originals[i])); effects.update(0); }
+}
+async function runLandingReview(sequence = false, fallHeight = 0, shot = false, muzzle = null) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.landingFrames = []; cameraReview.error = null;
   select("camera-captures").replaceChildren();
-  const serial = sceneSerial, initialErrors = errorCount, hero = game.players[0];
+  const serial = sceneSerial, initialErrors = errorCount, originalHero = game.players[0], originalVisible = originalHero.group.visible;
+  let hero = originalHero;
   const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
   let shotState = null;
+  let muzzleEvent = null, muzzleDelta = null;
   const clearShot = () => {
     game.clearTransientNetworkCombat();
     const effects = game.combatVisuals;
@@ -781,10 +795,16 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false) 
     effects.update(0);
   };
   try {
-    if (stress || !game.paused || resetPhase !== "ready" || !(select("view").value.startsWith("lower-body-") || sequence && select("view").value === "fighter") || !sequence && select("pose").value !== "landing")
+    if (stress || !game.paused || resetPhase !== "ready" || !(select("view").value.startsWith("lower-body-") || sequence && select("view").value === "fighter" || muzzle && select("view").value.startsWith("muzzle-")) || !sequence && select("pose").value !== "landing")
       throw new Error("Landing comparison needs the ready paused lower-body landing view");
     controls.forEach(([control]) => { control.disabled = true; });
     if (shot && hero.weapon.id !== "blaster") throw new Error("Landing shot comparison requires Blaster");
+    if (muzzle) {
+      hero = new Fighter(game.scene, { id: originalHero.id, name: originalHero.name, color: originalHero.color, accent: originalHero.accent },
+        [...originalHero.loadout], originalHero.position.clone());
+      hero.aim.copy(originalHero.aim); hero.group.rotation.set(0, Math.atan2(hero.aim.x, hero.aim.z), 0);
+      originalHero.group.visible = false; game.players[0] = hero;
+    }
     if (shot) clearShot();
     const state = () => ({ fighterPosition: hero.position.toArray(), velocity: hero.velocity.toArray(), rigY: hero.rig.position.y,
       rigScale: hero.rig.scale.toArray(), landTimer: hero.landTimer, landStrength: hero.landStrength,
@@ -793,7 +813,10 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false) 
       weaponMatrix: hero.weaponGroup.matrixWorld.toArray(),
       blasterAperture: hero.weapon.id === "blaster" ? hero.weaponGroup.localToWorld(new THREE.Vector3(.05, .06, .994)).toArray() : null,
       shotEvidence: shot ? { projectiles: game.projectiles.map(projectile => ({ position: projectile.mesh.position.toArray(), age: projectile.age })),
-        flashes: game.combatVisuals.flashes.filter(flash => flash.life > 0).map(flash => ({ position: flash.position.toArray(), life: flash.life })) } : null,
+        flashes: game.combatVisuals.flashes.filter(flash => flash.life > 0).map(flash => ({ position: flash.position.toArray(), direction: flash.direction.toArray(), life: flash.life })),
+        muzzleEvent: muzzleEvent ? { delta: muzzleDelta.toArray(), flash: muzzleEvent.flash.position.toArray(), flashLife: muzzleEvent.flash.life,
+          tracerStart: muzzleEvent.tracer.start.toArray(), tracerEnd: muzzleEvent.tracer.end.toArray(), tracerLife: muzzleEvent.tracer.life,
+          lightPosition: muzzleEvent.light.position.toArray(), lightIntensity: muzzleEvent.light.intensity } : null } : null,
       legs: [hero.leftLeg, hero.rightLeg].map(leg => ({ localMatrix: leg.matrix.toArray(), matrix: leg.matrixWorld.toArray(), minY: new THREE.Box3().setFromObject(leg, true).min.y,
         meshes: leg.children.map(mesh => ({ name: mesh.name, geometry: mesh.geometry?.uuid, localMatrix: mesh.matrix.toArray(), matrix: mesh.matrixWorld.toArray(), visible: mesh.visible })) })) });
     const capture = async (mode, removedDrop = 0, landingFrame = null) => {
@@ -808,7 +831,8 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false) 
     };
     const compare = async landingFrame => {
       await capture("current", 0, landingFrame);
-      if (hero.landTimer > 0) await withPreviousLandingDrop(hero, drop => capture("previous-drop", drop, landingFrame));
+      if (muzzle) await withTranslatedMuzzle(muzzleEvent, muzzleDelta, game.combatVisuals, () => capture("previous-logical-origin", 0, landingFrame));
+      else if (hero.landTimer > 0) await withPreviousLandingDrop(hero, drop => capture("previous-drop", drop, landingFrame));
       else await capture("previous-drop", 0, landingFrame);
       await capture("current-restored", 0, landingFrame);
     };
@@ -820,20 +844,34 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false) 
       let landingFrame = -1;
       for (let i = 0; i < 240; i++) {
         const stepTime = performance.now();
-        hero.update(1 / 60, stillMove, reviewAim, { jump: !fallHeight && i === 0 }, game.world); hero.group.updateMatrixWorld(true);
-        if (landingFrame < 0 && hero.landTimer > 0) landingFrame = 0;
+        hero.update(1 / 60, stillMove, reviewAim, { jump: muzzle !== "neutral" && !fallHeight && i === 0 }, game.world); hero.group.updateMatrixWorld(true);
+        if (landingFrame < 0 && (muzzle === "neutral" || hero.landTimer > 0)) landingFrame = 0;
         if (landingFrame >= 0) {
           const baseline = state(), candidate = hero.landTimer > 0 ? await withPreviousLandingDrop(hero, () => state()) : state();
           cameraReview.landingFrames.push({ simulationFrame: i, landingFrame, stepTime, fallHeight, baseline, candidate });
-          if (shot && landingFrame === 6) {
+          if (shot && landingFrame === (muzzle === "neutral" ? 0 : 6)) {
             shotState = { ammo: hero.ammo[hero.weapon.id], attackTimer: hero.attackTimer, velocity: hero.velocity.clone(),
               recoilVisual: hero.recoilVisual, musicPulse: game.combatMusicPulse,
               cursors: { ...game.combatVisuals.cursors }, lightCursor: game.combatVisuals.combatLightCursor };
             hero.attackTimer = 0; hero.ammo[hero.weapon.id] = hero.weapon.ammo;
-            game.tryFire(hero, true); game.combatVisuals.update(0);
+            game.tryFire(hero, true, false); game.combatVisuals.update(0);
             if (game.projectiles.length !== 1) throw new Error("Landing shot did not create one projectile");
-            for (let shotFrame = 0; shotFrame < 3; shotFrame++) {
-              if (shotFrame) { game.updateProjectiles(1 / 60); game.combatVisuals.update(1 / 60); }
+            if (muzzle) {
+              const effects = game.combatVisuals;
+              if (new THREE.Vector3(0, 0, 1).transformDirection(hero.weaponGroup.matrixWorld).dot(hero.aim) < .95)
+                throw new Error("Muzzle review barrel heading disagrees with aim");
+              if (effects.cursors.flash !== shotState.cursors.flash + 1 || effects.cursors.tracer !== shotState.cursors.tracer + 1 || effects.combatLightCursor !== shotState.lightCursor + 1)
+                throw new Error("Muzzle comparison requires exactly one flash, tracer and light");
+              muzzleEvent = { flash: effects.flashes[shotState.cursors.flash % effects.flashes.length],
+                tracer: effects.tracers[shotState.cursors.tracer % effects.tracers.length],
+                light: effects.combatLights[shotState.lightCursor % (effects.lightLimit || effects.combatLights.length)] };
+              muzzleDelta = hero.muzzlePoint().sub(muzzleEvent.flash.position);
+            }
+            for (let shotFrame = 0; shotFrame < (muzzle ? 9 : 3); shotFrame++) {
+              if (shotFrame) {
+                if (muzzle) { hero.update(1 / 60, stillMove, reviewAim, {}, game.world); hero.group.updateMatrixWorld(true); }
+                game.updateProjectiles(1 / 60); game.combatVisuals.update(1 / 60);
+              }
               await compare(landingFrame);
             }
             break;
@@ -843,7 +881,7 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false) 
           landingFrame++;
         }
       }
-      if (shot ? cameraReview.samples.length !== 9 : cameraReview.landingFrames.length !== 46 || hero.landTimer !== 0) throw new Error("Landing recovery did not complete within 240 frames");
+      if (shot ? cameraReview.samples.length !== (muzzle ? 27 : 9) : cameraReview.landingFrames.length !== 46 || hero.landTimer !== 0) throw new Error("Landing recovery did not complete within 240 frames");
     }
   } catch (error) { cameraReview.error = String(error); }
   finally {
@@ -854,12 +892,15 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false) 
         Object.assign(game.combatVisuals.cursors, shotState.cursors); game.combatVisuals.combatLightCursor = shotState.lightCursor; }
     }
     cameraReview.running = false; cameraReview.shell = false; controls.forEach(([control, disabled]) => { control.disabled = disabled; });
+    if (hero !== originalHero) { hero.dispose(); game.players[0] = originalHero; originalHero.group.visible = originalVisible; }
   }
 }
 select("landing-translation").onclick = () => runLandingReview();
 select("landing-sequence").onclick = () => runLandingReview(true);
 select("landing-hard-sequence").onclick = () => runLandingReview(true, 8);
 select("landing-shot").onclick = () => runLandingReview(true, 8, true);
+select("muzzle-neutral").onclick = () => runLandingReview(true, 0, true, "neutral");
+select("muzzle-landing").onclick = () => runLandingReview(true, 8, true, "landing");
 async function runCameraReview(boostPassage = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cameraReview.running = true; cameraReview.samples = []; cameraReview.error = null;
