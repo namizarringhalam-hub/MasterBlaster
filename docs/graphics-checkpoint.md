@@ -2,6 +2,12 @@
 
 Updated: 2026-09-08. Pass40 shoulder fit is PUBLISHED after actual visual92→96 improvement, technical99/98PASS, full validation and production verification. The graphics project is NOT complete.
 
+## Latest publication — Pass49 muzzle-origin correction v108 verified
+
+- Exact sourceebcaba5898a58d04351e943996130f5d6a80dee2 pushedorigin/main+Sitesmain. Pages4aefc308-2fdf-4e6c-8902-36955150cf48 at https://masterblaster.se/; Sitesv108/appgprj_6a6378a267348191a15d7e0faf662c64~appgver_251744d7bb3c8191b5c2786105184cbc, deploymentappgdep_6a9f5b9bfdc88191b6ac57465be25dfc succeededrevision0 existingpublicmirror. Archived55017735588357f989d7242a97e1d2b406bd42522e55e52f189b52cfd45fb18/96files16404480B. Bothorigins main-uFkUpbk7.js SHA608168d9b873e6885495acfb88ac45043dbf1452529ee05d96862f99e4e53be7 andunchangedThreeSHA0d4ca7307685042392fe48a2cd080f6c614ee935cfb7aaaa70065d4c702e4fc9 verified. Health200/ok/protocol1/arenaRevision2; backendunchanged e79ad4a2-f74a-42bc-9c18-e1ea58af707c.
+- Productionbothlive multiplayer suitesPASS, nativeHigh16fighterTrainingclockprogress rendered; pass49-production.jpg/-dom.txt (noFPSclaim). SessionendedMainMenu; QA7backlocalnative1280x720, Siteshandoffqueuedexistingmirror. All3actualscores80visual(up68muzzle-only)/98technical/98technical, no scopedblockers. Landing82/staticlowerbody76/shoulder96 andbroader98gatesunchanged/open.
+- NEXT Pass50 boundedQA current-aperture translation duringvisibleevent vs currentat-firesnapshot; direction/brightness/lifetime/audio/logicalprojectilepaths fixed. UseisolatedtemporaryFighter, explicitEulerheadingguard, onlyoneeventexistingrefs, actualrecoilframes. Decideattachmentfromcandidartscore beforeproductlifecyclework; no newproductchange yet. Vitesession13885retained/noWorker/test/captureactive. Continuewithoutprompt, notcomplete/userpause.
+
 ## Latest publication — Pass48 landing correction v107 verified
 
 - Pass49 CURRENT QA-only: withTranslatedMuzzle translates only one realBlaster event's flash.position, tracer.start/end, light.position byconstantfire-time aperture−flashorigin, finallyrestorespositions+update0. RealtryFire once replicatefalse; prefirecursorrefs andexact+1guard. RealFighter/recoil/projectile/effectadvance9ages0..8/60 untilflashlife−.03333, eachcurrent/aperture-at-emission/restoredtriplet. Properties/logicalshotsnotchanged. Existingpoolcleanup/state/cursorrestore retained; realpooltests nowavoid redundantmanualtracer andassert27captures/translations/expiry/recoil/interruption.
