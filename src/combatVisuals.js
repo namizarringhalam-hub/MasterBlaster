@@ -316,11 +316,13 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
     pulseParts
   );
 
+  const trailParts = group.children.filter((mesh) => mesh.userData.trail);
+  if (weapon.id === "blaster") for (const trail of trailParts) trail.rotation.x = -Math.PI / 2;
   group.userData.combatVisual = {
     family, profile,
     time: 0,
     movingParts, payloadParts,
-    trailParts: group.children.filter((mesh) => mesh.userData.trail),
+    trailParts,
     pulseParts: pulseParts.map((mesh) => ({ mesh, opacity: mesh.material.opacity }))
   };
   return group;

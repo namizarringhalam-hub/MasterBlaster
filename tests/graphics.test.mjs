@@ -21,6 +21,18 @@ import { shoulderChamferGeometry } from "./shoulderChamferGeometry.js";
 // Only the three transient merge copies differ; no frozen art data to maintain.
 const playerMergeSource = readFileSync(new URL("../src/player.js", import.meta.url), "utf8");
 {
+  const effects = new CombatVisuals(new THREE.Scene());
+  for (const weapon of Object.values(WEAPONS)) {
+    const mesh = effects.createProjectile({ accent: 0x6ff6ff }, weapon, .11);
+    for (const trail of mesh.userData.combatVisual?.trailParts || []) {
+      assert.ok(Math.abs(trail.rotation.x - (weapon.id === "blaster" ? -Math.PI / 2 : Math.PI / 2)) < 1e-12,
+        `${weapon.id} trail orientation: only Blaster should taper toward the rear`);
+    }
+    effects.removeProjectile({ mesh }); mesh.traverse(child => child.material?.dispose());
+  }
+  effects.dispose();
+}
+{
   const scene = new THREE.Scene(), effects = new CombatVisuals(scene);
   const hero = new Fighter(scene, { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster", "rocket_launcher"], new THREE.Vector3(8, 15, 8));
   effects.muzzle(hero, hero.weapon);
@@ -692,6 +704,29 @@ const handViewSource = graphicsFixture.slice(graphicsFixture.indexOf("function s
 const landingDropSource = graphicsFixture.slice(graphicsFixture.indexOf("async function withPreviousLandingDrop("), graphicsFixture.indexOf("async function runLandingReview("));
 const removeLandingDrop = new Function(`${landingDropSource}; return withPreviousLandingDrop;`)();
 const translateMuzzle = new Function(`${landingDropSource}; return withTranslatedMuzzle;`)();
+const reverseTrail = new Function(`${landingDropSource}; return withReversedTrail;`)();
+{
+  const effects = new CombatVisuals(new THREE.Scene());
+  const mesh = effects.createProjectile({ accent: 0x6ff6ff }, WEAPONS.blaster, .11);
+  const shot = { mesh, velocity: new THREE.Vector3(0, 0, -30) };
+  effects.updateProjectile(shot, 1 / 60); mesh.updateMatrixWorld(true);
+  const trails = mesh.userData.combatVisual.trailParts;
+  assert.equal(trails.length, 1);
+  const before = trails.map(trail => ({ rotationX: trail.rotation.x, quaternion: trail.quaternion.toArray(), matrix: trail.matrixWorld.toArray(), position: trail.position.toArray(), scale: trail.scale.toArray(), geometry: trail.geometry, material: trail.material }));
+  for (const fail of [false, true]) {
+    const capture = () => {
+      trails.forEach((trail, i) => {
+        assert.ok(Math.abs(trail.rotation.x + before[i].rotationX) < 1e-12);
+        assert.deepEqual(trail.position.toArray(), before[i].position); assert.deepEqual(trail.scale.toArray(), before[i].scale);
+        assert.ok(trail.geometry === before[i].geometry && trail.material === before[i].material);
+      });
+      if (fail) throw new Error("trail capture interrupted");
+    };
+    if (fail) await assert.rejects(reverseTrail(shot, capture), /trail capture interrupted/); else await reverseTrail(shot, capture);
+    trails.forEach((trail, i) => { assert.deepEqual(trail.quaternion.toArray(), before[i].quaternion); assert.deepEqual(trail.matrixWorld.toArray(), before[i].matrix); });
+  }
+  mesh.traverse(child => child.material?.dispose()); effects.dispose();
+}
 assert.ok(playerMergeSource.includes("this.rig.position.y = bob;"), "QA previous-drop control requires the corrected production translation");
 for (const weaponId of Object.keys(WEAPONS)) {
   const hero = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, [weaponId], new THREE.Vector3(8, 15, 8));
@@ -721,20 +756,23 @@ for (const weaponId of Object.keys(WEAPONS)) {
   let beforeShot;
   const shotCalls = [], shotGame = { scene: new THREE.Scene(), projectiles: [], combatMusicPulse: .23, combatVisuals: new CombatVisuals(new THREE.Scene()),
     clearTransientNetworkCombat() { this.projectiles = []; shotCalls.push("clear"); },
-    tryFire(player) { shotCalls.push("fire"); this.projectiles.push({ mesh: { position: player.forwardPoint(.08) }, age: 0 });
+    tryFire(player) { shotCalls.push("fire");
+      const mesh = new THREE.Group(), trail = new THREE.Object3D(); trail.rotation.x = Math.PI / 2; mesh.add(trail);
+      mesh.position.copy(player.forwardPoint(.08)); mesh.userData.combatVisual = { trailParts: [trail] }; mesh.updateMatrixWorld(true);
+      this.projectiles.push({ mesh, age: 0 });
       beforeShot = { velocity: player.velocity.toArray(), recoilVisual: player.recoilVisual };
       player.recoil(); player.ammo[player.weapon.id]--; player.attackTimer = .3; this.combatMusicPulse = .52;
       this.combatVisuals.muzzle(player, player.weapon); },
-    updateProjectiles(dt) { shotCalls.push("step"); this.projectiles[0].age += dt; this.projectiles[0].mesh.position.addScaledVector(hero.aim, dt * 30); } };
+    updateProjectiles(dt) { shotCalls.push("step"); this.projectiles[0].age += dt; this.projectiles[0].mesh.position.addScaledVector(hero.aim, dt * 30); this.projectiles[0].mesh.updateMatrixWorld(true); } };
   let interrupted = false;
-  const run = new Function("THREE", "Fighter", "game", "cameraReview", "document", "select", "waitForReviewFrame", "shellReviewState", "withPreviousLandingDrop", "withTranslatedMuzzle", `
+  const run = new Function("THREE", "Fighter", "game", "cameraReview", "document", "select", "waitForReviewFrame", "shellReviewState", "withPreviousLandingDrop", "withTranslatedMuzzle", "withReversedTrail", `
     const resetReview={},cacheReview={},decoyReview={},sceneSerial=1,errorCount=0,stress=false,resetPhase="ready",renderedFrames=0,stillMove=new THREE.Vector3(),reviewAim=new THREE.Vector3(0,0,-1);
     ${source};return runLandingReview;`)(THREE, Fighter, Object.assign(shotGame, { players: [hero], paused: true, renderPipeline: { direct: false }, world: {
       surfaceHeightAt: () => 15, resolve: position => { const grounded = position.y <= 15; if (grounded) position.y = 15; return { grounded }; }, boostAt: () => null } }), state,
     { querySelectorAll: () => controls, createElement: () => ({}), querySelector: () => ({ toDataURL: () => "data:image/png;base64,test" }) },
     name => name === "view" ? { value: "lower-body-side" } : name === "pose" ? { value: "landing" } : { replaceChildren: () => { links.length = 0; }, append: link => links.push(link) },
     async () => { assert.equal(state.shell, true); assert.ok(controls.every(control => control.disabled)); if (interrupted && state.samples.length === 1) throw new Error("landing frame timeout"); },
-    () => ({}), removeLandingDrop, translateMuzzle);
+    () => ({}), removeLandingDrop, translateMuzzle, reverseTrail);
   await run(); assert.equal(state.error, null); assert.equal(links.length, 3);
   assert.deepEqual(state.samples.map(sample => sample.mode), ["current", "previous-drop", "current-restored"]);
   assert.equal(state.samples[0].rigY, state.samples[2].rigY); assert.ok(state.samples[1].rigY < state.samples[0].rigY);
@@ -783,21 +821,26 @@ for (const weaponId of Object.keys(WEAPONS)) {
     return { fields, transforms, ammo: { ...hero.ammo } };
   };
   const original = originalSnapshot();
-  for (const mode of ["neutral", "landing", "neutral-follow", "landing-follow"]) {
-    const following = mode.endsWith("-follow");
-    await run(true, mode.startsWith("neutral") ? 0 : 8, true, mode); assert.equal(state.error, null); assert.equal(state.samples.length, following ? 36 : 27);
+  for (const mode of ["neutral", "landing", "neutral-follow", "landing-follow", "neutral-tail", "landing-tail"]) {
+    const following = mode.endsWith("-follow"), tail = mode.endsWith("-tail");
+    await run(true, mode.startsWith("neutral") ? 0 : 8, true, mode); assert.equal(state.error, null); assert.equal(state.samples.length, following || tail ? 36 : 27);
     assert.ok(shotGame.players[0] === hero); assert.deepEqual(originalSnapshot(), original); assert.equal(shotGame.scene.children.length, 0);
+    if (tail) assert.ok(Math.abs(state.samples[0].shotEvidence.muzzleEvent.age - 1 / 60) < 1e-12, "trail review starts after the real heading update, not construction state");
     for (let index = 0; index < state.samples.length; index += 3) {
       const [before, trial, restored] = state.samples.slice(index, index + 3);
       assert.ok(new THREE.Vector3(0, 0, 1).transformDirection(new THREE.Matrix4().fromArray(before.weaponMatrix)).dot(new THREE.Vector3(0, 0, -1)) > .95,
         "temporary fighter barrel must face the shot direction throughout recoil");
       assert.deepEqual(before.shotEvidence, restored.shotEvidence);
-      assert.deepEqual(before.shotEvidence.projectiles, trial.shotEvidence.projectiles);
+      if (tail) {
+        assert.deepEqual(before.shotEvidence.projectiles.map(({ trails, ...physical }) => physical), trial.shotEvidence.projectiles.map(({ trails, ...physical }) => physical));
+        assert.notDeepEqual(before.shotEvidence.projectiles[0].trails[0].rotation, trial.shotEvidence.projectiles[0].trails[0].rotation);
+        assert.deepEqual(before.shotEvidence.projectiles[0].trails[0].scale, trial.shotEvidence.projectiles[0].trails[0].scale);
+      } else assert.deepEqual(before.shotEvidence.projectiles, trial.shotEvidence.projectiles);
       assert.deepEqual(before.weaponMatrix, trial.weaponMatrix);
       const event = before.shotEvidence.muzzleEvent, moved = trial.shotEvidence.muzzleEvent;
       if (following && event.flashLife > 0) assert.ok(new THREE.Vector3().fromArray(event.flash).distanceTo(new THREE.Vector3().fromArray(before.blasterAperture)) < 1e-12);
       for (const field of ["flash", "tracerStart", "tracerEnd", "lightPosition"]) {
-        const expected = following ? new THREE.Vector3().fromArray(state.samples[0].shotEvidence.muzzleEvent[field])
+        const expected = tail ? new THREE.Vector3().fromArray(event[field]) : following ? new THREE.Vector3().fromArray(state.samples[0].shotEvidence.muzzleEvent[field])
           : new THREE.Vector3().fromArray(event[field]).add(new THREE.Vector3().fromArray(event.delta));
         assert.ok(expected.distanceTo(new THREE.Vector3().fromArray(moved[field])) < 1e-12);
       }
