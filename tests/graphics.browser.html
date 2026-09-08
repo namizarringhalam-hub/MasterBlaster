@@ -36,6 +36,7 @@
 <button id="knee-comparison">Compare contained knee taper</button>
 <button id="ankle-comparison">Compare contained ankle relief</button>
 <button id="leg-assembly-comparison">Compare separate ankle and boot</button>
+<button id="leg-environment-diagnosis">Diagnose boot environment highlights</button>
 <button id="arm-diagnosis">Diagnose elbow finish</button>
 <button id="shoulder-diagnosis">Diagnose shoulder and upper arm</button>
 <button id="shoulder-comparison">Check shoulder finish restoration</button>
@@ -1321,6 +1322,13 @@ function shellReviewState(target = game.players[0].helmetShell ?? game.players[0
     effects: { projectiles: game.projectiles.length, hazards: game.hazards.length, decoys: game.decoys.length, effects: game.effects.length },
     exposure: game.renderer.toneMappingExposure, toneMapping: game.renderer.toneMapping };
 }
+async function withLegEnvironment(hero, mode, capture) {
+  const [body, shin] = hero.leftLeg.children;
+  if (!body?.isMesh || !shin?.isMesh || body.position.y !== -.39 || shin.position.y !== -.54 || shin.position.z !== .035 ||
+      body.material !== hero.darkMaterial || shin.material !== hero.armorMaterial)
+    throw new Error("Unexpected leg targets for environment diagnostic");
+  return withHelmetShellDiagnostic(mode, () => withHelmetShellDiagnostic(mode, capture, shin), body);
+}
 async function withAnkleRelief(hero, capture, assembly = false) {
   const legs = [hero.leftLeg, hero.rightLeg], meshes = legs.flatMap(leg => leg.children.slice(0, 2));
   if (meshes.some(mesh => !mesh?.isMesh) || meshes[0].geometry !== meshes[2].geometry || meshes[1].geometry !== meshes[3].geometry)
@@ -1358,6 +1366,7 @@ async function withPreviousKnees(hero, capture) {
 select("knee-comparison").onclick = () => runLowerBodyReview();
 select("ankle-comparison").onclick = () => runLowerBodyReview(true);
 select("leg-assembly-comparison").onclick = () => runLowerBodyReview("assembly");
+select("leg-environment-diagnosis").onclick = () => runLowerBodyReview("environment");
 async function runLowerBodyReview(ankle = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.error = null;
@@ -1378,12 +1387,19 @@ async function runLowerBodyReview(ankle = false) {
       select("camera-captures").append(link, " ");
       cameraReview.samples.push({ index, mode, view: select("view").value, pose: select("pose").value,
         legParts: [game.players[0].leftLeg, game.players[0].rightLeg].flatMap(leg => leg.children.slice(0, 3).map(mesh => ({
-          geometry: mesh.geometry.uuid, material: mesh.material.uuid, matrix: mesh.matrixWorld.toArray(), vertices: mesh.geometry.attributes.position.count }))),
+          geometry: mesh.geometry.uuid, material: mesh.material.uuid, matrix: mesh.matrixWorld.toArray(), vertices: mesh.geometry.attributes.position.count,
+          finish: { roughness: mesh.material.roughness, clearcoat: mesh.material.clearcoat, clearcoatRoughness: mesh.material.clearcoatRoughness,
+            metalness: mesh.material.metalness, emissiveIntensity: mesh.material.emissiveIntensity,
+            envMap: mesh.material.envMap?.uuid ?? null, envMapIntensity: mesh.material.envMapIntensity,
+            envMapRotation: mesh.material.envMapRotation?.toArray() ?? null } }))),
         ...shellReviewState(game.players[0].leftLeg.children[ankle ? 0 : 2]), errorCount, directFallback: game.renderPipeline.direct });
     };
     await withFrozenShaderTime(async () => {
       await capture(ankle === "assembly" ? "integrated-ankle-boot" : ankle ? "baseline" : "integrated-taper");
-      if (ankle) await withAnkleRelief(game.players[0], () => capture(ankle === "assembly" ? "previous-continuous-leg" : "ankle-relief-local-bevels"), ankle === "assembly");
+      if (ankle === "environment") {
+        for (const mode of ["explicit-environment", "no-environment"])
+          await withLegEnvironment(game.players[0], mode, () => capture(mode));
+      } else if (ankle) await withAnkleRelief(game.players[0], () => capture(ankle === "assembly" ? "previous-continuous-leg" : "ankle-relief-local-bevels"), ankle === "assembly");
       else await withPreviousKnees(game.players[0], () => capture("previous-rounded"));
       await capture("restored");
     });

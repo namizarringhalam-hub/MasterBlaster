@@ -1452,6 +1452,39 @@ const shellGame = { players: [{ helmet: { material: shellOriginal } }], renderer
   scene: { environment: shellEnvironment, environmentIntensity: .82, environmentRotation: new THREE.Euler(0, .3, 0) },
   renderPipeline: { pipeline: { outputNode: shellOutput }, scenePass: { getTextureNode: name => { assert.equal(name, "output"); return shellRawOutput; } } } };
 const shellControl = new Function("THREE", "game", `${shellControlSource}; return withHelmetShellDiagnostic;`)(THREE, shellGame);
+{
+  const source = graphicsFixture.slice(graphicsFixture.indexOf("async function withLegEnvironment("), graphicsFixture.indexOf("async function withAnkleRelief("));
+  const run = new Function("withHelmetShellDiagnostic", `${source}; return withLegEnvironment;`)(shellControl);
+  const fighter = new Fighter(new THREE.Scene(), { id: "boot-environment", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const targets = fighter.leftLeg.children.slice(0, 2), materials = new Map(), geometries = new Map();
+  fighter.group.traverse(mesh => { if (mesh.isMesh) { materials.set(mesh, mesh.material); geometries.set(mesh, mesh.geometry); } });
+  const originals = targets.map(mesh => mesh.material.toJSON());
+  for (const mode of ["explicit-environment", "no-environment"]) for (const fail of [false, true]) {
+    let disposed = 0;
+    const capture = async () => {
+      for (const [mesh, original] of materials) {
+        assert.ok(mesh.geometry === geometries.get(mesh));
+        if (!targets.includes(mesh)) { assert.ok(mesh.material === original); continue; }
+        assert.ok(mesh.material !== original && mesh.material.envMap === shellEnvironment);
+        assert.equal(mesh.material.envMapIntensity, mode === "no-environment" ? 0 : .82);
+        for (const key of ["roughness", "clearcoat", "clearcoatRoughness", "metalness", "emissiveIntensity", "side", "normalMap"])
+          assert.equal(mesh.material[key], original[key]);
+        assert.ok(mesh.material.color.equals(original.color) && mesh.material.emissive.equals(original.emissive));
+        mesh.material.addEventListener("dispose", () => disposed++);
+      }
+      if (fail) throw new Error("leg environment interrupted");
+    };
+    if (fail) await assert.rejects(run(fighter, mode, capture), /leg environment interrupted/); else await run(fighter, mode, capture);
+    assert.equal(disposed, 2);
+    for (const [mesh, original] of materials) assert.ok(mesh.material === original);
+    assert.deepEqual(targets.map(mesh => mesh.material.toJSON()), originals);
+  }
+  const wrong = targets[0].material;
+  targets[0].material = targets[1].material;
+  await assert.rejects(run(fighter, "no-environment", () => assert.fail("incorrect material must not capture")), /Unexpected leg targets/);
+  targets[0].material = wrong;
+  fighter.dispose();
+}
 let sharedShellDisposals = 0;
 shellOriginal.addEventListener("dispose", () => sharedShellDisposals++);
 shellEnvironment.addEventListener("dispose", () => sharedShellDisposals++);
