@@ -1,8 +1,10 @@
 # Graphics overhaul checkpoint
 
-Updated: 2026-09-08. Pass62 shin finish is PUBLISHED as v114 after visual80→82 improvement, technical98/98PASS and production verification. The graphics project is NOT complete; newest entries below override older handoffs.
+Updated: 2026-09-08. Pass63 exhaust assembly is PUBLISHED as v115 after visual72→80 improvement, technical98/98PASS and production verification. The graphics project is NOT complete; newest entries below override older handoffs.
 
-## Latest publication — Pass62 isolated shin finish v114 verified
+## Latest publication — Pass63 exhaust assembly v115 verified
+
+- Pass63 PUBLISHED/VERIFIED v115 source886f7824b754e7a5246cd77874ea1823e514d9e9. Visual80PASS(up72), Ramanujan98PASS, independentverification98PASS/no scopedblockers. Full19+15/build/dryrun/local+productionbothlive/nativeGLtiermatrix+reset/decoy/desktop+actual390mobile PASS asbelow. Primary https://masterblaster.se/ Pages52c7ed82-dad1-4370-b8b0-1c5a600f7d6d. Sites version appgprj_6a6378a267348191a15d7e0faf662c64~appgver_d18736c606f88191bfdb88f0a32edb15; deployment appgdep_6a9fc883ee5481918bd9167d6a3475ae SUCCEEDED/revision0/public unchanged. Archive master-blaster-pass63.tar.gz SHA3debea086e1f163af4cd14c1311447b468b7ddc8ce4d578f26bcb0f20848265a. Bothorigins exactmain-DAU62_82.jsSHA92b150a36540909d718cb9893e2a115da61dc7ae848fa0f35ef4b1abe58061da/Threeunchanged0d4ca7307685042392fe48a2cd080f6c614ee935cfb7aaaa70065d4c702e4fc9; HTMLindex-BfxD4qqQ→mainverified. Primaryhealth200/protocol1/arena2/backend100%unchanged e79ad4a2-f74a-42bc-9c18-e1ea58af707c. Productionbothlive70786PASSexit0, canonicalmenubrowserverified. QA7blank, panel8production/viewportreset, Vite13885retained/noWorker/test. NEXT independentvisualcritic selecting one bounded unfinishedcraftfocus; no newcandidate. Continueautonomously/no overall98/FPSclaim/no pause.
 
 - Pass63 ALL THREE FINAL REVIEWS approve partial publication: actualvisual80/100 PASS(up72), Ramanujan98/100PASS, independentverification98/100PASS, no scoped releaseblockers. Evidence complete below; no FPS/GPUdelta/physicalphone/overall98 claims. Commit exactlyfiveownedfiles and pushorigin/main+Sites; save/deployexactarchive, verify primary+mirrorassetidentity/primaryhealth/productionbothlive, then continue next critic-directed bounded graphics task. Currentv114, sourcefrozen; no active arena/Worker/test.
 
