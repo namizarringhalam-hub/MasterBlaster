@@ -740,6 +740,36 @@ const translateMuzzle = new Function(`${landingDropSource}; return withTranslate
 const reverseTrail = new Function(`${landingDropSource}; return withReversedTrail;`)();
 const makeTrailShading = new Function("THREE", `${landingDropSource}; return makeTrailShading;`)(THREE);
 const shadeTrail = new Function(`${landingDropSource}; return withTrailShading;`)();
+const landingReference = new Function(`${landingDropSource}; return landingReference;`)();
+const plantLanding = new Function("THREE", `${landingDropSource}; return withLandingContact;`)(THREE);
+{
+  const fighter = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3(8, 15, 8));
+  fighter.rig.position.y = .012;
+  fighter.leftLeg.rotation.z = .025; fighter.rightLeg.rotation.z = -.025;
+  const standing = landingReference(fighter);
+  fighter.group.updateMatrixWorld(true);
+  const feet = () => [fighter.leftLeg, fighter.rightLeg].map(leg => new THREE.Box3().setFromObject(leg, true).min.y);
+  const referenceFeet = feet();
+  fighter.rig.scale.set(1.18, .79, 1.18); fighter.rig.rotation.x = .08;
+  fighter.leftLeg.rotation.x = .65; fighter.rightLeg.rotation.x = .6; fighter.group.updateMatrixWorld(true);
+  const original = landingReference(fighter), originalFeet = feet(), position = fighter.position.toArray(), muzzle = fighter.muzzlePoint().toArray();
+  for (const fail of [false, true]) {
+    const capture = async offset => {
+      const planted = feet();
+      assert.ok(offset <= 0);
+      assert.ok(Math.abs(Math.min(...planted) - Math.min(...referenceFeet, ...originalFeet)) < 1e-12);
+      for (let i = 0; i < 2; i++) assert.ok(Math.abs(planted[i] - originalFeet[i] - offset) < 1e-12);
+      assert.deepEqual(fighter.position.toArray(), position); assert.deepEqual(fighter.muzzlePoint().toArray(), muzzle);
+      if (fail) throw new Error("foot contact interrupted");
+    };
+    if (fail) await assert.rejects(plantLanding(fighter, standing, capture), /foot contact interrupted/);
+    else await plantLanding(fighter, standing, capture);
+    assert.deepEqual(landingReference(fighter), original); assert.equal(fighter.rig.position.y, .012); assert.deepEqual(feet(), originalFeet);
+  }
+  fighter.grounded = false;
+  await plantLanding(fighter, standing, offset => { assert.equal(offset, 0); assert.deepEqual(feet(), originalFeet); });
+  fighter.dispose();
+}
 const makeTrailEdgeMaterials = new Function("THREE", "materialOpacity", "normalViewGeometry", "positionViewDirection", `${landingDropSource}; return makeTrailEdgeMaterials;`)(THREE, materialOpacity, normalViewGeometry, positionViewDirection);
 const fadeTrail = new Function(`${landingDropSource}; return withTrailEdgeMaterials;`)();
 {
@@ -875,14 +905,14 @@ for (const weaponId of Object.keys(WEAPONS)) {
     for (const entry of entries) for (const asset of [entry.control, entry.trial]) asset.addEventListener("dispose", () => shadingDisposals.push(asset.uuid));
     return entries;
   };
-  const run = new Function("THREE", "Fighter", "game", "cameraReview", "document", "select", "waitForReviewFrame", "shellReviewState", "withPreviousLandingDrop", "withTranslatedMuzzle", "withReversedTrail", "makeTrailShading", "withTrailShading", "withFrozenShaderTime", "makeTrailEdgeMaterials", "withTrailEdgeMaterials", `
+  const run = new Function("THREE", "Fighter", "game", "cameraReview", "document", "select", "waitForReviewFrame", "shellReviewState", "withPreviousLandingDrop", "withTranslatedMuzzle", "withReversedTrail", "makeTrailShading", "withTrailShading", "withFrozenShaderTime", "makeTrailEdgeMaterials", "withTrailEdgeMaterials", "landingReference", "withLandingContact", `
     const resetReview={},cacheReview={},decoyReview={},sceneSerial=1,errorCount=0,stress=false,resetPhase="ready",renderedFrames=0,stillMove=new THREE.Vector3(),reviewAim=new THREE.Vector3(0,0,-1);
     ${source};return runLandingReview;`)(THREE, Fighter, Object.assign(shotGame, { players: [hero], paused: true, renderPipeline: { direct: false }, world: {
       surfaceHeightAt: () => 15, resolve: position => { const grounded = position.y <= 15; if (grounded) position.y = 15; return { grounded }; }, boostAt: () => null } }), state,
     { querySelectorAll: () => controls, createElement: () => ({}), querySelector: () => ({ toDataURL: () => "data:image/png;base64,test" }) },
     name => name === "view" ? { value: "lower-body-side" } : name === "pose" ? { value: "landing" } : { replaceChildren: () => { links.length = 0; }, append: link => links.push(link) },
     async () => { assert.equal(state.shell, true); assert.ok(controls.every(control => control.disabled)); if (interrupted && state.samples.length === 1) throw new Error("landing frame timeout"); },
-    () => ({}), removeLandingDrop, translateMuzzle, reverseTrail, trackedShading, shadeTrail, freezeShaderTime, trackedEdges, fadeTrail);
+    () => ({}), removeLandingDrop, translateMuzzle, reverseTrail, trackedShading, shadeTrail, freezeShaderTime, trackedEdges, fadeTrail, landingReference, plantLanding);
   await run(); assert.equal(state.error, null); assert.equal(links.length, 3);
   assert.deepEqual(state.samples.map(sample => sample.mode), ["current", "previous-drop", "current-restored"]);
   assert.equal(state.samples[0].rigY, state.samples[2].rigY); assert.ok(state.samples[1].rigY < state.samples[0].rigY);
@@ -904,6 +934,27 @@ for (const weaponId of Object.keys(WEAPONS)) {
       assert.ok(frame.candidate.rigY <= frame.baseline.rigY);
     }
   }
+  for (const fallHeight of [0, 8]) {
+    await run(true, fallHeight, false, null, true);
+    assert.equal(state.error, null); assert.equal(state.samples.length, 27); assert.equal(state.landingFrames.length, 46);
+    assert.equal(state.standingReference.grounded, true); assert.equal(state.standingReference.landTimer, 0); assert.equal(state.standingReference.velocityY, 0);
+    const referenceClearance = Math.min(...state.standingReference.footClearances) - state.standingReference.rigY;
+    for (const { baseline, candidate } of state.landingFrames) {
+      assert.deepEqual(baseline.fighterPosition, candidate.fighterPosition); assert.deepEqual(baseline.velocity, candidate.velocity);
+      assert.deepEqual(baseline.logicalMuzzle, candidate.logicalMuzzle); assert.deepEqual(baseline.rigScale, candidate.rigScale);
+      const baselineMin = Math.min(...baseline.legs.map(leg => leg.minY));
+      const expectedMin = Math.min(baselineMin, baseline.floor + baseline.rigY + referenceClearance);
+      assert.ok(candidate.rigY <= baseline.rigY);
+      assert.ok(Math.abs(Math.min(...candidate.legs.map(leg => leg.minY)) - expectedMin) < 1e-12);
+      if (expectedMin === baselineMin) assert.deepEqual(candidate.legs, baseline.legs);
+      for (let i = 0; i < 2; i++) assert.ok(Math.abs(candidate.legs[i].minY - baseline.legs[i].minY - candidate.rigY + baseline.rigY) < 1e-12);
+    }
+    assert.equal(state.landingFrames.at(-1).baseline.landTimer, 0);
+    assert.ok(Math.abs(state.landingFrames.at(-1).candidate.rigY - state.landingFrames.at(-1).baseline.rigY) < .001, "full recovery must remove the contact correction smoothly");
+    for (let i = 0; i < 27; i += 3) assert.deepEqual(state.samples[i].legs, state.samples[i + 2].legs);
+  }
+  interrupted = true; await run(true, 8, false, null, true); assert.match(state.error, /landing frame timeout/);
+  assert.equal(state.running, false); assert.equal(state.shell, false); interrupted = false;
   await run(true, 8, true); assert.equal(state.error, null); assert.equal(state.samples.length, 9);
   assert.deepEqual(shotCalls, ["clear", "fire", "step", "step", "clear"]);
   for (let index = 0; index < 9; index += 3) {

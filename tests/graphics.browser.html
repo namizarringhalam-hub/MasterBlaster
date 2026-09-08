@@ -47,6 +47,8 @@
 <button id="landing-translation">Compare landing translation</button>
 <button id="landing-sequence">Compare full landing recovery</button>
 <button id="landing-hard-sequence">Compare hard landing recovery</button>
+<button id="landing-contact">Compare landing foot contact</button>
+<button id="landing-hard-contact">Compare hard landing foot contact</button>
 <button id="landing-shot">Compare hard landing shot</button>
 <button id="muzzle-neutral">Compare neutral muzzle origin</button>
 <button id="muzzle-landing">Compare landing muzzle origin</button>
@@ -801,6 +803,29 @@ async function withReversedTrail(projectile, capture) {
     return await capture();
   } finally { trails.forEach((trail, i) => { trail.quaternion.copy(rotations[i]); trail.updateWorldMatrix(true, false); }); }
 }
+function landingReference(fighter) {
+  return { scale: fighter.rig.scale.clone(), rotation: fighter.rig.quaternion.clone(),
+    legs: [fighter.leftLeg, fighter.rightLeg].map(leg => leg.quaternion.clone()) };
+}
+async function withLandingContact(fighter, standing, capture) {
+  if (!fighter.grounded) return capture(0);
+  const legs = [fighter.leftLeg, fighter.rightLeg], current = landingReference(fighter), y = fighter.rig.position.y;
+  const feet = () => { fighter.group.updateMatrixWorld(true); return legs.map(leg => new THREE.Box3().setFromObject(leg, true).min.y); };
+  const actualFeet = feet();
+  try {
+    fighter.rig.scale.copy(standing.scale); fighter.rig.quaternion.copy(standing.rotation);
+    legs.forEach((leg, i) => leg.quaternion.copy(standing.legs[i]));
+    const standingFeet = feet(); // Keep this frame's idle bob and physical root position.
+    fighter.rig.scale.copy(current.scale); fighter.rig.quaternion.copy(current.rotation);
+    legs.forEach((leg, i) => leg.quaternion.copy(current.legs[i]));
+    const offset = Math.min(0, Math.min(...standingFeet) - Math.min(...actualFeet));
+    fighter.rig.position.y = y + offset; fighter.group.updateMatrixWorld(true);
+    return await capture(offset);
+  } finally {
+    fighter.rig.position.y = y; fighter.rig.scale.copy(current.scale); fighter.rig.quaternion.copy(current.rotation);
+    legs.forEach((leg, i) => leg.quaternion.copy(current.legs[i])); fighter.group.updateMatrixWorld(true);
+  }
+}
 function makeTrailEdgeMaterials(projectile) {
   return (projectile.mesh.userData.combatVisual?.trailParts || []).map(trail => {
     const control = new THREE.MeshBasicNodeMaterial().copy(trail.material), trial = control.clone();
@@ -841,7 +866,7 @@ async function withTrailShading(entries, mode, capture) {
     return await capture();
   } finally { entries.forEach(({ trail }, i) => { [trail.geometry, trail.material] = originals[i]; }); }
 }
-async function runLandingReview(sequence = false, fallHeight = 0, shot = false, muzzle = null) {
+async function runLandingReview(sequence = false, fallHeight = 0, shot = false, muzzle = null, contactReview = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.landingFrames = []; cameraReview.error = null;
   select("camera-captures").replaceChildren();
@@ -851,6 +876,8 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
   let shotState = null;
   let muzzleEvent = null, muzzleDelta = null;
   let trailShading = [], trailEdgeMaterials = [];
+  let standingPose = null;
+  cameraReview.standingReference = null;
   const trailReview = muzzle?.endsWith("-tail"), shadeReview = muzzle?.endsWith("-shade"), edgeReview = muzzle?.endsWith("-edge"), followMuzzle = trailReview || shadeReview || edgeReview || muzzle?.endsWith("-follow"), neutralMuzzle = muzzle?.startsWith("neutral");
   const clearShot = () => {
     game.clearTransientNetworkCombat();
@@ -900,7 +927,8 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
     const compare = async landingFrame => withFrozenShaderTime(async () => {
       if (followMuzzle) muzzleDelta = muzzleEvent.initialPositions[0].clone().sub(muzzleEvent.flash.position);
       await capture("current", 0, landingFrame);
-      if (edgeReview) {
+      if (contactReview) await withLandingContact(hero, standingPose, offset => capture("contact-reference", offset, landingFrame));
+      else if (edgeReview) {
         await withTrailEdgeMaterials(trailEdgeMaterials, "control", () => capture("node-material-control", 0, landingFrame));
         await withTrailEdgeMaterials(trailEdgeMaterials, "trial", () => capture("edge-trial", 0, landingFrame));
       } else if (shadeReview) {
@@ -916,6 +944,13 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
     else {
       hero.velocity.set(0, 0, 0);
       for (let i = 0; i < 60; i++) hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
+      if (contactReview) {
+        if (!hero.grounded || hero.landTimer !== 0 || Math.abs(hero.velocity.y) > 1e-8) throw new Error("Foot contact reference must be settled and grounded");
+        standingPose = landingReference(hero); hero.group.updateMatrixWorld(true);
+        const floor = game.world.surfaceHeightAt(hero.position, hero.position.y + .35);
+        cameraReview.standingReference = { grounded: hero.grounded, landTimer: hero.landTimer, velocityY: hero.velocity.y, rigY: hero.rig.position.y,
+          floor, footClearances: [hero.leftLeg, hero.rightLeg].map(leg => new THREE.Box3().setFromObject(leg, true).min.y - floor) };
+      }
       if (fallHeight) { hero.position.y += fallHeight; hero.grounded = false; }
       let landingFrame = -1;
       for (let i = 0; i < 240; i++) {
@@ -923,7 +958,8 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
         hero.update(1 / 60, stillMove, reviewAim, { jump: !neutralMuzzle && !fallHeight && i === 0 }, game.world); hero.group.updateMatrixWorld(true);
         if (landingFrame < 0 && (neutralMuzzle || hero.landTimer > 0)) landingFrame = 0;
         if (landingFrame >= 0) {
-          const baseline = state(), candidate = hero.landTimer > 0 ? await withPreviousLandingDrop(hero, () => state()) : state();
+          const baseline = state(), candidate = contactReview ? await withLandingContact(hero, standingPose, () => state())
+            : hero.landTimer > 0 ? await withPreviousLandingDrop(hero, () => state()) : state();
           cameraReview.landingFrames.push({ simulationFrame: i, landingFrame, stepTime, fallHeight, baseline, candidate });
           if (shot && landingFrame === (neutralMuzzle ? 0 : 6)) {
             shotState = { ammo: hero.ammo[hero.weapon.id], attackTimer: hero.attackTimer, velocity: hero.velocity.clone(),
@@ -980,6 +1016,8 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
 select("landing-translation").onclick = () => runLandingReview();
 select("landing-sequence").onclick = () => runLandingReview(true);
 select("landing-hard-sequence").onclick = () => runLandingReview(true, 8);
+select("landing-contact").onclick = () => runLandingReview(true, 0, false, null, true);
+select("landing-hard-contact").onclick = () => runLandingReview(true, 8, false, null, true);
 select("landing-shot").onclick = () => runLandingReview(true, 8, true);
 select("muzzle-neutral").onclick = () => runLandingReview(true, 0, true, "neutral");
 select("muzzle-landing").onclick = () => runLandingReview(true, 8, true, "landing");
