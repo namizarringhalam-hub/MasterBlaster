@@ -72,6 +72,7 @@
 <button id="arm-comparison">Check elbow finish restoration</button>
 <button id="elbow-comparison">Compare elbow silhouette</button>
 <button id="boost-passage">Test boost passage</button>
+<button id="exhaust-shroud-trial">Compare exhaust shrouds</button>
 <button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
 <label><input id="follow-camera" type="checkbox" checked>Follow player camera</label>
 <output id="metrics" style="flex-basis:100%;min-width:0;max-height:100px;overflow:auto;white-space:pre-wrap">Loading actual game…</output>
@@ -86,6 +87,7 @@ import { Fighter } from "../src/player.js";
 import { shoulderChamferGeometry } from "./shoulderChamferGeometry.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { ankleReliefGeometry } from "./ankleReliefGeometry.js";
+import { withExhaustShrouds } from "./exhaustShroudGeometry.js";
 document.querySelector("#view").add(new Option("lower-body-oblique", "lower-body-oblique"));
 document.querySelector("#view").add(new Option("thrusters-low", "thrusters-low"));
 document.querySelector("#pose").add(new Option("boost", "boost"));
@@ -1426,6 +1428,16 @@ select("leg-assembly-comparison").onclick = () => runLowerBodyReview("assembly")
 select("leg-environment-diagnosis").onclick = () => runLowerBodyReview("environment");
 select("shin-clearcoat-diagnosis").onclick = () => runLowerBodyReview("clearcoat");
 select("shin-roughness-trial").onclick = () => runLowerBodyReview("roughness");
+select("exhaust-shroud-trial").onclick = () => runLowerBodyReview("exhaust");
+async function withSettledReviewCamera(capture) {
+  if (select("view").value !== "player-camera") return await capture();
+  const update = game.updateCamera;
+  // Settle the actual collision-aware camera, then hold its output across A/B.
+  for (let i = 0; i < 240; i++) update();
+  game.updateCamera = () => {};
+  try { return await capture(); }
+  finally { game.updateCamera = update; }
+}
 async function runLowerBodyReview(ankle = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.error = null;
@@ -1433,10 +1445,10 @@ async function runLowerBodyReview(ankle = false) {
   const serial = sceneSerial, initialErrors = errorCount;
   select("camera-captures").replaceChildren();
   try {
-    if (stress || !game.paused || resetPhase !== "ready" || !["fighter", "lower-body-front", "lower-body-side", "lower-body-oblique"].includes(select("view").value))
+    if (stress || !game.paused || resetPhase !== "ready" || !(ankle === "exhaust" ? ["thrusters", "thrusters-low", "player-camera"] : ["fighter", "lower-body-front", "lower-body-side", "lower-body-oblique"]).includes(select("view").value))
       throw new Error("Knee comparison needs a ready paused fighter or lower-body view");
     for (const [control] of controls) control.disabled = true;
-    const capture = async mode => {
+    const capture = async (mode, exhaustTarget = null) => {
       const frame = renderedFrames + 4;
       await waitForReviewFrame(serial, () => renderedFrames >= frame);
       if (!game.paused || errorCount !== initialErrors || game.renderPipeline.direct) throw new Error("Knee comparison interrupted or renderer failed");
@@ -1451,11 +1463,16 @@ async function runLowerBodyReview(ankle = false) {
             metalness: mesh.material.metalness, emissiveIntensity: mesh.material.emissiveIntensity,
             envMap: mesh.material.envMap?.uuid ?? null, envMapIntensity: mesh.material.envMapIntensity,
             envMapRotation: mesh.material.envMapRotation?.toArray() ?? null } }))),
-        ...shellReviewState(game.players[0].leftLeg.children[["clearcoat", "roughness"].includes(ankle) ? 1 : ankle ? 0 : 2]), errorCount, directFallback: game.renderPipeline.direct });
+        ...(ankle === "exhaust" ? { exhaust: { geometry: game.players[0].thrusterLights.geometry.uuid,
+          matrix: game.players[0].thrusterLights.matrixWorld.toArray(), material: game.players[0].thrusterMaterial.toJSON(),
+          pose: { ...poseReview } } } : {}),
+        ...shellReviewState(ankle === "exhaust" ? exhaustTarget || game.players[0].rig.children.find(mesh => mesh.isMesh && mesh.material === game.players[0].darkMaterial)
+          : game.players[0].leftLeg.children[["clearcoat", "roughness"].includes(ankle) ? 1 : ankle ? 0 : 2]), errorCount, directFallback: game.renderPipeline.direct });
     };
-    await withFrozenShaderTime(async () => {
+    await withSettledReviewCamera(() => withFrozenShaderTime(async () => {
       await capture(ankle === "assembly" ? "integrated-ankle-boot" : ankle ? "baseline" : "integrated-taper");
-      if (ankle === "environment") {
+      if (ankle === "exhaust") await withExhaustShrouds(game.players[0], target => capture("closed-shrouds", target));
+      else if (ankle === "environment") {
         for (const mode of ["explicit-environment", "no-environment"])
           await withLegEnvironment(game.players[0], mode, () => capture(mode));
       } else if (ankle === "clearcoat" || ankle === "roughness") {
@@ -1464,7 +1481,7 @@ async function runLowerBodyReview(ankle = false) {
       } else if (ankle) await withAnkleRelief(game.players[0], () => capture(ankle === "assembly" ? "previous-continuous-leg" : "ankle-relief-local-bevels"), ankle === "assembly");
       else await withPreviousKnees(game.players[0], () => capture("previous-rounded"));
       await capture("restored");
-    });
+    }));
   } catch (error) { cameraReview.error = String(error); }
   finally {
     cameraReview.running = false; cameraReview.shell = false;

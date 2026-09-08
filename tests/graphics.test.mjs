@@ -18,6 +18,68 @@ import { weaponPresentation } from "../src/weaponPresentation.js";
 import { shoulderChamferGeometry } from "./shoulderChamferGeometry.js";
 import { ConvexHull } from "three/addons/math/ConvexHull.js";
 import { ankleReliefGeometry } from "./ankleReliefGeometry.js";
+import { exhaustShroudGeometry, withExhaustShrouds } from "./exhaustShroudGeometry.js";
+
+for (let variant = 0; variant < 4; variant++) {
+  const geometry = exhaustShroudGeometry(variant), positions = geometry.attributes.position, normals = geometry.attributes.normal;
+  geometry.computeBoundingBox();
+  assert.ok(Math.abs(geometry.boundingBox.min.y - (variant === 2 ? .9974 : 1.055)) < 1e-7);
+  assert.ok(Math.abs(geometry.boundingBox.max.y - 1.460) < 1e-7);
+  const outletY = variant === 2 ? .9974 : 1.055, outletRadius = variant === 2 ? .056 : .075;
+  let minimumClearance = Infinity;
+  for (let step = 0; step <= 175; step++) {
+    const scale = .65 + step / 100, bottom = 1.02 - .18 * scale, top = 1.02 + .18 * scale;
+    assert.ok(top <= 1.456 - .004 + 1e-12, "closed ceiling clears the full authored plume scale envelope");
+    for (let slice = 0; slice <= 100; slice++) {
+      const y = outletY + (top - outletY) * slice / 100;
+      const cavity = y >= 1.137 ? .110 : outletRadius + (.110 - outletRadius) * (y - outletY) / (1.137 - outletY);
+      const coneRadius = .105 * (y - bottom) / (top - bottom);
+      minimumClearance = Math.min(minimumClearance, cavity * Math.cos(Math.PI / 12) - coneRadius);
+    }
+  }
+  assert.ok(minimumClearance > .00125, "twelve-sided cavity clears the circular upper bound of every plume cross-section");
+  const edges = new Map(), point = index => new THREE.Vector3().fromBufferAttribute(positions, index);
+  const key = v => v.toArray().map(x => x.toFixed(6)).join(",").replaceAll("-0.000000", "0.000000");
+  for (let i = 0; i < positions.count; i += 3) {
+    const triangle = [point(i), point(i + 1), point(i + 2)], normal = triangle[1].clone().sub(triangle[0]).cross(triangle[2].clone().sub(triangle[0]));
+    assert.ok(normal.length() > 1e-8, "no degenerate shroud faces"); normal.normalize();
+    for (let j = 0; j < 3; j++) {
+      assert.ok(normal.dot(new THREE.Vector3().fromBufferAttribute(normals, i + j)) > .99999);
+      const a = key(triangle[j]), b = key(triangle[(j + 1) % 3]), edge = [a, b].sort().join("|");
+      const counts = edges.get(edge) || [0, 0]; counts[a < b ? 0 : 1]++; edges.set(edge, counts);
+    }
+  }
+  assert.ok([...edges.values()].every(([a, b]) => a === 1 && b === 1), "closed oriented shroud manifold, open cavity outlet remains annular");
+  geometry.dispose();
+  for (const fail of [false, true]) {
+    const hero = new Fighter(new THREE.Scene(), { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+    const target = hero.rig.children.find(mesh => mesh.isMesh && mesh.material === hero.darkMaterial), original = target.geometry;
+    const children = [...hero.rig.children];
+    const flame = hero.thrusterLights, flameState = JSON.stringify({ geometry: flame.geometry.toJSON(), material: flame.material.toJSON(), position: flame.position, scale: flame.scale });
+    let disposed = 0;
+    const run = () => withExhaustShrouds(hero, async changed => {
+      assert.notEqual(changed, target); assert.equal(changed.material, hero.darkMaterial);
+      assert.equal(target.geometry, original); assert.equal(target.visible, false); assert.equal(changed.visible, true);
+      assert.equal(changed.parent, hero.rig); assert.deepEqual(changed.matrix, target.matrix);
+      assert.equal(changed.castShadow, target.castShadow); assert.equal(changed.receiveShadow, target.receiveShadow);
+      changed.geometry.addEventListener("dispose", () => disposed++);
+      for (const [name, attribute] of Object.entries(original.attributes))
+        assert.deepEqual(changed.geometry.attributes[name].array.slice(0, attribute.array.length), attribute.array, "existing static body bytes remain unchanged");
+      assert.ok(changed.geometry.attributes.position.count > original.attributes.position.count);
+      if (fail) throw Error("capture failure");
+    });
+    const disposeGeometry = THREE.BufferGeometry.prototype.dispose, releases = new Map();
+    THREE.BufferGeometry.prototype.dispose = function () { releases.set(this, (releases.get(this) || 0) + 1); return disposeGeometry.call(this); };
+    try { if (fail) await assert.rejects(run, /capture failure/); else await run(); }
+    finally { THREE.BufferGeometry.prototype.dispose = disposeGeometry; }
+    assert.equal(releases.size, 3); assert.ok([...releases.values()].every(count => count === 1));
+    assert.equal(releases.has(original), false); assert.equal(releases.has(flame.geometry), false);
+    assert.equal(target.geometry, original); assert.equal(disposed, 1);
+    assert.equal(target.visible, true); assert.deepEqual(hero.rig.children, children);
+    assert.equal(JSON.stringify({ geometry: flame.geometry.toJSON(), material: flame.material.toJSON(), position: flame.position, scale: flame.scale }), flameState);
+    hero.dispose();
+  }
+}
 
 {
   const owned = new Set();
@@ -1024,6 +1086,45 @@ for (const pose of ["gait-positive", "gait-negative", "landing"]) {
   hero.dispose();
 }
 const handViewSource = graphicsFixture.slice(graphicsFixture.indexOf("function setView()"), graphicsFixture.indexOf("async function reset()"));
+const settledCameraSource = graphicsFixture.slice(graphicsFixture.indexOf("async function withSettledReviewCamera("), graphicsFixture.indexOf("async function runLowerBodyReview("));
+{
+  const source = graphicsFixture.slice(graphicsFixture.indexOf("async function runLowerBodyReview("), graphicsFixture.indexOf("async function runShellReview("));
+  const hero = new Fighter(new THREE.Scene(), { id: "helmet-1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const target = hero.rig.children.find(mesh => mesh.isMesh && mesh.material === hero.darkMaterial), original = target.geometry;
+  const game = { players: [hero], paused: true, renderPipeline: { direct: false } }, captured = [];
+  const controls = { view: { value: "thrusters" }, pose: { value: "aim" }, "camera-captures": { replaceChildren() {}, append() {} } };
+  const document = { querySelectorAll: () => [], createElement: () => ({}), querySelector: () => ({ toDataURL: () => "unit-test-only" }) };
+  const review = new Function("game", "select", "document", "withExhaustShrouds", "shellReviewState", `
+    const resetReview={},cacheReview={},decoyReview={},cameraReview={},sceneSerial=1,errorCount=0,stress=false,resetPhase="ready",poseReview={requested:"aim"};
+    let renderedFrames=0; const waitForReviewFrame=async()=>{renderedFrames+=4;},withFrozenShaderTime=async capture=>capture();
+    ${settledCameraSource}; ${source}; return {run:runLowerBodyReview,state:cameraReview};
+  `)(game, name => controls[name], document, withExhaustShrouds, mesh => {
+    captured.push(mesh); return { targetGeometry: mesh.geometry.uuid, targetVertices: mesh.geometry.attributes.position.count };
+  });
+  await review.run("exhaust");
+  assert.equal(review.state.error, null); assert.equal(review.state.running, false);
+  assert.equal(captured.length, 3); assert.equal(captured[0], target); assert.equal(captured[2], target);
+  assert.notEqual(captured[1], target); assert.equal(captured[1].material, target.material);
+  assert.equal(review.state.samples[0].targetGeometry, original.uuid);
+  assert.equal(review.state.samples[2].targetGeometry, original.uuid);
+  assert.ok(review.state.samples[1].targetVertices > review.state.samples[0].targetVertices, "candidate metadata uses the actual replacement, never another dark helmet mesh");
+  assert.deepEqual(review.state.samples.map(s => s.exhaust), Array(3).fill(review.state.samples[0].exhaust));
+  hero.dispose();
+}
+for (const view of ["player-camera", "thrusters-low"]) for (const fail of [false, true]) {
+  let updates = 0;
+  const game = { updateCamera: () => updates++ }, original = game.updateCamera;
+  const settle = new Function("game", "select", `${settledCameraSource}; return withSettledReviewCamera;`)(game, () => ({ value: view }));
+  const run = () => settle(async () => {
+    assert.equal(updates, view === "player-camera" ? 240 : 0);
+    game.updateCamera();
+    assert.equal(updates, view === "player-camera" ? 240 : 1);
+    if (fail) throw Error("capture failed");
+  });
+  if (fail) await assert.rejects(run, /capture failed/); else await run();
+  assert.equal(game.updateCamera, original); game.updateCamera();
+  assert.equal(updates, view === "player-camera" ? 241 : 2);
+}
 for (const view of ["fighter", "helmet-profile", "hand-front", "lower-body-front"]) for (const pose of ["boost", "exhaust-hard-landing"]) {
   const game = { players: [{ position: new THREE.Vector3(4, 5, 6), group: { rotation: { y: .4 } } }],
     camera: new THREE.PerspectiveCamera() };
