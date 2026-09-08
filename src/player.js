@@ -1189,7 +1189,7 @@ export class Fighter {
     if (this.weaponSpinner) this.weaponSpinner.rotation.z += dt * (this.attackTimer > 0 ? 32 : 5);
     if (this.weaponPiston) this.weaponPiston.position.z = THREE.MathUtils.damp(this.weaponPiston.position.z, attacking ? .42 * attackSwing : 0, 24, dt);
     const bob = this.grounded && moving && !grappled ? Math.abs(gait) * .075 : Math.sin(time * .45) * .018;
-    this.rig.position.y = bob - landing * .27;
+    this.rig.position.y = bob;
     const airStretch = this.grounded ? 0 : clamp(Math.abs(this.velocity.y) / 36, 0, .09);
     this.rig.scale.set(1.07 + landing * .14 - airStretch * .35, 1.04 - landing * .27 + airStretch, 1.07 + landing * .14 - airStretch * .35);
     const strafe = this.velocity.x * this.aim.z - this.velocity.z * this.aim.x;
