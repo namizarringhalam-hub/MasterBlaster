@@ -17,6 +17,95 @@ import { weaponUsesAmmo } from "../src/gameData.js";
 import { weaponPresentation } from "../src/weaponPresentation.js";
 import { shoulderChamferGeometry } from "./shoulderChamferGeometry.js";
 import { ConvexHull } from "three/addons/math/ConvexHull.js";
+import { ankleReliefGeometry } from "./ankleReliefGeometry.js";
+
+{
+  const fixture = readFileSync(new URL("./graphics.browser.html", import.meta.url), "utf8");
+  const source = fixture.slice(fixture.indexOf("async function withAnkleRelief("), fixture.indexOf("async function withPreviousKnees("));
+  const run = new Function("THREE", "ankleReliefGeometry", `${source}; return withAnkleRelief;`)(THREE, ankleReliefGeometry);
+  const dark = new RoundedBoxGeometry(.3, .78, .34, 1, .042), shin = new RoundedBoxGeometry(.255, .4, .39, 1, .0357);
+  const legs = [new THREE.Group(), new THREE.Group()];
+  for (const leg of legs) {
+    const body = new THREE.Mesh(dark), plate = new THREE.Mesh(shin);
+    body.position.set(0, -.39, 0); plate.position.set(0, -.54, .035); leg.add(body, plate);
+  }
+  const hero = { leftLeg: legs[0], rightLeg: legs[1] }; let originalsDisposed = 0;
+  dark.addEventListener("dispose", () => originalsDisposed++); shin.addEventListener("dispose", () => originalsDisposed++);
+  for (const fail of [false, true]) {
+    const disposed = [0, 0];
+    const capture = async () => {
+      for (let i = 0; i < 2; i++) {
+        const geometry = legs[0].children[i].geometry;
+        assert.ok(geometry !== (i ? shin : dark)); assert.ok(geometry === legs[1].children[i].geometry);
+        geometry.addEventListener("dispose", () => disposed[i]++);
+      }
+      if (fail) throw new Error("ankle capture interrupted");
+    };
+    if (fail) await assert.rejects(run(hero, capture), /ankle capture interrupted/); else await run(hero, capture);
+    for (const leg of legs) assert.ok(leg.children[0].geometry === dark && leg.children[1].geometry === shin);
+    assert.deepEqual(disposed, [1, 1]); assert.equal(originalsDisposed, 0);
+  }
+  for (const leg of legs) leg.children.reverse();
+  await assert.rejects(run(hero, async () => assert.fail("wrong layout must not capture")), /Unexpected authored leg/);
+  dark.dispose(); shin.dispose();
+}
+
+for (const [ys, derivative] of [[[-.16, -.18, -.22], -12.5], [[-.25, -.27, -.30], 12.5]]) {
+  const original = new THREE.BufferGeometry();
+  original.setAttribute("position", new THREE.Float32BufferAttribute([-.1, ys[0], -.17, .1, ys[1], -.17, -.1, ys[2], -.17], 3));
+  original.setAttribute("normal", new THREE.Float32BufferAttribute([0, 0, -1, 0, 0, -1, 0, 0, -1], 3));
+  original.setAttribute("uv", new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1], 2));
+  const trial = ankleReliefGeometry(original, -.39, .9, .30 / .34, .02);
+  assert.equal(trial.attributes.position.count, 3);
+  for (let i = 0; i < 3; i++) {
+    const p = new THREE.Vector3().fromBufferAttribute(original.attributes.position, i), t = 1 - Math.abs(p.y - .39 + .62) / .08;
+    const sx = 1 - .1 * t, sz = 1 + (.30 / .34 - 1) * t;
+    const expected = new THREE.Vector3(p.x * sx, p.y, p.z * sz + .02 * t);
+    assert.ok(expected.distanceTo(new THREE.Vector3().fromBufferAttribute(trial.attributes.position, i)) < 2e-8);
+    expected.set(0, derivative * ((.30 / .34 - 1) * p.z + .02) / sz, -1 / sz).normalize();
+    assert.ok(expected.distanceTo(new THREE.Vector3().fromBufferAttribute(trial.attributes.normal, i)) < 1e-7);
+  }
+  trial.dispose(); original.dispose();
+}
+
+for (const [sample, curve] of [[.008, u => [12.5 * u * u / .032, 25 * u / .032]],
+  [.04, u => [12.5 * (u - .008), 12.5]], [.08, u => [.85 - 12.5 * (u - .08) ** 2 / .016, -25 * (u - .08) / .016]],
+  [.12, u => [12.5 * (.152 - u), -12.5]], [.152, u => [12.5 * (.16 - u) ** 2 / .032, -25 * (.16 - u) / .032]]]) {
+  const y = sample - .70 + .39, geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute([-.1, y, -.17, .1, y + .0001, -.17, -.1, y + .0002, -.17], 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute([.6, 0, -.8, .6, 0, -.8, .6, 0, -.8], 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1], 2));
+  const trial = ankleReliefGeometry(geometry, -.39, .9, .30 / .34, .02, true);
+  const p = new THREE.Vector3().fromBufferAttribute(geometry.attributes.position, 0);
+  const n = new THREE.Vector3().fromBufferAttribute(geometry.attributes.normal, 0), [t, derivative] = curve(p.y - .39 + .70);
+  const sx = 1 - .1 * t, sz = 1 + (.30 / .34 - 1) * t;
+  const expectedPosition = new THREE.Vector3(p.x * sx, p.y, p.z * sz + .02 * t);
+  const expectedNormal = new THREE.Vector3(n.x / sx, n.y + derivative * .1 * p.x * n.x / sx
+    - derivative * ((.30 / .34 - 1) * p.z + .02) * n.z / sz, n.z / sz).normalize();
+  let checked = 0;
+  for (let i = 0; i < trial.attributes.uv.count; i++) if (trial.attributes.uv.getX(i) === 0 && trial.attributes.uv.getY(i) === 0) {
+    assert.ok(expectedPosition.distanceTo(new THREE.Vector3().fromBufferAttribute(trial.attributes.position, i)) < 2e-8);
+    assert.ok(expectedNormal.distanceTo(new THREE.Vector3().fromBufferAttribute(trial.attributes.normal, i)) < 1e-7);
+    checked++;
+  }
+  assert.ok(checked > 0, "beveled capture profile sample was verified");
+  trial.dispose(); geometry.dispose();
+}
+
+for (const bevel of [false, true]) for (const [w, h, d, cy, wr, dr, shift] of [[.3, .78, .34, -.39, .9, .30 / .34, .02], [.255, .4, .39, -.54, .23 / .255, .33 / .39, .01]]) {
+  const original = new RoundedBoxGeometry(w, h, d, 1, Math.min(.045, w * .14, h * .14, d * .14));
+  const trial = ankleReliefGeometry(original, cy, wr, dr, shift, bevel), points = [];
+  const p = original.attributes.position, q = trial.attributes.position;
+  for (let i = 0; i < p.count; i++) points.push(new THREE.Vector3().fromBufferAttribute(p, i));
+  const hull = new ConvexHull().setFromPoints(points), point = new THREE.Vector3(), retained = new Set();
+  for (let i = 0; i < q.count; i++) {
+    point.fromBufferAttribute(q, i); retained.add(point.toArray().join(","));
+    assert.ok(hull.faces.every(face => face.distanceToPoint(point) <= 2e-8), "ankle relief stays inside its original hull");
+  }
+  for (const point of points) assert.ok(retained.has(point.toArray().join(",")), "every old support extremum is retained exactly");
+  assert.ok(q.count > p.count, "authored ankle rings are added");
+  trial.dispose(); original.dispose();
+}
 
 {
   const original = new RoundedBoxGeometry(.29, .18, .13, 1, .0182);

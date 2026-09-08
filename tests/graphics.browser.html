@@ -34,6 +34,7 @@
 <button id="shell-diagnosis">Diagnose helmet shell finish</button>
 <button id="shell-comparison">Compare capsule shell finish</button>
 <button id="knee-comparison">Compare contained knee taper</button>
+<button id="ankle-comparison">Compare contained ankle relief</button>
 <button id="arm-diagnosis">Diagnose elbow finish</button>
 <button id="shoulder-diagnosis">Diagnose shoulder and upper arm</button>
 <button id="shoulder-comparison">Check shoulder finish restoration</button>
@@ -80,6 +81,7 @@ import { WEAPONS, MAP_THEMES, seedFromText } from "../src/gameData.js";
 import { Fighter } from "../src/player.js";
 import { shoulderChamferGeometry } from "./shoulderChamferGeometry.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { ankleReliefGeometry } from "./ankleReliefGeometry.js";
 import { ArenaWorld } from "../src/world.js";
 import { CombatVisuals } from "../src/combatVisuals.js";
 import { NeonRenderPipeline, recoverInvalidAONormals } from "../src/renderPipeline.js";
@@ -1316,6 +1318,30 @@ function shellReviewState(target = game.players[0].helmetShell ?? game.players[0
     effects: { projectiles: game.projectiles.length, hazards: game.hazards.length, decoys: game.decoys.length, effects: game.effects.length },
     exposure: game.renderer.toneMappingExposure, toneMapping: game.renderer.toneMapping };
 }
+async function withAnkleRelief(hero, capture) {
+  const legs = [hero.leftLeg, hero.rightLeg], meshes = legs.flatMap(leg => leg.children.slice(0, 2));
+  if (meshes.some(mesh => !mesh?.isMesh) || meshes[0].geometry !== meshes[2].geometry || meshes[1].geometry !== meshes[3].geometry)
+    throw new Error("Unexpected leg layout; update ankle diagnostic");
+  for (let i = 0; i < meshes.length; i++) {
+    const mesh = meshes[i], shin = i % 2, p = mesh.geometry.attributes.position;
+    const expected = shin ? [.255, .4, .39] : [.3, .78, .34];
+    const bounds = new THREE.Box3().setFromBufferAttribute(p), size = bounds.getSize(new THREE.Vector3());
+    if (mesh.position.x !== 0 || mesh.position.y !== (shin ? -.54 : -.39) || mesh.position.z !== (shin ? .035 : 0) ||
+        mesh.geometry.index || !mesh.geometry.attributes.normal || !mesh.geometry.attributes.uv ||
+        size.toArray().some((value, axis) => Math.abs(value - expected[axis]) > 5e-8) || bounds.getCenter(new THREE.Vector3()).length() > 2e-8)
+      throw new Error("Unexpected authored leg dimensions or transform");
+  }
+  const originals = meshes.map(mesh => mesh.geometry), trials = [];
+  try {
+    trials.push(ankleReliefGeometry(originals[0], -.39, .9, .30 / .34, .02, true));
+    trials.push(ankleReliefGeometry(originals[1], -.54, .23 / .255, .33 / .39, .01, true));
+    meshes.forEach((mesh, i) => { mesh.geometry = trials[i % 2]; });
+    await capture();
+  } finally {
+    meshes.forEach((mesh, i) => { mesh.geometry = originals[i]; });
+    for (const trial of trials) trial.dispose();
+  }
+}
 async function withPreviousKnees(hero, capture) {
   const knees = [hero.leftLeg.children[2], hero.rightLeg.children[2]];
   if (knees.some(knee => !knee?.isMesh || knee.position.y !== -.39 || knee.position.z !== .23) || knees[0].geometry !== knees[1].geometry)
@@ -1324,7 +1350,9 @@ async function withPreviousKnees(hero, capture) {
   try { for (const knee of knees) knee.geometry = trial; await capture(); }
   finally { for (const knee of knees) knee.geometry = original; trial.dispose(); }
 }
-select("knee-comparison").onclick = async () => {
+select("knee-comparison").onclick = () => runLowerBodyReview();
+select("ankle-comparison").onclick = () => runLowerBodyReview(true);
+async function runLowerBodyReview(ankle = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.error = null;
   const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
@@ -1343,11 +1371,14 @@ select("knee-comparison").onclick = async () => {
       link.href = document.querySelector("#game-canvas").toDataURL("image/png");
       select("camera-captures").append(link, " ");
       cameraReview.samples.push({ index, mode, view: select("view").value, pose: select("pose").value,
-        ...shellReviewState(game.players[0].leftLeg.children[2]), errorCount, directFallback: game.renderPipeline.direct });
+        legParts: [game.players[0].leftLeg, game.players[0].rightLeg].flatMap(leg => leg.children.slice(0, 3).map(mesh => ({
+          geometry: mesh.geometry.uuid, material: mesh.material.uuid, matrix: mesh.matrixWorld.toArray(), vertices: mesh.geometry.attributes.position.count }))),
+        ...shellReviewState(game.players[0].leftLeg.children[ankle ? 0 : 2]), errorCount, directFallback: game.renderPipeline.direct });
     };
     await withFrozenShaderTime(async () => {
-      await capture("integrated-taper");
-      await withPreviousKnees(game.players[0], () => capture("previous-rounded"));
+      await capture(ankle ? "baseline" : "integrated-taper");
+      if (ankle) await withAnkleRelief(game.players[0], () => capture("ankle-relief-local-bevels"));
+      else await withPreviousKnees(game.players[0], () => capture("previous-rounded"));
       await capture("restored");
     });
   } catch (error) { cameraReview.error = String(error); }
@@ -1355,7 +1386,7 @@ select("knee-comparison").onclick = async () => {
     cameraReview.running = false; cameraReview.shell = false;
     for (const [control, disabled] of controls) control.disabled = disabled;
   }
-};
+}
 async function runShellReview(compareFinish = false, forearm = false, elbowSilhouette = false, shoulder = false, shoulderSilhouette = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.error = null;
