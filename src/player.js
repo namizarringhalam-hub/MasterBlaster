@@ -8,6 +8,19 @@ const clamp = THREE.MathUtils.clamp;
 export const PROJECTILE_SPAWN_OFFSET = .08;
 const roundedParts = new Map();
 
+export function torsoGeometry() {
+  const geometry = new THREE.CapsuleGeometry(.39, .68, 4, 8).translate(0, 1.25, 0);
+  const positions = geometry.attributes.position, normals = geometry.attributes.normal, normal = new THREE.Vector3();
+  for (let i = 0; i < positions.count; i++) {
+    const y = positions.getY(i);
+    if (y >= .91) continue;
+    positions.setY(i, .91 + (y - .91) * (.11 / .39));
+    normal.fromBufferAttribute(normals, i); normal.y /= .11 / .39; normal.normalize();
+    normals.setXYZ(i, normal.x, normal.y, normal.z);
+  }
+  return geometry;
+}
+
 export function exhaustShroudGeometry(variant = 0) {
   if (![0, 1, 2, 3].includes(variant)) throw new Error("Unknown fighter variant");
   const large = variant === 2, y = large ? .9974 : 1.055;
@@ -412,7 +425,7 @@ export class Fighter {
     this.rig = new THREE.Group();
     this.rig.scale.set(1.07, 1.04, 1.07);
     group.add(this.rig);
-    const torso = part(new THREE.CapsuleGeometry(.39, .68, 4, 8), dark, 0, 1.25, 0);
+    const torso = part(torsoGeometry(), dark, 0, 0, 0);
     const chest = part(new THREE.CylinderGeometry(.37, .49, .65, [6, 8, 5, 7][costumeVariant]), armor, 0, 1.43, .015);
     chest.scale.z = .76;
     const pelvis = part(new THREE.BoxGeometry(.72, .23, .45), armor, 0, .91, -.01);

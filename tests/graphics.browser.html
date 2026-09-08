@@ -94,7 +94,8 @@ import { exhaustBody, withExhaustShrouds, withPreviousExhaust } from "./exhaustS
 import { withShortenedTorso } from "./torsoShape.js";
 document.querySelector("#view").add(new Option("lower-body-oblique", "lower-body-oblique"));
 document.querySelector("#view").add(new Option("thrusters-low", "thrusters-low"));
-for (const view of ["waist-front", "waist-profile"]) document.querySelector("#view").add(new Option(view, view));
+for (const view of ["waist-front", "waist-profile", "waist-low-front", "waist-low-rear"]) document.querySelector("#view").add(new Option(view, view));
+for (const pose of ["hip-hard-peak", "hip-hard-recovery"]) document.querySelector("#pose").add(new Option(pose, pose));
 document.querySelector("#pose").add(new Option("boost", "boost"));
 document.querySelector("#pose").add(new Option("exhaust-hard-landing", "exhaust-hard-landing"));
 import { ArenaWorld } from "../src/world.js";
@@ -529,6 +530,10 @@ const stillMove = new THREE.Vector3(), reviewAim = new THREE.Vector3(0, 0, -1);
 let poseReview = null;
 function validateExhaustView(capture = false) {
   const pose = select("pose").value;
+  if (pose.startsWith("hip-hard-") && !select("view").value.startsWith("waist-"))
+    throw new Error("Hip landing requires a waist view");
+  if (capture && pose.startsWith("hip-hard-") && poseReview?.requested !== pose)
+    throw new Error("Hip landing must be successfully staged before capture");
   if (["boost", "exhaust-hard-landing"].includes(pose) && !["thrusters", "thrusters-low", "player-camera"].includes(select("view").value))
     throw new Error("Boost pose requires a thruster or player-camera view");
   if (capture && ["boost", "exhaust-hard-landing"].includes(pose) && poseReview?.requested !== pose)
@@ -571,6 +576,22 @@ function settlePose() {
       peakScale = hero.thrusterScale;
     }
     if (!captured || hero.landStrength !== 1) throw new Error("Maximum-strength production landing not reached");
+  } else if (pose.startsWith("hip-hard-")) {
+    hero.position.y += 8; hero.grounded = false;
+    let landed = false, afterTimer = 0, captured = false;
+    for (let i = 0; i < 180; i++) {
+      hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
+      landed ||= hero.grounded && hero.landStrength === 1 && hero.landTimer > 0;
+      if (!landed || !hero.grounded) continue;
+      if (hero.landTimer <= 0) afterTimer++;
+      if (pose === "hip-hard-peak" ? hero.landTimer > 0 && hero.landTimer <= .11 : afterTimer === 6) {
+        poseReview.hipLanding = { sampledFrames: i + 1, landStrength: hero.landStrength, landTimer: hero.landTimer,
+          grounded: hero.grounded, afterTimer, position: hero.position.toArray(), velocity: hero.velocity.toArray(),
+          legAngles: [hero.leftLeg.rotation.x, hero.rightLeg.rotation.x] };
+        captured = true; break;
+      }
+    }
+    if (!captured) throw new Error("Full-strength hip landing pose not reached");
   } else if (pose.startsWith("gait-") || pose === "landing") {
     const move = pose === "landing" ? stillMove : new THREE.Vector3(0, 0, -1);
     let previousAngle = hero.leftLeg.rotation.x, previousDelta = 0, captured = false, maxHorizontalCorrection = 0;
@@ -629,7 +650,7 @@ function setView() {
   // Start each hand-view/weapon comparison at visible Aim; then select its
   // transient pose without reframing. Control order cannot pick a reload anchor.
   if (view.startsWith("hand-")) select("pose").value = "aim";
-  hero.position.set(view.startsWith("lower-body-") || view.startsWith("muzzle-") ? 8 : 0, 15.01, 8); hero.group.rotation.y = Math.PI;
+  hero.position.set(view.startsWith("lower-body-") || view.startsWith("muzzle-") || view.startsWith("waist-") ? 8 : 0, 15.01, 8); hero.group.rotation.y = Math.PI;
   settlePose();
   if (view === "rope-corner") hero.position.set(-12, 18.6, 0);
   hero.rig.visible = true;
@@ -638,6 +659,8 @@ function setView() {
     fighter: [[3.7, 17.1, 3.3], [0, 16.35, 8]],
     "waist-front": [[hero.position.x + .9, hero.position.y + 1, hero.position.z - 1.6], [hero.position.x, hero.position.y + .91, hero.position.z]],
     "waist-profile": [[hero.position.x + 1.8, hero.position.y + 1, hero.position.z], [hero.position.x, hero.position.y + .91, hero.position.z]],
+    "waist-low-front": [[hero.position.x + .6, hero.position.y + .46, hero.position.z - 1.65], [hero.position.x, hero.position.y + .85, hero.position.z]],
+    "waist-low-rear": [[hero.position.x - .6, hero.position.y + .46, hero.position.z + 1.65], [hero.position.x, hero.position.y + .85, hero.position.z]],
     thrusters: [[hero.position.x + 1.6, hero.position.y + 1.69, hero.position.z + 2.3], [hero.position.x, hero.position.y + 1.14, hero.position.z + .49]],
     "thrusters-low": [[hero.position.x + .8, hero.position.y + .65, hero.position.z + 1.8], [hero.position.x, hero.position.y + 1.16, hero.position.z + .49]],
     "muzzle-whole": [[11.7, 17.1, 3.3], [8, 16.35, 8]],
@@ -741,7 +764,7 @@ select("weapon").onchange = () => {
   if (select("view").value.startsWith("hand-")) setView();
   else settlePose();
 };
-select("pose").onchange = () => /^(lower-body-|thrusters)/.test(select("view").value) || select("view").value === "player-camera" ? setView() : settlePose();
+select("pose").onchange = () => /^(lower-body-|thrusters|waist-)/.test(select("view").value) || select("view").value === "player-camera" ? setView() : settlePose();
 select("costume").onchange = () => { setTimeout(reset, 0); };
 select("aim-height").onchange = settlePose;
 select("reset").onclick = reset;
@@ -1456,7 +1479,7 @@ async function runLowerBodyReview(ankle = false) {
   const serial = sceneSerial, initialErrors = errorCount;
   select("camera-captures").replaceChildren();
   try {
-    if (stress || !game.paused || resetPhase !== "ready" || !(ankle === "torso" ? ["waist-front", "waist-profile", "fighter", "player-camera"] : exhaust ? ["thrusters", "thrusters-low", "player-camera"] : ["fighter", "lower-body-front", "lower-body-side", "lower-body-oblique"]).includes(select("view").value))
+    if (stress || !game.paused || resetPhase !== "ready" || !(ankle === "torso" ? ["waist-front", "waist-profile", "waist-low-front", "waist-low-rear", "fighter", "player-camera"] : exhaust ? ["thrusters", "thrusters-low", "player-camera"] : ["fighter", "lower-body-front", "lower-body-side", "lower-body-oblique"]).includes(select("view").value))
       throw new Error("Knee comparison needs a ready paused fighter or lower-body view");
     for (const [control] of controls) control.disabled = true;
     const capture = async (mode, exhaustTarget = null, lightTarget = null) => {
@@ -1469,6 +1492,7 @@ async function runLowerBodyReview(ankle = false) {
       link.href = document.querySelector("#game-canvas").toDataURL("image/png");
       select("camera-captures").append(link, " ");
       cameraReview.samples.push({ index, mode, view: select("view").value, pose: select("pose").value,
+        ...(ankle === "torso" ? { torsoPose: { ...poseReview } } : {}),
         legParts: [game.players[0].leftLeg, game.players[0].rightLeg].flatMap(leg => leg.children.slice(0, 3).map(mesh => ({
           geometry: mesh.geometry.uuid, material: mesh.material.uuid, matrix: mesh.matrixWorld.toArray(), vertices: mesh.geometry.attributes.position.count,
           finish: { roughness: mesh.material.roughness, clearcoat: mesh.material.clearcoat, clearcoatRoughness: mesh.material.clearcoatRoughness,
@@ -1486,8 +1510,8 @@ async function runLowerBodyReview(ankle = false) {
     };
     await withSettledReviewCamera(() => withFrozenShaderTime(async () => {
       if (ankle === "torso") {
-        await capture("published-lower-core");
-        await withShortenedTorso(game.players[0], target => capture("shortened-lower-core", target));
+        await capture("integrated-lower-core");
+        await withShortenedTorso(game.players[0], target => capture("previous-lower-core", target), true);
         await capture("restored");
         return;
       }

@@ -23,8 +23,13 @@ import { shortenedTorsoGeometry, withShortenedTorso } from "./torsoShape.js";
 
 for (let variant = 0; variant < 4; variant++) {
   const hero = new Fighter(new THREE.Scene(), { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
-  const body = exhaustBody(hero), source = body.geometry, children = [...hero.rig.children];
+  const body = exhaustBody(hero), integrated = body.geometry, source = shortenedTorsoGeometry(integrated, true), children = [...hero.rig.children];
   const candidate = shortenedTorsoGeometry(source), capsule = new THREE.CapsuleGeometry(.39, .68, 4, 8);
+  for (const [name, attribute] of Object.entries(integrated.attributes)) {
+    const reviewed = candidate.attributes[name]; assert.equal(attribute.count, reviewed.count);
+    for (let i = 0; i < attribute.array.length; i++) assert.ok(Math.abs(attribute.array[i] - reviewed.array[i]) < 1e-7,
+      `integrated ${name} matches the reviewed torso within Float32 normal rounding`);
+  }
   const count = capsule.index.count, p = source.attributes.position, q = candidate.attributes.position;
   let changed = 0, minimum = Infinity;
   assert.equal(q.count, p.count); assert.equal(candidate.index, source.index);
@@ -53,17 +58,17 @@ for (let variant = 0; variant < 4; variant++) {
     let disposed = 0;
     const run = () => withShortenedTorso(hero, async target => {
       target.geometry.addEventListener("dispose", () => disposed++);
-      assert.equal(body.geometry, source); assert.equal(body.visible, false);
+      assert.equal(body.geometry, integrated); assert.equal(body.visible, false);
       assert.equal(target.material, body.material); assert.equal(target.geometry.attributes.position.count, p.count);
       assert.deepEqual(target.matrixWorld.elements, body.matrixWorld.elements);
       if (fail) throw Error("torso capture failed");
-    });
+    }, true);
     hero.group.updateWorldMatrix(true, true);
     if (fail) await assert.rejects(run, /torso capture failed/); else await run();
-    assert.equal(disposed, 1); assert.equal(body.geometry, source); assert.equal(body.visible, true);
+    assert.equal(disposed, 1); assert.equal(body.geometry, integrated); assert.equal(body.visible, true);
     assert.deepEqual(hero.rig.children, children);
   }
-  hero.dispose();
+  source.dispose(); hero.dispose();
 }
 
 function previousFighter(...args) {
@@ -1265,6 +1270,29 @@ for (const pose of ["gait-positive", "gait-negative", "landing"]) {
   hero.dispose();
 }
 const handViewSource = graphicsFixture.slice(graphicsFixture.indexOf("function setView()"), graphicsFixture.indexOf("async function reset()"));
+for (const pose of ["gait-positive", "gait-negative", "hip-hard-peak", "hip-hard-recovery"]) {
+  const hero = new Fighter(new THREE.Scene(), { id: "helmet-1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const game = { players: [hero], camera: new THREE.PerspectiveCamera(62, 16 / 9, .1, 300), clearTransientNetworkCombat() {},
+    world: { boostPads: [], boostAt: () => null, resolve: position => { const grounded = position.y <= 15; if (grounded) position.y = 15; return { grounded }; } } };
+  const controls = { view: { value: pose.startsWith("gait-") ? "waist-profile" : "waist-low-front" },
+    pose: { value: pose }, "aim-height": { value: "0" } };
+  const state = new Function("THREE", "game", "select", `let stress=false, cameraOffset=0;
+    const clearThrusterSortControl=()=>{}, resetSamples=()=>{}, cameraUpdate=()=>{};
+    ${settleReviewSource}; ${handViewSource}; setView(); return poseReview;`)(THREE, game, name => controls[name]);
+  assert.equal(state.requested, pose);
+  if (pose.startsWith("hip-hard-")) {
+    assert.equal(state.hipLanding.landStrength, 1); assert.equal(state.hipLanding.grounded, true);
+    if (pose === "hip-hard-peak") assert.ok(state.hipLanding.landTimer > .09 && state.hipLanding.landTimer <= .11);
+    else { assert.equal(state.hipLanding.landTimer, 0); assert.equal(state.hipLanding.afterTimer, 6); }
+  } else {
+    assert.equal(state.locomotion.grounded, true); assert.ok(state.locomotion.maxHorizontalCorrection < 1e-12);
+    assert.ok(pose === "gait-positive" ? state.locomotion.angle > .3 : state.locomotion.angle < -.3);
+  }
+  game.camera.updateMatrixWorld(true);
+  const target = hero.position.clone().add(new THREE.Vector3(0, pose.startsWith("gait-") ? .91 : .85, 0)).project(game.camera);
+  assert.ok(Math.abs(target.x) < 1e-6 && Math.abs(target.y) < 1e-6 && target.z > 0 && target.z < 1);
+  hero.dispose();
+}
 const settledCameraSource = graphicsFixture.slice(graphicsFixture.indexOf("async function withSettledReviewCamera("), graphicsFixture.indexOf("async function runLowerBodyReview("));
 for (const mode of ["exhaust", "exhaust-raised", "exhaust-integrated", "torso"]) {
   const source = graphicsFixture.slice(graphicsFixture.indexOf("async function runLowerBodyReview("), graphicsFixture.indexOf("async function runShellReview("));
@@ -1289,7 +1317,7 @@ for (const mode of ["exhaust", "exhaust-raised", "exhaust-integrated", "torso"])
   assert.equal(review.state.samples[count - 1].targetGeometry, original.uuid);
   if (mode === "torso") {
     assert.equal(review.state.samples[1].targetVertices, review.state.samples[0].targetVertices);
-    assert.deepEqual(review.state.samples.map(s => s.mode), ["published-lower-core", "shortened-lower-core", "restored"]);
+    assert.deepEqual(review.state.samples.map(s => s.mode), ["integrated-lower-core", "previous-lower-core", "restored"]);
     hero.dispose(); continue;
   }
   assert.ok(mode === "exhaust-integrated" ? review.state.samples[1].targetVertices < review.state.samples[0].targetVertices
@@ -1316,7 +1344,7 @@ for (const view of ["player-camera", "thrusters-low"]) for (const fail of [false
   assert.equal(game.updateCamera, original); game.updateCamera();
   assert.equal(updates, view === "player-camera" ? 241 : 2);
 }
-for (const view of ["fighter", "helmet-profile", "hand-front", "lower-body-front"]) for (const pose of ["boost", "exhaust-hard-landing"]) {
+for (const view of ["fighter", "helmet-profile", "hand-front", "lower-body-front"]) for (const pose of ["boost", "exhaust-hard-landing", "hip-hard-peak", "hip-hard-recovery"]) {
   const game = { players: [{ position: new THREE.Vector3(4, 5, 6), group: { rotation: { y: .4 } } }],
     camera: new THREE.PerspectiveCamera() };
   const controls = { view: { value: view }, pose: { value: pose } }, before = JSON.stringify(game);
@@ -1324,7 +1352,7 @@ for (const view of ["fighter", "helmet-profile", "hand-front", "lower-body-front
   const review = new Function("THREE", "game", "select", "touch", `let stress=false, cameraOffset=0;
     const clearThrusterSortControl=touch, resetSamples=touch, cameraUpdate=touch;
     ${settleReviewSource}; ${handViewSource}; poseReview={requested:"aim"}; return {setView,state:()=>poseReview};`)(THREE, game, name => controls[name], () => { touched = true; });
-  assert.throws(review.setView, /requires a thruster or player-camera view/);
+  assert.throws(review.setView, /requires a thruster or player-camera view|Hip landing requires a waist view/);
   assert.equal(touched, false); assert.equal(JSON.stringify(game), before);
   assert.deepEqual(review.state(), { requested: "aim" }); assert.equal(controls.pose.value, pose);
 }
@@ -1352,11 +1380,11 @@ for (const view of ["thrusters", "thrusters-low"]) for (const pose of ["boost", 
 }
 {
   const routing = graphicsFixture.match(/select\("pose"\)\.onchange = ([^\n]+)/)[0];
-  for (const view of ["thrusters", "thrusters-low", "player-camera", "lower-body-front", "fighter", "hand-front"]) {
+  for (const view of ["thrusters", "thrusters-low", "player-camera", "lower-body-front", "waist-profile", "waist-low-front", "fighter", "hand-front"]) {
     const controls = { pose: {}, view: { value: view } }; let framed = 0, settled = 0;
     new Function("select", "setView", "settlePose", routing)(name => controls[name], () => framed++, () => settled++);
     controls.pose.onchange();
-    assert.equal(framed, ["thrusters", "thrusters-low", "player-camera", "lower-body-front"].includes(view) ? 1 : 0);
+    assert.equal(framed, ["thrusters", "thrusters-low", "player-camera", "lower-body-front", "waist-profile", "waist-low-front"].includes(view) ? 1 : 0);
     assert.equal(settled, 1 - framed);
   }
 }
@@ -2696,6 +2724,14 @@ const waitSource = graphicsFixture.slice(graphicsFixture.indexOf("function waitF
 let timeoutCallback, timeoutDelay, frameCallback, cleared = 0, cancelled = 0, serial = 3;
 const makeWait = new Function("setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "getSerial", "validateExhaustView",
   waitSource.replaceAll("sceneSerial", "getSerial()") + "; return waitForReviewFrame;");
+for (const pose of ["hip-hard-peak", "hip-hard-recovery"]) {
+  const guard = new Function("THREE", "select", `${settleReviewSource}; poseReview={requested:"aim"}; return validateExhaustView;`)(THREE,
+    name => ({ value: name === "view" ? "waist-low-front" : pose }));
+  let started = false;
+  const fail = () => { started = true; };
+  assert.throws(() => makeWait(fail, fail, fail, fail, () => 3, guard)(3, () => true), /successfully staged/);
+  assert.equal(started, false);
+}
 const waitReview = makeWait((callback, delay) => { timeoutCallback = callback; timeoutDelay = delay; return 9; }, () => cleared++,
   callback => { frameCallback = callback; return 7; }, () => cancelled++, () => serial, capture => assert.equal(capture, true));
 assert.throws(() => makeWait(() => { throw Error("must not start timer"); }, () => {}, () => {}, () => {}, () => serial,
