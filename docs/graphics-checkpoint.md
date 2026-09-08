@@ -2,7 +2,13 @@
 
 Updated: 2026-09-08. Pass40 shoulder fit is PUBLISHED after actual visual92→96 improvement, technical99/98PASS, full validation and production verification. The graphics project is NOT complete.
 
-## Latest publication — Pass50 attachment v109 verified
+## Latest publication — Pass51 trail taper v110 verified
+
+- Source d05e172aa0fb781ebbfb8226513a935f0dd49545 pushed origin/main and Sitesmain. Pages880d7e09-6200-4b75-8d77-0343d6400852 at https://masterblaster.se/. Sitesv110 saved appgprj_6a6378a267348191a15d7e0faf662c64~appgver_b93bda40788081918fce49436e3bff81; deploymentappgdep_6a9f6b3cacb081918c2926e61cfe17f9 succeededrevision0. ArchiveSHA3c6d4a00edddef28a1776f44ae1eb385f37613dd34f395ed88db57045738e0e9/96files16404480B. Bothorigins exact main-Dun6w6zC.js SHA65bc04e6e0a33f40d77d4a3eb44b34f8c0f7541eee1069cea796dbf466f27a77 andunchangedThreeSHA0d4ca7307685042392fe48a2cd080f6c614ee935cfb7aaaa70065d4c702e4fc9 verified.
+- Primaryhealth200/ok/protocol1/arenaRevision2, Workerunchangedactive100%e79ad4a2-f74a-42bc-9c18-e1ea58af707c. Bothproductionmultiplayer suitesPASS. Desktop/narrow390x844nativeHigh16fighterTraining rendered/progressed; pass51-production.jpg/-dom.txt and-mobile.jpg/-dom.txt; smokeonlynotFPS/devicecertification. SessionendedMainMenu, QA7backordinarylocalnative1280x720. Existingpublishedtabprovider7handoffnowqueuedCANONICAL https://masterblaster.se/ (notstaticmirror, whoseunchangedAPI404limitationwasdisclosed).
+- Actualfinalscores trail82(up74)/Ramanujan98/Bohr99,noscopedblockers; muzzle86unchanged. NEXTPass52 boundedBlastertrail-only longitudinal shading/gradienttrial toaddressuniformhardcyantriangle, ifindependentreview supports it. Retain cone dimensions/brightness/readability/head/physics and selectedquality; no globaltailchange. Must diagnose existingmaterial/vertexcolors and testbeforetrial. No newproductcandidateyet. Broadgraphics98unfinished;Vite13885active/noWorker/test/capture. Continuewithoutprompt, notcompletion/userpause.
+
+## Pass51 implementation and validation history
 
 - Pass51 all3FINALactualscores trailvisual82(up74)approvedpartial / Ramanujan98PASS / Bohr99PASS; noscopedblockers. FinalbuildunchangedPASS. PublishthisvalidatedincrementNOW. No claimmuzzle86changed orbroader98passed. Nextafterproductionverification boundedtrailshading/gradientQAonlyif warranted, without movingauthoritativeprojectile orreducingreadability.
 
