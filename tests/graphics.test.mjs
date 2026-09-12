@@ -21,6 +21,67 @@ import { ankleReliefGeometry } from "./ankleReliefGeometry.js";
 import { exhaustBody, exhaustShroudGeometry, previousExhaustGeometries, withExhaustShrouds, withPreviousExhaust } from "./exhaustShroudGeometry.js";
 import { shortenedTorsoGeometry, withShortenedTorso } from "./torsoShape.js";
 import { withAlignedShoulders } from "./shoulderFit.js";
+import { fittedChestCore, withFittedChestCore } from "./chestFit.js";
+
+for (const variant of [0, 1, 2, 3]) {
+  const hero = new Fighter(new THREE.Scene(), { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  hero.group.updateMatrixWorld(true);
+  const body = exhaustBody(hero), source = body.geometry, before = hero.group.toJSON();
+  const coreCount = 432, candidate = fittedChestCore(source, variant), added = candidate.attributes.position.count - source.attributes.position.count;
+  assert.ok(added > 0, "chest boundary rings must split the original long side triangles");
+  for (const [name, attribute] of Object.entries(source.attributes)) {
+    assert.deepEqual(candidate.attributes[name].array.subarray((coreCount + added) * attribute.itemSize), attribute.array.subarray(coreCount * attribute.itemSize), "all non-core suffixes remain byte-identical");
+    assert.ok([...candidate.attributes[name].array].every(Number.isFinite));
+  }
+  const sharedNormals = new Map();
+  for (let i = 0; i < coreCount + added; i++) {
+    const p = new THREE.Vector3().fromBufferAttribute(candidate.attributes.position, i), n = new THREE.Vector3().fromBufferAttribute(candidate.attributes.normal, i).normalize();
+    const key = p.toArray().map(v => Math.round(v * 1e6)).join(":");
+    if (sharedNormals.has(key)) assert.ok(sharedNormals.get(key).dot(n) > .99999, "clipped shared positions retain a continuous smooth normal field");
+    else sharedNormals.set(key, n);
+  }
+  const housingGeometry = new THREE.CylinderGeometry(.37, .49, .65, [6, 8, 5, 7][variant]);
+  const housingMaterial = new THREE.MeshBasicMaterial(), housing = new THREE.Mesh(housingGeometry, housingMaterial);
+  housing.position.set(0, 1.43, .015); housing.scale.z = .76; housing.updateMatrixWorld(true);
+  let normalWitnesses = 0;
+  for (let i = 0; i < coreCount + added; i++) {
+    const p = new THREE.Vector3().fromBufferAttribute(candidate.attributes.position, i);
+    if (p.y <= 1.15 || p.y >= 1.69 || Math.abs(p.x) < .05 || Math.abs(p.x) > .32 || p.z < .15) continue;
+    const hit = new THREE.Raycaster(new THREE.Vector3(p.x, p.y, 1), new THREE.Vector3(0, 0, -1)).intersectObject(housing, false)[0];
+    if (!hit || Math.abs(hit.point.z - p.z - .008) > 1e-5) continue;
+    const normal = new THREE.Vector3().fromBufferAttribute(candidate.attributes.normal, i);
+    assert.ok(Math.abs(normal.length() - 1) < 1e-6);
+    assert.ok(normal.dot(hit.face.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(housing.matrixWorld))) > .9999,
+      "fully fitted surface normal equals the real housing normal, including taper and inverse Z scale");
+    normalWitnesses++;
+  }
+  assert.ok(normalWitnesses >= 4); housingGeometry.dispose(); housingMaterial.dispose();
+  for (let i = 0; i < coreCount; i += 3) {
+    const p = source.attributes.position;
+    if (![["y", .91, false], ["y", 1.755, true], ["z", 1e-8, false]].some(([axis, level, above]) =>
+      [0, 1, 2].every(k => above ? p.getY(i + k) >= level : (axis === "y" ? p.getY(i + k) : p.getZ(i + k)) <= level))) continue;
+    const positions = p.array.subarray(i * 3, (i + 3) * 3), normals = source.attributes.normal.array.subarray(i * 3, (i + 3) * 3);
+    let found = false;
+    for (let j = 0; j < coreCount + added; j += 3) if (positions.every((v, k) => v === candidate.attributes.position.array[j * 3 + k]) &&
+      normals.every((v, k) => v === candidate.attributes.normal.array[j * 3 + k])) { found = true; break; }
+    assert.ok(found, "whole rear/hip/neck triangles outside the chest band are untouched");
+  }
+  candidate.dispose();
+  for (const fail of [false, true]) {
+    let disposed = 0;
+    const capture = target => {
+      target.geometry.addEventListener("dispose", () => disposed++);
+      assert.equal(body.visible, false); assert.equal(target.material, body.material);
+      assert.deepEqual(target.position.toArray(), body.position.toArray());
+      if (fail) throw Error("chest capture interrupted");
+    };
+    if (fail) await assert.rejects(withFittedChestCore(hero, capture), /chest capture interrupted/);
+    else await withFittedChestCore(hero, capture);
+    assert.equal(disposed, 1); assert.deepEqual(hero.group.toJSON(), before);
+  }
+  const bad = source.clone(); bad.attributes.position.array[1] += .01;
+  assert.throws(() => fittedChestCore(bad, variant), /Unexpected chest position/); bad.dispose(); hero.dispose();
+}
 
 for (const variant of [0, 2, 3]) for (const fail of [false, true]) {
   const hero = new Fighter(new THREE.Scene(), { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
@@ -1338,11 +1399,11 @@ const inspectChest = new Function(`${chestVisibilitySource}; return withUnobstru
   const links = [], controls = { view: { value: "chest-front" }, pose: { value: "aim" }, "camera-captures": { replaceChildren() { links.length = 0; }, append(link) { links.push(link); } } };
   const document = { querySelectorAll: () => [], createElement: () => ({ dataset: {} }), querySelector: () => ({ toDataURL: () => "test-frame" }) };
   const source = graphicsFixture.slice(graphicsFixture.indexOf("async function runChestInspection("), graphicsFixture.indexOf("async function withSettledReviewCamera("));
-  const runner = new Function("game", "select", "document", "withUnobstructedChest", "withAlignedShoulders", "shellReviewState", `
-    const resetReview={},cacheReview={},decoyReview={},cameraReview={},sceneSerial=1,errorCount=0,stress=false,resetPhase="ready";
+  const runner = new Function("game", "select", "document", "withUnobstructedChest", "withAlignedShoulders", "withFittedChestCore", "exhaustBody", "shellReviewState", `
+    const resetReview={},cacheReview={},decoyReview={},cameraReview={},poseReview={},sceneSerial=1,errorCount=0,stress=false,resetPhase="ready";
     let renderedFrames=0; const waitForReviewFrame=async()=>{renderedFrames+=4;},withFrozenShaderTime=async capture=>capture();
     ${source};return runChestInspection;
-  `)({players:[hero],paused:true,renderPipeline:{direct:false}}, name => controls[name], document, inspectChest, withAlignedShoulders,
+  `)({players:[hero],paused:true,renderPipeline:{direct:false}}, name => controls[name], document, inspectChest, withAlignedShoulders, withFittedChestCore, exhaustBody,
     mesh => ({fighterId:hero.id,geometryId:mesh.geometry.uuid}));
   for (const shoulder of [false, true]) {
     await runner(shoulder);
@@ -1355,6 +1416,14 @@ const inspectChest = new Function(`${chestVisibilitySource}; return withUnobstru
     const frozen = links[0].dataset.review; hero.aim.y += .1;
     assert.equal(links[0].dataset.review, frozen, "per-PNG evidence is immutable, independent of later pose or throttled status panel");
   }
+  await runner("core-fit");
+  const chestFrames = links.map(link => JSON.parse(link.dataset.review));
+  assert.deepEqual(chestFrames.map(s => s.mode), ["current", "hidden-current", "hidden-core-fit", "hidden-restored", "core-fit", "restored"]);
+  assert.deepEqual(chestFrames.map(s => s.armVisibility), [[true,true,true],[false,false,false],[false,false,false],[false,false,false],[true,true,true],[true,true,true]]);
+  assert.equal(chestFrames[0].geometryId, chestFrames[5].geometryId);
+  assert.equal(chestFrames[0].geometryId, exhaustBody(hero).geometry.uuid, "all controls describe the edited dark torso, not unrelated armor");
+  assert.equal(chestFrames[1].geometryId, chestFrames[3].geometryId);
+  assert.notEqual(chestFrames[1].geometryId, chestFrames[2].geometryId);
   hero.dispose();
 }
 for (const fail of [false, true]) {
@@ -1384,11 +1453,12 @@ for (const view of ["chest-front", "chest-oblique", "chest-profile"]) {
   assert.ok(hero.aim.y > .86, "chest review retains actual raised aim");
   hero.dispose();
 }
-for (const pose of ["gait-positive", "gait-negative", "hip-hard-peak", "hip-hard-recovery"]) {
+for (const [pose, view] of [["gait-positive", "waist-profile"], ["gait-negative", "waist-profile"],
+  ["hip-hard-peak", "waist-low-front"], ["hip-hard-recovery", "waist-low-front"], ["hip-hard-peak", "chest-oblique"]]) {
   const hero = new Fighter(new THREE.Scene(), { id: "helmet-1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
   const game = { players: [hero], camera: new THREE.PerspectiveCamera(62, 16 / 9, .1, 300), clearTransientNetworkCombat() {},
     world: { boostPads: [], boostAt: () => null, resolve: position => { const grounded = position.y <= 15; if (grounded) position.y = 15; return { grounded }; } } };
-  const controls = { view: { value: pose.startsWith("gait-") ? "waist-profile" : "waist-low-front" },
+  const controls = { view: { value: view },
     pose: { value: pose }, "aim-height": { value: "0" } };
   const state = new Function("THREE", "game", "select", `let stress=false, cameraOffset=0;
     const clearThrusterSortControl=()=>{}, resetSamples=()=>{}, cameraUpdate=()=>{};
@@ -1403,7 +1473,8 @@ for (const pose of ["gait-positive", "gait-negative", "hip-hard-peak", "hip-hard
     assert.ok(pose === "gait-positive" ? state.locomotion.angle > .3 : state.locomotion.angle < -.3);
   }
   game.camera.updateMatrixWorld(true);
-  const target = hero.position.clone().add(new THREE.Vector3(0, pose.startsWith("gait-") ? .91 : .85, 0)).project(game.camera);
+  const target = (view.startsWith("chest-") ? new THREE.Vector3(0, 16.54, 8)
+    : hero.position.clone().add(new THREE.Vector3(0, pose.startsWith("gait-") ? .91 : .85, 0))).project(game.camera);
   assert.ok(Math.abs(target.x) < 1e-6 && Math.abs(target.y) < 1e-6 && target.z > 0 && target.z < 1);
   hero.dispose();
 }
@@ -1466,7 +1537,7 @@ for (const view of ["fighter", "helmet-profile", "hand-front", "lower-body-front
   const review = new Function("THREE", "game", "select", "touch", `let stress=false, cameraOffset=0;
     const clearThrusterSortControl=touch, resetSamples=touch, cameraUpdate=touch;
     ${settleReviewSource}; ${handViewSource}; poseReview={requested:"aim"}; return {setView,state:()=>poseReview};`)(THREE, game, name => controls[name], () => { touched = true; });
-  assert.throws(review.setView, /requires a thruster or player-camera view|Hip landing requires a waist view/);
+  assert.throws(review.setView, /requires a thruster or player-camera view|Hip landing requires a waist or chest view/);
   assert.equal(touched, false); assert.equal(JSON.stringify(game), before);
   assert.deepEqual(review.state(), { requested: "aim" }); assert.equal(controls.pose.value, pose);
 }

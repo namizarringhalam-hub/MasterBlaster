@@ -78,6 +78,7 @@
 <button id="torso-shape">Compare lower torso silhouette</button>
 <button id="chest-inspect">Inspect unobstructed upper body</button>
 <button id="shoulder-fit-trial">Compare aligned shoulder fit</button>
+<button id="chest-fit-trial">Compare fitted chest core</button>
 <button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
 <label><input id="follow-camera" type="checkbox" checked>Follow player camera</label>
 <output id="metrics" style="flex-basis:100%;min-width:0;max-height:100px;overflow:auto;white-space:pre-wrap">Loading actual game…</output>
@@ -95,6 +96,7 @@ import { ankleReliefGeometry } from "./ankleReliefGeometry.js";
 import { exhaustBody, withExhaustShrouds, withPreviousExhaust } from "./exhaustShroudGeometry.js";
 import { withShortenedTorso } from "./torsoShape.js";
 import { withAlignedShoulders } from "./shoulderFit.js";
+import { withFittedChestCore } from "./chestFit.js";
 document.querySelector("#view").add(new Option("lower-body-oblique", "lower-body-oblique"));
 document.querySelector("#view").add(new Option("thrusters-low", "thrusters-low"));
 for (const view of ["waist-front", "waist-profile", "waist-low-front", "waist-low-rear"]) document.querySelector("#view").add(new Option(view, view));
@@ -534,8 +536,8 @@ const stillMove = new THREE.Vector3(), reviewAim = new THREE.Vector3(0, 0, -1);
 let poseReview = null;
 function validateExhaustView(capture = false) {
   const pose = select("pose").value;
-  if (pose.startsWith("hip-hard-") && !select("view").value.startsWith("waist-"))
-    throw new Error("Hip landing requires a waist view");
+  if (pose.startsWith("hip-hard-") && !/^(waist-|chest-)/.test(select("view").value))
+    throw new Error("Hip landing requires a waist or chest view");
   if (capture && pose.startsWith("hip-hard-") && poseReview?.requested !== pose)
     throw new Error("Hip landing must be successfully staged before capture");
   if (["boost", "exhaust-hard-landing"].includes(pose) && !["thrusters", "thrusters-low", "player-camera"].includes(select("view").value))
@@ -1471,6 +1473,7 @@ select("exhaust-integrated").onclick = () => runLowerBodyReview("exhaust-integra
 select("torso-shape").onclick = () => runLowerBodyReview("torso");
 select("chest-inspect").onclick = () => runChestInspection();
 select("shoulder-fit-trial").onclick = () => runChestInspection(true);
+select("chest-fit-trial").onclick = () => runChestInspection("core-fit");
 async function withUnobstructedChest(hero, capture) {
   const visible = [hero.leftArm, hero.rightArm, hero.weaponGroup].map(mesh => [mesh, mesh.visible]);
   try {
@@ -1486,8 +1489,12 @@ async function runChestInspection(shoulderFit = false) {
   select("camera-captures").replaceChildren();
   try {
     if (stress || !game.paused || resetPhase !== "ready" || !(select("view").value.startsWith("chest-") ||
-        (shoulderFit && (select("view").value.startsWith("hand-shoulder") || select("view").value === "fighter"))) || select("pose").value !== "aim")
+        (shoulderFit && (select("view").value.startsWith("hand-shoulder") || select("view").value === "fighter"))) ||
+        !(select("pose").value === "aim" || (shoulderFit === "core-fit" && select("pose").value === "hip-hard-peak")))
       throw Error("Chest inspection requires a ready paused chest view in aim pose");
+    if (shoulderFit === "core-fit" && select("pose").value === "hip-hard-peak" &&
+        (poseReview?.requested !== "hip-hard-peak" || !poseReview.hipLanding?.grounded || poseReview.hipLanding.landStrength !== 1))
+      throw Error("Chest landing review requires the settled actual hard-landing pose");
     for (const [control] of controls) control.disabled = true;
     const hero = game.players[0];
     const capture = async (mode, target = null) => {
@@ -1500,14 +1507,22 @@ async function runChestInspection(shoulderFit = false) {
       select("camera-captures").append(link, " ");
       cameraReview.samples.push({ index, mode, playerId: hero.id, view: select("view").value, pose: select("pose").value,
         aim: hero.aim.toArray(), armVisibility: [hero.leftArm.visible, hero.rightArm.visible, hero.weaponGroup.visible],
-        ...shellReviewState(target ?? hero.rig.children.find(mesh => mesh.isMesh && mesh.material === hero.armorMaterial)),
+        ...(shoulderFit === "core-fit" ? { corePose: { ...poseReview } } : {}),
+        ...shellReviewState(target ?? (shoulderFit === "core-fit" ? exhaustBody(hero) : hero.rig.children.find(mesh => mesh.isMesh && mesh.material === hero.armorMaterial))),
         errorCount, directFallback: game.renderPipeline.direct });
       // Bind evidence to this PNG; the general status panel refreshes only once per second.
       link.dataset.review = JSON.stringify(cameraReview.samples.at(-1));
     };
     await withFrozenShaderTime(async () => {
       await capture("current");
-      if (shoulderFit) await withAlignedShoulders(hero, target => capture("previous-shoulder-fit", target), true);
+      if (shoulderFit === "core-fit") {
+        await withUnobstructedChest(hero, async () => {
+          await capture("hidden-current");
+          await withFittedChestCore(hero, target => capture("hidden-core-fit", target));
+          await capture("hidden-restored");
+        });
+        await withFittedChestCore(hero, target => capture("core-fit", target));
+      } else if (shoulderFit) await withAlignedShoulders(hero, target => capture("previous-shoulder-fit", target), true);
       else await withUnobstructedChest(hero, () => capture("arms-and-weapon-hidden-diagnostic"));
       await capture("restored");
     });
