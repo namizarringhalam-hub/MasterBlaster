@@ -2731,6 +2731,9 @@ class BlasterBattle {
             break;
           }
           if (worldHit) {
+            // Preserve contact before terrain damage can remove its collider.
+            // Only non-explosive wall presentation consumes this hit-only query.
+            const contact = !shot.weapon.radius ? this.world.projectileContact(previous, shot.mesh.position, shot.radius) : null;
             const terrainHit = shot.remainingTerrainPenetration > 0 || !shot.weapon.radius
               ? this.damageTerrain(shot.mesh.position, shot.weapon, shot.owner, shot.networkShotId)
               : 0;
@@ -2765,7 +2768,7 @@ class BlasterBattle {
               this.bounceProjectile(shot, previous);
               break;
             } else {
-              this.finishProjectile(index, shot);
+              this.finishProjectile(index, shot, contact);
               removed = true;
             }
             break;
@@ -2812,11 +2815,12 @@ class BlasterBattle {
     this.sound.play("bounce", shot.weapon, this.audioSpatial(previous, false, shot.weapon.presentationPayload === "fireball" ? .42 : .62, shot.owner.id));
   }
 
-  finishProjectile(index, shot) {
+  finishProjectile(index, shot, contact = null) {
     if (shot.weapon.split && !shot.split) this.splitProjectile(shot);
     else if (shot.weapon.radius) this.explode(shot);
     else {
-      this.combatVisuals?.impact(shot.mesh.position, shot.weapon, shot.owner, { size: 1.05 });
+      const point = contact ? contact.point.addScaledVector(contact.normal, .012) : shot.mesh.position;
+      this.combatVisuals?.impact(point, shot.weapon, shot.owner, { size: 1.05, normal: contact?.normal });
       this.sound.playImpact(shot.weapon, this.audioSpatial(shot.mesh.position, false, .78, shot.owner.id), 0, "wall");
     }
     this.removeProjectile(index);

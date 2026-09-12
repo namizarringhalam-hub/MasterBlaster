@@ -2934,6 +2934,59 @@ export class ArenaWorld {
     return false;
   }
 
+  // Presentation only, queried after projectileHit succeeds. Do not move the
+  // projectile or replace the existing collision/damage decision with this ray.
+  projectileContact(previous, position, radius = .2) {
+    const direction = this.collisionDirection.copy(position).sub(previous), length = direction.length();
+    if (!Number.isFinite(length) || length < 1e-9) return null;
+    direction.multiplyScalar(1 / length);
+    const ray = this.collisionRay.set(previous, direction), box = this.collisionBox, hit = this.collisionHit;
+    let nearest = Infinity, contact = null;
+    const accept = (distance, point, axis, sign) => {
+      if (distance < 0 || distance > length + 1e-8 || distance >= nearest) return;
+      nearest = distance;
+      contact ||= { point: new THREE.Vector3(), normal: new THREE.Vector3() };
+      contact.point.copy(point); contact.normal.set(0, 0, 0); contact.normal[axis] = sign;
+    };
+    for (const item of this.nearbyObstacles(
+      Math.min(previous.x, position.x) - radius, Math.max(previous.x, position.x) + radius,
+      Math.min(previous.z, position.z) - radius, Math.max(previous.z, position.z) + radius
+    )) {
+      box.min.set(item.x - item.w / 2 - radius, item.baseY - radius, item.z - item.d / 2 - radius);
+      box.max.set(item.x + item.w / 2 + radius, item.top + radius, item.z + item.d / 2 + radius);
+      // No valid entry witness when the last point was already overlapped.
+      const inside = previous.x > box.min.x && previous.x < box.max.x &&
+        previous.y > box.min.y && previous.y < box.max.y && previous.z > box.min.z && previous.z < box.max.z;
+      if (inside) continue;
+      // Boundary exits and tangential travel along a face are not entries.
+      if (box.containsPoint(previous) && !(position.x > box.min.x && position.x < box.max.x &&
+          position.y > box.min.y && position.y < box.max.y && position.z > box.min.z && position.z < box.max.z)) continue;
+      if (!ray.intersectBox(box, hit)) continue;
+      const distance = previous.distanceTo(hit);
+      if (distance > length + 1e-8 || distance >= nearest) continue;
+      let faceAxis = "x", faceSign = -1, faceGap = Infinity;
+      for (const axis of ["x", "y", "z"]) for (const sign of [-1, 1]) {
+        const gap = Math.abs(hit[axis] - (sign < 0 ? box.min[axis] : box.max[axis]));
+        if (gap < faceGap - 1e-8) { faceAxis = axis; faceSign = sign; faceGap = gap; }
+      }
+      hit[faceAxis] -= faceSign * radius;
+      // The boolean collider is an expanded box, including its square corners.
+      // Clamp tangential coordinates to the real face, never emit beyond it.
+      hit.x = THREE.MathUtils.clamp(hit.x, item.x - item.w / 2, item.x + item.w / 2);
+      hit.y = THREE.MathUtils.clamp(hit.y, item.baseY, item.top);
+      hit.z = THREE.MathUtils.clamp(hit.z, item.z - item.d / 2, item.z + item.d / 2);
+      accept(distance, hit, faceAxis, faceSign);
+    }
+    // The original boolean path also has center-based world-limit planes.
+    for (const [axis, limit, sign] of [["x", -this.size, 1], ["x", this.size, -1],
+      ["z", -this.size, 1], ["z", this.size, -1], ["y", 0, 1], ["y", this.height + 18, -1]]) {
+      if ((previous[axis] - limit) * sign <= 0 || (position[axis] - limit) * sign > 0) continue;
+      const distance = (limit - previous[axis]) / direction[axis];
+      accept(distance, ray.at(distance, hit), axis, sign);
+    }
+    return contact;
+  }
+
   constrainCamera(origin, desired, clearance = .45, target = new THREE.Vector3()) {
     const direction = this.collisionDirection.copy(desired).sub(origin);
     const distance = direction.length();

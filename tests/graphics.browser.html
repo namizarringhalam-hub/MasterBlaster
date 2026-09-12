@@ -83,6 +83,7 @@
 <label><input type="checkbox" id="wall-turn">Turn aim after shot</label>
 <label><input type="checkbox" id="wall-gameplay">Actual gameplay camera</label>
 <label><input type="checkbox" id="wall-contact">Use contact correction trial</label>
+<label><input type="checkbox" id="wall-previous">Use previous impact placement</label>
 <button id="wall-impact">Capture real wall impact</button>
 <button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
 <label><input id="follow-camera" type="checkbox" checked>Follow player camera</label>
@@ -958,7 +959,8 @@ async function runWallImpactReview() {
     if (stress || resetPhase !== "ready") throw Error("Stop stress and wait for the scene before impact review");
     controls.forEach(([control]) => { control.disabled = true; });
     await withFrozenShaderTime(() => withWallImpactReview(game, { oblique: select("wall-angle").value === "oblique",
-      turn: select("wall-turn").checked, gameplay: select("wall-gameplay").checked, surfaceContact: select("wall-contact").checked }, async state => {
+      turn: select("wall-turn").checked, gameplay: select("wall-gameplay").checked, surfaceContact: select("wall-contact").checked,
+      previousContact: select("wall-previous").checked }, async state => {
       const ready = renderedFrames + 4;
       await waitForReviewFrame(serial, () => renderedFrames >= ready);
       if (!game.paused || errorCount !== initialErrors || game.renderPipeline.direct) throw Error("Wall impact capture interrupted");

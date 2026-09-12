@@ -4,14 +4,14 @@ import { seededRandom } from "../src/gameData.js";
 
 // QA only: an actual paid Blaster shot against the existing east arena wall.
 // Never synthesize an impact or replace collision, damage, or effect generation.
-export async function withWallImpactReview(game, { oblique = false, turn = false, gameplay = false, surfaceContact = false } = {}, capture) {
+export async function withWallImpactReview(game, { oblique = false, turn = false, gameplay = false, surfaceContact = false, previousContact = false } = {}, capture) {
   const visuals = game.combatVisuals, pools = [visuals.flashes, visuals.tracers, visuals.rings, visuals.sparks, visuals.bloodDecals];
   if (!game.paused || game.players[0]?.weapon.id !== "blaster" || game.projectiles.length || game.hazards.length || game.decoys.length || game.effects.length ||
       pools.some(pool => pool.some(slot => slot.life > 0)) || visuals.combatLights.some(light => light.userData.life > 0 || light.intensity > 1e-10))
     throw Error("Wall impact review requires a paused, transient-free Blaster scene");
   const original = game.players[0], visible = original.group.visible, updateCamera = game.updateCamera;
   const saved = { random: visuals.random, cursors: { ...visuals.cursors }, lightCursor: visuals.combatLightCursor,
-    impact: visuals.impact, music: game.combatMusicPulse, cameraPosition: game.camera.position.clone(),
+    impact: visuals.impact, effectTime: visuals.effectTime, music: game.combatMusicPulse, cameraPosition: game.camera.position.clone(),
     cameraQuaternion: game.camera.quaternion.clone(), fov: game.camera.fov,
     yaw: game.cameraYaw, pitch: game.cameraPitch, firstPerson: game.cameraFirstPerson, requested: game.cameraFirstPersonRequested,
     clearance: { ...game.cameraClearance }, scratch: Object.fromEntries(Object.entries(game.cameraScratch || {}).map(([key, v]) => [key, v.clone()])) };
@@ -34,19 +34,21 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
     if (game.world.projectileHit(hero.forwardPoint(.08), .11)) throw Error("Wall review shot begins in an obstacle");
     visuals.random = seededRandom(0x67167);
     visuals.impact = function(point, weapon, owner, options) {
-      if (impact || owner !== hero || weapon.id !== "blaster" || !shot || !game.world.projectileHit(point, shot.radius))
+      if (impact || owner !== hero || weapon.id !== "blaster" || !shot || !game.world.projectileHit(shot.mesh.position, shot.radius))
         throw Error("Wall review requires exactly one genuine Blaster world collision");
       let emissionPoint = point, emissionOptions = options;
       if (surfaceContact) {
         // QA reference for this known east wall only, NOT production collision
         // geometry. Intersect the real final movement segment with its inner face.
-        const t = (wallX - shot.previousPosition.x) / (point.x - shot.previousPosition.x);
+        const t = (wallX - shot.previousPosition.x) / (shot.mesh.position.x - shot.previousPosition.x);
         if (!(t >= 0 && t <= 1)) throw Error("Contact trial requires the final segment to cross the wall face");
         const normal = new THREE.Vector3(-1, 0, 0);
-        emissionPoint = shot.previousPosition.clone().lerp(point, t).addScaledVector(normal, .012);
+        emissionPoint = shot.previousPosition.clone().lerp(shot.mesh.position, t).addScaledVector(normal, .012);
         emissionOptions = { ...options, normal };
+      } else if (previousContact) {
+        emissionPoint = shot.mesh.position; emissionOptions = { ...options, normal: null };
       }
-      impact = { position: point.toArray(), previous: shot.previousPosition.toArray(), velocity: shot.velocity.toArray(),
+      impact = { position: shot.mesh.position.toArray(), incomingPosition: point.toArray(), previous: shot.previousPosition.toArray(), velocity: shot.velocity.toArray(),
         firedDirection: shot.firedDirection.toArray(), ownerAim: owner.aim.toArray(), suppliedNormal: options?.normal?.toArray() ?? null,
         emissionPosition: emissionPoint.toArray(), emissionNormal: emissionOptions?.normal?.toArray() ?? null,
         radius: shot.radius, projectileAge: shot.age, wallX, geometricNormal: [-1, 0, 0] };
@@ -82,7 +84,7 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
     game.camera.updateMatrixWorld(true);
     const slotState = slot => ({ life: slot.life, maxLife: slot.maxLife, position: slot.position?.toArray(),
       normal: slot.normal?.toArray(), velocity: slot.velocity?.toArray(), size: slot.size, family: slot.family });
-    const state = frame => ({ frame, effectAge: (frame + 1) / 60, flightFrames, initial, impact, oblique, turn, gameplay, surfaceContact,
+    const state = frame => ({ frame, effectAge: (frame + 1) / 60, flightFrames, initial, impact, oblique, turn, gameplay, surfaceContact, previousContact,
       poseClockMs: 1000, cameraKind: gameplay ? "production-collision-aware-camera-settled-240" : "fixed-close-oblique",
       cameraState: { firstPerson: game.cameraFirstPerson, fov: game.camera.fov, clearance: { ...game.cameraClearance } },
       paidAmmo: hero.ammo.blaster, projectiles: game.projectiles.length,
@@ -102,7 +104,7 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
     while (game.projectiles.some(projectile => projectile.owner === hero)) game.removeProjectile(game.projectiles.findIndex(projectile => projectile.owner === hero));
     for (const pool of pools) for (const slot of pool) slot.life = 0;
     for (const light of visuals.combatLights) { light.userData.life = 0; light.intensity = 0; }
-    visuals.update(0); Object.assign(visuals.cursors, saved.cursors); visuals.combatLightCursor = saved.lightCursor;
+    visuals.update(0); visuals.effectTime = saved.effectTime; Object.assign(visuals.cursors, saved.cursors); visuals.combatLightCursor = saved.lightCursor;
     game.combatMusicPulse = saved.music; hero.dispose(); game.players[0] = original; original.group.visible = visible;
     game.updateCamera = updateCamera; game.camera.position.copy(saved.cameraPosition); game.camera.quaternion.copy(saved.cameraQuaternion);
     game.camera.fov = saved.fov; game.camera.updateProjectionMatrix(); game.camera.updateMatrixWorld(true);
