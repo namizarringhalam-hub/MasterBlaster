@@ -10,8 +10,8 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
   if (!["off", "current", "trial", "integrated"].includes(ringDissipation)) throw Error("Unknown ring dissipation review");
   if (!["both", "outer", "inner"].includes(ringLayer)) throw Error("Unknown ring layer review");
   if (!["off", "control", "soft"].includes(outerProfile)) throw Error("Unknown outer profile review");
-  if (!["off", "control", "trial"].includes(impactBurst)) throw Error("Unknown impact burst review");
-  if (impactBurst !== "off" && (ringDissipation !== "integrated" || surfaceContact || previousContact || sparkAspect || previousSparks || ringLayer !== "both" || nestedRing || outerProfile !== "off"))
+  if (!["off", "previous", "control", "trial"].includes(impactBurst)) throw Error("Unknown impact burst review");
+  if (["control", "trial"].includes(impactBurst) && (ringDissipation !== "integrated" || surfaceContact || previousContact || sparkAspect || previousSparks || ringLayer !== "both" || nestedRing || outerProfile !== "off"))
     throw Error("Impact burst review requires published contact, fade, sparks and both ring layers");
   if (sparkAspect && previousSparks) throw Error("Choose either reference or previous sparks, not both");
   const visuals = game.combatVisuals, pools = [visuals.flashes, visuals.tracers, visuals.rings, visuals.sparks, visuals.bloodDecals];
@@ -33,7 +33,7 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
   let shot, impact = null, ringIndex = -1, profileMaterial;
   const sparkIndices = [];
   try {
-    if (impactBurst !== "off") {
+    if (["control", "trial"].includes(impactBurst)) {
       if (impactBurst === "trial") burstGeometry = new THREE.PlaneGeometry(2, 2);
       for (const [index, source] of ringSources.entries()) {
         const proxy = source.clone(false); burstLayers.push(proxy);
@@ -159,6 +159,11 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
       // Historical control and reference trial must not apply product shape twice.
       if (previousSparks || sparkAspect) for (const index of sparkIndices) this.sparks[index].directional = false;
       ringIndex = (this.cursors.ring - 1) % this.rings.length;
+      // Archived ring experiments keep the old torus path. The default renders
+      // the actual integrated layers, with no reference multiplier or proxy.
+      if (impactBurst !== "off" || surfaceContact || previousContact || sparkAspect || previousSparks ||
+          ["current", "trial"].includes(ringDissipation) || ringLayer !== "both" || nestedRing || outerProfile !== "off")
+        this.rings[ringIndex].surfaceBurst = false;
       // Archived control/trial remain pre-integration comparisons, never a
       // second multiplier on top of the integrated product fade.
       if (ringDissipation === "current" || ringDissipation === "trial") this.rings[ringIndex].dissipate = false;
@@ -203,7 +208,7 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
       paidAmmo: hero.ammo.blaster, projectiles: game.projectiles.length,
       rings: visuals.rings.filter(s => s.life > 0).map(slotState), sparks: visuals.sparks.filter(s => s.life > 0).map(slotState),
       ringLayers: ringLayers(),
-      displayRingLayers: ringLayers(burstLayers.length ? burstLayers : ringSources),
+      displayRingLayers: ringLayers(burstLayers.length ? burstLayers : visuals.rings[ringIndex]?.surfaceBurst ? [visuals.surfaceFront, visuals.surfaceCore] : ringSources),
       sparkLayers: sparkIndices.filter(index => visuals.sparks[index].life > 0).map(index => ({ index,
         matrix: Array.from(visuals.sparkLayer.instanceMatrix.array.slice(index * 16, index * 16 + 16)),
         color: Array.from(visuals.sparkLayer.instanceColor.array.slice(index * 3, index * 3 + 3)) })),

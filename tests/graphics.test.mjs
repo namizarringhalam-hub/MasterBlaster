@@ -3,6 +3,7 @@ import "./wallImpactReview.test.mjs";
 import "./projectileContact.test.mjs";
 import "./blasterRing.test.mjs";
 import "./blasterSpark.test.mjs";
+import "./blasterSurface.test.mjs";
 import * as THREE from "three/webgpu";
 import { getCurrentStack, getNormalFromDepth, materialOpacity, normalView, normalViewGeometry, positionViewDirection, setCurrentStack, stack, time as shaderTime, uniform, vec2, vec4 } from "three/tsl";
 import NodeMaterialObserver from "../node_modules/three/src/materials/nodes/manager/NodeMaterialObserver.js";

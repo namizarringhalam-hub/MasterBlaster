@@ -23,6 +23,7 @@
 <button id="thruster-sort">Toggle thruster sort control</button><button id="thruster-dust">Overlap structural dust</button>
 <button id="stress">Run 16-fighter stress</button><button id="reset">Reset scene</button>
 <button id="reset-ten">Test ten resets</button>
+<button id="surface-runtime">Test surface burst runtime</button>
 <button id="reset-decoys">Test ten decoy resets</button>
 <button id="reset-covers">Test ten destroyed-cover resets</button>
 <button id="loader-transitions">Test loader transitions</button>
@@ -91,7 +92,7 @@
 <label>Impact ring layers<select id="wall-ring-layer"><option value="both">Both</option><option value="outer">Outer only</option><option value="inner">Inner only</option></select></label>
 <label><input type="checkbox" id="wall-nested-ring">Nest inner impact ring</label>
 <label>Outer ring profile<select id="wall-outer-profile"><option value="off">Published material</option><option value="control">Constant opacity control</option><option value="soft">Tube emission profile</option></select></label>
-<label>Impact burst design<select id="wall-burst"><option value="off">Published rings</option><option value="control">Same-geometry proxy control</option><option value="trial">Surface-energy burst</option></select></label>
+<label>Impact burst design<select id="wall-burst"><option value="off">Current product</option><option value="previous">Previous torus design</option><option value="control">Same-geometry proxy control</option><option value="trial">Reviewed surface-burst reference</option></select></label>
 <button id="wall-impact">Capture real wall impact</button>
 <button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
 <label><input id="follow-camera" type="checkbox" checked>Follow player camera</label>
@@ -112,6 +113,7 @@ import { withShortenedTorso } from "./torsoShape.js";
 import { withAlignedShoulders } from "./shoulderFit.js";
 import { withFittedChestCore } from "./chestFit.js";
 import { withWallImpactReview } from "./wallImpactReview.js";
+import { withSurfaceBurstRuntime } from "./surfaceBurstReview.js";
 document.querySelector("#view").add(new Option("lower-body-oblique", "lower-body-oblique"));
 document.querySelector("#view").add(new Option("thrusters-low", "thrusters-low"));
 for (const view of ["waist-front", "waist-profile", "waist-low-front", "waist-low-rear"]) document.querySelector("#view").add(new Option(view, view));
@@ -121,6 +123,20 @@ document.querySelector("#pose").add(new Option("boost", "boost"));
 document.querySelector("#pose").add(new Option("exhaust-hard-landing", "exhaust-hard-landing"));
 import { ArenaWorld } from "../src/world.js";
 import { CombatVisuals } from "../src/combatVisuals.js";
+// Diagnostic only: exclude the two new GPU owners before the first scene render.
+// CPU construction still occurs; this measures eager GPU cost, not load speed.
+const withoutSurfaceResources = new URLSearchParams(location.search).has("withoutSurfaceResources");
+function withSurfaceResourceControl(applyProfile) {
+  return function(...args) {
+    const result = applyProfile.apply(this, args);
+    this.surfaceFront.visible = this.surfaceCore.visible = false;
+    return result;
+  };
+}
+if (withoutSurfaceResources) {
+  CombatVisuals.prototype.setGraphicsProfile = withSurfaceResourceControl(CombatVisuals.prototype.setGraphicsProfile);
+  document.querySelector("nav").prepend("STARTUP RESOURCE CONTROL: surface layers hidden; NOT an artwork or first-hit pass. ");
+}
 import { NeonRenderPipeline, recoverInvalidAONormals } from "../src/renderPipeline.js";
 const geometryAONormals = new URLSearchParams(location.search).has("geometryAONormals");
 const legacyAONormals = new URLSearchParams(location.search).has("legacyAONormals");
@@ -865,6 +881,26 @@ async function runResetReview(warmDecoy = false, destroyCovers = false) {
   finally { resetReview.running = false; }
 }
 select("reset-ten").onclick = () => runResetReview();
+select("surface-runtime").onclick = async () => {
+  if (withoutSurfaceResources) throw Error("Hidden-resource control cannot validate runtime effects");
+  if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running || stress) return;
+  cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.error = null;
+  const serial = sceneSerial, initialErrors = errorCount;
+  const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(c => [c, c.disabled]);
+  try {
+    controls.forEach(([c]) => { c.disabled = true; });
+    await withSurfaceBurstRuntime(game, async state => {
+      const ready = renderedFrames + 4;
+      await waitForReviewFrame(serial, () => renderedFrames >= ready);
+      if (errorCount !== initialErrors || game.renderPipeline.direct || !game.paused) throw Error("Surface runtime review interrupted");
+      cameraReview.samples.push({ ...state, renderedFrames, sceneSerial, tier: game.settings.graphics, profile: game.renderPipeline.profile,
+        viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
+        memory: { ...game.renderer.info.memory }, draws: game.renderer.info.render.drawCalls,
+        triangles: game.renderer.info.render.triangles, errorCount, directFallback: game.renderPipeline.direct });
+    });
+  } catch (error) { cameraReview.error = String(error); }
+  finally { cameraReview.running = false; cameraReview.shell = false; controls.forEach(([c, disabled]) => { c.disabled = disabled; }); }
+};
 select("reset-decoys").onclick = () => runResetReview(true);
 select("reset-covers").onclick = () => runResetReview(false, true);
 select("cache-cycle").onclick = async () => {
@@ -959,6 +995,7 @@ async function withFrozenShaderTime(capture, fixedTime) {
   finally { shaderTime.update = update; if (fixedTime !== undefined) shaderTime.value = value; }
 }
 async function runWallImpactReview() {
+  if (withoutSurfaceResources) throw Error("Hidden-resource control cannot validate artwork");
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.error = null;
   const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
@@ -1990,7 +2027,7 @@ game.frame = time => {
       buffer: { width: game.renderer.domElement.width, height: game.renderer.domElement.height } },
     stress, sceneSerial, resetPhase, qaFrames: renderedFrames, paused: game.paused, ropes: game.players.filter(player => player.grapple).length,
     reviewPlayer: { id: game.players[0]?.id, visible: game.players[0]?.rig.visible, aim: game.players[0]?.aim.toArray(), position: game.players[0]?.position.toArray() },
-    fullEffectCapacity, followCamera: select("follow-camera").checked, view: select("view").value, pose: select("pose").value, fighters: game.players.length, surface,
+    fullEffectCapacity, withoutSurfaceResources, followCamera: select("follow-camera").checked, view: select("view").value, pose: select("pose").value, fighters: game.players.length, surface,
     boostPads: game.world.boostPads.map(pad => ({ position: pad.position.toArray(), strength: pad.strength, active: pad.active,
       supported: Boolean(pad.support), color: pad.mesh.children[0].material.color.getHexString() })), selectedBoostPad: Number(select("boost-pad").value),
     aoNormals: depthAONormals ? "depth" : geometryAONormals ? "geometry" : legacyAONormals ? "legacy-material" : "depth-matched-material", aoOutput, hiddenAOObject,
@@ -2016,7 +2053,7 @@ game.frame = time => {
     startupMeasures: performance.getEntriesByType("measure").filter(entry => entry.name.startsWith("blaster-")).slice(-12)
       .map(({ name, startTime, duration }) => ({ name, startTime, duration })),
     draws: game.renderer.info.render.drawCalls, triangles: game.renderer.info.render.triangles,
-    effectInstances: Object.fromEntries(["flashOuter", "tracerOuter", "ringOuter", "sparkLayer", "bloodLayer"].map(name => [name, game.combatVisuals?.[name].count || 0])),
+    effectInstances: Object.fromEntries(["flashOuter", "tracerOuter", "ringOuter", "surfaceFront", "surfaceCore", "sparkLayer", "bloodLayer"].map(name => [name, game.combatVisuals?.[name].count || 0])),
     ...game.renderer.info.memory, errors, errorCount,
     failedBuffers: errors.map(e => bufferHistory.get(e.match(/qa-\d+/)?.[0])).filter(Boolean),
     retainedBuffers: [...bufferHistory.values()].filter(e => !e.destroyed && e.sceneSerial < sceneSerial),

@@ -56,12 +56,15 @@ for (const quality of [.5, .75, 1]) {
   assert.equal(blastVisuals.cursors.ring, fighters.length * 7, `${quality} quality processes every mortar and six-child cluster impact in a synchronized 16-player volley`);
   assert.equal(blastVisuals.rings.filter((ring) => ring.life > 0).length, fighters.length * 7, `${quality} quality preserves every one of the 112 critical impact cues without overwriting earlier hits`);
   assert.ok(Math.max(...blastVisuals.rings.map((ring) => ring.size || 0)) > 3, `${quality} quality preserves the enlarged mortar shockwave instead of covertly scaling it down`);
-  assert.equal(blastVisuals.group.children.length, 10, `${quality} quality keeps the explosive volley inside the fixed render-group budget`);
+  assert.equal(blastVisuals.group.children.length, 12, `${quality} quality retains ten original groups plus two capped surface layers`);
+  assert.equal(blastVisuals.surfaceFront.count, 0, "explosions submit no surface-front instances");
+  assert.equal(blastVisuals.surfaceCore.count, 0, "explosions submit no surface-core instances");
   blastVisuals.dispose();
 }
 
 assert.equal(fighters.length, 16, "the stress matrix renders a full sixteen-fighter match");
-assert.equal(visuals.group.children.length, 10, "rapid effects, pooled splatters, response lights, and Fireballs stay in fixed render groups");
+assert.equal(visuals.group.children.length, 12, "rapid effects and the two preallocated surface layers stay in fixed render groups");
+assert.equal(visuals.surfaceFront.count, 0); assert.equal(visuals.surfaceCore.count, 0);
 assert.ok(!visuals.group.getObjectByName("Momentum speed streaks"), "the local cone shower has been removed from the grapple presentation");
 const speedPresentationCss = await readFile(new URL("../src/styles.css", import.meta.url), "utf8");
 const speedPresentationMain = await readFile(new URL("../src/main.js", import.meta.url), "utf8");

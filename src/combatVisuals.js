@@ -1,4 +1,5 @@
 import * as THREE from "three/webgpu";
+import { materialOpacity, uv } from "three/tsl";
 import { weaponPresentation } from "./weaponPresentation.js";
 import { seededRandom } from "./gameData.js";
 
@@ -15,6 +16,10 @@ const BLOOD = new THREE.Color(0xff183f);
 const HDR_GLOW = 2.2;
 const BLASTER_SPARK_WIDTH = 1.15 * 2 ** (-1 / 3);
 const BLASTER_SPARK_LENGTH = 1.15 * 2 ** (2 / 3);
+// Immutable graphs shared across matches; meshes/materials retain match ownership.
+const SURFACE_RADIUS = uv().sub(.5).mul(2).length();
+const SURFACE_FRONT_OPACITY = materialOpacity.mul(SURFACE_RADIUS.smoothstep(.5, .78).mul(SURFACE_RADIUS.smoothstep(.78, 1).oneMinus()));
+const SURFACE_CORE_OPACITY = materialOpacity.mul(SURFACE_RADIUS.smoothstep(0, 1).oneMinus().pow(2));
 const FIRE_TONGUES = [
   ["flameA", 0, 0, 3.4, .72, 0],
   ["flameB", .54, .24, 2.45, .46, 2.1],
@@ -37,8 +42,9 @@ function sharedGeometry(Type, ...parameters) {
   return geometry;
 }
 
-function glowMaterial(opacity = 1) {
-  return new THREE.MeshBasicMaterial({
+function glowMaterial(opacity = 1, opacityNode = null) {
+  const Material = opacityNode ? THREE.MeshBasicNodeMaterial : THREE.MeshBasicMaterial;
+  const material = new Material({
     color: new THREE.Color(0xffffff).multiplyScalar(HDR_GLOW),
     transparent: true,
     opacity,
@@ -46,6 +52,8 @@ function glowMaterial(opacity = 1) {
     blending: THREE.AdditiveBlending,
     toneMapped: false
   });
+  if (opacityNode) material.opacityNode = opacityNode;
+  return material;
 }
 
 function visualMesh(geometry, material, position = null) {
@@ -338,8 +346,8 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
   return group;
 }
 
-function instancedLayer(geometry, capacity, opacity) {
-  const mesh = new THREE.InstancedMesh(geometry, glowMaterial(opacity), capacity);
+function instancedLayer(geometry, capacity, opacity, opacityNode = null) {
+  const mesh = new THREE.InstancedMesh(geometry, glowMaterial(opacity, opacityNode), capacity);
   mesh.count = 0;
   mesh.updateMatrix();
   mesh.matrixAutoUpdate = false;
@@ -406,6 +414,8 @@ export class CombatVisuals {
     this.tracerInner = instancedLayer(new THREE.CylinderGeometry(1, 1, 1, 6), tracerCapacity, .96);
     this.ringOuter = instancedLayer(new THREE.TorusGeometry(1, .052, 5, 24), ringCapacity, .34);
     this.ringInner = instancedLayer(new THREE.TorusGeometry(1, .026, 4, 24), ringCapacity, .78);
+    this.surfaceFront = instancedLayer(new THREE.PlaneGeometry(2, 2), ringCapacity, .34, SURFACE_FRONT_OPACITY);
+    this.surfaceCore = instancedLayer(new THREE.PlaneGeometry(2, 2), ringCapacity, .78, SURFACE_CORE_OPACITY);
     this.sparkLayer = instancedLayer(new THREE.OctahedronGeometry(1, 0), sparkCapacity, .92);
     this.bloodLayer = new THREE.InstancedMesh(
       bloodSplatGeometry(),
@@ -423,7 +433,7 @@ export class CombatVisuals {
     }
     this.bloodLayer.instanceMatrix.needsUpdate = true;
     this.bloodLayer.instanceColor.needsUpdate = true;
-    this.group.add(this.flashOuter, this.flashInner, this.tracerOuter, this.tracerInner, this.ringOuter, this.ringInner, this.sparkLayer, this.bloodLayer);
+    this.group.add(this.flashOuter, this.flashInner, this.tracerOuter, this.tracerInner, this.ringOuter, this.ringInner, this.surfaceFront, this.surfaceCore, this.sparkLayer, this.bloodLayer);
 
     // Four recycled lights preserve spatial continuity during crossfire without
     // multiplying illumination by fighter count.
@@ -744,6 +754,9 @@ export class CombatVisuals {
     ring.family = family;
     ring.profile = profile;
     ring.dissipate = weapon.id === "blaster" && !explosive && family === "plasma";
+    // A front-sided surface pulse must never replace player hits or airbursts.
+    const normalLengthSq = normal?.lengthSq();
+    ring.surfaceBurst = ring.dissipate && Number.isFinite(normalLengthSq) && normalLengthSq > 1e-10;
     if (!this.reducedMotion) {
       this.position.copy(position).addScaledVector(ring.normal, .18);
       this.color.copy(ring.weaponColor).lerp(ring.ownerColor, .2);
@@ -1045,7 +1058,7 @@ export class CombatVisuals {
   }
 
   updateRings(dt) {
-    let dirty = false, count = 0;
+    let dirty = false, count = 0, surfaceCount = 0;
     for (let index = 0; index < this.rings.length; index++) {
       const slot = this.rings[index];
       slot.life -= dt;
@@ -1053,13 +1066,25 @@ export class CombatVisuals {
         if (slot.visible) {
           this.ringOuter.setMatrixAt(index, HIDDEN);
           this.ringInner.setMatrixAt(index, HIDDEN);
+          this.surfaceFront.setMatrixAt(index, HIDDEN);
+          this.surfaceCore.setMatrixAt(index, HIDDEN);
           slot.visible = false;
           dirty = true;
         }
         continue;
       }
       slot.visible = true;
-      count = index + 1;
+      const outerLayer = slot.surfaceBurst ? this.surfaceFront : this.ringOuter;
+      const innerLayer = slot.surfaceBurst ? this.surfaceCore : this.ringInner;
+      if (slot.surfaceBurst) {
+        surfaceCount = index + 1;
+        this.ringOuter.setMatrixAt(index, HIDDEN);
+        this.ringInner.setMatrixAt(index, HIDDEN);
+      } else {
+        count = index + 1;
+        this.surfaceFront.setMatrixAt(index, HIDDEN);
+        this.surfaceCore.setMatrixAt(index, HIDDEN);
+      }
       dirty = true;
       const progress = 1 - clamp(slot.life / slot.maxLife, 0, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
@@ -1071,7 +1096,11 @@ export class CombatVisuals {
       let inner = [radius * .72, radius * .72, radius * .72];
       let outerTurn = 0;
       let innerTurn = 0;
-      if (inward) {
+      if (slot.surfaceBurst) {
+        const frontRadius = radius * 1.052, coreRadius = Math.min(frontRadius, slot.size * .28);
+        outer = [frontRadius, frontRadius, 1];
+        inner = [coreRadius, coreRadius, 1];
+      } else if (inward) {
         const squeeze = slot.family === "gravity" ? .62 : .38;
         outer = [radius * 1.3, radius * squeeze, radius];
         inner = [radius * .62, radius * 1.38, radius * .72];
@@ -1155,21 +1184,24 @@ export class CombatVisuals {
       this.quaternion.multiply(this.twistQuaternion.setFromAxisAngle(FORWARD, outerTurn));
       this.scale.set(...outer);
       this.matrix.compose(slot.position, this.quaternion, this.scale);
-      this.ringOuter.setMatrixAt(index, this.matrix);
+      outerLayer.setMatrixAt(index, this.matrix);
       this.quaternion.setFromUnitVectors(FORWARD, slot.normal);
       this.quaternion.multiply(this.twistQuaternion.setFromAxisAngle(FORWARD, innerTurn));
       this.scale.set(...inner);
       this.matrix.compose(slot.position, this.quaternion, this.scale);
-      this.ringInner.setMatrixAt(index, this.matrix);
-      this.ringOuter.setColorAt(index, this.color.copy(slot.ownerColor).multiplyScalar((.35 + fade * .65) * dissipation));
+      innerLayer.setMatrixAt(index, this.matrix);
+      outerLayer.setColorAt(index, this.color.copy(slot.ownerColor).multiplyScalar((.35 + fade * .65) * dissipation));
       const hotMix = slot.family === "freeze" || slot.family === "precision" ? .78
         : inward ? .38
           : slot.family === "scan" || slot.family === "disrupt" ? .56
             : .62;
-      this.ringInner.setColorAt(index, this.color.copy(slot.weaponColor).lerp(WHITE, hotMix).multiplyScalar((.65 + fade * .35) * dissipation));
+      innerLayer.setColorAt(index, this.color.copy(slot.weaponColor).lerp(WHITE, hotMix).multiplyScalar((.65 + fade * .35) * dissipation));
     }
+    // Upload active categories and their final expiry update, not dormant pairs.
+    if (dirty && (count || this.ringOuter.count)) this.markUpdated(this.ringOuter, this.ringInner);
+    if (dirty && (surfaceCount || this.surfaceFront.count)) this.markUpdated(this.surfaceFront, this.surfaceCore);
     this.ringOuter.count = this.ringInner.count = count;
-    if (dirty) this.markUpdated(this.ringOuter, this.ringInner);
+    this.surfaceFront.count = this.surfaceCore.count = surfaceCount;
   }
 
   updateSparks(dt) {
