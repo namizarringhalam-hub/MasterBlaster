@@ -52,10 +52,11 @@ const originalState = () => ({ position: original.position.toArray(), aim: origi
   yaw: game.cameraYaw, pitch: game.cameraPitch, firstPerson: game.cameraFirstPerson, requested: game.cameraFirstPersonRequested,
   clearance: { ...game.cameraClearance }, scratch: Object.fromEntries(Object.entries(game.cameraScratch).map(([k,v]) => [k,v.toArray()])) });
 const before = originalState(), cameraUpdate = game.updateCamera, impactMethod = game.combatVisuals.impact, ringUpdate = game.combatVisuals.updateRings, rng = game.combatVisuals.random, globalRng = Math.random;
-const run = async options => {
+const run = async (options, inspect = () => {}) => {
   const frames = [], beforeQueries = collisionQueries, beforeTerrain = terrainCalls, beforeAudio = impactAudio.length;
   const effectTime = game.combatVisuals.effectTime;
   await withWallImpactReview(game, { previousContact: true, previousSparks: !options?.sparkAspect, ...options }, async state => {
+    inspect(state);
     assert.equal(Math.random, globalRng);
     if(options?.sparkAspect || options?.previousSparks===false) for(const spark of state.sparkLayers) {
       const x=new THREE.Vector3().fromArray(spark.matrix,0), y=new THREE.Vector3().fromArray(spark.matrix,4), z=new THREE.Vector3().fromArray(spark.matrix,8);
@@ -206,6 +207,44 @@ for(const gameplay of [false,true]) {
   assert.deepEqual(await run(options),current,"nesting trial restores subsequent production capture exactly");
 }
 await assert.rejects(withWallImpactReview(game,{nestedRing:true},async()=>{throw Error("nest interrupted");}),/nest interrupted/);
+const outerMaterial=game.combatVisuals.ringOuter.material, innerMaterial=game.combatVisuals.ringInner.material;
+const outerGeometry=game.combatVisuals.ringOuter.geometry;
+let originalDisposals=0;
+outerMaterial.addEventListener("dispose",()=>originalDisposals++);
+for(const gameplay of [false,true]) {
+  const options={previousContact:false,previousSparks:false,ringDissipation:"integrated",gameplay};
+  const current=await run(options);
+  for(const outerProfile of ["control","soft"]) {
+    let temporary,disposals=0;
+    const trial=await run({...options,outerProfile}, state=>{
+      const material=game.combatVisuals.ringOuter.material;
+      assert.notEqual(material,outerMaterial);
+      assert.equal(material.isMeshBasicNodeMaterial,true);
+      assert.ok(material.opacityNode);
+      assert.equal(game.combatVisuals.ringInner.material,innerMaterial);
+      assert.equal(game.combatVisuals.ringOuter.geometry,outerGeometry);
+      for(const key of ["color","opacity","transparent","blending","depthWrite","depthTest","toneMapped","side"])
+        assert.deepEqual(material[key],outerMaterial[key],`profile preserves material ${key}`);
+      if(!temporary) { temporary=material; temporary.addEventListener("dispose",()=>disposals++); }
+      assert.equal(material,temporary,"one temporary material for the whole isolated event");
+      assert.ok(state.rings.length<=1,"no unrelated live ring shares the trial material");
+    });
+    assert.equal(disposals,1); assert.equal(game.combatVisuals.ringOuter.material,outerMaterial);
+    for(let i=0;i<current.length;i++) {
+      assert.equal(trial[i].outerProfile,outerProfile);
+      assert.deepEqual({...trial[i],outerProfile:"off"},current[i],"opacity trial changes no matrices, RGB, physical state or camera");
+    }
+  }
+  assert.deepEqual(await run(options),current);
+}
+await assert.rejects(withWallImpactReview(game,{outerProfile:"unknown"},async()=>{}),/Unknown outer profile/);
+let interruptedDisposals=0;
+await assert.rejects(withWallImpactReview(game,{outerProfile:"soft"},async()=>{
+  game.combatVisuals.ringOuter.material.addEventListener("dispose",()=>interruptedDisposals++);
+  throw Error("profile interrupted");
+}),/profile interrupted/);
+assert.equal(interruptedDisposals,1); assert.equal(originalDisposals,0);
+assert.equal(game.combatVisuals.ringOuter.material,outerMaterial);
 assert.equal(game.combatVisuals.updateRings,ringUpdate);
 assert.deepEqual(originalState(), before); assert.equal(Math.random, globalRng); assert.equal(game.combatVisuals.random, rng);
 assert.equal(game.combatVisuals.impact, impactMethod); assert.equal(game.projectiles.length, 0); assert.equal(game.updateCamera, cameraUpdate);
@@ -229,7 +268,7 @@ await freeze(async()=>assert.equal(shaderClock.value,17));
 const runnerSource = html.slice(html.indexOf("async function runWallImpactReview("), html.indexOf("function makeTrailShading("));
 const links = [], controls = [{ disabled: false }, { disabled: true }], review = { running: false };
 const elements = { "camera-captures": { replaceChildren: () => { links.length = 0; }, append: link => links.push(link) },
-  "wall-angle": { value: "normal" }, "wall-turn": { checked: false }, "wall-gameplay": { checked: true }, "wall-contact": { checked: false }, "wall-previous": { checked: false }, "wall-ring": {value:"off"}, "wall-sparks": {checked:false}, "wall-previous-sparks": {checked:false}, "wall-ring-layer": {value:"both"}, "wall-nested-ring": {checked:false} };
+  "wall-angle": { value: "normal" }, "wall-turn": { checked: false }, "wall-gameplay": { checked: true }, "wall-contact": { checked: false }, "wall-previous": { checked: false }, "wall-ring": {value:"off"}, "wall-sparks": {checked:false}, "wall-previous-sparks": {checked:false}, "wall-ring-layer": {value:"both"}, "wall-nested-ring": {checked:false}, "wall-outer-profile": {value:"off"} };
 Object.assign(game, { renderPipeline: { direct: false, profile: "unit-test-no-renderer" }, settings: { graphics: "high" } });
 const document = { querySelectorAll: () => controls, createElement: () => ({ dataset: {} }), querySelector: () => ({ toDataURL: () => "unit-test-only" }) };
 const makeRunner = (stress = false, fail = false) => new Function("game", "withWallImpactReview", "select", "document", "cameraReview", "stress", "fail", `
@@ -258,6 +297,10 @@ elements["wall-nested-ring"].checked = true;
 await makeRunner()();
 assert.equal(review.error,null); assert.equal(JSON.parse(links[0].dataset.review).nestedRing,true);
 elements["wall-nested-ring"].checked = false;
+elements["wall-outer-profile"].value = "soft";
+await makeRunner()();
+assert.equal(review.error,null); assert.equal(JSON.parse(links[0].dataset.review).outerProfile,"soft");
+elements["wall-outer-profile"].value = "off";
 await makeRunner(true)(); assert.match(review.error, /Stop stress/); assert.equal(links.length, 0);
 await makeRunner(false, true)(); assert.match(review.error, /render interrupted/); assert.equal(review.running, false); assert.equal(review.shell, false);
 assert.deepEqual(controls.map(c => c.disabled), [false, true]); assert.deepEqual(originalState(), before);

@@ -89,6 +89,7 @@
 <label><input type="checkbox" id="wall-previous-sparks">Use previous impact sparks</label>
 <label>Impact ring layers<select id="wall-ring-layer"><option value="both">Both</option><option value="outer">Outer only</option><option value="inner">Inner only</option></select></label>
 <label><input type="checkbox" id="wall-nested-ring">Nest inner impact ring</label>
+<label>Outer ring profile<select id="wall-outer-profile"><option value="off">Published material</option><option value="control">Constant opacity control</option><option value="soft">Tube emission profile</option></select></label>
 <button id="wall-impact">Capture real wall impact</button>
 <button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
 <label><input id="follow-camera" type="checkbox" checked>Follow player camera</label>
@@ -967,7 +968,7 @@ async function runWallImpactReview() {
     await withFrozenShaderTime(() => withWallImpactReview(game, { oblique: select("wall-angle").value === "oblique",
       turn: select("wall-turn").checked, gameplay: select("wall-gameplay").checked, surfaceContact: select("wall-contact").checked,
       previousContact: select("wall-previous").checked, ringDissipation: select("wall-ring").value, sparkAspect: select("wall-sparks").checked, previousSparks: select("wall-previous-sparks").checked,
-      ringLayer: select("wall-ring-layer").value, nestedRing: select("wall-nested-ring").checked }, async state => {
+      ringLayer: select("wall-ring-layer").value, nestedRing: select("wall-nested-ring").checked, outerProfile: select("wall-outer-profile").value }, async state => {
       const ready = renderedFrames + 4;
       await waitForReviewFrame(serial, () => renderedFrames >= ready);
       if (!game.paused || errorCount !== initialErrors || game.renderPipeline.direct) throw Error("Wall impact capture interrupted");
