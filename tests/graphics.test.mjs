@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import "./wallImpactReview.test.mjs";
 import "./projectileContact.test.mjs";
+import "./blasterRing.test.mjs";
 import * as THREE from "three/webgpu";
 import { getCurrentStack, getNormalFromDepth, materialOpacity, normalView, normalViewGeometry, positionViewDirection, setCurrentStack, stack, time as shaderTime, uniform, vec2, vec4 } from "three/tsl";
 import NodeMaterialObserver from "../node_modules/three/src/materials/nodes/manager/NodeMaterialObserver.js";
@@ -3434,6 +3435,9 @@ for (const quality of [.5, .75, 1]) {
   for (let volley = 0; volley < 3; volley++) for (const weapon of Object.values(WEAPONS)) {
     effects.muzzle(owner, weapon); effects.tracer(start, end, weapon, owner);
     effects.impact(end, weapon, owner, { explosive: Boolean(weapon.radius) }); effects.blood(end, normal);
+    // Keep this archived draw-tail optimization baseline before Pass68's
+    // separately tested artistic Blaster fade. Preserve its original hashes.
+    effects.rings[(effects.cursors.ring - 1) % effects.rings.length].dissipate = false;
     for (const dt of [.008, .016, .09, .4]) {
       effects.update(dt);
       for (const [slots, ...names] of effectGroups) {
@@ -3464,7 +3468,7 @@ assert.deepEqual(effectDigests, [
   "0210fb48d26f44d6745b45316c6f35b61c952e414de0e9ad78352308ef7279e4",
   "0f54f2d5a66f74c80741732d45bd2164a9ae59df2eb4c67b526163edbe1f5e77",
   "2a4ff06b7d57d1718b4a4ca63c6d3ccd0c8e5703ebe452b7a7fa50bf1fc6deaf"
-], "all 47 weapons at all tiers retain byte-identical effect transforms and colours");
+], "archived pre-dissipation effects retain byte-identical transforms and colours at all tiers");
 const emptyEffects = new CombatVisuals(new THREE.Scene());
 for (const [, ...names] of effectGroups) for (const name of names) assert.equal(emptyEffects[name].count, 0, "countdown frames start with empty draw ranges");
 emptyEffects.update(1 / 60);

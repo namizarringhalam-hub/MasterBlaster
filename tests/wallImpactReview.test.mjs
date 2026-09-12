@@ -111,6 +111,7 @@ for (const oblique of [false,true]) {
 await assert.rejects(withWallImpactReview(game, {}, async () => { throw Error("capture interrupted"); }), /capture interrupted/);
 const dissipationCurrent = await run({previousContact:false,ringDissipation:"current"});
 const dissipationTrial = await run({previousContact:false,ringDissipation:"trial"});
+const dissipationIntegrated = await run({previousContact:false,ringDissipation:"integrated"});
 for (let i=0;i<dissipationCurrent.length;i++) {
   const a=dissipationCurrent[i], b=dissipationTrial[i];
   assert.deepEqual(b.rings,a.rings); assert.deepEqual(b.sparks,a.sparks); assert.deepEqual(b.lights,a.lights);
@@ -121,6 +122,13 @@ for (let i=0;i<dissipationCurrent.length;i++) {
     assert.ok(Math.abs(b.ringLayers[layer].color[channel]-a.ringLayers[layer].color[channel]*factor)<1e-7);
   if (a.effectAge<=.08) assert.deepEqual(b.ringLayers,a.ringLayers,"the initial cue is unchanged");
   if (a.effectAge>=.38) assert.ok(b.ringLayers.every(x=>x.color.every(c=>c<.02)),"last living ring frame approaches zero brightness");
+}
+for(let i=0;i<dissipationTrial.length;i++) {
+  const a=dissipationTrial[i],b=dissipationIntegrated[i];
+  assert.deepEqual(b.rings,a.rings); assert.deepEqual(b.sparks,a.sparks); assert.deepEqual(b.lights,a.lights);
+  assert.deepEqual(b.ringLayers.map(x=>x.matrix),a.ringLayers.map(x=>x.matrix));
+  for(let layer=0;layer<2;layer++) for(let channel=0;channel<3;channel++)
+    assert.ok(Math.abs(b.ringLayers[layer].color[channel]-a.ringLayers[layer].color[channel])<1e-7,"fused product color writes match reference within Float32 rounding");
 }
 await assert.rejects(withWallImpactReview(game,{ringDissipation:"trial"},async()=>{throw Error("fade interrupted");}),/fade interrupted/);
 assert.equal(game.combatVisuals.updateRings,ringUpdate);

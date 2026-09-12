@@ -5,7 +5,7 @@ import { seededRandom } from "../src/gameData.js";
 // QA only: an actual paid Blaster shot against the existing east arena wall.
 // Never synthesize an impact or replace collision, damage, or effect generation.
 export async function withWallImpactReview(game, { oblique = false, turn = false, gameplay = false, surfaceContact = false, previousContact = false, ringDissipation = "off" } = {}, capture) {
-  if (!["off", "current", "trial"].includes(ringDissipation)) throw Error("Unknown ring dissipation review");
+  if (!["off", "current", "trial", "integrated"].includes(ringDissipation)) throw Error("Unknown ring dissipation review");
   const visuals = game.combatVisuals, pools = [visuals.flashes, visuals.tracers, visuals.rings, visuals.sparks, visuals.bloodDecals];
   if (!game.paused || game.players[0]?.weapon.id !== "blaster" || game.projectiles.length || game.hazards.length || game.decoys.length || game.effects.length ||
       pools.some(pool => pool.some(slot => slot.life > 0)) || visuals.combatLights.some(light => light.userData.life > 0 || light.intensity > 1e-10))
@@ -68,6 +68,9 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
         radius: shot.radius, projectileAge: shot.age, wallX, geometricNormal: [-1, 0, 0] };
       const result = saved.impact.call(this, emissionPoint, weapon, owner, emissionOptions);
       ringIndex = (this.cursors.ring - 1) % this.rings.length;
+      // Archived control/trial remain pre-integration comparisons, never a
+      // second multiplier on top of the integrated product fade.
+      if (ringDissipation === "current" || ringDissipation === "trial") this.rings[ringIndex].dissipate = false;
       return result;
     };
     // Match spread/visual random choices across the post-shot-aim diagnostic.

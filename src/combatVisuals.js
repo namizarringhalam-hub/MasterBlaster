@@ -740,6 +740,7 @@ export class CombatVisuals {
     ring.size = size * (.78 + profile.impactScale * .22);
     ring.family = family;
     ring.profile = profile;
+    ring.dissipate = weapon.id === "blaster" && !explosive && family === "plasma";
     if (!this.reducedMotion) {
       this.position.copy(position).addScaledVector(ring.normal, .18);
       this.color.copy(ring.weaponColor).lerp(ring.ownerColor, .2);
@@ -1060,6 +1061,7 @@ export class CombatVisuals {
       const inward = slot.family === "gravity" || slot.family === "implosion";
       const radius = inward ? slot.size * (1.08 - eased * .88) : slot.size * (.14 + eased * .86);
       const fade = 1 - progress;
+      const dissipation = slot.dissipate ? 1 - THREE.MathUtils.smoothstep(progress, .2, 1) : 1;
       let outer = [radius, radius, radius];
       let inner = [radius * .72, radius * .72, radius * .72];
       let outerTurn = 0;
@@ -1154,12 +1156,12 @@ export class CombatVisuals {
       this.scale.set(...inner);
       this.matrix.compose(slot.position, this.quaternion, this.scale);
       this.ringInner.setMatrixAt(index, this.matrix);
-      this.ringOuter.setColorAt(index, this.color.copy(slot.ownerColor).multiplyScalar(.35 + fade * .65));
+      this.ringOuter.setColorAt(index, this.color.copy(slot.ownerColor).multiplyScalar((.35 + fade * .65) * dissipation));
       const hotMix = slot.family === "freeze" || slot.family === "precision" ? .78
         : inward ? .38
           : slot.family === "scan" || slot.family === "disrupt" ? .56
             : .62;
-      this.ringInner.setColorAt(index, this.color.copy(slot.weaponColor).lerp(WHITE, hotMix).multiplyScalar(.65 + fade * .35));
+      this.ringInner.setColorAt(index, this.color.copy(slot.weaponColor).lerp(WHITE, hotMix).multiplyScalar((.65 + fade * .35) * dissipation));
     }
     this.ringOuter.count = this.ringInner.count = count;
     if (dirty) this.markUpdated(this.ringOuter, this.ringInner);
