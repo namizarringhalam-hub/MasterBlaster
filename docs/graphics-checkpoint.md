@@ -1,6 +1,14 @@
 # Graphics overhaul checkpoint
 
-Updated: 2026-09-08. Pass64 torso/hip silhouette is PUBLISHED as v116 after visual74→80 improvement, technical98/98PASS and production verification. **INTENTIONALLY PAUSED BY USER.** Do not resume until the user asks to continue **graphics improvements**. The project is not complete; newest entries override older handoffs.
+Updated: 2026-09-12. Pass64 torso/hip silhouette remains PUBLISHED as v116 after visual74→80 improvement, technical98/98PASS and production verification. **INTENTIONALLY PAUSED BY USER.** Do not resume until the user asks to continue **graphics improvements**. The project is not complete; newest entries override older handoffs.
+
+## September 12 pause handoff
+
+- User again requested production publication, saved continuation memory, then STOP until explicitly resuming **graphics improvements**. No new product changes were made during the brief resumed investigation. Existing v116 is already published; do not manufacture a duplicate product release.
+- Fresh baseline session69005 finished exit0: complete npm test (19 standalone checks plus 15 Worker tests) and npm run build PASS. Built main-BwfxPk2X.js/index-B4XgHrTS.js remain unchanged. Production health returned ok/protocol1/arenaRevision2, and the fetched production main asset SHA256 again matched 60d32aa114f97a4a4fbcec10ff5703cf646dcc3077889a3869f523676a744125. No fresh live multiplayer/browser/FPS review is claimed for this pause verification; prior release evidence remains below.
+- Repository was clean at cd768cb, matching origin/main. This handoff is documentation-only. Recovery automation master-blaster-work-recovery was confirmed PAUSED and was not re-enabled. No local Vite or Worker was started; baseline process finished. Independent graphics reviewer completed its read-only recommendation; no candidate implementation or new score exists.
+- NEXT on explicit resume: investigate chest armor assembly and the partially buried identity light strip. Retained graphics reviewer found geometric breastplate occlusion of sampled front-facing chest-light triangle barycentres (variant0 7/30, variant1 3/30, variants2/3 1/30; not pixel-area measurements or a quality score). First capture unobstructed chest-front, oblique and whole views at actual raised aim, then a frozen baseline / breastplate-only-hidden / restored diagnostic using existing comparison infrastructure. Keep main chest, sternum, light geometry, materials, lighting, arms and accepted hip unchanged. Hiding the plate is a causal diagnostic, NOT a proposed production deletion.
+- No verified whole-game total score exists. Latest Pass64 visual score80/100 and two technical98/100 reviews are separate bounded evaluations, not an overall score. Remaining broader work and rejected branches below remain saved unchanged.
 
 ## Latest publication — Pass64 torso/hip silhouette v116 verified; work paused
 
