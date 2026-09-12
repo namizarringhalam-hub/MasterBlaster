@@ -1,6 +1,15 @@
 # Graphics overhaul checkpoint
 
-Updated: 2026-09-12. Pass64 torso/hip silhouette remains PUBLISHED as v116 after visual74→80 improvement, technical98/98PASS and production verification. **INTENTIONALLY PAUSED BY USER.** Do not resume until the user asks to continue **graphics improvements**. The project is not complete; newest entries override older handoffs.
+Updated: 2026-09-12. **RESUMED BY USER. Body visuals now pass at 80/100 for EVERY body part; the remaining graphics assignment keeps its 98/100 target.** Technical, gameplay, performance and audio gates are unchanged. Publish validated improvements between checkpoints. Pass64/v116 remains the last published product. The project is not complete; newest entries override older handoffs.
+
+## Current work — complete body coverage at the revised threshold
+
+- User explicitly ended the intentional pause and requested all body parts pass independent visual review at 80/100 before continuing the remaining graphics assignment. Do not reinterpret scoped historical scores as whole-body coverage or an overall game score.
+- Retained graphics_quality_reviewer is independently mapping body-part evidence and missing captures; no new product candidate is approved. Fresh baseline full tests/build passed in session69005 before this request and source remains unchanged. Latest documentation commit89b849b is pushed; existing v116 production proof is recorded below.
+- Recovery automation master-blaster-work-recovery updated in place to ACTIVE with the body80/other98 rule. Local Vite session7791 serves the existing QA fixture. One retained browser tab1 is reused; no Worker or duplicate graphics run was started.
+- Next: receive coverage ledger, collect only missing evidence, correct only independently identified sub-80 body areas, validate and publish each approved checkpoint, then continue non-body graphics. Preserve prior accepted geometry, all47 weapons, music, selected tiers, and authoritative multiplayer behavior.
+- Pass65 coverage audit: existing supported grouped body passes include capsule head94 (shell finish98 scoped), visor attachment98 scoped, upper-arm finish88, variant1 cap fit96, elbows98, hands98, hip80, grouped legs82, rear pack/exhaust80. NOT blanket all-variant certification. Head0/1/3, chest/neck, other caps and cuffs require current coverage. Fresh variant0 shoulder raised-aim contact provisionally76 FAIL: dark wedge breaks closed cyan cap face; actual surface attribution is being independently traced. No product change yet.
+- QA checkpoint: three chest camera views plus frozen current / arms-and-weapon-hidden diagnostic / restored; no product code changed. ActualFighter projection/raised-aim/previously-hidden visibility/success+throw restoration tests PASS. Independent Bohr QA PASS/no blockers. Full19+15 and build session56731 PASS; product remains exact v116 main-BwfxPk2X.js. New pass65-chest-v{0,1,2}-{front,oblique} native lossless triplets are byte-exact0=2/errors0; variant3 capture next. Arm-hidden images support surface construction only, not unchanged normal shadow/AO or gameplay readability. Evidence retained in existing Temp/master-blaster-graphics-review.
 
 ## September 12 pause handoff
 

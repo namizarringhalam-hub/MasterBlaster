@@ -1270,6 +1270,35 @@ for (const pose of ["gait-positive", "gait-negative", "landing"]) {
   hero.dispose();
 }
 const handViewSource = graphicsFixture.slice(graphicsFixture.indexOf("function setView()"), graphicsFixture.indexOf("async function reset()"));
+const chestVisibilitySource = graphicsFixture.slice(graphicsFixture.indexOf("async function withUnobstructedChest("), graphicsFixture.indexOf("async function runChestInspection("));
+const inspectChest = new Function(`${chestVisibilitySource}; return withUnobstructedChest;`)();
+for (const fail of [false, true]) {
+  const hero = new Fighter(new THREE.Scene(), { id: "helmet-0", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  hero.rightArm.visible = false;
+  const before = hero.group.toJSON(), children = [...hero.rig.children];
+  const run = () => inspectChest(hero, async () => {
+    assert.deepEqual([hero.leftArm.visible, hero.rightArm.visible, hero.weaponGroup.visible], [false, false, false]);
+    assert.deepEqual(hero.rig.children, children);
+    if (fail) throw Error("chest capture failed");
+  });
+  if (fail) await assert.rejects(run, /chest capture failed/); else await run();
+  assert.deepEqual(hero.group.toJSON(), before, "diagnostic restores exactly, including previously hidden arms");
+  hero.dispose();
+}
+for (const view of ["chest-front", "chest-oblique", "chest-profile"]) {
+  const hero = new Fighter(new THREE.Scene(), { id: "helmet-0", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const game = { players: [hero], camera: new THREE.PerspectiveCamera(62, 16 / 9, .1, 300), clearTransientNetworkCombat() {},
+    world: { resolve: position => { position.y = 15.01; return { grounded: true }; }, boostAt: () => null } };
+  const controls = { view: { value: view }, pose: { value: "aim" }, "aim-height": { value: "1.7320508075688772" } };
+  new Function("THREE", "game", "select", `let stress=false, cameraOffset=0;
+    const clearThrusterSortControl=()=>{}, resetSamples=()=>{}, cameraUpdate=()=>{};
+    ${settleReviewSource}; ${handViewSource}; setView();`)(THREE, game, name => controls[name]);
+  game.camera.updateMatrixWorld(true);
+  const target = new THREE.Vector3(0, 16.54, 8).project(game.camera);
+  assert.ok(Math.abs(target.x) < 1e-6 && Math.abs(target.y) < 1e-6 && target.z > 0 && target.z < 1);
+  assert.ok(hero.aim.y > .86, "chest review retains actual raised aim");
+  hero.dispose();
+}
 for (const pose of ["gait-positive", "gait-negative", "hip-hard-peak", "hip-hard-recovery"]) {
   const hero = new Fighter(new THREE.Scene(), { id: "helmet-1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
   const game = { players: [hero], camera: new THREE.PerspectiveCamera(62, 16 / 9, .1, 300), clearTransientNetworkCombat() {},

@@ -76,6 +76,7 @@
 <button id="exhaust-raised-trial">Compare supported exhaust panel</button>
 <button id="exhaust-integrated">Compare integrated exhaust</button>
 <button id="torso-shape">Compare lower torso silhouette</button>
+<button id="chest-inspect">Inspect unobstructed upper body</button>
 <button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
 <label><input id="follow-camera" type="checkbox" checked>Follow player camera</label>
 <output id="metrics" style="flex-basis:100%;min-width:0;max-height:100px;overflow:auto;white-space:pre-wrap">Loading actual game…</output>
@@ -95,6 +96,7 @@ import { withShortenedTorso } from "./torsoShape.js";
 document.querySelector("#view").add(new Option("lower-body-oblique", "lower-body-oblique"));
 document.querySelector("#view").add(new Option("thrusters-low", "thrusters-low"));
 for (const view of ["waist-front", "waist-profile", "waist-low-front", "waist-low-rear"]) document.querySelector("#view").add(new Option(view, view));
+for (const view of ["chest-front", "chest-oblique", "chest-profile"]) document.querySelector("#view").add(new Option(view, view));
 for (const pose of ["hip-hard-peak", "hip-hard-recovery"]) document.querySelector("#pose").add(new Option(pose, pose));
 document.querySelector("#pose").add(new Option("boost", "boost"));
 document.querySelector("#pose").add(new Option("exhaust-hard-landing", "exhaust-hard-landing"));
@@ -657,6 +659,9 @@ function setView() {
   const poses = { arena: [[70, 47, 98], [0, 25, 0]], grazing: [[3, 1.8, 65], [0, 4, -40]],
     "helmet-three-quarter": [[1.2, 17.35, 6.4], [0, 17.19, 7.85]], "helmet-profile": [[2, 17.24, 8.15], [0, 17.19, 7.95]],
     fighter: [[3.7, 17.1, 3.3], [0, 16.35, 8]],
+    "chest-front": [[0, 16.59, 5.4], [0, 16.54, 8]],
+    "chest-oblique": [[1.3, 16.59, 5.748], [0, 16.54, 8]],
+    "chest-profile": [[2.6, 16.59, 8], [0, 16.54, 8]],
     "waist-front": [[hero.position.x + .9, hero.position.y + 1, hero.position.z - 1.6], [hero.position.x, hero.position.y + .91, hero.position.z]],
     "waist-profile": [[hero.position.x + 1.8, hero.position.y + 1, hero.position.z], [hero.position.x, hero.position.y + .91, hero.position.z]],
     "waist-low-front": [[hero.position.x + .6, hero.position.y + .46, hero.position.z - 1.65], [hero.position.x, hero.position.y + .85, hero.position.z]],
@@ -1462,6 +1467,49 @@ select("exhaust-shroud-trial").onclick = () => runLowerBodyReview("exhaust");
 select("exhaust-raised-trial").onclick = () => runLowerBodyReview("exhaust-raised");
 select("exhaust-integrated").onclick = () => runLowerBodyReview("exhaust-integrated");
 select("torso-shape").onclick = () => runLowerBodyReview("torso");
+select("chest-inspect").onclick = runChestInspection;
+async function withUnobstructedChest(hero, capture) {
+  const visible = [hero.leftArm, hero.rightArm, hero.weaponGroup].map(mesh => [mesh, mesh.visible]);
+  try {
+    for (const [mesh] of visible) mesh.visible = false;
+    return await capture();
+  } finally { for (const [mesh, value] of visible) mesh.visible = value; }
+}
+async function runChestInspection() {
+  if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
+  cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.error = null;
+  const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
+  const serial = sceneSerial, initialErrors = errorCount;
+  select("camera-captures").replaceChildren();
+  try {
+    if (stress || !game.paused || resetPhase !== "ready" || !select("view").value.startsWith("chest-") || select("pose").value !== "aim")
+      throw Error("Chest inspection requires a ready paused chest view in aim pose");
+    for (const [control] of controls) control.disabled = true;
+    const hero = game.players[0];
+    const capture = async mode => {
+      const frame = renderedFrames + 4;
+      await waitForReviewFrame(serial, () => renderedFrames >= frame);
+      if (!game.paused || errorCount !== initialErrors || game.renderPipeline.direct) throw Error("Chest inspection interrupted or renderer failed");
+      const index = cameraReview.samples.length, link = document.createElement("a");
+      link.textContent = `Camera frame ${index}`; link.download = `chest-${mode}.png`;
+      link.href = document.querySelector("#game-canvas").toDataURL("image/png");
+      select("camera-captures").append(link, " ");
+      cameraReview.samples.push({ index, mode, playerId: hero.id, view: select("view").value, pose: select("pose").value,
+        aim: hero.aim.toArray(), armVisibility: [hero.leftArm.visible, hero.rightArm.visible, hero.weaponGroup.visible],
+        ...shellReviewState(hero.rig.children.find(mesh => mesh.isMesh && mesh.material === hero.armorMaterial)),
+        errorCount, directFallback: game.renderPipeline.direct });
+    };
+    await withFrozenShaderTime(async () => {
+      await capture("current");
+      await withUnobstructedChest(hero, () => capture("arms-and-weapon-hidden-diagnostic"));
+      await capture("restored");
+    });
+  } catch (error) { cameraReview.error = String(error); }
+  finally {
+    cameraReview.running = false; cameraReview.shell = false;
+    for (const [control, disabled] of controls) control.disabled = disabled;
+  }
+}
 async function withSettledReviewCamera(capture) {
   if (select("view").value !== "player-camera") return await capture();
   const update = game.updateCamera;
