@@ -4,7 +4,7 @@ import { seededRandom } from "../src/gameData.js";
 
 // QA only: an actual paid Blaster shot against the existing east arena wall.
 // Never synthesize an impact or replace collision, damage, or effect generation.
-export async function withWallImpactReview(game, { oblique = false, turn = false, gameplay = false, surfaceContact = false, previousContact = false, ringDissipation = "off" } = {}, capture) {
+export async function withWallImpactReview(game, { oblique = false, turn = false, gameplay = false, surfaceContact = false, previousContact = false, ringDissipation = "off", sparkAspect = false } = {}, capture) {
   if (!["off", "current", "trial", "integrated"].includes(ringDissipation)) throw Error("Unknown ring dissipation review");
   const visuals = game.combatVisuals, pools = [visuals.flashes, visuals.tracers, visuals.rings, visuals.sparks, visuals.bloodDecals];
   if (!game.paused || game.players[0]?.weapon.id !== "blaster" || game.projectiles.length || game.hazards.length || game.decoys.length || game.effects.length ||
@@ -12,7 +12,7 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
     throw Error("Wall impact review requires a paused, transient-free Blaster scene");
   const original = game.players[0], visible = original.group.visible, updateCamera = game.updateCamera;
   const saved = { random: visuals.random, cursors: { ...visuals.cursors }, lightCursor: visuals.combatLightCursor,
-    impact: visuals.impact, updateRings: visuals.updateRings, effectTime: visuals.effectTime, music: game.combatMusicPulse, cameraPosition: game.camera.position.clone(),
+    impact: visuals.impact, updateRings: visuals.updateRings, updateSparks: visuals.updateSparks, effectTime: visuals.effectTime, music: game.combatMusicPulse, cameraPosition: game.camera.position.clone(),
     cameraQuaternion: game.camera.quaternion.clone(), fov: game.camera.fov,
     yaw: game.cameraYaw, pitch: game.cameraPitch, firstPerson: game.cameraFirstPerson, requested: game.cameraFirstPersonRequested,
     clearance: { ...game.cameraClearance }, scratch: Object.fromEntries(Object.entries(game.cameraScratch || {}).map(([key, v]) => [key, v.clone()])) };
@@ -20,7 +20,22 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
   const position = new THREE.Vector3(wallX - 12, 6.8, oblique ? -12 : 0);
   const hero = new Fighter(game.scene, { id: original.id, name: original.name, color: original.color, accent: original.accent }, ["blaster"], position);
   let shot, impact = null, ringIndex = -1;
+  const sparkIndices = [];
   try {
+    if (sparkAspect) {
+      const matrix = new THREE.Matrix4(), aspect = new THREE.Vector3(2 ** (-1 / 3), 2 ** (2 / 3), 2 ** (-1 / 3));
+      visuals.updateSparks = function(dt) {
+        saved.updateSparks.call(this, dt);
+        for (const index of sparkIndices) {
+          if (this.sparks[index].life <= 0) continue;
+          // Production first rebuilds the velocity-aligned matrix every frame:
+          // a non-cumulative, equal-volume 2:1 shape, never a trajectory change.
+          this.sparkLayer.getMatrixAt(index, matrix);
+          this.sparkLayer.setMatrixAt(index, matrix.scale(aspect));
+          this.sparkLayer.instanceMatrix.needsUpdate = true;
+        }
+      };
+    }
     if (ringDissipation === "trial") {
       const color = new THREE.Color();
       visuals.updateRings = function(dt) {
@@ -66,7 +81,10 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
         firedDirection: shot.firedDirection.toArray(), ownerAim: owner.aim.toArray(), suppliedNormal: options?.normal?.toArray() ?? null,
         emissionPosition: emissionPoint.toArray(), emissionNormal: emissionOptions?.normal?.toArray() ?? null,
         radius: shot.radius, projectileAge: shot.age, wallX, geometricNormal: [-1, 0, 0] };
+      const sparkStart = this.cursors.spark;
       const result = saved.impact.call(this, emissionPoint, weapon, owner, emissionOptions);
+      for (let cursor = Math.max(sparkStart, this.cursors.spark - this.sparks.length); cursor < this.cursors.spark; cursor++)
+        sparkIndices.push(cursor % this.sparks.length);
       ringIndex = (this.cursors.ring - 1) % this.rings.length;
       // Archived control/trial remain pre-integration comparisons, never a
       // second multiplier on top of the integrated product fade.
@@ -106,12 +124,15 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
     const ringLayers = () => [visuals.ringOuter, visuals.ringInner].map(layer => ({
       matrix: Array.from(layer.instanceMatrix.array.slice(ringIndex * 16, ringIndex * 16 + 16)),
       color: Array.from(layer.instanceColor.array.slice(ringIndex * 3, ringIndex * 3 + 3)) }));
-    const state = frame => ({ frame, effectAge: (frame + 1) / 60, flightFrames, initial, impact, oblique, turn, gameplay, surfaceContact, previousContact, ringDissipation,
+    const state = frame => ({ frame, effectAge: (frame + 1) / 60, flightFrames, initial, impact, oblique, turn, gameplay, surfaceContact, previousContact, ringDissipation, sparkAspect,
       poseClockMs: 1000, cameraKind: gameplay ? "production-collision-aware-camera-settled-240" : "fixed-close-oblique",
       cameraState: { firstPerson: game.cameraFirstPerson, fov: game.camera.fov, clearance: { ...game.cameraClearance } },
       paidAmmo: hero.ammo.blaster, projectiles: game.projectiles.length,
       rings: visuals.rings.filter(s => s.life > 0).map(slotState), sparks: visuals.sparks.filter(s => s.life > 0).map(slotState),
       ringLayers: ringLayers(),
+      sparkLayers: sparkIndices.filter(index => visuals.sparks[index].life > 0).map(index => ({ index,
+        matrix: Array.from(visuals.sparkLayer.instanceMatrix.array.slice(index * 16, index * 16 + 16)),
+        color: Array.from(visuals.sparkLayer.instanceColor.array.slice(index * 3, index * 3 + 3)) })),
       lights: visuals.combatLights.map(light => ({ position: light.position.toArray(), intensity: light.intensity, life: light.userData.life })),
       cameraMatrix: game.camera.matrixWorld.toArray(), projection: game.camera.projectionMatrix.toArray() });
     for (let frame = 0; frame <= 90; frame++) {
@@ -123,7 +144,7 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
     if (pools.some(pool => pool.some(slot => slot.life > 0)) || visuals.combatLights.some(light => light.userData.life > 0 || light.intensity > 1e-10))
       throw Error("Wall impact did not expire within 90 frames");
   } finally {
-    visuals.impact = saved.impact; visuals.updateRings = saved.updateRings; visuals.random = saved.random;
+    visuals.impact = saved.impact; visuals.updateRings = saved.updateRings; visuals.updateSparks = saved.updateSparks; visuals.random = saved.random;
     while (game.projectiles.some(projectile => projectile.owner === hero)) game.removeProjectile(game.projectiles.findIndex(projectile => projectile.owner === hero));
     for (const pool of pools) for (const slot of pool) slot.life = 0;
     for (const light of visuals.combatLights) { light.userData.life = 0; light.intensity = 0; }
