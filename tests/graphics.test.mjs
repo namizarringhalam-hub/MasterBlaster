@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import "./wallImpactReview.test.mjs";
 import * as THREE from "three/webgpu";
 import { getCurrentStack, getNormalFromDepth, materialOpacity, normalView, normalViewGeometry, positionViewDirection, setCurrentStack, stack, time as shaderTime, uniform, vec2, vec4 } from "three/tsl";
 import NodeMaterialObserver from "../node_modules/three/src/materials/nodes/manager/NodeMaterialObserver.js";

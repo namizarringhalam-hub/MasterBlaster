@@ -79,6 +79,11 @@
 <button id="chest-inspect">Inspect unobstructed upper body</button>
 <button id="shoulder-fit-trial">Compare aligned shoulder fit</button>
 <button id="chest-fit-trial">Compare fitted chest core</button>
+<label>Wall impact <select id="wall-angle"><option value="normal">Perpendicular</option><option value="oblique">45 degree</option></select></label>
+<label><input type="checkbox" id="wall-turn">Turn aim after shot</label>
+<label><input type="checkbox" id="wall-gameplay">Actual gameplay camera</label>
+<label><input type="checkbox" id="wall-contact">Use contact correction trial</label>
+<button id="wall-impact">Capture real wall impact</button>
 <button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
 <label><input id="follow-camera" type="checkbox" checked>Follow player camera</label>
 <output id="metrics" style="flex-basis:100%;min-width:0;max-height:100px;overflow:auto;white-space:pre-wrap">Loading actual game…</output>
@@ -97,6 +102,7 @@ import { exhaustBody, withExhaustShrouds, withPreviousExhaust } from "./exhaustS
 import { withShortenedTorso } from "./torsoShape.js";
 import { withAlignedShoulders } from "./shoulderFit.js";
 import { withFittedChestCore } from "./chestFit.js";
+import { withWallImpactReview } from "./wallImpactReview.js";
 document.querySelector("#view").add(new Option("lower-body-oblique", "lower-body-oblique"));
 document.querySelector("#view").add(new Option("thrusters-low", "thrusters-low"));
 for (const view of ["waist-front", "waist-profile", "waist-low-front", "waist-low-rear"]) document.querySelector("#view").add(new Option(view, view));
@@ -942,6 +948,30 @@ async function withFrozenShaderTime(capture) {
   try { return await capture(); }
   finally { shaderTime.update = update; }
 }
+async function runWallImpactReview() {
+  if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
+  cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.error = null;
+  const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
+  const serial = sceneSerial, initialErrors = errorCount;
+  select("camera-captures").replaceChildren();
+  try {
+    if (stress || resetPhase !== "ready") throw Error("Stop stress and wait for the scene before impact review");
+    controls.forEach(([control]) => { control.disabled = true; });
+    await withFrozenShaderTime(() => withWallImpactReview(game, { oblique: select("wall-angle").value === "oblique",
+      turn: select("wall-turn").checked, gameplay: select("wall-gameplay").checked, surfaceContact: select("wall-contact").checked }, async state => {
+      const ready = renderedFrames + 4;
+      await waitForReviewFrame(serial, () => renderedFrames >= ready);
+      if (!game.paused || errorCount !== initialErrors || game.renderPipeline.direct) throw Error("Wall impact capture interrupted");
+      const index = cameraReview.samples.length, link = document.createElement("a");
+      const metadata = { index, ...state, sceneSerial, renderedFrames, tier: game.settings.graphics, profile: game.renderPipeline.profile,
+        viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio }, errorCount, directFallback: game.renderPipeline.direct };
+      link.textContent = `Camera frame ${index}`; link.download = `wall-impact-${state.frame}.png`;
+      link.href = document.querySelector("#game-canvas").toDataURL("image/png"); link.dataset.review = JSON.stringify(metadata);
+      select("camera-captures").append(link, " "); cameraReview.samples.push(metadata);
+    }));
+  } catch (error) { cameraReview.error = String(error); }
+  finally { cameraReview.running = false; cameraReview.shell = false; controls.forEach(([control, disabled]) => { control.disabled = disabled; }); }
+}
 function makeTrailShading(projectile) {
   return (projectile.mesh.userData.combatVisual?.trailParts || []).map(trail => {
     const white = trail.geometry.clone(), gradient = trail.geometry.clone(), material = trail.material.clone();
@@ -1139,6 +1169,7 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
   }
 }
 select("landing-translation").onclick = () => runLandingReview();
+select("wall-impact").onclick = runWallImpactReview;
 select("landing-sequence").onclick = () => runLandingReview(true);
 select("landing-hard-sequence").onclick = () => runLandingReview(true, 8);
 select("landing-contact").onclick = () => runLandingReview(true, 0, false, null, true);
