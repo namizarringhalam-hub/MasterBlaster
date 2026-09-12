@@ -55,9 +55,9 @@ const before = originalState(), cameraUpdate = game.updateCamera, impactMethod =
 const run = async options => {
   const frames = [], beforeQueries = collisionQueries, beforeTerrain = terrainCalls, beforeAudio = impactAudio.length;
   const effectTime = game.combatVisuals.effectTime;
-  await withWallImpactReview(game, { previousContact: true, ...options }, async state => {
+  await withWallImpactReview(game, { previousContact: true, previousSparks: !options?.sparkAspect, ...options }, async state => {
     assert.equal(Math.random, globalRng);
-    if(options?.sparkAspect) for(const spark of state.sparkLayers) {
+    if(options?.sparkAspect || options?.previousSparks===false) for(const spark of state.sparkLayers) {
       const x=new THREE.Vector3().fromArray(spark.matrix,0), y=new THREE.Vector3().fromArray(spark.matrix,4), z=new THREE.Vector3().fromArray(spark.matrix,8);
       assert.ok(Math.abs(y.length()/x.length()-2)<1e-6 && Math.abs(y.length()/z.length()-2)<1e-6,"actual spark aspect is 2:1 on both transverse axes");
       const velocity=game.combatVisuals.sparks[spark.index].velocity;
@@ -145,12 +145,13 @@ const sparkUpdate = game.combatVisuals.updateSparks;
 for (const oblique of [false,true]) for (const gameplay of [false,true]) {
   const options={previousContact:false,ringDissipation:"integrated",oblique,gameplay};
   const current=await run(options), trial=await run({...options,sparkAspect:true}), restored=await run(options);
+  const integrated=await run({...options,previousSparks:false});
   assert.deepEqual(restored,current,"spark experiment restores subsequent captures exactly");
   for (let i=0;i<current.length;i++) {
     const a=current[i],b=trial[i];
     assert.equal(b.sparkAspect,true);
     for (const key of ["initial","impact","paidAmmo","projectiles","rings","sparks","lights","ringLayers","cameraMatrix","projection"])
-      assert.deepEqual(b[key],a[key],`spark aspect keeps ${key} exact`);
+      { assert.deepEqual(b[key],a[key],`spark aspect keeps ${key} exact`); assert.deepEqual(integrated[i][key],b[key],`integrated shape keeps ${key} exact`); }
     assert.equal(b.sparkLayers.length,a.sparkLayers.length);
     for (let j=0;j<a.sparkLayers.length;j++) {
       const old=a.sparkLayers[j], next=b.sparkLayers[j];
@@ -159,10 +160,13 @@ for (const oblique of [false,true]) for (const gameplay of [false,true]) {
       for(let n=0;n<16;n++) assert.ok(Math.abs(next.matrix[n]-expected.elements[n])<1e-7,"only volume-preserving velocity-axis aspect changes");
       const determinant=new THREE.Matrix4().fromArray(next.matrix).determinant();
       assert.ok(Math.abs(determinant/new THREE.Matrix4().fromArray(old.matrix).determinant()-1)<1e-5);
+      assert.deepEqual(integrated[i].sparkLayers[j].color,next.color);
+      for(let n=0;n<16;n++) assert.ok(Math.abs(integrated[i].sparkLayers[j].matrix[n]-next.matrix[n])<1e-7,"integrated shape matches reference within Float32 rounding");
     }
   }
 }
 await assert.rejects(withWallImpactReview(game,{sparkAspect:true},async()=>{throw Error("spark interrupted");}),/spark interrupted/);
+await assert.rejects(withWallImpactReview(game,{sparkAspect:true,previousSparks:true},async()=>{throw Error("must not capture");}),/Choose either/);
 assert.equal(game.combatVisuals.updateSparks,sparkUpdate);
 assert.deepEqual(originalState(), before); assert.equal(Math.random, globalRng); assert.equal(game.combatVisuals.random, rng);
 assert.equal(game.combatVisuals.impact, impactMethod); assert.equal(game.projectiles.length, 0); assert.equal(game.updateCamera, cameraUpdate);
@@ -186,7 +190,7 @@ await freeze(async()=>assert.equal(shaderClock.value,17));
 const runnerSource = html.slice(html.indexOf("async function runWallImpactReview("), html.indexOf("function makeTrailShading("));
 const links = [], controls = [{ disabled: false }, { disabled: true }], review = { running: false };
 const elements = { "camera-captures": { replaceChildren: () => { links.length = 0; }, append: link => links.push(link) },
-  "wall-angle": { value: "normal" }, "wall-turn": { checked: false }, "wall-gameplay": { checked: true }, "wall-contact": { checked: false }, "wall-previous": { checked: false }, "wall-ring": {value:"off"}, "wall-sparks": {checked:false} };
+  "wall-angle": { value: "normal" }, "wall-turn": { checked: false }, "wall-gameplay": { checked: true }, "wall-contact": { checked: false }, "wall-previous": { checked: false }, "wall-ring": {value:"off"}, "wall-sparks": {checked:false}, "wall-previous-sparks": {checked:false} };
 Object.assign(game, { renderPipeline: { direct: false, profile: "unit-test-no-renderer" }, settings: { graphics: "high" } });
 const document = { querySelectorAll: () => controls, createElement: () => ({ dataset: {} }), querySelector: () => ({ toDataURL: () => "unit-test-only" }) };
 const makeRunner = (stress = false, fail = false) => new Function("game", "withWallImpactReview", "select", "document", "cameraReview", "stress", "fail", `

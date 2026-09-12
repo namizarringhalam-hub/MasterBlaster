@@ -13,6 +13,8 @@ const FIRE_HOT = new THREE.Color(0xffd36a);
 const FIRE_DARK = new THREE.Color(0xff2608);
 const BLOOD = new THREE.Color(0xff183f);
 const HDR_GLOW = 2.2;
+const BLASTER_SPARK_WIDTH = 1.15 * 2 ** (-1 / 3);
+const BLASTER_SPARK_LENGTH = 1.15 * 2 ** (2 / 3);
 const FIRE_TONGUES = [
   ["flameA", 0, 0, 3.4, .72, 0],
   ["flameB", .54, .24, 2.45, .46, 2.1],
@@ -699,6 +701,7 @@ export class CombatVisuals {
       spark.color = (spark.color || new THREE.Color()).copy(index % 3 ? new THREE.Color(weapon.color) : ownerTint);
       spark.size = .11 + fraction * .12;
       spark.family = "flame";
+      spark.directional = false;
       spark.gravity = -1.5;
     }
   }
@@ -775,6 +778,7 @@ export class CombatVisuals {
       spark.color = (spark.color || new THREE.Color()).copy(index % 3 ? ring.weaponColor : ring.ownerColor);
       spark.size = (blastLike ? .14 : family === "plasma" || family === "freeze" ? .11 : family === "flame" ? .09 : .075) + this.random() * .09;
       spark.family = family;
+      spark.directional = weapon.id === "blaster" && !explosive && family === "plasma";
       spark.gravity = family === "flame" ? -1.5 : ["plasma", "arc", "gravity", "implosion", "disrupt", "scan"].includes(family) ? 4 : 13;
     }
   }
@@ -797,6 +801,7 @@ export class CombatVisuals {
       spark.color = (spark.color || new THREE.Color()).copy(family === "blood" ? BLOOD : tint).lerp(tint, family === "blood" ? .22 : .45);
       spark.size = (family === "blood" ? .065 : .08) + this.random() * (family === "blood" ? .09 : .11);
       spark.family = family;
+      spark.directional = false;
       spark.gravity = family === "blood" ? 17 : 10;
     }
   }
@@ -1188,7 +1193,7 @@ export class CombatVisuals {
       slot.position.addScaledVector(slot.velocity, dt);
       if (slot.velocity.lengthSq() > .001) this.quaternion.setFromUnitVectors(UP, this.direction.copy(slot.velocity).normalize());
       else this.quaternion.identity();
-      const stretch = slot.family === "precision" ? 4.2
+      const stretch = slot.directional ? BLASTER_SPARK_LENGTH : slot.family === "precision" ? 4.2
         : slot.family === "freeze" || slot.family === "drill" ? 3.8
           : slot.family === "ricochet" || slot.family === "disrupt" ? 2.8
         : slot.family === "melee" ? 3
@@ -1196,7 +1201,7 @@ export class CombatVisuals {
           : slot.family === "flame" ? 1.8
           : slot.family === "plasma" || slot.family === "arc" ? 1.15
             : 1.7 + slot.velocity.length() * .08;
-      const width = slot.family === "precision" || slot.family === "freeze" || slot.family === "drill" ? .55
+      const width = slot.directional ? BLASTER_SPARK_WIDTH : slot.family === "precision" || slot.family === "freeze" || slot.family === "drill" ? .55
         : slot.family === "blood" ? .72
         : slot.family === "flame" ? 1.25
           : slot.family === "plasma" || slot.family === "arc" ? 1.15 : 1;

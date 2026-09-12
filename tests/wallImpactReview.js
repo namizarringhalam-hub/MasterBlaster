@@ -4,8 +4,9 @@ import { seededRandom } from "../src/gameData.js";
 
 // QA only: an actual paid Blaster shot against the existing east arena wall.
 // Never synthesize an impact or replace collision, damage, or effect generation.
-export async function withWallImpactReview(game, { oblique = false, turn = false, gameplay = false, surfaceContact = false, previousContact = false, ringDissipation = "off", sparkAspect = false } = {}, capture) {
+export async function withWallImpactReview(game, { oblique = false, turn = false, gameplay = false, surfaceContact = false, previousContact = false, ringDissipation = "off", sparkAspect = false, previousSparks = false } = {}, capture) {
   if (!["off", "current", "trial", "integrated"].includes(ringDissipation)) throw Error("Unknown ring dissipation review");
+  if (sparkAspect && previousSparks) throw Error("Choose either reference or previous sparks, not both");
   const visuals = game.combatVisuals, pools = [visuals.flashes, visuals.tracers, visuals.rings, visuals.sparks, visuals.bloodDecals];
   if (!game.paused || game.players[0]?.weapon.id !== "blaster" || game.projectiles.length || game.hazards.length || game.decoys.length || game.effects.length ||
       pools.some(pool => pool.some(slot => slot.life > 0)) || visuals.combatLights.some(light => light.userData.life > 0 || light.intensity > 1e-10))
@@ -85,6 +86,8 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
       const result = saved.impact.call(this, emissionPoint, weapon, owner, emissionOptions);
       for (let cursor = Math.max(sparkStart, this.cursors.spark - this.sparks.length); cursor < this.cursors.spark; cursor++)
         sparkIndices.push(cursor % this.sparks.length);
+      // Historical control and reference trial must not apply product shape twice.
+      if (previousSparks || sparkAspect) for (const index of sparkIndices) this.sparks[index].directional = false;
       ringIndex = (this.cursors.ring - 1) % this.rings.length;
       // Archived control/trial remain pre-integration comparisons, never a
       // second multiplier on top of the integrated product fade.
@@ -124,7 +127,7 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
     const ringLayers = () => [visuals.ringOuter, visuals.ringInner].map(layer => ({
       matrix: Array.from(layer.instanceMatrix.array.slice(ringIndex * 16, ringIndex * 16 + 16)),
       color: Array.from(layer.instanceColor.array.slice(ringIndex * 3, ringIndex * 3 + 3)) }));
-    const state = frame => ({ frame, effectAge: (frame + 1) / 60, flightFrames, initial, impact, oblique, turn, gameplay, surfaceContact, previousContact, ringDissipation, sparkAspect,
+    const state = frame => ({ frame, effectAge: (frame + 1) / 60, flightFrames, initial, impact, oblique, turn, gameplay, surfaceContact, previousContact, ringDissipation, sparkAspect, previousSparks,
       poseClockMs: 1000, cameraKind: gameplay ? "production-collision-aware-camera-settled-240" : "fixed-close-oblique",
       cameraState: { firstPerson: game.cameraFirstPerson, fov: game.camera.fov, clearance: { ...game.cameraClearance } },
       paidAmmo: hero.ammo.blaster, projectiles: game.projectiles.length,
