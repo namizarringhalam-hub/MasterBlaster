@@ -20,6 +20,65 @@ import { ConvexHull } from "three/addons/math/ConvexHull.js";
 import { ankleReliefGeometry } from "./ankleReliefGeometry.js";
 import { exhaustBody, exhaustShroudGeometry, previousExhaustGeometries, withExhaustShrouds, withPreviousExhaust } from "./exhaustShroudGeometry.js";
 import { shortenedTorsoGeometry, withShortenedTorso } from "./torsoShape.js";
+import { withAlignedShoulders } from "./shoulderFit.js";
+
+for (const variant of [0, 2, 3]) for (const fail of [false, true]) {
+  const hero = new Fighter(new THREE.Scene(), { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  hero.group.updateMatrixWorld(true);
+  const before = hero.group.toJSON(), armor = hero.rig.children.find(mesh => mesh.isMesh && mesh.material === hero.armorMaterial);
+  const originals = [armor, hero.leftArm.children[0], hero.rightArm.children[0]];
+  let disposed = 0;
+  const run = () => withAlignedShoulders(hero, async target => {
+    assert.equal(target.material, hero.armorMaterial);
+    assert.ok(originals.every(mesh => !mesh.visible));
+    for (const mesh of originals) {
+      const sibling = mesh.parent.children.find(child => child !== mesh && child.visible && child.material === mesh.material && child.geometry?.attributes.position.count === mesh.geometry.attributes.position.count);
+      assert.ok(sibling); sibling.geometry.addEventListener("dispose", () => disposed++);
+      for (const name of Object.keys(mesh.geometry.attributes)) {
+        assert.equal(sibling.geometry.attributes[name].array.length, mesh.geometry.attributes[name].array.length);
+      }
+      const cap = variant === 3 ? new THREE.DodecahedronGeometry(.25, 0) : new RoundedBoxGeometry(.34, .27, .48, 1, .0378);
+      const indexedSphere = new THREE.SphereGeometry(.18, 10, 6), sphere = indexedSphere.toNonIndexed().translate(0, -.045, 0);
+      const count = mesh === armor ? (cap.index?.count ?? cap.attributes.position.count) * 2 : sphere.attributes.position.count;
+      for (const [name, attr] of Object.entries(mesh.geometry.attributes)) {
+        const changed = sibling.geometry.attributes[name], start = (attr.count - count) * attr.itemSize;
+        assert.deepEqual(changed.array.subarray(0, start), attr.array.subarray(0, start), `${name} prefix is byte-identical`);
+        if (mesh !== armor) assert.deepEqual(changed.array.subarray(start), sphere.attributes[name].array, "previous reference is the exact radius .18 joint");
+        else if (variant === 2) {
+          const refs = [-1, 1].map(side => cap.clone().applyMatrix4(new THREE.Matrix4().compose(
+            new THREE.Vector3(side * .57, 1.62, -.02), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, side * .16)),
+            new THREE.Vector3(.84, 1.34, .92))));
+          const size = refs[0].attributes[name].array.length;
+          for (let side = 0; side < 2; side++) assert.deepEqual(changed.array.subarray(start + side * size, start + (side + 1) * size), refs[side].attributes[name].array,
+            "previous capsule cap uses absolute X scale.84 only, with the correct inverse-transpose normals");
+          for (const ref of refs) ref.dispose();
+        }
+        else if (name !== "position") assert.deepEqual(changed.array, attr.array, "cap normals and UVs unchanged");
+        else for (let i = 0; i < count; i++) {
+          const k = start + i * 3;
+          assert.ok(Math.abs(changed.array[k] - attr.array[k] - (i < count / 2 ? .04 : -.04)) < 1e-7);
+          assert.equal(changed.array[k + 1], attr.array[k + 1]); assert.equal(changed.array[k + 2], attr.array[k + 2]);
+        }
+      }
+      cap.dispose(); indexedSphere.dispose(); sphere.dispose();
+    }
+    if (fail) throw Error("shoulder capture failed");
+  }, true);
+  if (fail) await assert.rejects(run, /shoulder capture failed/); else await run();
+  assert.equal(disposed, 3); assert.deepEqual(hero.group.toJSON(), before);
+  hero.dispose();
+}
+for (const variant of [0, 1]) {
+  const hero = new Fighter(new THREE.Scene(), { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  hero.group.updateMatrixWorld(true);
+  if (variant === 0) {
+    const armor = hero.rig.children.find(mesh => mesh.isMesh && mesh.material === hero.armorMaterial);
+    armor.geometry.attributes.position.array[armor.geometry.attributes.position.array.length - 1] += 1;
+  }
+  const before = hero.group.toJSON(); let captured = false;
+  await assert.rejects(() => withAlignedShoulders(hero, () => { captured = true; }, true), /accepted fit|Unexpected shoulder/);
+  assert.equal(captured, false); assert.deepEqual(hero.group.toJSON(), before); hero.dispose();
+}
 
 for (let variant = 0; variant < 4; variant++) {
   const hero = new Fighter(new THREE.Scene(), { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
@@ -714,8 +773,9 @@ for (const reducedMotion of [false, true]) {
     assert.ok(checked); assert.equal(p.landTimer, 0);
   } finally { p.dispose(); }
 }
+// Archived variant-1-only controls for Pass40/39, not the pre-Pass65 builder.
 const beforeBearingSource = playerMergeSource.replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "")
-  .replace("const shoulderRadius = costumeVariant === 1 ? .16 : .18;", "const shoulderRadius = .18;");
+  .replace("const shoulderRadius = .16;", "const shoulderRadius = costumeVariant === 1 ? .18 : .16;");
 const BeforeBearingFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
   `${beforeBearingSource}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
 {
@@ -742,7 +802,7 @@ const beforeShoulderSource = playerMergeSource.replace(/^import .*;\r?\n/gm, "")
 const BeforeShoulderFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
   `${beforeShoulderSource}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
 const beforeCapSource = playerMergeSource.replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "")
-  .replace("const shoulderX = costumeVariant === 1 ? .61 : .57;", "const shoulderX = .57;");
+  .replace("const shoulderX = .61;", "const shoulderX = costumeVariant === 1 ? .57 : .61;");
 const BeforeCapFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
   `${beforeCapSource}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
 function shoulderClearance(fighter, y) {
@@ -759,7 +819,7 @@ function shoulderClearance(fighter, y) {
   assert.ok(shoulderClearance(hero, 1.76) > .035, "aligned cap must cover the upper joint patch by at least 35mm");
   hero.dispose();
   const BeforeContactFighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
-    `${beforeCapSource.replace("const shoulderRadius = costumeVariant === 1 ? .16 : .18;", "const shoulderRadius = .18;")}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
+    `${beforeCapSource.replace("const shoulderRadius = .16;", "const shoulderRadius = .18;")}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
   const previous = new BeforeContactFighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["energy_sword"], new THREE.Vector3());
   assert.ok(shoulderClearance(previous, 1.625) < -.025, "old cap exposes the lower joint");
   assert.ok(shoulderClearance(previous, 1.76) < -.004, "old cap exposes the upper joint");
@@ -1272,6 +1332,31 @@ for (const pose of ["gait-positive", "gait-negative", "landing"]) {
 const handViewSource = graphicsFixture.slice(graphicsFixture.indexOf("function setView()"), graphicsFixture.indexOf("async function reset()"));
 const chestVisibilitySource = graphicsFixture.slice(graphicsFixture.indexOf("async function withUnobstructedChest("), graphicsFixture.indexOf("async function runChestInspection("));
 const inspectChest = new Function(`${chestVisibilitySource}; return withUnobstructedChest;`)();
+{
+  const hero = new Fighter(new THREE.Scene(), { id: "helmet-0", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  hero.group.updateMatrixWorld(true);
+  const links = [], controls = { view: { value: "chest-front" }, pose: { value: "aim" }, "camera-captures": { replaceChildren() { links.length = 0; }, append(link) { links.push(link); } } };
+  const document = { querySelectorAll: () => [], createElement: () => ({ dataset: {} }), querySelector: () => ({ toDataURL: () => "test-frame" }) };
+  const source = graphicsFixture.slice(graphicsFixture.indexOf("async function runChestInspection("), graphicsFixture.indexOf("async function withSettledReviewCamera("));
+  const runner = new Function("game", "select", "document", "withUnobstructedChest", "withAlignedShoulders", "shellReviewState", `
+    const resetReview={},cacheReview={},decoyReview={},cameraReview={},sceneSerial=1,errorCount=0,stress=false,resetPhase="ready";
+    let renderedFrames=0; const waitForReviewFrame=async()=>{renderedFrames+=4;},withFrozenShaderTime=async capture=>capture();
+    ${source};return runChestInspection;
+  `)({players:[hero],paused:true,renderPipeline:{direct:false}}, name => controls[name], document, inspectChest, withAlignedShoulders,
+    mesh => ({fighterId:hero.id,geometryId:mesh.geometry.uuid}));
+  for (const shoulder of [false, true]) {
+    await runner(shoulder);
+    const samples = links.map(link => JSON.parse(link.dataset.review));
+    assert.equal(samples.length, 3); assert.deepEqual(samples.map(s => s.index), [0, 1, 2]);
+    assert.ok(samples.every(s => s.fighterId === "helmet-0" && s.view === "chest-front" && s.errorCount === 0));
+    assert.deepEqual(samples.map(s => s.armVisibility), shoulder ? [[true,true,true],[true,true,true],[true,true,true]] : [[true,true,true],[false,false,false],[true,true,true]]);
+    assert.equal(samples[0].geometryId, samples[2].geometryId);
+    if (shoulder) assert.notEqual(samples[0].geometryId, samples[1].geometryId);
+    const frozen = links[0].dataset.review; hero.aim.y += .1;
+    assert.equal(links[0].dataset.review, frozen, "per-PNG evidence is immutable, independent of later pose or throttled status panel");
+  }
+  hero.dispose();
+}
 for (const fail of [false, true]) {
   const hero = new Fighter(new THREE.Scene(), { id: "helmet-0", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
   hero.rightArm.visible = false;
@@ -2132,8 +2217,8 @@ for (const mode of ["baseline", "explicit-environment", "no-environment", "norma
 }
 for (const arm of [shoulderProbe.leftArm, shoulderProbe.rightArm]) for (const fail of [false, true]) for (const preserveZ of [false, true]) {
   const target = arm.children[0], geometry = target.geometry, material = target.material;
-  const coarseIndexed = new THREE.SphereGeometry(.18, 10, 6), coarse = coarseIndexed.toNonIndexed().translate(0, -.045, 0);
-  const fineIndexed = new THREE.SphereGeometry(.18, 16, 10), fine = fineIndexed.toNonIndexed().translate(0, -.045, 0);
+  const coarseIndexed = new THREE.SphereGeometry(.16, 10, 6), coarse = coarseIndexed.toNonIndexed().translate(0, -.045, 0);
+  const fineIndexed = new THREE.SphereGeometry(.16, 16, 10), fine = fineIndexed.toNonIndexed().translate(0, -.045, 0);
   coarse.computeBoundingBox(); fine.computeBoundingBox();
   if (preserveZ) fine.scale(1, 1, coarse.boundingBox.max.z / fine.boundingBox.max.z);
   const capture = async () => {
@@ -2403,7 +2488,7 @@ for (let variant = 0; variant < 4; variant++) {
   assert.ok(target.geometry === malformed); target.geometry = geometry; malformed.dispose(); hero.dispose();
 }
 shellGame.players[0] = capHeroBefore;
-// Match the integrated builder to the independently reviewed geometry-only trial.
+// Preserve the archived variant-1 cap/bearing trial parity across all weapons.
 for (const change of ["cap", "bearing"]) for (const variant of [0, 1, 2, 3]) for (const weapon of Object.keys(WEAPONS)) {
   const options = { id: String.fromCharCode(100 + variant), color: 0x129dba, accent: 0x6ff6ff };
   const current = new Fighter(new THREE.Scene(), options, [weapon], new THREE.Vector3());
@@ -2448,6 +2533,47 @@ for (const change of ["cap", "bearing"]) for (const variant of [0, 1, 2, 3]) for
   current.dispose(); previous.dispose();
 }
 shellGame.players[0] = capHeroBefore;
+// Actual pre-Pass65 source: all three changed constants restored together.
+const pre65Source = playerMergeSource.replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "")
+  .replace("const shoulderRadius = .16;", "const shoulderRadius = costumeVariant === 1 ? .16 : .18;")
+  .replace("const shoulderX = .61;", "const shoulderX = costumeVariant === 1 ? .61 : .57;")
+  .replace("leftShoulder.scale.set(1.15, 1.34, .92);", "leftShoulder.scale.set(.84, 1.34, .92);");
+for (const source of ["costumeVariant === 1 ? .16 : .18", "costumeVariant === 1 ? .61 : .57", "leftShoulder.scale.set(.84, 1.34, .92)"])
+  assert.ok(pre65Source.includes(source), "pre-Pass65 reconstruction must not silently become a no-op");
+const Pre65Fighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
+  `${pre65Source}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
+for (const variant of [0, 1, 2, 3]) for (const weapon of Object.keys(WEAPONS)) {
+  const options = { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff };
+  const current = new Fighter(new THREE.Scene(), options, [weapon], new THREE.Vector3());
+  const previous = new Pre65Fighter(new THREE.Scene(), options, [weapon], new THREE.Vector3());
+  const meshes = fighter => { const result = []; fighter.group.traverse(o => { if (o.isMesh) result.push(o); }); return result; };
+  const currentMeshes = meshes(current), previousMeshes = meshes(previous);
+  const compare = () => {
+    assert.equal(currentMeshes.length, previousMeshes.length);
+    for (let i = 0; i < currentMeshes.length; i++) {
+      // The QA control hides originals and adds temporary siblings; compare each
+      // sibling in its original mesh's slot, not traversal order after insertion.
+      const visibleMesh = mesh => mesh.visible ? mesh : mesh.parent.children.find(o => o !== mesh && o.isMesh && o.visible && o.material === mesh.material &&
+        o.geometry.attributes.position.count === mesh.geometry.attributes.position.count);
+      const a = visibleMesh(currentMeshes[i]), b = visibleMesh(previousMeshes[i]);
+      assert.ok(a && b);
+      for (const key of ["position", "quaternion", "scale"]) assert.deepEqual(a[key].toArray(), b[key].toArray());
+      assert.deepEqual(a.geometry.index?.array, b.geometry.index?.array);
+      for (const key of Object.keys(a.geometry.attributes)) assert.deepEqual(a.geometry.attributes[key].array, b.geometry.attributes[key].array,
+        `Pass65 ${variant}/${weapon}/${i}/${key} equals the approved trial`);
+      for (const key of ["type", "roughness", "metalness", "clearcoat", "clearcoatRoughness", "emissiveIntensity", "opacity", "transparent", "side"])
+        assert.equal(a.material[key], b.material[key]);
+      for (const key of ["color", "emissive"]) assert.equal(a.material[key]?.getHex(), b.material[key]?.getHex());
+    }
+  };
+  try {
+    if (variant === 1) compare();
+    else {
+      await withAlignedShoulders(previous, compare);
+      await withAlignedShoulders(current, compare, true);
+    }
+  } finally { current.dispose(); previous.dispose(); }
+}
 shoulderProbe.dispose();
 armDiagnosticProbe.dispose();
 hardwareMaterial.dispose();

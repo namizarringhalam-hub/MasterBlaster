@@ -473,7 +473,7 @@ export class Fighter {
     leftEar.rotation.z = rightEar.rotation.z = Math.PI / 2;
 
     const elbowGeometry = new THREE.SphereGeometry(.135, 16, 10);
-    const shoulderRadius = costumeVariant === 1 ? .16 : .18;
+    const shoulderRadius = .16;
     const leftArmRig = articulatedArm(dark, armor, accent, -.61, this.elbowMaterial, elbowGeometry, shoulderRadius);
     const rightArmRig = articulatedArm(dark, armor, accent, .61, this.elbowMaterial, elbowGeometry, shoulderRadius);
     this.leftArm = leftArmRig.upper;
@@ -495,7 +495,7 @@ export class Fighter {
       : costumeVariant === 3
         ? new THREE.DodecahedronGeometry(.25, 0)
         : new THREE.BoxGeometry(.34, .27, .48);
-    const shoulderX = costumeVariant === 1 ? .61 : .57;
+    const shoulderX = .61;
     const leftShoulder = part(shoulderGeometry, armor, -shoulderX, 1.62, -.02);
     const rightShoulder = part(shoulderGeometry, armor, shoulderX, 1.62, -.02);
     if (costumeVariant === 1) leftShoulder.rotation.x = rightShoulder.rotation.x = Math.PI / 2;
@@ -534,7 +534,7 @@ export class Fighter {
       breastplate.scale.set(.88, 1.18, .22 * 1.08);
       leftFin.scale.set(.66, 1.46, .66); rightFin.scale.copy(leftFin.scale);
     } else if (costumeVariant === 2) {
-      leftShoulder.scale.set(.84, 1.34, .92); rightShoulder.scale.copy(leftShoulder.scale);
+      leftShoulder.scale.set(1.15, 1.34, .92); rightShoulder.scale.copy(leftShoulder.scale);
       backpack.scale.set(1.08, 1.16, 1.08);
     } else {
       helmetCrest.rotation.z = .28;

@@ -77,6 +77,7 @@
 <button id="exhaust-integrated">Compare integrated exhaust</button>
 <button id="torso-shape">Compare lower torso silhouette</button>
 <button id="chest-inspect">Inspect unobstructed upper body</button>
+<button id="shoulder-fit-trial">Compare aligned shoulder fit</button>
 <button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
 <label><input id="follow-camera" type="checkbox" checked>Follow player camera</label>
 <output id="metrics" style="flex-basis:100%;min-width:0;max-height:100px;overflow:auto;white-space:pre-wrap">Loading actual game…</output>
@@ -93,6 +94,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { ankleReliefGeometry } from "./ankleReliefGeometry.js";
 import { exhaustBody, withExhaustShrouds, withPreviousExhaust } from "./exhaustShroudGeometry.js";
 import { withShortenedTorso } from "./torsoShape.js";
+import { withAlignedShoulders } from "./shoulderFit.js";
 document.querySelector("#view").add(new Option("lower-body-oblique", "lower-body-oblique"));
 document.querySelector("#view").add(new Option("thrusters-low", "thrusters-low"));
 for (const view of ["waist-front", "waist-profile", "waist-low-front", "waist-low-rear"]) document.querySelector("#view").add(new Option(view, view));
@@ -1206,7 +1208,7 @@ async function withElbowSilhouette(target, capture, shoulder = false, preserveZE
     try { target.geometry = previous; return await capture(); }
     finally { target.geometry = original; previous.dispose(); }
   }
-  const jointRadius = shoulder ? (!bearingFit && [...(game.players[0]?.id ?? "")].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % 4 === 1 ? .16 : .18) : .135;
+  const jointRadius = shoulder ? (bearingFit ? .18 : .16) : .135;
   const sphere = (width, height, radius = jointRadius) => {
     const indexed = new THREE.SphereGeometry(radius, width, height);
     const geometry = indexed.toNonIndexed(); indexed.dispose();
@@ -1467,7 +1469,8 @@ select("exhaust-shroud-trial").onclick = () => runLowerBodyReview("exhaust");
 select("exhaust-raised-trial").onclick = () => runLowerBodyReview("exhaust-raised");
 select("exhaust-integrated").onclick = () => runLowerBodyReview("exhaust-integrated");
 select("torso-shape").onclick = () => runLowerBodyReview("torso");
-select("chest-inspect").onclick = runChestInspection;
+select("chest-inspect").onclick = () => runChestInspection();
+select("shoulder-fit-trial").onclick = () => runChestInspection(true);
 async function withUnobstructedChest(hero, capture) {
   const visible = [hero.leftArm, hero.rightArm, hero.weaponGroup].map(mesh => [mesh, mesh.visible]);
   try {
@@ -1475,18 +1478,19 @@ async function withUnobstructedChest(hero, capture) {
     return await capture();
   } finally { for (const [mesh, value] of visible) mesh.visible = value; }
 }
-async function runChestInspection() {
+async function runChestInspection(shoulderFit = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   cameraReview.running = true; cameraReview.shell = true; cameraReview.samples = []; cameraReview.error = null;
   const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
   const serial = sceneSerial, initialErrors = errorCount;
   select("camera-captures").replaceChildren();
   try {
-    if (stress || !game.paused || resetPhase !== "ready" || !select("view").value.startsWith("chest-") || select("pose").value !== "aim")
+    if (stress || !game.paused || resetPhase !== "ready" || !(select("view").value.startsWith("chest-") ||
+        (shoulderFit && (select("view").value.startsWith("hand-shoulder") || select("view").value === "fighter"))) || select("pose").value !== "aim")
       throw Error("Chest inspection requires a ready paused chest view in aim pose");
     for (const [control] of controls) control.disabled = true;
     const hero = game.players[0];
-    const capture = async mode => {
+    const capture = async (mode, target = null) => {
       const frame = renderedFrames + 4;
       await waitForReviewFrame(serial, () => renderedFrames >= frame);
       if (!game.paused || errorCount !== initialErrors || game.renderPipeline.direct) throw Error("Chest inspection interrupted or renderer failed");
@@ -1496,12 +1500,15 @@ async function runChestInspection() {
       select("camera-captures").append(link, " ");
       cameraReview.samples.push({ index, mode, playerId: hero.id, view: select("view").value, pose: select("pose").value,
         aim: hero.aim.toArray(), armVisibility: [hero.leftArm.visible, hero.rightArm.visible, hero.weaponGroup.visible],
-        ...shellReviewState(hero.rig.children.find(mesh => mesh.isMesh && mesh.material === hero.armorMaterial)),
+        ...shellReviewState(target ?? hero.rig.children.find(mesh => mesh.isMesh && mesh.material === hero.armorMaterial)),
         errorCount, directFallback: game.renderPipeline.direct });
+      // Bind evidence to this PNG; the general status panel refreshes only once per second.
+      link.dataset.review = JSON.stringify(cameraReview.samples.at(-1));
     };
     await withFrozenShaderTime(async () => {
       await capture("current");
-      await withUnobstructedChest(hero, () => capture("arms-and-weapon-hidden-diagnostic"));
+      if (shoulderFit) await withAlignedShoulders(hero, target => capture("previous-shoulder-fit", target), true);
+      else await withUnobstructedChest(hero, () => capture("arms-and-weapon-hidden-diagnostic"));
       await capture("restored");
     });
   } catch (error) { cameraReview.error = String(error); }
