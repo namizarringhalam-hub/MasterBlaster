@@ -51,16 +51,17 @@ const originalState = () => ({ position: original.position.toArray(), aim: origi
   attackTimer: original.attackTimer, visible: original.group.visible, camera: game.camera.matrixWorld.toArray(), children: scene.children.length,
   yaw: game.cameraYaw, pitch: game.cameraPitch, firstPerson: game.cameraFirstPerson, requested: game.cameraFirstPersonRequested,
   clearance: { ...game.cameraClearance }, scratch: Object.fromEntries(Object.entries(game.cameraScratch).map(([k,v]) => [k,v.toArray()])) });
-const before = originalState(), cameraUpdate = game.updateCamera, impactMethod = game.combatVisuals.impact, rng = game.combatVisuals.random, globalRng = Math.random;
+const before = originalState(), cameraUpdate = game.updateCamera, impactMethod = game.combatVisuals.impact, ringUpdate = game.combatVisuals.updateRings, rng = game.combatVisuals.random, globalRng = Math.random;
 const run = async options => {
   const frames = [], beforeQueries = collisionQueries, beforeTerrain = terrainCalls, beforeAudio = impactAudio.length;
   const effectTime = game.combatVisuals.effectTime;
   await withWallImpactReview(game, { previousContact: true, ...options }, async state => { assert.equal(Math.random, globalRng); frames.push(structuredClone(state)); });
-  assert.deepEqual(frames.map(s => s.frame), [0, 1, 2, 4, 8, 16, 90]);
+  assert.deepEqual(frames.map(s => s.frame), options?.ringDissipation && options.ringDissipation !== "off" ? [0,1,2,4,8,16,20,22,23,24,26,90] : [0,1,2,4,8,16,90]);
   assert.ok(collisionQueries > beforeQueries && terrainCalls === beforeTerrain + 1, "every run reaches real collision and exactly one terrain call");
   assert.equal(impactAudio.length, beforeAudio + 1, "every real collision emits exactly one new impact audio call");
   assert.deepEqual(originalState(), before); assert.equal(game.players[0], original); assert.equal(game.updateCamera, cameraUpdate);
   assert.equal(game.combatVisuals.impact, impactMethod); assert.equal(game.combatVisuals.random, rng); assert.equal(Math.random, globalRng);
+  assert.equal(game.combatVisuals.updateRings, ringUpdate);
   assert.equal(game.combatMusicPulse, .27); assert.equal(game.projectiles.length, 0);
   assert.equal(game.combatVisuals.effectTime, effectTime);
   assert.equal(frames[0].paidAmmo, data.WEAPONS.blaster.ammo - 1);
@@ -108,6 +109,21 @@ for (const oblique of [false,true]) {
   assert.equal(current[0].sparks.length,legacy[0].sparks.length); assert.equal(current[0].rings[0].size,legacy[0].rings[0].size);
 }
 await assert.rejects(withWallImpactReview(game, {}, async () => { throw Error("capture interrupted"); }), /capture interrupted/);
+const dissipationCurrent = await run({previousContact:false,ringDissipation:"current"});
+const dissipationTrial = await run({previousContact:false,ringDissipation:"trial"});
+for (let i=0;i<dissipationCurrent.length;i++) {
+  const a=dissipationCurrent[i], b=dissipationTrial[i];
+  assert.deepEqual(b.rings,a.rings); assert.deepEqual(b.sparks,a.sparks); assert.deepEqual(b.lights,a.lights);
+  assert.deepEqual(b.ringLayers.map(x=>x.matrix),a.ringLayers.map(x=>x.matrix),"fade never changes geometry, expansion, pose or lifetime");
+  if (!a.rings.length) continue;
+  const factor=1-THREE.MathUtils.smoothstep(1-a.rings[0].life/a.rings[0].maxLife,.2,1);
+  for(let layer=0;layer<2;layer++) for(let channel=0;channel<3;channel++)
+    assert.ok(Math.abs(b.ringLayers[layer].color[channel]-a.ringLayers[layer].color[channel]*factor)<1e-7);
+  if (a.effectAge<=.08) assert.deepEqual(b.ringLayers,a.ringLayers,"the initial cue is unchanged");
+  if (a.effectAge>=.38) assert.ok(b.ringLayers.every(x=>x.color.every(c=>c<.02)),"last living ring frame approaches zero brightness");
+}
+await assert.rejects(withWallImpactReview(game,{ringDissipation:"trial"},async()=>{throw Error("fade interrupted");}),/fade interrupted/);
+assert.equal(game.combatVisuals.updateRings,ringUpdate);
 assert.deepEqual(originalState(), before); assert.equal(Math.random, globalRng); assert.equal(game.combatVisuals.random, rng);
 assert.equal(game.combatVisuals.impact, impactMethod); assert.equal(game.projectiles.length, 0); assert.equal(game.updateCamera, cameraUpdate);
 game.paused = false;
@@ -119,15 +135,23 @@ assert.deepEqual(originalState(), before);
 // Exercise the actual DOM runner too: immutable per-image stamps, guard and
 // control restoration must not depend on the once-per-second metrics panel.
 const html = readFileSync(new URL("./graphics.browser.html", import.meta.url), "utf8");
+const freezeSource = html.slice(html.indexOf("async function withFrozenShaderTime("),html.indexOf("async function runWallImpactReview("));
+const shaderClock = {value:17,update(){}};
+const freeze = new Function("shaderTime",`${freezeSource};return withFrozenShaderTime`)(shaderClock), clockUpdate=shaderClock.update;
+await freeze(async()=>assert.equal(shaderClock.value,3),3);
+assert.equal(shaderClock.value,17); assert.equal(shaderClock.update,clockUpdate);
+await assert.rejects(freeze(async()=>{throw Error("clock interrupted");},3),/clock interrupted/);
+assert.equal(shaderClock.value,17); assert.equal(shaderClock.update,clockUpdate);
+await freeze(async()=>assert.equal(shaderClock.value,17));
 const runnerSource = html.slice(html.indexOf("async function runWallImpactReview("), html.indexOf("function makeTrailShading("));
 const links = [], controls = [{ disabled: false }, { disabled: true }], review = { running: false };
 const elements = { "camera-captures": { replaceChildren: () => { links.length = 0; }, append: link => links.push(link) },
-  "wall-angle": { value: "normal" }, "wall-turn": { checked: false }, "wall-gameplay": { checked: true }, "wall-contact": { checked: false }, "wall-previous": { checked: false } };
+  "wall-angle": { value: "normal" }, "wall-turn": { checked: false }, "wall-gameplay": { checked: true }, "wall-contact": { checked: false }, "wall-previous": { checked: false }, "wall-ring": {value:"off"} };
 Object.assign(game, { renderPipeline: { direct: false, profile: "unit-test-no-renderer" }, settings: { graphics: "high" } });
 const document = { querySelectorAll: () => controls, createElement: () => ({ dataset: {} }), querySelector: () => ({ toDataURL: () => "unit-test-only" }) };
 const makeRunner = (stress = false, fail = false) => new Function("game", "withWallImpactReview", "select", "document", "cameraReview", "stress", "fail", `
   const resetReview={},cacheReview={},decoyReview={},sceneSerial=5,resetPhase='ready',errorCount=0,innerWidth=747,innerHeight=698,devicePixelRatio=1;
-  let renderedFrames=100; const withFrozenShaderTime=fn=>fn();
+  let renderedFrames=100; const shaderTime={value:17,update(){}}; ${freezeSource}
   const waitForReviewFrame=async(serial,predicate)=>{ if(fail) throw Error('render interrupted'); renderedFrames+=4; if(!predicate()) throw Error('unready'); };
   ${runnerSource}; return runWallImpactReview;
 `)(game, withWallImpactReview, id => elements[id], document, review, stress, fail);
@@ -136,6 +160,7 @@ assert.equal(review.error, null); assert.equal(links.length, 7); assert.equal(re
 assert.deepEqual(controls.map(c => c.disabled), [false, true]);
 const stamp = JSON.parse(links[0].dataset.review);
 assert.equal(stamp.effectAge, 1 / 60); assert.equal(stamp.sceneSerial, 5); assert.equal(stamp.cameraKind, "production-collision-aware-camera-settled-240");
+assert.equal(stamp.shaderClockSeconds,3);
 review.samples[0].impact.ownerAim[0] = 9;
 assert.equal(JSON.parse(links[0].dataset.review).impact.ownerAim[0], 1, "per-PNG evidence is immutable after capture");
 await makeRunner(true)(); assert.match(review.error, /Stop stress/); assert.equal(links.length, 0);

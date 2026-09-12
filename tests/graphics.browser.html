@@ -84,6 +84,7 @@
 <label><input type="checkbox" id="wall-gameplay">Actual gameplay camera</label>
 <label><input type="checkbox" id="wall-contact">Use contact correction trial</label>
 <label><input type="checkbox" id="wall-previous">Use previous impact placement</label>
+<label>Ring dissipation<select id="wall-ring"><option value="off">Off</option><option value="current">Current near expiry</option><option value="trial">Fade trial near expiry</option></select></label>
 <button id="wall-impact">Capture real wall impact</button>
 <button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
 <label><input id="follow-camera" type="checkbox" checked>Follow player camera</label>
@@ -943,11 +944,12 @@ async function withTrailEdgeMaterials(entries, mode, capture) {
     return await capture();
   } finally { entries.forEach(({ trail }, i) => { trail.material = originals[i]; }); }
 }
-async function withFrozenShaderTime(capture) {
-  const update = shaderTime.update;
+async function withFrozenShaderTime(capture, fixedTime) {
+  const update = shaderTime.update, value = shaderTime.value;
+  if (fixedTime !== undefined) shaderTime.value = fixedTime;
   shaderTime.update = () => {};
   try { return await capture(); }
-  finally { shaderTime.update = update; }
+  finally { shaderTime.update = update; if (fixedTime !== undefined) shaderTime.value = value; }
 }
 async function runWallImpactReview() {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
@@ -960,17 +962,17 @@ async function runWallImpactReview() {
     controls.forEach(([control]) => { control.disabled = true; });
     await withFrozenShaderTime(() => withWallImpactReview(game, { oblique: select("wall-angle").value === "oblique",
       turn: select("wall-turn").checked, gameplay: select("wall-gameplay").checked, surfaceContact: select("wall-contact").checked,
-      previousContact: select("wall-previous").checked }, async state => {
+      previousContact: select("wall-previous").checked, ringDissipation: select("wall-ring").value }, async state => {
       const ready = renderedFrames + 4;
       await waitForReviewFrame(serial, () => renderedFrames >= ready);
       if (!game.paused || errorCount !== initialErrors || game.renderPipeline.direct) throw Error("Wall impact capture interrupted");
       const index = cameraReview.samples.length, link = document.createElement("a");
       const metadata = { index, ...state, sceneSerial, renderedFrames, tier: game.settings.graphics, profile: game.renderPipeline.profile,
-        viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio }, errorCount, directFallback: game.renderPipeline.direct };
+        viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio }, shaderClockSeconds: shaderTime.value, errorCount, directFallback: game.renderPipeline.direct };
       link.textContent = `Camera frame ${index}`; link.download = `wall-impact-${state.frame}.png`;
       link.href = document.querySelector("#game-canvas").toDataURL("image/png"); link.dataset.review = JSON.stringify(metadata);
       select("camera-captures").append(link, " "); cameraReview.samples.push(metadata);
-    }));
+    }), 3);
   } catch (error) { cameraReview.error = String(error); }
   finally { cameraReview.running = false; cameraReview.shell = false; controls.forEach(([control, disabled]) => { control.disabled = disabled; }); }
 }

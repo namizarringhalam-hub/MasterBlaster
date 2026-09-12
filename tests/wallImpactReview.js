@@ -4,22 +4,36 @@ import { seededRandom } from "../src/gameData.js";
 
 // QA only: an actual paid Blaster shot against the existing east arena wall.
 // Never synthesize an impact or replace collision, damage, or effect generation.
-export async function withWallImpactReview(game, { oblique = false, turn = false, gameplay = false, surfaceContact = false, previousContact = false } = {}, capture) {
+export async function withWallImpactReview(game, { oblique = false, turn = false, gameplay = false, surfaceContact = false, previousContact = false, ringDissipation = "off" } = {}, capture) {
+  if (!["off", "current", "trial"].includes(ringDissipation)) throw Error("Unknown ring dissipation review");
   const visuals = game.combatVisuals, pools = [visuals.flashes, visuals.tracers, visuals.rings, visuals.sparks, visuals.bloodDecals];
   if (!game.paused || game.players[0]?.weapon.id !== "blaster" || game.projectiles.length || game.hazards.length || game.decoys.length || game.effects.length ||
       pools.some(pool => pool.some(slot => slot.life > 0)) || visuals.combatLights.some(light => light.userData.life > 0 || light.intensity > 1e-10))
     throw Error("Wall impact review requires a paused, transient-free Blaster scene");
   const original = game.players[0], visible = original.group.visible, updateCamera = game.updateCamera;
   const saved = { random: visuals.random, cursors: { ...visuals.cursors }, lightCursor: visuals.combatLightCursor,
-    impact: visuals.impact, effectTime: visuals.effectTime, music: game.combatMusicPulse, cameraPosition: game.camera.position.clone(),
+    impact: visuals.impact, updateRings: visuals.updateRings, effectTime: visuals.effectTime, music: game.combatMusicPulse, cameraPosition: game.camera.position.clone(),
     cameraQuaternion: game.camera.quaternion.clone(), fov: game.camera.fov,
     yaw: game.cameraYaw, pitch: game.cameraPitch, firstPerson: game.cameraFirstPerson, requested: game.cameraFirstPersonRequested,
     clearance: { ...game.cameraClearance }, scratch: Object.fromEntries(Object.entries(game.cameraScratch || {}).map(([key, v]) => [key, v.clone()])) };
   const wallX = game.world.size - .6, direction = new THREE.Vector3(1, 0, oblique ? 1 : 0).normalize();
   const position = new THREE.Vector3(wallX - 12, 6.8, oblique ? -12 : 0);
   const hero = new Fighter(game.scene, { id: original.id, name: original.name, color: original.color, accent: original.accent }, ["blaster"], position);
-  let shot, impact = null;
+  let shot, impact = null, ringIndex = -1;
   try {
+    if (ringDissipation === "trial") {
+      const color = new THREE.Color();
+      visuals.updateRings = function(dt) {
+        saved.updateRings.call(this, dt);
+        const ring = this.rings[ringIndex];
+        if (!ring || ring.life <= 0) return;
+        const fade = 1 - THREE.MathUtils.smoothstep(1 - ring.life / ring.maxLife, .2, 1);
+        for (const layer of [this.ringOuter, this.ringInner]) {
+          layer.getColorAt(ringIndex, color); layer.setColorAt(ringIndex, color.multiplyScalar(fade));
+          layer.instanceColor.needsUpdate = true;
+        }
+      };
+    }
     original.group.visible = false; game.players[0] = hero; game.updateCamera = () => {};
     hero.aim.copy(direction); hero.group.position.copy(position); hero.group.rotation.y = Math.atan2(direction.x, direction.z);
     // A static firing stance: only the production projectile/effect simulation is stepped.
@@ -52,7 +66,9 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
         firedDirection: shot.firedDirection.toArray(), ownerAim: owner.aim.toArray(), suppliedNormal: options?.normal?.toArray() ?? null,
         emissionPosition: emissionPoint.toArray(), emissionNormal: emissionOptions?.normal?.toArray() ?? null,
         radius: shot.radius, projectileAge: shot.age, wallX, geometricNormal: [-1, 0, 0] };
-      return saved.impact.call(this, emissionPoint, weapon, owner, emissionOptions);
+      const result = saved.impact.call(this, emissionPoint, weapon, owner, emissionOptions);
+      ringIndex = (this.cursors.ring - 1) % this.rings.length;
+      return result;
     };
     // Match spread/visual random choices across the post-shot-aim diagnostic.
     // Restore the global RNG synchronously, before any await/render can run.
@@ -84,23 +100,27 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
     game.camera.updateMatrixWorld(true);
     const slotState = slot => ({ life: slot.life, maxLife: slot.maxLife, position: slot.position?.toArray(),
       normal: slot.normal?.toArray(), velocity: slot.velocity?.toArray(), size: slot.size, family: slot.family });
-    const state = frame => ({ frame, effectAge: (frame + 1) / 60, flightFrames, initial, impact, oblique, turn, gameplay, surfaceContact, previousContact,
+    const ringLayers = () => [visuals.ringOuter, visuals.ringInner].map(layer => ({
+      matrix: Array.from(layer.instanceMatrix.array.slice(ringIndex * 16, ringIndex * 16 + 16)),
+      color: Array.from(layer.instanceColor.array.slice(ringIndex * 3, ringIndex * 3 + 3)) }));
+    const state = frame => ({ frame, effectAge: (frame + 1) / 60, flightFrames, initial, impact, oblique, turn, gameplay, surfaceContact, previousContact, ringDissipation,
       poseClockMs: 1000, cameraKind: gameplay ? "production-collision-aware-camera-settled-240" : "fixed-close-oblique",
       cameraState: { firstPerson: game.cameraFirstPerson, fov: game.camera.fov, clearance: { ...game.cameraClearance } },
       paidAmmo: hero.ammo.blaster, projectiles: game.projectiles.length,
       rings: visuals.rings.filter(s => s.life > 0).map(slotState), sparks: visuals.sparks.filter(s => s.life > 0).map(slotState),
+      ringLayers: ringLayers(),
       lights: visuals.combatLights.map(light => ({ position: light.position.toArray(), intensity: light.intensity, life: light.userData.life })),
       cameraMatrix: game.camera.matrixWorld.toArray(), projection: game.camera.projectionMatrix.toArray() });
     for (let frame = 0; frame <= 90; frame++) {
       if (frame) { game.updateEffects(1 / 60); visuals.update(1 / 60); }
-      if ([0, 1, 2, 4, 8, 16, 90].includes(frame)) await capture(state(frame));
+      if ((ringDissipation === "off" ? [0, 1, 2, 4, 8, 16, 90] : [0, 1, 2, 4, 8, 16, 20, 22, 23, 24, 26, 90]).includes(frame)) await capture(state(frame));
     }
     // Production lights damp asymptotically; preserve their real decay instead
     // of demanding an exact floating-point zero or snapping them for the test.
     if (pools.some(pool => pool.some(slot => slot.life > 0)) || visuals.combatLights.some(light => light.userData.life > 0 || light.intensity > 1e-10))
       throw Error("Wall impact did not expire within 90 frames");
   } finally {
-    visuals.impact = saved.impact; visuals.random = saved.random;
+    visuals.impact = saved.impact; visuals.updateRings = saved.updateRings; visuals.random = saved.random;
     while (game.projectiles.some(projectile => projectile.owner === hero)) game.removeProjectile(game.projectiles.findIndex(projectile => projectile.owner === hero));
     for (const pool of pools) for (const slot of pool) slot.life = 0;
     for (const light of visuals.combatLights) { light.userData.life = 0; light.intensity = 0; }
