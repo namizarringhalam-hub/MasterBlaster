@@ -7,13 +7,13 @@ export { exhaustShroudGeometry };
 
 export function exhaustBody(hero) {
   const target = hero.rig.children.find(mesh => mesh.isMesh && mesh.visible && mesh.material === hero.darkMaterial && mesh.position.lengthSq() === 0);
-  if (!target || target.geometry.index || ![1080, 2268].includes(target.geometry.attributes.position.count)) throw new Error("Unexpected static body layout");
+  if (!target || target.geometry.index || ![1080, 1464, 2268, 2652].includes(target.geometry.attributes.position.count)) throw new Error("Unexpected static body layout");
   return target;
 }
 
 export function previousExhaustGeometries(hero) {
   const target = exhaustBody(hero);
-  if (target.geometry.attributes.position.count !== 2268) throw new Error("Previous comparison requires integrated exhaust");
+  if (![2268, 2652].includes(target.geometry.attributes.position.count)) throw new Error("Previous comparison requires integrated exhaust");
   const light = hero.rig.children.find(mesh => mesh.isMesh && mesh.visible && mesh.material === hero.accentMaterial && mesh.position.lengthSq() === 0);
   const variant = [...hero.id].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % 4;
   const scale = new THREE.Vector3(variant === 3 ? .72 : 1, variant === 3 ? 1.28 : 1, 1);
@@ -28,7 +28,7 @@ export function previousExhaustGeometries(hero) {
     }
     bodyGeometry = new THREE.BufferGeometry();
     for (const [name, attribute] of Object.entries(target.geometry.attributes))
-      bodyGeometry.setAttribute(name, new THREE.Float32BufferAttribute(attribute.array.slice(0, 1080 * attribute.itemSize), attribute.itemSize));
+      bodyGeometry.setAttribute(name, new THREE.Float32BufferAttribute(attribute.array.slice(0, (target.geometry.attributes.position.count - 1188) * attribute.itemSize), attribute.itemSize));
     lightGeometry = new THREE.BufferGeometry().copy(light.geometry);
     const positions = lightGeometry.attributes.position.array;
     positions.set(previous.attributes.position.array, positions.length - previous.attributes.position.array.length);
@@ -39,7 +39,7 @@ export function previousExhaustGeometries(hero) {
 }
 
 export async function withPreviousExhaust(hero, capture) {
-  if (exhaustBody(hero).geometry.attributes.position.count === 1080) return await capture();
+  if ([1080, 1464].includes(exhaustBody(hero).geometry.attributes.position.count)) return await capture();
   const { body, light, bodyGeometry, lightGeometry } = previousExhaustGeometries(hero);
   const bodyVisible = body.visible, lightVisible = light.visible;
   const replacement = body.clone(false), panel = light.clone(false);
@@ -55,7 +55,7 @@ export async function withPreviousExhaust(hero, capture) {
 
 export async function withExhaustShrouds(hero, capture, raisedLight = false) {
   const target = exhaustBody(hero);
-  if (target.geometry.attributes.position.count !== 1080 || !hero.thrusterLights?.position.equals(new THREE.Vector3(0, 1.02, -.49)))
+  if (![1080, 1464].includes(target.geometry.attributes.position.count) || !hero.thrusterLights?.position.equals(new THREE.Vector3(0, 1.02, -.49)))
     throw new Error("Unexpected static backpack or plume layout");
   const variant = [...hero.id].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % 4;
   const original = target.geometry, visible = target.visible, parent = target.parent;

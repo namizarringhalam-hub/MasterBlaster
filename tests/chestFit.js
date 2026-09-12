@@ -3,10 +3,30 @@ import { clipLegPolygon, torsoGeometry } from "../src/player.js";
 import { exhaustBody } from "./exhaustShroudGeometry.js";
 
 // QA-only fit of the inner front surface to the actual polygonal chest housing.
-export function fittedChestCore(source, variant) {
+export function fittedChestCore(source, variant, previous = false) {
   if (![0, 1, 2, 3].includes(variant) || source.index) throw Error("Unexpected chest core");
   const indexed = torsoGeometry(), reference = indexed.toNonIndexed(); indexed.dispose();
   try {
+    if (previous) {
+      // Product merging applies the identity normal matrix, normalizing the
+      // interpolated boundary normals. Direction and rendered shading are unchanged.
+      const expected = fittedChestCore(reference, variant).applyMatrix4(new THREE.Matrix4());
+      try {
+        for (const [name, attr] of Object.entries(expected.attributes)) {
+          const actual = source.attributes[name];
+          if (!actual || actual.itemSize !== attr.itemSize || actual.count < attr.count || attr.array.some((v, i) => Math.abs(v - actual.array[i]) > 1e-7))
+            throw Error(`Unexpected fitted chest ${name} prefix`);
+        }
+        const result = new THREE.BufferGeometry();
+        for (const [name, attr] of Object.entries(expected.attributes)) {
+          const actual = source.attributes[name];
+          const prefix = reference.attributes[name].array, suffix = actual.array.subarray(attr.array.length);
+          const array = new Float32Array(prefix.length + suffix.length); array.set(prefix); array.set(suffix, prefix.length);
+          result.setAttribute(name, new THREE.BufferAttribute(array, actual.itemSize));
+        }
+        result.computeBoundingBox(); result.computeBoundingSphere(); return result;
+      } finally { expected.dispose(); }
+    }
     for (const [name, attribute] of Object.entries(reference.attributes)) {
       const actual = source.attributes[name];
       if (!actual || actual.itemSize !== attribute.itemSize || actual.count < attribute.count ||
@@ -77,9 +97,9 @@ export function fittedChestCore(source, variant) {
   } finally { reference.dispose(); }
 }
 
-export async function withFittedChestCore(hero, capture) {
+export async function withFittedChestCore(hero, capture, previous = false) {
   const body = exhaustBody(hero), variant = [...hero.id].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 4;
-  const geometry = fittedChestCore(body.geometry, variant), sibling = new THREE.Mesh(geometry, body.material), visible = body.visible;
+  const geometry = fittedChestCore(body.geometry, variant, previous), sibling = new THREE.Mesh(geometry, body.material), visible = body.visible;
   sibling.position.copy(body.position); sibling.quaternion.copy(body.quaternion); sibling.scale.copy(body.scale);
   sibling.castShadow = body.castShadow; sibling.receiveShadow = body.receiveShadow;
   try {

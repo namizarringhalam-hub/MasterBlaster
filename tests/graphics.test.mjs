@@ -4,7 +4,7 @@ import { getCurrentStack, getNormalFromDepth, materialOpacity, normalView, norma
 import NodeMaterialObserver from "../node_modules/three/src/materials/nodes/manager/NodeMaterialObserver.js";
 import WebGPUPipelineUtils from "../node_modules/three/src/renderers/webgpu/utils/WebGPUPipelineUtils.js";
 import { ArenaWorld, structuralPanelGeometry, structuralRouteGeometry } from "../src/world.js";
-import { Fighter, kneeTaperGeometry, legAssemblyGeometry } from "../src/player.js";
+import { Fighter, fittedTorsoGeometry, kneeTaperGeometry, legAssemblyGeometry } from "../src/player.js";
 import { graphicsProfile, swapStolenWeapon, WEAPONS } from "../src/gameData.js";
 import { CombatVisuals } from "../src/combatVisuals.js";
 import { NeonRenderPipeline, recoverInvalidAONormals } from "../src/renderPipeline.js";
@@ -23,8 +23,63 @@ import { shortenedTorsoGeometry, withShortenedTorso } from "./torsoShape.js";
 import { withAlignedShoulders } from "./shoulderFit.js";
 import { fittedChestCore, withFittedChestCore } from "./chestFit.js";
 
+const pre66Source = readFileSync(new URL("../src/player.js", import.meta.url), "utf8").replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "")
+  .replace("part(fittedTorsoGeometry(costumeVariant), dark, 0, 0, 0)", "part(torsoGeometry(), dark, 0, 0, 0)");
+assert.ok(pre66Source.includes("part(torsoGeometry(), dark, 0, 0, 0)"), "pre-Pass66 builder restores the actual previous torso");
+const Pre66Fighter = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation",
+  `${pre66Source}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation);
+
+const cachedCores = new Set(); let cachedCoreDisposals = 0;
+for (let variant = 0; variant < 4; variant++) {
+  const core = fittedTorsoGeometry(variant); cachedCores.add(core);
+  assert.equal(fittedTorsoGeometry(variant), core); assert.equal(core.userData.sharedFighterGeometry, true);
+  assert.equal(core.attributes.position.count, 816);
+  core.addEventListener("dispose", () => cachedCoreDisposals++);
+}
+assert.equal(cachedCores.size, 4);
+assert.throws(() => fittedTorsoGeometry(4), /Unknown fighter variant/);
+for (let variant = 0; variant < 4; variant++) for (const weapon of Object.keys(WEAPONS)) {
+  const options = { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff };
+  const current = new Fighter(new THREE.Scene(), options, [weapon], new THREE.Vector3());
+  const previous = new Pre66Fighter(new THREE.Scene(), options, [weapon], new THREE.Vector3());
+  const body = exhaustBody(current), oldBody = exhaustBody(previous), expected = fittedChestCore(oldBody.geometry, variant);
+  const reviewedCoreCount = fittedTorsoGeometry(variant).attributes.position.count;
+  // Match the normal-matrix normalization performed by the actual pre-merge path.
+  const normal = new THREE.Vector3(), normals = expected.attributes.normal;
+  for (let i = 0; i < reviewedCoreCount; i++) {
+    normal.fromBufferAttribute(normals, i).normalize(); normals.setXYZ(i, normal.x, normal.y, normal.z);
+  }
+  try {
+    const a = [], b = [];
+    current.group.traverse(o => a.push(o)); previous.group.traverse(o => b.push(o));
+    assert.equal(a.length, b.length);
+    a.forEach((o, i) => {
+      const old = b[i];
+      for (const key of ["position", "quaternion", "scale"]) assert.deepEqual(o[key].toArray(), old[key].toArray());
+      if (!o.isMesh) return;
+      const reference = o === body ? expected : old.geometry;
+      assert.deepEqual(o.geometry.index?.array, reference.index?.array);
+      for (const [name, attr] of Object.entries(o.geometry.attributes)) assert.deepEqual(attr.array, reference.attributes[name].array,
+        `integrated chest ${variant}/${weapon}/${i}/${name} matches the reviewed geometry exactly`);
+      for (const key of ["type", "roughness", "metalness", "clearcoat", "clearcoatRoughness", "emissiveIntensity", "opacity", "transparent", "side"])
+        assert.equal(o.material[key], old.material[key]);
+      for (const key of ["color", "emissive"]) assert.equal(o.material[key]?.getHex(), old.material[key]?.getHex());
+    });
+    await withFittedChestCore(current, target => {
+      for (const [name, attr] of Object.entries(target.geometry.attributes)) assert.deepEqual(attr.array, oldBody.geometry.attributes[name].array,
+        "reverse control reconstructs exact published torso and preserves every suffix");
+    }, true);
+    if (weapon === "blaster") {
+      const before = current.group.toJSON();
+      await assert.rejects(withFittedChestCore(current, () => { throw Error("reverse core interrupted"); }, true), /reverse core interrupted/);
+      assert.deepEqual(current.group.toJSON(), before);
+    }
+  } finally { expected.dispose(); current.dispose(); previous.dispose(); }
+}
+assert.equal(cachedCoreDisposals, 0, "fighter/rematch teardown never disposes the bounded immutable source cache");
+
 for (const variant of [0, 1, 2, 3]) {
-  const hero = new Fighter(new THREE.Scene(), { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const hero = new Pre66Fighter(new THREE.Scene(), { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
   hero.group.updateMatrixWorld(true);
   const body = exhaustBody(hero), source = body.geometry, before = hero.group.toJSON();
   const coreCount = 432, candidate = fittedChestCore(source, variant), added = candidate.attributes.position.count - source.attributes.position.count;
@@ -142,7 +197,7 @@ for (const variant of [0, 1]) {
 }
 
 for (let variant = 0; variant < 4; variant++) {
-  const hero = new Fighter(new THREE.Scene(), { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+  const hero = new Pre66Fighter(new THREE.Scene(), { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
   const body = exhaustBody(hero), integrated = body.geometry, source = shortenedTorsoGeometry(integrated, true), children = [...hero.rig.children];
   const candidate = shortenedTorsoGeometry(source), capsule = new THREE.CapsuleGeometry(.39, .68, 4, 8);
   for (const [name, attribute] of Object.entries(integrated.attributes)) {
@@ -202,10 +257,10 @@ for (let variant = 0; variant < 4; variant++) for (const fail of [false, true]) 
   const hero = new Fighter(new THREE.Scene(), { id: `helmet-${variant}`, color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
   const body = exhaustBody(hero), geometry = body.geometry, children = [...hero.rig.children];
   const light = hero.rig.children.find(mesh => mesh.isMesh && mesh.material === hero.accentMaterial && mesh.position.lengthSq() === 0), lightGeometry = light.geometry;
-  assert.equal(geometry.attributes.position.count, 2268);
+  assert.equal(geometry.attributes.position.count, 2652);
   const run = () => withPreviousExhaust(hero, async previous => {
     assert.equal(body.geometry, geometry); assert.equal(body.visible, false);
-    assert.equal(previous.geometry.attributes.position.count, 1080);
+    assert.equal(previous.geometry.attributes.position.count, 1464);
     assert.equal(previous.material, body.material);
     for (const [name, attribute] of Object.entries(previous.geometry.attributes))
       assert.deepEqual(attribute.array, geometry.attributes[name].array.slice(0, attribute.array.length), "integrated original body prefix is unchanged");
@@ -1418,7 +1473,7 @@ const inspectChest = new Function(`${chestVisibilitySource}; return withUnobstru
   }
   await runner("core-fit");
   const chestFrames = links.map(link => JSON.parse(link.dataset.review));
-  assert.deepEqual(chestFrames.map(s => s.mode), ["current", "hidden-current", "hidden-core-fit", "hidden-restored", "core-fit", "restored"]);
+  assert.deepEqual(chestFrames.map(s => s.mode), ["current", "hidden-current", "hidden-previous-core", "hidden-restored", "previous-core", "restored"]);
   assert.deepEqual(chestFrames.map(s => s.armVisibility), [[true,true,true],[false,false,false],[false,false,false],[false,false,false],[true,true,true],[true,true,true]]);
   assert.equal(chestFrames[0].geometryId, chestFrames[5].geometryId);
   assert.equal(chestFrames[0].geometryId, exhaustBody(hero).geometry.uuid, "all controls describe the edited dark torso, not unrelated armor");
