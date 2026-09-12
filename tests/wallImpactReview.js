@@ -4,7 +4,7 @@ import { seededRandom } from "../src/gameData.js";
 
 // QA only: an actual paid Blaster shot against the existing east arena wall.
 // Never synthesize an impact or replace collision, damage, or effect generation.
-export async function withWallImpactReview(game, { oblique = false, turn = false, gameplay = false, surfaceContact = false, previousContact = false, ringDissipation = "off", sparkAspect = false, previousSparks = false, ringLayer = "both" } = {}, capture) {
+export async function withWallImpactReview(game, { oblique = false, turn = false, gameplay = false, surfaceContact = false, previousContact = false, ringDissipation = "off", sparkAspect = false, previousSparks = false, ringLayer = "both", nestedRing = false } = {}, capture) {
   if (!["off", "current", "trial", "integrated"].includes(ringDissipation)) throw Error("Unknown ring dissipation review");
   if (!["both", "outer", "inner"].includes(ringLayer)) throw Error("Unknown ring layer review");
   if (sparkAspect && previousSparks) throw Error("Choose either reference or previous sparks, not both");
@@ -38,8 +38,9 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
         }
       };
     }
-    if (ringDissipation === "trial" || ringLayer !== "both") {
+    if (ringDissipation === "trial" || ringLayer !== "both" || nestedRing) {
       const color = new THREE.Color(), hidden = new THREE.Matrix4().makeScale(0, 0, 0);
+      const outerBasis = new THREE.Matrix4(), innerBasis = new THREE.Matrix4();
       visuals.updateRings = function(dt) {
         saved.updateRings.call(this, dt);
         const ring = this.rings[ringIndex];
@@ -50,6 +51,12 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
             layer.getColorAt(ringIndex, color); layer.setColorAt(ringIndex, color.multiplyScalar(fade));
             layer.instanceColor.needsUpdate = true;
           }
+        }
+        if (nestedRing) {
+          this.ringOuter.getMatrixAt(ringIndex, outerBasis); this.ringInner.getMatrixAt(ringIndex, innerBasis);
+          // Reuse the real outer XY basis; keep the inner Z and contact position.
+          for (const n of [0, 1, 2, 4, 5, 6]) innerBasis.elements[n] = outerBasis.elements[n] * .7;
+          this.ringInner.setMatrixAt(ringIndex, innerBasis); this.ringInner.instanceMatrix.needsUpdate = true;
         }
         if (ringLayer !== "both") {
           const masked = ringLayer === "outer" ? this.ringInner : this.ringOuter;
@@ -134,7 +141,7 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
     const ringLayers = () => [visuals.ringOuter, visuals.ringInner].map(layer => ({
       matrix: Array.from(layer.instanceMatrix.array.slice(ringIndex * 16, ringIndex * 16 + 16)),
       color: Array.from(layer.instanceColor.array.slice(ringIndex * 3, ringIndex * 3 + 3)) }));
-    const state = frame => ({ frame, effectAge: (frame + 1) / 60, flightFrames, initial, impact, oblique, turn, gameplay, surfaceContact, previousContact, ringDissipation, sparkAspect, previousSparks, ringLayer,
+    const state = frame => ({ frame, effectAge: (frame + 1) / 60, flightFrames, initial, impact, oblique, turn, gameplay, surfaceContact, previousContact, ringDissipation, sparkAspect, previousSparks, ringLayer, nestedRing,
       poseClockMs: 1000, cameraKind: gameplay ? "production-collision-aware-camera-settled-240" : "fixed-close-oblique",
       cameraState: { firstPerson: game.cameraFirstPerson, fov: game.camera.fov, clearance: { ...game.cameraClearance } },
       paidAmmo: hero.ammo.blaster, projectiles: game.projectiles.length,

@@ -189,6 +189,24 @@ for(const gameplay of [false,true]) {
 await assert.rejects(withWallImpactReview(game,{ringLayer:"invalid"},async()=>{}),/Unknown ring layer/);
 await assert.rejects(withWallImpactReview(game,{ringLayer:"outer"},async()=>{throw Error("layer interrupted");}),/layer interrupted/);
 assert.equal(game.combatVisuals.updateRings,ringUpdate);
+for(const gameplay of [false,true]) {
+  const options={previousContact:false,previousSparks:false,ringDissipation:"integrated",gameplay};
+  const current=await run(options), nested=await run({...options,nestedRing:true});
+  for(let i=0;i<current.length;i++) {
+    const a=current[i],b=nested[i];
+    assert.equal(b.nestedRing,true);
+    for(const key of ["initial","impact","paidAmmo","projectiles","rings","sparks","sparkLayers","lights","cameraMatrix","projection"])
+      assert.deepEqual(b[key],a[key],`nesting preserves ${key}`);
+    assert.deepEqual(b.ringLayers[0],a.ringLayers[0],"outer layer is untouched");
+    assert.deepEqual(b.ringLayers[1].color,a.ringLayers[1].color,"no brightness compensation");
+    const expected=[...a.ringLayers[1].matrix];
+    if(a.rings.length) for(const n of [0,1,2,4,5,6]) expected[n]=a.ringLayers[0].matrix[n]*.7;
+    for(let n=0;n<16;n++) assert.ok(Math.abs(b.ringLayers[1].matrix[n]-expected[n])<1e-7,"inner XY follows outer basis at .7, Z and translation remain exact");
+  }
+  assert.deepEqual(await run(options),current,"nesting trial restores subsequent production capture exactly");
+}
+await assert.rejects(withWallImpactReview(game,{nestedRing:true},async()=>{throw Error("nest interrupted");}),/nest interrupted/);
+assert.equal(game.combatVisuals.updateRings,ringUpdate);
 assert.deepEqual(originalState(), before); assert.equal(Math.random, globalRng); assert.equal(game.combatVisuals.random, rng);
 assert.equal(game.combatVisuals.impact, impactMethod); assert.equal(game.projectiles.length, 0); assert.equal(game.updateCamera, cameraUpdate);
 game.paused = false;
@@ -211,7 +229,7 @@ await freeze(async()=>assert.equal(shaderClock.value,17));
 const runnerSource = html.slice(html.indexOf("async function runWallImpactReview("), html.indexOf("function makeTrailShading("));
 const links = [], controls = [{ disabled: false }, { disabled: true }], review = { running: false };
 const elements = { "camera-captures": { replaceChildren: () => { links.length = 0; }, append: link => links.push(link) },
-  "wall-angle": { value: "normal" }, "wall-turn": { checked: false }, "wall-gameplay": { checked: true }, "wall-contact": { checked: false }, "wall-previous": { checked: false }, "wall-ring": {value:"off"}, "wall-sparks": {checked:false}, "wall-previous-sparks": {checked:false}, "wall-ring-layer": {value:"both"} };
+  "wall-angle": { value: "normal" }, "wall-turn": { checked: false }, "wall-gameplay": { checked: true }, "wall-contact": { checked: false }, "wall-previous": { checked: false }, "wall-ring": {value:"off"}, "wall-sparks": {checked:false}, "wall-previous-sparks": {checked:false}, "wall-ring-layer": {value:"both"}, "wall-nested-ring": {checked:false} };
 Object.assign(game, { renderPipeline: { direct: false, profile: "unit-test-no-renderer" }, settings: { graphics: "high" } });
 const document = { querySelectorAll: () => controls, createElement: () => ({ dataset: {} }), querySelector: () => ({ toDataURL: () => "unit-test-only" }) };
 const makeRunner = (stress = false, fail = false) => new Function("game", "withWallImpactReview", "select", "document", "cameraReview", "stress", "fail", `
@@ -236,6 +254,10 @@ elements["wall-ring-layer"].value = "outer";
 await makeRunner()();
 assert.equal(review.error,null); assert.equal(JSON.parse(links[0].dataset.review).ringLayer,"outer");
 elements["wall-ring-layer"].value = "both";
+elements["wall-nested-ring"].checked = true;
+await makeRunner()();
+assert.equal(review.error,null); assert.equal(JSON.parse(links[0].dataset.review).nestedRing,true);
+elements["wall-nested-ring"].checked = false;
 await makeRunner(true)(); assert.match(review.error, /Stop stress/); assert.equal(links.length, 0);
 await makeRunner(false, true)(); assert.match(review.error, /render interrupted/); assert.equal(review.running, false); assert.equal(review.shell, false);
 assert.deepEqual(controls.map(c => c.disabled), [false, true]); assert.deepEqual(originalState(), before);
