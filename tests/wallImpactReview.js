@@ -4,8 +4,9 @@ import { seededRandom } from "../src/gameData.js";
 
 // QA only: an actual paid Blaster shot against the existing east arena wall.
 // Never synthesize an impact or replace collision, damage, or effect generation.
-export async function withWallImpactReview(game, { oblique = false, turn = false, gameplay = false, surfaceContact = false, previousContact = false, ringDissipation = "off", sparkAspect = false, previousSparks = false } = {}, capture) {
+export async function withWallImpactReview(game, { oblique = false, turn = false, gameplay = false, surfaceContact = false, previousContact = false, ringDissipation = "off", sparkAspect = false, previousSparks = false, ringLayer = "both" } = {}, capture) {
   if (!["off", "current", "trial", "integrated"].includes(ringDissipation)) throw Error("Unknown ring dissipation review");
+  if (!["both", "outer", "inner"].includes(ringLayer)) throw Error("Unknown ring layer review");
   if (sparkAspect && previousSparks) throw Error("Choose either reference or previous sparks, not both");
   const visuals = game.combatVisuals, pools = [visuals.flashes, visuals.tracers, visuals.rings, visuals.sparks, visuals.bloodDecals];
   if (!game.paused || game.players[0]?.weapon.id !== "blaster" || game.projectiles.length || game.hazards.length || game.decoys.length || game.effects.length ||
@@ -37,16 +38,22 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
         }
       };
     }
-    if (ringDissipation === "trial") {
-      const color = new THREE.Color();
+    if (ringDissipation === "trial" || ringLayer !== "both") {
+      const color = new THREE.Color(), hidden = new THREE.Matrix4().makeScale(0, 0, 0);
       visuals.updateRings = function(dt) {
         saved.updateRings.call(this, dt);
         const ring = this.rings[ringIndex];
         if (!ring || ring.life <= 0) return;
-        const fade = 1 - THREE.MathUtils.smoothstep(1 - ring.life / ring.maxLife, .2, 1);
-        for (const layer of [this.ringOuter, this.ringInner]) {
-          layer.getColorAt(ringIndex, color); layer.setColorAt(ringIndex, color.multiplyScalar(fade));
-          layer.instanceColor.needsUpdate = true;
+        if (ringDissipation === "trial") {
+          const fade = 1 - THREE.MathUtils.smoothstep(1 - ring.life / ring.maxLife, .2, 1);
+          for (const layer of [this.ringOuter, this.ringInner]) {
+            layer.getColorAt(ringIndex, color); layer.setColorAt(ringIndex, color.multiplyScalar(fade));
+            layer.instanceColor.needsUpdate = true;
+          }
+        }
+        if (ringLayer !== "both") {
+          const masked = ringLayer === "outer" ? this.ringInner : this.ringOuter;
+          masked.setMatrixAt(ringIndex, hidden); masked.instanceMatrix.needsUpdate = true;
         }
       };
     }
@@ -127,7 +134,7 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
     const ringLayers = () => [visuals.ringOuter, visuals.ringInner].map(layer => ({
       matrix: Array.from(layer.instanceMatrix.array.slice(ringIndex * 16, ringIndex * 16 + 16)),
       color: Array.from(layer.instanceColor.array.slice(ringIndex * 3, ringIndex * 3 + 3)) }));
-    const state = frame => ({ frame, effectAge: (frame + 1) / 60, flightFrames, initial, impact, oblique, turn, gameplay, surfaceContact, previousContact, ringDissipation, sparkAspect, previousSparks,
+    const state = frame => ({ frame, effectAge: (frame + 1) / 60, flightFrames, initial, impact, oblique, turn, gameplay, surfaceContact, previousContact, ringDissipation, sparkAspect, previousSparks, ringLayer,
       poseClockMs: 1000, cameraKind: gameplay ? "production-collision-aware-camera-settled-240" : "fixed-close-oblique",
       cameraState: { firstPerson: game.cameraFirstPerson, fov: game.camera.fov, clearance: { ...game.cameraClearance } },
       paidAmmo: hero.ammo.blaster, projectiles: game.projectiles.length,

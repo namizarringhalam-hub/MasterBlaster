@@ -87,6 +87,7 @@
 <label>Ring dissipation<select id="wall-ring"><option value="off">Off</option><option value="current">Previous near expiry</option><option value="trial">Reference fade near expiry</option><option value="integrated">Integrated near expiry</option></select></label>
 <label><input type="checkbox" id="wall-sparks">Elongate Blaster impact sparks</label>
 <label><input type="checkbox" id="wall-previous-sparks">Use previous impact sparks</label>
+<label>Impact ring layers<select id="wall-ring-layer"><option value="both">Both</option><option value="outer">Outer only</option><option value="inner">Inner only</option></select></label>
 <button id="wall-impact">Capture real wall impact</button>
 <button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
 <label><input id="follow-camera" type="checkbox" checked>Follow player camera</label>
@@ -964,7 +965,8 @@ async function runWallImpactReview() {
     controls.forEach(([control]) => { control.disabled = true; });
     await withFrozenShaderTime(() => withWallImpactReview(game, { oblique: select("wall-angle").value === "oblique",
       turn: select("wall-turn").checked, gameplay: select("wall-gameplay").checked, surfaceContact: select("wall-contact").checked,
-      previousContact: select("wall-previous").checked, ringDissipation: select("wall-ring").value, sparkAspect: select("wall-sparks").checked, previousSparks: select("wall-previous-sparks").checked }, async state => {
+      previousContact: select("wall-previous").checked, ringDissipation: select("wall-ring").value, sparkAspect: select("wall-sparks").checked, previousSparks: select("wall-previous-sparks").checked,
+      ringLayer: select("wall-ring-layer").value }, async state => {
       const ready = renderedFrames + 4;
       await waitForReviewFrame(serial, () => renderedFrames >= ready);
       if (!game.paused || errorCount !== initialErrors || game.renderPipeline.direct) throw Error("Wall impact capture interrupted");

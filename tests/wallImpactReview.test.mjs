@@ -168,6 +168,27 @@ for (const oblique of [false,true]) for (const gameplay of [false,true]) {
 await assert.rejects(withWallImpactReview(game,{sparkAspect:true},async()=>{throw Error("spark interrupted");}),/spark interrupted/);
 await assert.rejects(withWallImpactReview(game,{sparkAspect:true,previousSparks:true},async()=>{throw Error("must not capture");}),/Choose either/);
 assert.equal(game.combatVisuals.updateSparks,sparkUpdate);
+for(const gameplay of [false,true]) {
+  const options={previousContact:false,previousSparks:false,ringDissipation:"integrated",gameplay};
+  const full=await run(options);
+  for(const ringLayer of ["outer","inner"]) {
+    const isolated=await run({...options,ringLayer});
+    for(let i=0;i<full.length;i++) {
+      const a=full[i],b=isolated[i];
+      assert.equal(b.ringLayer,ringLayer);
+      for(const key of ["initial","impact","paidAmmo","projectiles","rings","sparks","sparkLayers","lights","cameraMatrix","projection"])
+        assert.deepEqual(b[key],a[key],`ring isolation preserves ${key}`);
+      assert.deepEqual(b.ringLayers.map(l=>l.color),a.ringLayers.map(l=>l.color));
+      const shown=ringLayer==="outer"?0:1,hidden=1-shown;
+      assert.deepEqual(b.ringLayers[shown],a.ringLayers[shown],"selected layer keeps its exact production matrix and color");
+      assert.deepEqual(b.ringLayers[hidden].matrix,new THREE.Matrix4().makeScale(0,0,0).toArray(),"only the unselected slot matrix is hidden");
+    }
+  }
+  assert.deepEqual(await run(options),full,"both layers and all effects restore exactly after isolation");
+}
+await assert.rejects(withWallImpactReview(game,{ringLayer:"invalid"},async()=>{}),/Unknown ring layer/);
+await assert.rejects(withWallImpactReview(game,{ringLayer:"outer"},async()=>{throw Error("layer interrupted");}),/layer interrupted/);
+assert.equal(game.combatVisuals.updateRings,ringUpdate);
 assert.deepEqual(originalState(), before); assert.equal(Math.random, globalRng); assert.equal(game.combatVisuals.random, rng);
 assert.equal(game.combatVisuals.impact, impactMethod); assert.equal(game.projectiles.length, 0); assert.equal(game.updateCamera, cameraUpdate);
 game.paused = false;
@@ -190,7 +211,7 @@ await freeze(async()=>assert.equal(shaderClock.value,17));
 const runnerSource = html.slice(html.indexOf("async function runWallImpactReview("), html.indexOf("function makeTrailShading("));
 const links = [], controls = [{ disabled: false }, { disabled: true }], review = { running: false };
 const elements = { "camera-captures": { replaceChildren: () => { links.length = 0; }, append: link => links.push(link) },
-  "wall-angle": { value: "normal" }, "wall-turn": { checked: false }, "wall-gameplay": { checked: true }, "wall-contact": { checked: false }, "wall-previous": { checked: false }, "wall-ring": {value:"off"}, "wall-sparks": {checked:false}, "wall-previous-sparks": {checked:false} };
+  "wall-angle": { value: "normal" }, "wall-turn": { checked: false }, "wall-gameplay": { checked: true }, "wall-contact": { checked: false }, "wall-previous": { checked: false }, "wall-ring": {value:"off"}, "wall-sparks": {checked:false}, "wall-previous-sparks": {checked:false}, "wall-ring-layer": {value:"both"} };
 Object.assign(game, { renderPipeline: { direct: false, profile: "unit-test-no-renderer" }, settings: { graphics: "high" } });
 const document = { querySelectorAll: () => controls, createElement: () => ({ dataset: {} }), querySelector: () => ({ toDataURL: () => "unit-test-only" }) };
 const makeRunner = (stress = false, fail = false) => new Function("game", "withWallImpactReview", "select", "document", "cameraReview", "stress", "fail", `
@@ -211,6 +232,10 @@ elements["wall-sparks"].checked = true;
 await makeRunner()();
 assert.equal(review.error,null); assert.equal(JSON.parse(links[0].dataset.review).sparkAspect,true);
 elements["wall-sparks"].checked = false;
+elements["wall-ring-layer"].value = "outer";
+await makeRunner()();
+assert.equal(review.error,null); assert.equal(JSON.parse(links[0].dataset.review).ringLayer,"outer");
+elements["wall-ring-layer"].value = "both";
 await makeRunner(true)(); assert.match(review.error, /Stop stress/); assert.equal(links.length, 0);
 await makeRunner(false, true)(); assert.match(review.error, /render interrupted/); assert.equal(review.running, false); assert.equal(review.shell, false);
 assert.deepEqual(controls.map(c => c.disabled), [false, true]); assert.deepEqual(originalState(), before);
