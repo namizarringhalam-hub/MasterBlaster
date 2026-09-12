@@ -5,16 +5,23 @@ import { seededRandom } from "../src/gameData.js";
 
 // QA only: an actual paid Blaster shot against the existing east arena wall.
 // Never synthesize an impact or replace collision, damage, or effect generation.
-export async function withWallImpactReview(game, { oblique = false, turn = false, gameplay = false, surfaceContact = false, previousContact = false, ringDissipation = "off", sparkAspect = false, previousSparks = false, ringLayer = "both", nestedRing = false, outerProfile = "off" } = {}, capture) {
+export async function withWallImpactReview(game, { oblique = false, turn = false, gameplay = false, grazing = false, surfaceContact = false, previousContact = false, ringDissipation = "off", sparkAspect = false, previousSparks = false, ringLayer = "both", nestedRing = false, outerProfile = "off", impactBurst = "off" } = {}, capture) {
+  if (grazing && gameplay) throw Error("Choose grazing or gameplay camera, not both");
   if (!["off", "current", "trial", "integrated"].includes(ringDissipation)) throw Error("Unknown ring dissipation review");
   if (!["both", "outer", "inner"].includes(ringLayer)) throw Error("Unknown ring layer review");
   if (!["off", "control", "soft"].includes(outerProfile)) throw Error("Unknown outer profile review");
+  if (!["off", "control", "trial"].includes(impactBurst)) throw Error("Unknown impact burst review");
+  if (impactBurst !== "off" && (ringDissipation !== "integrated" || surfaceContact || previousContact || sparkAspect || previousSparks || ringLayer !== "both" || nestedRing || outerProfile !== "off"))
+    throw Error("Impact burst review requires published contact, fade, sparks and both ring layers");
   if (sparkAspect && previousSparks) throw Error("Choose either reference or previous sparks, not both");
   const visuals = game.combatVisuals, pools = [visuals.flashes, visuals.tracers, visuals.rings, visuals.sparks, visuals.bloodDecals];
   if (!game.paused || game.players[0]?.weapon.id !== "blaster" || game.projectiles.length || game.hazards.length || game.decoys.length || game.effects.length ||
       pools.some(pool => pool.some(slot => slot.life > 0)) || visuals.combatLights.some(light => light.userData.life > 0 || light.intensity > 1e-10))
     throw Error("Wall impact review requires a paused, transient-free Blaster scene");
   const original = game.players[0], visible = original.group.visible, updateCamera = game.updateCamera;
+  const ringSources = [visuals.ringOuter, visuals.ringInner], ringVisibility = ringSources.map(layer => layer.visible);
+  const burstLayers = [], burstMaterials = [];
+  let burstGeometry;
   const saved = { random: visuals.random, cursors: { ...visuals.cursors }, lightCursor: visuals.combatLightCursor,
     outerMaterial: visuals.ringOuter.material, impact: visuals.impact, updateRings: visuals.updateRings, updateSparks: visuals.updateSparks, effectTime: visuals.effectTime, music: game.combatMusicPulse, cameraPosition: game.camera.position.clone(),
     cameraQuaternion: game.camera.quaternion.clone(), fov: game.camera.fov,
@@ -26,6 +33,21 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
   let shot, impact = null, ringIndex = -1, profileMaterial;
   const sparkIndices = [];
   try {
+    if (impactBurst !== "off") {
+      if (impactBurst === "trial") burstGeometry = new THREE.PlaneGeometry(2, 2);
+      for (const [index, source] of ringSources.entries()) {
+        const proxy = source.clone(false); burstLayers.push(proxy);
+        proxy.name = `wall-impact-burst-${index}`;
+        if (burstGeometry) {
+          const material = new THREE.MeshBasicNodeMaterial().copy(source.material); burstMaterials.push(material);
+          const radius = uv().sub(.5).mul(2).length();
+          const profile = index === 0 ? radius.smoothstep(.5, .78).mul(radius.smoothstep(.78, 1).oneMinus()) : radius.smoothstep(0, 1).oneMinus().pow(2);
+          material.opacityNode = materialOpacity.mul(profile);
+          proxy.geometry = burstGeometry; proxy.material = material;
+        }
+        source.parent.add(proxy); source.visible = false;
+      }
+    }
     if (outerProfile !== "off") {
       // QA only: the transient-free guard and single real impact isolate this
       // layer to one ring. Product-wide per-instance styling is NOT implemented.
@@ -70,6 +92,31 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
         if (ringLayer !== "both") {
           const masked = ringLayer === "outer" ? this.ringInner : this.ringOuter;
           masked.setMatrixAt(ringIndex, hidden); masked.instanceMatrix.needsUpdate = true;
+        }
+      };
+    }
+    if (burstLayers.length) {
+      const matrix = new THREE.Matrix4(), color = new THREE.Color(), scale = new THREE.Vector3();
+      const orientation = new THREE.Quaternion(), forward = new THREE.Vector3(0, 0, 1);
+      visuals.updateRings = function(dt) {
+        saved.updateRings.call(this, dt);
+        const ring = this.rings[ringIndex];
+        let radius = 0;
+        if (ring?.life > 0 && impactBurst === "trial") {
+          this.ringOuter.getMatrixAt(ringIndex, matrix);
+          radius = Math.hypot(...matrix.elements.slice(0, 3)) * 1.052;
+          orientation.setFromUnitVectors(forward, ring.normal);
+        }
+        for (const [index, proxy] of burstLayers.entries()) {
+          const source = ringSources[index]; proxy.count = source.count;
+          if (ringIndex < 0) continue;
+          source.getMatrixAt(ringIndex, matrix); source.getColorAt(ringIndex, color);
+          if (ring?.life > 0 && impactBurst === "trial") {
+            const extent = index === 0 ? radius : Math.min(radius, ring.size * .28);
+            matrix.compose(ring.position, orientation, scale.set(extent, extent, 1));
+          }
+          proxy.setMatrixAt(ringIndex, matrix); proxy.setColorAt(ringIndex, color);
+          proxy.instanceMatrix.needsUpdate = true; proxy.instanceColor.needsUpdate = true;
         }
       };
     }
@@ -133,7 +180,7 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
     }
     if (!impact || game.projectiles.length || Math.abs(impact.position[0] - wallX) > .3)
       throw Error("Blaster did not reach the expected east wall within 90 steps");
-    const contact = new THREE.Vector3().fromArray(impact.position);
+    const contact = new THREE.Vector3().fromArray(grazing ? impact.emissionPosition : impact.position);
     if (gameplay) {
       game.cameraYaw = Math.atan2(direction.x, direction.z); game.cameraPitch = 0;
       game.cameraFirstPerson = false; game.cameraFirstPersonRequested = false;
@@ -141,21 +188,22 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
       // rig visibility. Freeze only after its 240 settling updates.
       for (let i = 0; i < 240; i++) Object.getPrototypeOf(game).updateCamera.call(game, 1 / 60);
     } else {
-      game.camera.position.copy(contact).add(new THREE.Vector3(-4.5, 2.3, 5.5)); game.camera.lookAt(contact);
+      game.camera.position.copy(contact).add(grazing ? new THREE.Vector3(-.65, 1.1, 5.5) : new THREE.Vector3(-4.5, 2.3, 5.5)); game.camera.lookAt(contact);
       game.camera.fov = 62; game.camera.updateProjectionMatrix();
     }
     game.camera.updateMatrixWorld(true);
     const slotState = slot => ({ life: slot.life, maxLife: slot.maxLife, position: slot.position?.toArray(),
       normal: slot.normal?.toArray(), velocity: slot.velocity?.toArray(), size: slot.size, family: slot.family });
-    const ringLayers = () => [visuals.ringOuter, visuals.ringInner].map(layer => ({
+    const ringLayers = (layers = ringSources) => layers.map(layer => ({
       matrix: Array.from(layer.instanceMatrix.array.slice(ringIndex * 16, ringIndex * 16 + 16)),
       color: Array.from(layer.instanceColor.array.slice(ringIndex * 3, ringIndex * 3 + 3)) }));
-    const state = frame => ({ frame, effectAge: (frame + 1) / 60, flightFrames, initial, impact, oblique, turn, gameplay, surfaceContact, previousContact, ringDissipation, sparkAspect, previousSparks, ringLayer, nestedRing, outerProfile,
-      poseClockMs: 1000, cameraKind: gameplay ? "production-collision-aware-camera-settled-240" : "fixed-close-oblique",
+    const state = frame => ({ frame, effectAge: (frame + 1) / 60, flightFrames, initial, impact, oblique, turn, gameplay, grazing, surfaceContact, previousContact, ringDissipation, sparkAspect, previousSparks, ringLayer, nestedRing, outerProfile, impactBurst,
+      poseClockMs: 1000, cameraKind: gameplay ? "production-collision-aware-camera-settled-240" : grazing ? "fixed-surface-grazing" : "fixed-close-oblique",
       cameraState: { firstPerson: game.cameraFirstPerson, fov: game.camera.fov, clearance: { ...game.cameraClearance } },
       paidAmmo: hero.ammo.blaster, projectiles: game.projectiles.length,
       rings: visuals.rings.filter(s => s.life > 0).map(slotState), sparks: visuals.sparks.filter(s => s.life > 0).map(slotState),
       ringLayers: ringLayers(),
+      displayRingLayers: ringLayers(burstLayers.length ? burstLayers : ringSources),
       sparkLayers: sparkIndices.filter(index => visuals.sparks[index].life > 0).map(index => ({ index,
         matrix: Array.from(visuals.sparkLayer.instanceMatrix.array.slice(index * 16, index * 16 + 16)),
         color: Array.from(visuals.sparkLayer.instanceColor.array.slice(index * 3, index * 3 + 3)) })),
@@ -170,6 +218,10 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
     if (pools.some(pool => pool.some(slot => slot.life > 0)) || visuals.combatLights.some(light => light.userData.life > 0 || light.intensity > 1e-10))
       throw Error("Wall impact did not expire within 90 frames");
   } finally {
+    for (const proxy of burstLayers) { proxy.removeFromParent(); proxy.dispose(); }
+    for (const material of burstMaterials) material.dispose();
+    burstGeometry?.dispose();
+    ringSources.forEach((layer, index) => { layer.visible = ringVisibility[index]; });
     visuals.ringOuter.material = saved.outerMaterial; profileMaterial?.dispose();
     visuals.impact = saved.impact; visuals.updateRings = saved.updateRings; visuals.updateSparks = saved.updateSparks; visuals.random = saved.random;
     while (game.projectiles.some(projectile => projectile.owner === hero)) game.removeProjectile(game.projectiles.findIndex(projectile => projectile.owner === hero));

@@ -95,6 +95,18 @@ const gameplayFrame = (await run({ gameplay: true }))[0];
 assert.equal(gameplayFrame.cameraKind, "production-collision-aware-camera-settled-240");
 assert.equal(gameplayFrame.cameraState.firstPerson, false);
 assert.ok(gameplayFrame.cameraState.clearance.actual > 8 && gameplayFrame.cameraState.clearance.actual < 9);
+const grazingOptions={previousContact:false,previousSparks:false,ringDissipation:"integrated"};
+const normalCamera=await run(grazingOptions),grazingCamera=await run({...grazingOptions,grazing:true});
+for(let i=0;i<grazingCamera.length;i++) {
+  const a=normalCamera[i],b=grazingCamera[i];assert.equal(b.cameraKind,"fixed-surface-grazing");
+  for(const key of ["initial","impact","rings","ringLayers","sparks","sparkLayers","lights","paidAmmo","projection"])assert.deepEqual(b[key],a[key]);
+  const sight=new THREE.Vector3().fromArray(b.cameraMatrix,12).sub(new THREE.Vector3().fromArray(b.impact.emissionPosition));
+  assert.ok(sight.x<0,"camera stays inside the wall");
+  const cosine=sight.normalize().dot(new THREE.Vector3(-1,0,0));
+  assert.ok(cosine>.1&&cosine<.13,"approximately 83-degree grazing angle from the surface normal");
+}
+await assert.rejects(withWallImpactReview(game,{grazing:true,gameplay:true},async()=>{}),/Choose grazing or gameplay/);
+await assert.rejects(withWallImpactReview(game,{grazing:true},async()=>{throw Error("grazing interrupted");}),/grazing interrupted/);
 for (const oblique of [false, true]) {
   const current = await run({ oblique }), candidate = await run({ oblique, surfaceContact: true }), turned = await run({ oblique, surfaceContact: true, turn: true });
   assert.deepEqual(candidate[0].initial, current[0].initial); assert.deepEqual(candidate[0].impact.position, current[0].impact.position);
@@ -245,6 +257,70 @@ await assert.rejects(withWallImpactReview(game,{outerProfile:"soft"},async()=>{
 }),/profile interrupted/);
 assert.equal(interruptedDisposals,1); assert.equal(originalDisposals,0);
 assert.equal(game.combatVisuals.ringOuter.material,outerMaterial);
+const originals=[game.combatVisuals.ringOuter,game.combatVisuals.ringInner];
+for(const gameplay of [false,true]) {
+  const options={previousContact:false,previousSparks:false,ringDissipation:"integrated",gameplay};
+  const current=await run(options);
+  for(const impactBurst of ["control","trial"]) {
+    const owned=new Map(),borrowed=new Map();
+    const compared=await run({...options,impactBurst},state=>{
+      const proxies=game.combatVisuals.group.children.filter(x=>x.name.startsWith("wall-impact-burst-"));
+      assert.equal(proxies.length,2); assert.ok(originals.every(x=>!x.visible));
+      for(let n=0;n<2;n++) {
+        const p=proxies[n],o=originals[n];
+        assert.equal(p.parent,o.parent,"proxies retain source hierarchy");
+        p.updateWorldMatrix(true,false);o.updateWorldMatrix(true,false);
+        assert.deepEqual(p.matrixWorld.toArray(),o.matrixWorld.toArray());
+        assert.notEqual(p.instanceMatrix,o.instanceMatrix); assert.notEqual(p.instanceColor,o.instanceColor);
+        assert.equal(p.renderOrder,o.renderOrder); assert.equal(p.count,o.count);
+        assert.deepEqual(p.material.color,o.material.color); assert.equal(p.material.opacity,o.material.opacity);
+        for(const resource of [p,p.geometry,p.material]) {
+          const registry=resource===o.geometry||resource===o.material?borrowed:owned;
+          if(!registry.has(resource)){registry.set(resource,0); resource.addEventListener("dispose",()=>registry.set(resource,registry.get(resource)+1));}
+        }
+        if(impactBurst==="control") {assert.equal(p.geometry,o.geometry);assert.equal(p.material,o.material);}
+        else { assert.equal(p.geometry.type,"PlaneGeometry");assert.equal(p.material.isMeshBasicNodeMaterial,true);assert.ok(p.material.opacityNode); }
+      }
+      assert.equal(state.impactBurst,impactBurst);
+    });
+    assert.ok([...owned.values()].every(n=>n===1),"only owned proxy resources dispose exactly once");
+    assert.ok([...borrowed.values()].every(n=>n===0),"borrowed originals never dispose");
+    assert.ok(originals.every(x=>x.visible));
+    for(let i=0;i<current.length;i++) {
+      const a=current[i],b=compared[i];
+      const aa={...a},bb={...b};delete aa.impactBurst;delete bb.impactBurst;delete aa.displayRingLayers;delete bb.displayRingLayers;
+      assert.deepEqual(bb,aa,"new design preserves all production physical/effect state");
+      if(impactBurst==="control") assert.deepEqual(b.displayRingLayers,a.displayRingLayers);
+      else if(a.rings.length) for(let n=0;n<2;n++) {
+        const m=b.displayRingLayers[n].matrix,x=new THREE.Vector3().fromArray(m),y=new THREE.Vector3().fromArray(m,4);
+        const r=Math.hypot(...a.ringLayers[0].matrix.slice(0,3))*1.052,expected=n===0?r:Math.min(r,a.rings[0].size*.28);
+        assert.ok(Math.abs(x.length()-expected)<1e-6&&Math.abs(y.length()-expected)<1e-6,"circular front bounded by original long-axis envelope; core capped");
+        assert.ok(x.clone().cross(y).normalize().dot(new THREE.Vector3().fromArray(a.rings[0].normal))>1-1e-7,"quad stays on impact surface");
+        assert.deepEqual(m.slice(12,15),a.ringLayers[0].matrix.slice(12,15));
+        assert.deepEqual(b.displayRingLayers[n].color,a.ringLayers[n].color);
+      }
+    }
+  }
+  assert.deepEqual(await run(options),current);
+}
+await assert.rejects(withWallImpactReview(game,{impactBurst:"invalid"},async()=>{}),/Unknown impact burst/);
+await assert.rejects(withWallImpactReview(game,{impactBurst:"trial",ringDissipation:"integrated",nestedRing:true},async()=>{}),/requires published/);
+const interruptedBurst=new Map();
+await assert.rejects(withWallImpactReview(game,{impactBurst:"trial",ringDissipation:"integrated"},async()=>{
+  for(const p of game.combatVisuals.group.children.filter(x=>x.name.startsWith("wall-impact-burst-"))) for(const r of [p,p.geometry,p.material])
+    if(!interruptedBurst.has(r)){interruptedBurst.set(r,0);r.addEventListener("dispose",()=>interruptedBurst.set(r,interruptedBurst.get(r)+1));}
+  throw Error("burst interrupted");
+}),/burst interrupted/);
+assert.ok([...interruptedBurst.values()].every(n=>n===1));assert.ok(originals.every(x=>x.visible));
+game.combatVisuals.group.position.set(1,2,3);game.combatVisuals.group.rotation.y=.3;
+await run({previousContact:false,previousSparks:false,ringDissipation:"integrated",impactBurst:"control"},()=>{
+  for(const p of game.combatVisuals.group.children.filter(x=>x.name.startsWith("wall-impact-burst-"))){
+    p.updateWorldMatrix(true,false);originals[0].updateWorldMatrix(true,false);
+    assert.deepEqual(p.matrixWorld.toArray(),originals[0].matrixWorld.toArray(),"nonidentity parent transform is retained");
+  }
+});
+assert.equal(game.combatVisuals.group.children.filter(x=>x.name.startsWith("wall-impact-burst-")).length,0);
+game.combatVisuals.group.position.set(0,0,0);game.combatVisuals.group.rotation.y=0;game.combatVisuals.group.updateMatrixWorld(true);
 assert.equal(game.combatVisuals.updateRings,ringUpdate);
 assert.deepEqual(originalState(), before); assert.equal(Math.random, globalRng); assert.equal(game.combatVisuals.random, rng);
 assert.equal(game.combatVisuals.impact, impactMethod); assert.equal(game.projectiles.length, 0); assert.equal(game.updateCamera, cameraUpdate);
@@ -271,6 +347,8 @@ const elements = { "camera-captures": { replaceChildren: () => { links.length = 
   "wall-angle": { value: "normal" }, "wall-turn": { checked: false }, "wall-gameplay": { checked: true }, "wall-contact": { checked: false }, "wall-previous": { checked: false }, "wall-ring": {value:"off"}, "wall-sparks": {checked:false}, "wall-previous-sparks": {checked:false}, "wall-ring-layer": {value:"both"}, "wall-nested-ring": {checked:false}, "wall-outer-profile": {value:"off"} };
 Object.assign(game, { renderPipeline: { direct: false, profile: "unit-test-no-renderer" }, settings: { graphics: "high" } });
 const document = { querySelectorAll: () => controls, createElement: () => ({ dataset: {} }), querySelector: () => ({ toDataURL: () => "unit-test-only" }) };
+elements["wall-burst"] = {value:"off"};
+elements["wall-grazing"] = {checked:false};
 const makeRunner = (stress = false, fail = false) => new Function("game", "withWallImpactReview", "select", "document", "cameraReview", "stress", "fail", `
   const resetReview={},cacheReview={},decoyReview={},sceneSerial=5,resetPhase='ready',errorCount=0,innerWidth=747,innerHeight=698,devicePixelRatio=1;
   let renderedFrames=100; const shaderTime={value:17,update(){}}; ${freezeSource}
@@ -301,6 +379,14 @@ elements["wall-outer-profile"].value = "soft";
 await makeRunner()();
 assert.equal(review.error,null); assert.equal(JSON.parse(links[0].dataset.review).outerProfile,"soft");
 elements["wall-outer-profile"].value = "off";
+elements["wall-burst"].value = "trial"; elements["wall-ring"].value = "integrated";
+await makeRunner()();
+assert.equal(review.error,null); assert.equal(JSON.parse(links[0].dataset.review).impactBurst,"trial");
+assert.notDeepEqual(JSON.parse(links[0].dataset.review).displayRingLayers,JSON.parse(links[0].dataset.review).ringLayers);
+elements["wall-burst"].value = "off";
+elements["wall-gameplay"].checked=false;elements["wall-grazing"].checked=true;
+await makeRunner()();assert.equal(review.error,null);assert.equal(JSON.parse(links[0].dataset.review).cameraKind,"fixed-surface-grazing");
+elements["wall-grazing"].checked=false;elements["wall-gameplay"].checked=true;
 await makeRunner(true)(); assert.match(review.error, /Stop stress/); assert.equal(links.length, 0);
 await makeRunner(false, true)(); assert.match(review.error, /render interrupted/); assert.equal(review.running, false); assert.equal(review.shell, false);
 assert.deepEqual(controls.map(c => c.disabled), [false, true]); assert.deepEqual(originalState(), before);
