@@ -6,8 +6,9 @@ import { Fighter } from "../src/player.js";
 // The structure stays destroyed; reset the fixture before another run. This is
 // not a weapon/damage test. No synthetic dust, suppressed landing or live match.
 export async function withStructuralDustReview(game, { gameplay = false, diagnostic = "hide" } = {}, capture) {
-  if(!["hide","bounds","camera","profile","compile"].includes(diagnostic))throw Error("Unknown dust diagnostic");
-  const materialComparison=diagnostic==="profile"||diagnostic==="compile";
+  if(!["hide","bounds","camera","profile","compile","tint"].includes(diagnostic))throw Error("Unknown dust diagnostic");
+  const materialComparison=["profile","compile","tint"].includes(diagnostic);
+  const materialModes=diagnostic==="compile"?["fresh-basic","fresh-node"]:diagnostic==="tint"?["soft-grey","authored-tint"]:["constant-one","soft-edge"];
   const world=game.world,v=game.combatVisuals,original=game.players[0];
   const pools=[v.flashes,v.tracers,v.rings,v.sparks,v.bloodDecals];
   if(game.mode!=="training"||game.isOnlineMatch()||!game.paused||!original||world.collapseSerial||world.structuralChanges.length||
@@ -76,14 +77,14 @@ export async function withStructuralDustReview(game, { gameplay = false, diagnos
         for(let i=0;i<profileMaterials.length;i++){
           const colors=world.dustMesh.instanceColor;
           try{
-            if(diagnostic==="profile"){
+            if(diagnostic==="profile"||(diagnostic==="tint"&&i===0)){
               if(!game.paused||!colors)throw Error("Dust profile requires paused simulation and its saved color stream");
               // QA control: the published graph was cached before first-spawn colors existed.
               // Preserve their bytes, but render each trial with that same no-color graph.
               suspendedDustColors=colors;world.dustMesh.instanceColor=null;
             }
             world.dustMesh.material=profileMaterials[i];
-            await capture(state(age,(diagnostic==="compile"?["fresh-basic","fresh-node"]:["constant-one","soft-edge"])[i]));
+            await capture(state(age,materialModes[i]));
           }finally{
             world.dustMesh.material=originalDustMaterial;world.dustMesh.instanceColor=colors;suspendedDustColors=null;
           }
@@ -110,12 +111,14 @@ export async function withStructuralDustReview(game, { gameplay = false, diagnos
       // Equal classic material properties otherwise reuse the original cached node graph.
       fresh.customProgramCacheKey=()=>"qa-structural-dust-fresh-classic";
       profileMaterials.push(new THREE.MeshBasicNodeMaterial().copy(originalDustMaterial));
-    }else if(diagnostic==="profile"){
+    }else if(diagnostic==="profile"||diagnostic==="tint"){
       const control=new THREE.MeshBasicNodeMaterial().copy(originalDustMaterial);profileMaterials.push(control);
-      control.opacityNode=materialOpacity.mul(1);
-      const soft=control.clone();profileMaterials.push(soft);
       // These accessors normalize interpolated geometry normals and perspective view direction.
-      soft.opacityNode=materialOpacity.mul(normalViewGeometry.dot(positionViewDirection).clamp(0,1).pow(2));
+      const edge=normalViewGeometry.dot(positionViewDirection).clamp(0,1).pow(2);
+      control.opacityNode=materialOpacity.mul(diagnostic==="tint"?edge:1);
+      const soft=control.clone();profileMaterials.push(soft);
+      soft.opacityNode=materialOpacity.mul(edge);
+      if(diagnostic==="tint")soft.color.set(0xffffff);
     }
     world.spawnStructuralDust=function(...args){
       const start=this.dustCursor,result=spawn.apply(this,args),indices=[];

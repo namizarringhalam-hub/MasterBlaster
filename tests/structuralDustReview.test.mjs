@@ -90,9 +90,9 @@ for(const gameplay of [false,true]){
   }
   f.dispose();
 }
-for(const failMode of ["constant-one","soft-edge"]){
+for(const failMode of ["constant-one","soft-edge","soft-grey","authored-tint"]){
   const f=fixture(),mesh=f.game.world.dustMesh,material=mesh.material,owned=new Map();let colors,version,bytes,count,bound;
-  await assert.rejects(withStructuralDustReview(f.game,{diagnostic:"profile"},async s=>{
+  await assert.rejects(withStructuralDustReview(f.game,{diagnostic:["soft-grey","authored-tint"].includes(failMode)?"tint":"profile"},async s=>{
     if(s.mode==="current"){colors=mesh.instanceColor;version=colors.version;bytes=Array.from(colors.array);count=mesh.count;bound=mesh.boundingSphere.clone();}
     if(mesh.material!==material&&!owned.has(mesh.material)){const m=mesh.material;owned.set(m,0);m.addEventListener("dispose",()=>owned.set(m,owned.get(m)+1));}
     if(s.mode===failMode)throw Error("profile interrupted");
@@ -117,6 +117,19 @@ for(let i=0;i<compileSamples.length;i+=4){
   assert.deepEqual(clean(a),clean(b));assert.deepEqual(clean(a),clean(c));assert.deepEqual(d,{...a,mode:"restored"});
 }
 compileFixture.dispose();
+const tintFixture=fixture(),tintMesh=tintFixture.game.world.dustMesh,tintMaterial=tintMesh.material,tintSamples=[];
+await withStructuralDustReview(tintFixture.game,{diagnostic:"tint",gameplay:true},async s=>{
+  tintSamples.push(structuredClone(s));
+  if(s.mode==="soft-grey"){assert.equal(tintMesh.instanceColor,null);assert.ok(tintMesh.material.color.equals(tintMaterial.color));}
+  if(s.mode==="authored-tint"){assert.ok(tintMesh.instanceColor);assert.equal(tintMesh.material.color.getHex(),0xffffff);}
+});
+assert.equal(tintSamples.length,28);
+for(let i=0;i<28;i+=4){
+  const [a,b,c,d]=tintSamples.slice(i,i+4),clean=s=>({...s,mode:"ignored",dustRenderInstanceColors:"intentional-color-binding",dustMaterial:{...s.dustMaterial,type:"ignored",color:"intentional-rgb-comparison"}});
+  assert.deepEqual([a.mode,b.mode,c.mode,d.mode],["current","soft-grey","authored-tint","restored"]);
+  assert.deepEqual(clean(a),clean(b));assert.deepEqual(clean(a),clean(c));assert.deepEqual(d,{...a,mode:"restored"});
+}
+assert.equal(tintMesh.material,tintMaterial);assert.ok(tintMesh.instanceColor);tintFixture.dispose();
 for(const diagnostic of ["bounds","camera"]){
   const f=fixture(),camera=f.game.camera.matrixWorld.toArray();let bound,copy;
   await assert.rejects(withStructuralDustReview(f.game,{diagnostic},async s=>{
