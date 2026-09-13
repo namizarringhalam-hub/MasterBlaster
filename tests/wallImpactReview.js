@@ -5,17 +5,20 @@ import { seededRandom } from "../src/gameData.js";
 
 // QA only: an actual paid Blaster shot against the existing east arena wall.
 // Never synthesize an impact or replace collision, damage, or effect generation.
-export async function withWallImpactReview(game, { oblique = false, turn = false, gameplay = false, grazing = false, surfaceContact = false, previousContact = false, ringDissipation = "off", sparkAspect = false, previousSparks = false, ringLayer = "both", nestedRing = false, outerProfile = "off", impactBurst = "off", hideImpactSparks = false } = {}, capture) {
+export async function withWallImpactReview(game, { oblique = false, turn = false, gameplay = false, grazing = false, surfaceContact = false, previousContact = false, ringDissipation = "off", sparkAspect = false, previousSparks = false, ringLayer = "both", nestedRing = false, outerProfile = "off", impactBurst = "off", hideImpactSparks = false, sparkBirth = "off" } = {}, capture) {
   if (grazing && gameplay) throw Error("Choose grazing or gameplay camera, not both");
   if (!["off", "current", "trial", "integrated"].includes(ringDissipation)) throw Error("Unknown ring dissipation review");
   if (!["both", "outer", "inner"].includes(ringLayer)) throw Error("Unknown ring layer review");
   if (!["off", "control", "soft"].includes(outerProfile)) throw Error("Unknown outer profile review");
   if (!["off", "previous", "control", "trial"].includes(impactBurst)) throw Error("Unknown impact burst review");
+  if (!["off", "current", "trial"].includes(sparkBirth)) throw Error("Unknown spark birth review");
   if (["control", "trial"].includes(impactBurst) && (ringDissipation !== "integrated" || surfaceContact || previousContact || sparkAspect || previousSparks || ringLayer !== "both" || nestedRing || outerProfile !== "off"))
     throw Error("Impact burst review requires published contact, fade, sparks and both ring layers");
   if (sparkAspect && previousSparks) throw Error("Choose either reference or previous sparks, not both");
   if (hideImpactSparks && (impactBurst !== "off" || ringDissipation !== "integrated" || surfaceContact || previousContact || sparkAspect || previousSparks || ringLayer !== "both" || nestedRing || outerProfile !== "off"))
     throw Error("Spark isolation requires current product contact, pulse, fade and spark shape");
+  if (sparkBirth !== "off" && (hideImpactSparks || impactBurst !== "off" || ringDissipation !== "integrated" || surfaceContact || previousContact || sparkAspect || previousSparks || ringLayer !== "both" || nestedRing || outerProfile !== "off"))
+    throw Error("Spark birth review requires current product contact, pulse, fade and spark shape");
   const visuals = game.combatVisuals, pools = [visuals.flashes, visuals.tracers, visuals.rings, visuals.sparks, visuals.bloodDecals];
   if (!game.paused || game.players[0]?.weapon.id !== "blaster" || game.projectiles.length || game.hazards.length || game.decoys.length || game.effects.length ||
       pools.some(pool => pool.some(slot => slot.life > 0)) || visuals.combatLights.some(light => light.userData.life > 0 || light.intensity > 1e-10))
@@ -77,6 +80,23 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
         saved.updateSparks.call(this, dt);
         for (const index of sparkIndices) this.sparkLayer.setMatrixAt(index, hidden);
         if (sparkIndices.length) this.sparkLayer.instanceMatrix.needsUpdate = true;
+      };
+    }
+    if (sparkBirth === "trial") {
+      const matrix = new THREE.Matrix4(), scale = new THREE.Vector3();
+      visuals.updateSparks = function(dt) {
+        saved.updateSparks.call(this, dt);
+        for (const index of sparkIndices) {
+          const spark = this.sparks[index];
+          if (spark.life <= 0) continue;
+          const factor = THREE.MathUtils.smoothstep(spark.maxLife - spark.life, 0, .10);
+          if (factor === 1) continue;
+          // QA only: fresh velocity-aligned basis, not cumulative growth.
+          // Translation and physical size stay untouched; onset volume changes.
+          this.sparkLayer.getMatrixAt(index, matrix);
+          this.sparkLayer.setMatrixAt(index, matrix.scale(scale.setScalar(factor)));
+          this.sparkLayer.instanceMatrix.needsUpdate = true;
+        }
       };
     }
     if (ringDissipation === "trial" || ringLayer !== "both" || nestedRing) {
@@ -212,7 +232,7 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
     const ringLayers = (layers = ringSources) => layers.map(layer => ({
       matrix: Array.from(layer.instanceMatrix.array.slice(ringIndex * 16, ringIndex * 16 + 16)),
       color: Array.from(layer.instanceColor.array.slice(ringIndex * 3, ringIndex * 3 + 3)) }));
-    const state = frame => ({ frame, effectAge: (frame + 1) / 60, flightFrames, initial, impact, oblique, turn, gameplay, grazing, surfaceContact, previousContact, ringDissipation, sparkAspect, previousSparks, ringLayer, nestedRing, outerProfile, impactBurst, hideImpactSparks,
+    const state = frame => ({ frame, effectAge: (frame + 1) / 60, flightFrames, initial, impact, oblique, turn, gameplay, grazing, surfaceContact, previousContact, ringDissipation, sparkAspect, previousSparks, ringLayer, nestedRing, outerProfile, impactBurst, hideImpactSparks, sparkBirth,
       poseClockMs: 1000, cameraKind: gameplay ? "production-collision-aware-camera-settled-240" : grazing ? "fixed-surface-grazing" : "fixed-close-oblique",
       cameraState: { firstPerson: game.cameraFirstPerson, fov: game.camera.fov, clearance: { ...game.cameraClearance } },
       paidAmmo: hero.ammo.blaster, projectiles: game.projectiles.length,
@@ -227,7 +247,7 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
       cameraMatrix: game.camera.matrixWorld.toArray(), projection: game.camera.projectionMatrix.toArray() });
     for (let frame = 0; frame <= 90; frame++) {
       if (frame) { game.updateEffects(1 / 60); visuals.update(1 / 60); }
-      if ((ringDissipation === "off" ? [0, 1, 2, 4, 8, 16, 90] : [0, 1, 2, 4, 8, 16, 20, 22, 23, 24, 26, 90]).includes(frame)) await capture(state(frame));
+      if ((sparkBirth !== "off" ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 22, 23, 24, 26, 90] : ringDissipation === "off" ? [0, 1, 2, 4, 8, 16, 90] : [0, 1, 2, 4, 8, 16, 20, 22, 23, 24, 26, 90]).includes(frame)) await capture(state(frame));
     }
     // Production lights damp asymptotically; preserve their real decay instead
     // of demanding an exact floating-point zero or snapping them for the test.

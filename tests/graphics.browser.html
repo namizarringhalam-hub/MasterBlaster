@@ -94,6 +94,7 @@
 <label>Outer ring profile<select id="wall-outer-profile"><option value="off">Published material</option><option value="control">Constant opacity control</option><option value="soft">Tube emission profile</option></select></label>
 <label>Impact burst design<select id="wall-burst"><option value="off">Current product</option><option value="previous">Previous torus design</option><option value="control">Same-geometry proxy control</option><option value="trial">Reviewed surface-burst reference</option></select></label>
 <label><input type="checkbox" id="wall-hide-sparks">Hide impact sparks (diagnostic)</label>
+<label>Spark birth size<select id="wall-spark-birth"><option value="off">Off</option><option value="current">Current (dense onset)</option><option value="trial">100ms growth trial</option></select></label>
 <button id="wall-impact">Capture real wall impact</button>
 <button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
 <label><input id="follow-camera" type="checkbox" checked>Follow player camera</label>
@@ -1008,7 +1009,7 @@ async function runWallImpactReview() {
     await withFrozenShaderTime(() => withWallImpactReview(game, { oblique: select("wall-angle").value === "oblique",
       turn: select("wall-turn").checked, gameplay: select("wall-gameplay").checked, grazing: select("wall-grazing").checked, surfaceContact: select("wall-contact").checked,
       previousContact: select("wall-previous").checked, ringDissipation: select("wall-ring").value, sparkAspect: select("wall-sparks").checked, previousSparks: select("wall-previous-sparks").checked,
-      ringLayer: select("wall-ring-layer").value, nestedRing: select("wall-nested-ring").checked, outerProfile: select("wall-outer-profile").value, impactBurst: select("wall-burst").value, hideImpactSparks: select("wall-hide-sparks").checked }, async state => {
+      ringLayer: select("wall-ring-layer").value, nestedRing: select("wall-nested-ring").checked, outerProfile: select("wall-outer-profile").value, impactBurst: select("wall-burst").value, hideImpactSparks: select("wall-hide-sparks").checked, sparkBirth: select("wall-spark-birth").value }, async state => {
       const ready = renderedFrames + 4;
       await waitForReviewFrame(serial, () => renderedFrames >= ready);
       if (!game.paused || errorCount !== initialErrors || game.renderPipeline.direct) throw Error("Wall impact capture interrupted");

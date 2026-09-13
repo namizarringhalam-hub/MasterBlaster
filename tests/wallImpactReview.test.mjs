@@ -66,7 +66,7 @@ const run = async (options, inspect = () => {}) => {
     }
     frames.push(structuredClone(state));
   });
-  assert.deepEqual(frames.map(s => s.frame), options?.ringDissipation && options.ringDissipation !== "off" ? [0,1,2,4,8,16,20,22,23,24,26,90] : [0,1,2,4,8,16,90]);
+  assert.deepEqual(frames.map(s => s.frame), options?.sparkBirth && options.sparkBirth !== "off" ? [0,1,2,3,4,5,6,7,8,12,16,20,22,23,24,26,90] : options?.ringDissipation && options.ringDissipation !== "off" ? [0,1,2,4,8,16,20,22,23,24,26,90] : [0,1,2,4,8,16,90]);
   assert.ok(collisionQueries > beforeQueries && terrainCalls === beforeTerrain + 1, "every run reaches real collision and exactly one terrain call");
   assert.equal(impactAudio.length, beforeAudio + 1, "every real collision emits exactly one new impact audio call");
   assert.deepEqual(originalState(), before); assert.equal(game.players[0], original); assert.equal(game.updateCamera, cameraUpdate);
@@ -331,6 +331,30 @@ for(const grazing of [false,true]) {
 await assert.rejects(withWallImpactReview(game,{hideImpactSparks:true,ringDissipation:"integrated",impactBurst:"previous"},async()=>{}),/requires current product/);
 await assert.rejects(withWallImpactReview(game,{hideImpactSparks:true,ringDissipation:"integrated"},async()=>{throw Error("mask interrupted");}),/mask interrupted/);
 assert.equal(game.combatVisuals.updateSparks,sparkUpdate);
+for(const camera of [{},{grazing:true},{gameplay:true}]) {
+  const options={previousContact:false,previousSparks:false,ringDissipation:"integrated",impactBurst:"off",sparkBirth:"current",...camera};
+  const current=await run(options),trial=await run({...options,sparkBirth:"trial"});
+  for(let i=0;i<current.length;i++) {
+    const a=current[i],b=trial[i];assert.equal(b.sparkBirth,"trial");assert.equal(b.surfaceBurst,true);
+    const aa={...a},bb={...b};delete aa.sparkBirth;delete bb.sparkBirth;delete aa.sparkLayers;delete bb.sparkLayers;
+    assert.deepEqual(bb,aa,"birth trial preserves all physical state, pulse, count, light and camera");
+    for(let j=0;j<a.sparkLayers.length;j++) {
+      const source=a.sparkLayers[j],target=b.sparkLayers[j],slot=a.sparks[j];
+      assert.equal(target.index,source.index);assert.deepEqual(target.color,source.color);
+      const factor=THREE.MathUtils.smoothstep(slot.maxLife-slot.life,0,.10);
+      const expected=new THREE.Matrix4().fromArray(source.matrix).scale(new THREE.Vector3(factor,factor,factor)).toArray();
+      target.matrix.forEach((n,k)=>assert.ok(Math.abs(n-expected[k])<1e-7,"only XYZ basis scales uniformly from freshly built matrix"));
+      assert.deepEqual(target.matrix.slice(12),source.matrix.slice(12),"translation and homogeneous coordinate remain exact");
+      if(a.effectAge>=.10)assert.deepEqual(target.matrix,source.matrix,"100ms onward is exact published geometry");
+    }
+  }
+  assert.deepEqual(await run(options),current,"later current captures restore exactly");
+}
+await assert.rejects(withWallImpactReview(game,{sparkBirth:"invalid"},async()=>{}),/Unknown spark birth/);
+for(const conflict of [{hideImpactSparks:true},{impactBurst:"previous"},{previousSparks:true}])
+  await assert.rejects(withWallImpactReview(game,{sparkBirth:"trial",ringDissipation:"integrated",...conflict},async()=>{}),/requires current product/);
+await assert.rejects(withWallImpactReview(game,{sparkBirth:"trial",ringDissipation:"integrated"},async()=>{throw Error("birth interrupted");}),/birth interrupted/);
+assert.equal(game.combatVisuals.updateSparks,sparkUpdate);
 await assert.rejects(withWallImpactReview(game,{impactBurst:"invalid"},async()=>{}),/Unknown impact burst/);
 for(const oblique of [false,true])for(const gameplay of [false,true]) {
   const options={previousContact:false,previousSparks:false,ringDissipation:"integrated",oblique,gameplay};
@@ -396,6 +420,7 @@ const document = { querySelectorAll: () => controls, createElement: () => ({ dat
 elements["wall-burst"] = {value:"off"};
 elements["wall-grazing"] = {checked:false};
 elements["wall-hide-sparks"] = {checked:false};
+elements["wall-spark-birth"] = {value:"off"};
 const makeRunner = (stress = false, fail = false, withoutSurfaceResources = false) => new Function("game", "withWallImpactReview", "select", "document", "cameraReview", "stress", "fail", "withoutSurfaceResources", `
   const resetReview={},cacheReview={},decoyReview={},sceneSerial=5,resetPhase='ready',errorCount=0,innerWidth=747,innerHeight=698,devicePixelRatio=1;
   let renderedFrames=100; const shaderTime={value:17,update(){}}; ${freezeSource}
@@ -437,6 +462,10 @@ await makeRunner()();assert.equal(review.error,null);
 const maskedStamp=JSON.parse(links[0].dataset.review);assert.equal(maskedStamp.hideImpactSparks,true);assert.equal(maskedStamp.surfaceBurst,true);
 assert.ok(maskedStamp.sparkLayers.every(s=>s.matrix[0]===0&&s.matrix[5]===0&&s.matrix[10]===0));
 elements["wall-hide-sparks"].checked=false;
+elements["wall-spark-birth"].value="trial";
+await makeRunner()();assert.equal(review.error,null);assert.equal(links.length,17);
+assert.equal(JSON.parse(links[0].dataset.review).sparkBirth,"trial");
+elements["wall-spark-birth"].value="off";
 elements["wall-gameplay"].checked=false;elements["wall-grazing"].checked=true;
 await makeRunner()();assert.equal(review.error,null);assert.equal(JSON.parse(links[0].dataset.review).cameraKind,"fixed-surface-grazing");
 elements["wall-grazing"].checked=false;elements["wall-gameplay"].checked=true;
