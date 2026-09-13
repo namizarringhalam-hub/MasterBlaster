@@ -5,7 +5,7 @@ import { Fighter } from "../src/player.js";
 // The structure stays destroyed; reset the fixture before another run. This is
 // not a weapon/damage test. No synthetic dust, suppressed landing or live match.
 export async function withStructuralDustReview(game, { gameplay = false, diagnostic = "hide" } = {}, capture) {
-  if(!["hide","bounds"].includes(diagnostic))throw Error("Unknown dust diagnostic");
+  if(!["hide","bounds","camera"].includes(diagnostic))throw Error("Unknown dust diagnostic");
   const world=game.world,v=game.combatVisuals,original=game.players[0];
   const pools=[v.flashes,v.tracers,v.rings,v.sparks,v.bloodDecals];
   if(game.mode!=="training"||game.isOnlineMatch()||!game.paused||!original||world.collapseSerial||world.structuralChanges.length||
@@ -48,7 +48,7 @@ export async function withStructuralDustReview(game, { gameplay = false, diagnos
     debrisMatrices:layerState(world.debrisMesh,world.debrisParticles.flatMap((p,i)=>p.active?[i]:[])),
     dustMaterial:{type:world.dustMesh.material.type,color:world.dustMesh.material.color.toArray(),opacity:world.dustMesh.material.opacity,
       blending:world.dustMesh.material.blending,depthWrite:world.dustMesh.material.depthWrite,toneMapped:world.dustMesh.material.toneMapped},
-    dustCount:world.dustMesh.count,dustBounds:boundsState(world.dustMesh),debrisBounds:boundsState(world.debrisMesh),
+    dustCount:world.dustMesh.count,debrisCount:world.debrisMesh.count,dustBounds:boundsState(world.dustMesh),debrisBounds:boundsState(world.debrisMesh),
     changes:world.structuralChanges.map(c=>({id:c.id,phase:c.phase,elapsed:c.elapsed})),
     combat:pools.map(pool=>pool.filter(s=>s.life>0).map(s=>({life:s.life,position:s.position?.toArray(),velocity:s.velocity?.toArray()}))),
     lights:v.combatLights.map(l=>({position:l.position.toArray(),intensity:l.intensity,life:l.userData.life})),
@@ -57,12 +57,15 @@ export async function withStructuralDustReview(game, { gameplay = false, diagnos
     await capture(state(age,"current"));
     const matrices=[...owned].map(index=>{world.dustMesh.getMatrixAt(index,matrix);return [index,matrix.clone()];});
     const bound=world.dustMesh.boundingSphere,boundCopy=bound?.clone();
+    const cameraQuaternion=game.camera.quaternion.clone();
     try{
       if(diagnostic==="bounds")world.dustMesh.computeBoundingSphere();
+      else if(diagnostic==="camera"){game.camera.rotateY(Math.PI);game.camera.updateMatrixWorld(true);}
       else{for(const [index] of matrices)world.dustMesh.setMatrixAt(index,hidden);world.dustMesh.instanceMatrix.needsUpdate=true;}
-      await capture(state(age,diagnostic==="bounds"?"fresh-bounds":"dust-hidden"));
+      await capture(state(age,diagnostic==="bounds"?"fresh-bounds":diagnostic==="camera"?"camera-away":"dust-hidden"));
     }finally{
       if(diagnostic==="bounds"){world.dustMesh.boundingSphere=bound;if(bound)bound.copy(boundCopy);}
+      else if(diagnostic==="camera"){game.camera.quaternion.copy(cameraQuaternion);game.camera.updateMatrixWorld(true);}
       else{for(const [index,m] of matrices)world.dustMesh.setMatrixAt(index,m);world.dustMesh.instanceMatrix.needsUpdate=true;}
     }
     await capture(state(age,"restored"));

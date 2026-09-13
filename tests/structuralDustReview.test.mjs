@@ -53,10 +53,27 @@ await withStructuralDustReview(boundsFixture.game,{diagnostic:"bounds"},async s=
 for(let i=0;i<boundsSamples.length;i+=3){
   const [a,b,c]=boundsSamples.slice(i,i+3),clean=s=>{const x={...s};delete x.mode;delete x.dustBounds;return x;};
   assert.deepEqual(clean(a),clean(b));assert.deepEqual(c,{...a,mode:"restored"});
-  assert.equal(a.dustBounds.cached.radius,0);assert.equal(a.dustBounds.cached.inFrustum,false);
-  if(a.dust.length){assert.ok(a.dustBounds.visibleInstances>0,"actual dust lies in this frustum");assert.equal(b.dustBounds.cached.inFrustum,true);}
+  assert.deepEqual(b.dustBounds,a.dustBounds,"product already maintains the same freshly computed bound");
+  if(a.dust.length){assert.ok(a.dustBounds.visibleInstances>0,"actual dust lies in this frustum");assert.equal(a.dustBounds.cached.inFrustum,true);}
 }
 boundsFixture.dispose();
+const cameraFixture=fixture(),cameraSamples=[];
+await withStructuralDustReview(cameraFixture.game,{diagnostic:"camera"},async s=>cameraSamples.push(structuredClone(s)));
+for(let i=0;i<cameraSamples.length;i+=3){
+  const [a,b,c]=cameraSamples.slice(i,i+3),clean=s=>{const x={...s};for(const k of ["mode","cameraMatrix","dustBounds","debrisBounds"])delete x[k];return x;};
+  assert.equal(b.mode,"camera-away");assert.notDeepEqual(b.cameraMatrix,a.cameraMatrix);
+  assert.deepEqual(clean(a),clean(b));assert.deepEqual(c,{...a,mode:"restored"});
+}
+cameraFixture.dispose();
+for(const diagnostic of ["bounds","camera"]){
+  const f=fixture(),camera=f.game.camera.matrixWorld.toArray();let bound,copy;
+  await assert.rejects(withStructuralDustReview(f.game,{diagnostic},async s=>{
+    if(s.mode==="current"){bound=f.game.world.dustMesh.boundingSphere;copy=bound.clone();}
+    else throw Error("probe interrupted");
+  }),/probe interrupted/);
+  assert.equal(f.game.world.dustMesh.boundingSphere,bound);assert.ok(bound.equals(copy));
+  assert.deepEqual(f.game.camera.matrixWorld.toArray(),camera);f.dispose();
+}
 const failed=fixture(),method=failed.game.world.spawnStructuralDust;
 await assert.rejects(withStructuralDustReview(failed.game,{},async state=>{if(state.mode==="dust-hidden")throw Error("capture interrupted");}),/capture interrupted/);
 assert.equal(failed.game.world.spawnStructuralDust,method);
@@ -67,6 +84,7 @@ const runner=html.slice(html.indexOf("async function runStructuralDustReview("),
 const freezeSource=html.slice(html.indexOf("async function withFrozenShaderTime("),html.indexOf("async function runWallImpactReview("));
 const runFixture=fixture(),links=[],controls=[{disabled:false},{disabled:true}],review={running:false};
 runFixture.game.renderPipeline={direct:false,profile:"unit-test-no-renderer"};
+runFixture.game.renderer={info:{render:{drawCalls:0,triangles:0},memory:{}}};
 const elements={"dust-gameplay":{checked:true},"dust-diagnostic":{value:"bounds"},"camera-captures":{replaceChildren:()=>{links.length=0;},append:link=>links.push(link)}};
 const document={querySelectorAll:()=>controls,createElement:()=>({dataset:{}}),querySelector:()=>({toDataURL:()=>"unit-test-only"})};
 const makeRunner=(stress=false,fail=false)=>new Function("game","withStructuralDustReview","select","document","cameraReview","stress","fail",`

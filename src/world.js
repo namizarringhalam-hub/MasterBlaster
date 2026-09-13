@@ -1579,6 +1579,7 @@ export class ArenaWorld {
     const geometry = new THREE.BoxGeometry(1, 1, 1);
     const debrisMaterial = material(0x253646, this.theme.danger, .55, { roughness: .7, metalness: .45, emissiveIntensity: .08 });
     const mesh = new THREE.InstancedMesh(geometry, debrisMaterial, count);
+    mesh.count = 0;
     mesh.name = "Pooled structural scrap";
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.castShadow = false;
@@ -1609,6 +1610,7 @@ export class ArenaWorld {
       blending: THREE.NormalBlending, toneMapped: false
     });
     this.dustMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 6), dustMaterial, dustCount);
+    this.dustMesh.count = 0;
     this.dustMesh.name = "Pooled structural dust volumes";
     this.dustMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.dustMesh.castShadow = false;
@@ -1696,7 +1698,7 @@ export class ArenaWorld {
 
   updateStructuralDebris(dt) {
     const dummy = this.debrisDummy;
-    let changed = false;
+    let changed = false, debrisCount = 0;
     for (let index = 0; index < this.debrisParticles.length; index++) {
       const particle = this.debrisParticles[index];
       if (!particle.active) continue;
@@ -1731,10 +1733,16 @@ export class ArenaWorld {
       dummy.position.copy(particle.position);
       dummy.updateMatrix();
       this.debrisMesh.setMatrixAt(index, dummy.matrix);
+      debrisCount = index + 1;
     }
-    if (changed) this.debrisMesh.instanceMatrix.needsUpdate = true;
+    this.debrisMesh.count = debrisCount;
+    if (changed) {
+      this.debrisMesh.instanceMatrix.needsUpdate = true;
+      // Moving pooled instances invalidate the cached object-level culling bound.
+      this.debrisMesh.computeBoundingSphere();
+    }
 
-    let dustChanged = false;
+    let dustChanged = false, dustCount = 0;
     for (let index = 0; index < this.dustParticles.length; index++) {
       const particle = this.dustParticles[index];
       if (!particle.active) continue;
@@ -1754,8 +1762,13 @@ export class ArenaWorld {
       this.dustDummy.scale.copy(particle.scale).multiplyScalar((.85 + progress * 2.8) * envelope);
       this.dustDummy.updateMatrix();
       this.dustMesh.setMatrixAt(index, this.dustDummy.matrix);
+      dustCount = index + 1;
     }
-    if (dustChanged) this.dustMesh.instanceMatrix.needsUpdate = true;
+    this.dustMesh.count = dustCount;
+    if (dustChanged) {
+      this.dustMesh.instanceMatrix.needsUpdate = true;
+      this.dustMesh.computeBoundingSphere();
+    }
   }
 
   structuralPartAt(position, radius = 0) {
@@ -2269,6 +2282,9 @@ export class ArenaWorld {
     });
     this.debrisMesh.instanceMatrix.needsUpdate = true;
     this.dustMesh.instanceMatrix.needsUpdate = true;
+    this.debrisMesh.count = this.dustMesh.count = 0;
+    this.debrisMesh.computeBoundingSphere();
+    this.dustMesh.computeBoundingSphere();
   }
 
   addPlatform(x, top, z, w, d, thickness, color) {

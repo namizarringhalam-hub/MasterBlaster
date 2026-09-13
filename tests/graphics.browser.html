@@ -97,7 +97,7 @@
 <label>Spark birth size<select id="wall-spark-birth"><option value="off">Off</option><option value="current">Current (dense onset)</option><option value="trial">100ms growth trial</option></select></label>
 <button id="wall-impact">Capture real wall impact</button>
 <label><input type="checkbox" id="dust-gameplay">Structural dust gameplay camera</label>
-<label>Dust diagnostic<select id="dust-diagnostic"><option value="hide">Hide dust contribution</option><option value="bounds">Refresh cached bounds only</option></select></label>
+<label>Dust diagnostic<select id="dust-diagnostic"><option value="hide">Hide dust contribution</option><option value="bounds">Refresh cached bounds only</option><option value="camera">Camera exit and re-entry</option></select></label>
 <button id="dust-lifecycle" title="Consumes one fresh training scene; reset before repeating">Capture structural dust lifecycle</button>
 <button id="capture-canvas">Capture lossless canvas</button><a id="canvas-capture" hidden download="graphics-scene.png">Download lossless game canvas</a>
 <label><input id="follow-camera" type="checkbox" checked>Follow player camera</label>
@@ -1044,6 +1044,7 @@ async function runStructuralDustReview() {
       const index = cameraReview.samples.length, link = document.createElement("a");
       const metadata = { index, ...state, sceneSerial, renderedFrames, tier: game.settings.graphics, profile: game.renderPipeline.profile,
         viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio }, shaderClockSeconds: shaderTime.value, errorCount, directFallback: game.renderPipeline.direct };
+      metadata.render = { draws: game.renderer.info.render.drawCalls, triangles: game.renderer.info.render.triangles, memory: { ...game.renderer.info.memory } };
       link.textContent = `Camera frame ${index}`; link.download = `structural-dust-${index}.png`;
       link.href = document.querySelector("#game-canvas").toDataURL("image/png"); link.dataset.review = JSON.stringify(metadata);
       select("camera-captures").append(link, " "); cameraReview.samples.push(metadata);

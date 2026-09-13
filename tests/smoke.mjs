@@ -650,9 +650,11 @@ const seamNeighbor = worldB.structures[0].platformChunks.find((chunk) => chunk.d
 const seamPoint = new THREE.Vector3(firstChunk.x + firstChunk.w / 2, firstChunk.top, firstChunk.z);
 assert.equal(worldB.structuralPartAt(seamPoint, .01).structuralId, [firstChunk.structuralId, seamNeighbor.structuralId].sort()[0], "deck seams use a stable part-id tie break on every client");
 assert.ok(worldB.structures.every((structure) => structure.segments.length >= 3 && structure.segments.length <= 12), "every destructible pillar is composed of a bounded number of sections");
-assert.equal(worldB.debrisMesh.count, 128, "all collapsing structures share one bounded mixed-scale debris instance pool");
+assert.equal(worldB.debrisMesh.instanceMatrix.count, 128, "all collapsing structures retain the full bounded debris capacity");
+assert.equal(worldB.debrisMesh.count, 0, "unused debris does not submit hidden instances");
 assert.equal(worldB.debrisMesh.castShadow, false, "temporary structural scrap cannot multiply shadow rendering cost");
-assert.equal(worldB.dustMesh.count, 128, "soft structural smoke shares one bounded instanced volume pool");
+assert.equal(worldB.dustMesh.instanceMatrix.count, 128, "structural dust retains the full bounded volume capacity");
+assert.equal(worldB.dustMesh.count, 0, "unused dust does not submit hidden instances");
 assert.equal(worldB.dustMesh.castShadow, false, "temporary collapse dust never adds shadow passes");
 
 const collapseWorld = new ArenaWorld(new THREE.Scene(), "COLLAPSE-QA");
