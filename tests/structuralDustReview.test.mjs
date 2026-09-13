@@ -65,6 +65,58 @@ for(let i=0;i<cameraSamples.length;i+=3){
   assert.deepEqual(clean(a),clean(b));assert.deepEqual(c,{...a,mode:"restored"});
 }
 cameraFixture.dispose();
+for(const gameplay of [false,true]){
+  const f=fixture(),mesh=f.game.world.dustMesh,material=mesh.material,geometry=mesh.geometry,profiles=new Map(),samples=[];
+  let originalDisposals=0;material.addEventListener("dispose",()=>originalDisposals++);
+  await withStructuralDustReview(f.game,{gameplay,diagnostic:"profile"},async s=>{
+    samples.push(structuredClone(s));assert.equal(mesh.geometry,geometry);
+    assert.equal(s.dustColorStream.count,128);assert.equal(s.dustColorStream.itemSize,3);assert.equal(s.dustColorStream.values.length,384);
+    if(["constant-one","soft-edge"].includes(s.mode)){
+      assert.equal(mesh.instanceColor,null,"profile reproduces the published cached shader without binding the later-created color stream");
+      assert.equal(s.dustRenderInstanceColors,false);
+      assert.notEqual(mesh.material,material);assert.ok(mesh.material.opacityNode?.isNode);
+      if(!profiles.has(mesh.material)){profiles.set(mesh.material,0);const owned=mesh.material;owned.addEventListener("dispose",()=>profiles.set(owned,profiles.get(owned)+1));}
+      for(const k of ["opacity","blending","depthWrite","depthTest","transparent","toneMapped","side","vertexColors","flatShading"])
+        assert.equal(mesh.material[k],material[k],`profile preserves ${k}`);
+      assert.ok(mesh.material.color.equals(material.color));
+    }else {assert.equal(mesh.material,material);assert.ok(mesh.instanceColor);assert.equal(s.dustRenderInstanceColors,true);}
+  });
+  assert.equal(samples.length,28);assert.equal(profiles.size,2);assert.deepEqual([...profiles.values()],[1,1]);
+  assert.equal(originalDisposals,0);assert.equal(mesh.material,material);
+  for(let i=0;i<samples.length;i+=4){
+    const [a,b,c,d]=samples.slice(i,i+4),clean=s=>({...s,mode:"ignored",dustRenderInstanceColors:"explicit-no-color-graph-control",dustMaterial:{...s.dustMaterial,type:"ignored"}});
+    assert.deepEqual([a.mode,b.mode,c.mode,d.mode],["current","constant-one","soft-edge","restored"]);
+    assert.deepEqual(clean(a),clean(b));assert.deepEqual(clean(a),clean(c));assert.deepEqual(d,{...a,mode:"restored"});
+  }
+  f.dispose();
+}
+for(const failMode of ["constant-one","soft-edge"]){
+  const f=fixture(),mesh=f.game.world.dustMesh,material=mesh.material,owned=new Map();let colors,version,bytes,count,bound;
+  await assert.rejects(withStructuralDustReview(f.game,{diagnostic:"profile"},async s=>{
+    if(s.mode==="current"){colors=mesh.instanceColor;version=colors.version;bytes=Array.from(colors.array);count=mesh.count;bound=mesh.boundingSphere.clone();}
+    if(mesh.material!==material&&!owned.has(mesh.material)){const m=mesh.material;owned.set(m,0);m.addEventListener("dispose",()=>owned.set(m,owned.get(m)+1));}
+    if(s.mode===failMode)throw Error("profile interrupted");
+  }),/profile interrupted/);
+  assert.equal(mesh.material,material);assert.equal(mesh.instanceColor,colors);assert.equal(colors.version,version);assert.deepEqual(Array.from(colors.array),bytes);
+  assert.equal(mesh.count,count);assert.ok(mesh.boundingSphere.equals(bound));assert.ok([...owned.values()].every(n=>n===1));f.dispose();
+}
+const compileFixture=fixture(),compileMesh=compileFixture.game.world.dustMesh,compileMaterial=compileMesh.material,compileSamples=[],compileOwned=new Map();
+await withStructuralDustReview(compileFixture.game,{diagnostic:"compile"},async s=>{
+  compileSamples.push(structuredClone(s));
+  if(s.mode==="fresh-basic"||s.mode==="fresh-node"){
+    const m=compileMesh.material;assert.notEqual(m,compileMaterial);
+    assert.equal(Boolean(m.isNodeMaterial),s.mode==="fresh-node");assert.equal(m.opacityNode??null,null);
+    if(s.mode==="fresh-basic")assert.notEqual(m.customProgramCacheKey(),compileMaterial.customProgramCacheKey(),"force a fresh shader rather than reusing the original equivalent-material graph");
+    if(!compileOwned.has(m)){compileOwned.set(m,0);m.addEventListener("dispose",()=>compileOwned.set(m,compileOwned.get(m)+1));}
+  }else assert.equal(compileMesh.material,compileMaterial);
+});
+assert.equal(compileSamples.length,28);assert.deepEqual([...compileOwned.values()],[1,1]);assert.equal(compileMesh.material,compileMaterial);
+for(let i=0;i<compileSamples.length;i+=4){
+  const [a,b,c,d]=compileSamples.slice(i,i+4),clean=s=>({...s,mode:"ignored",dustMaterial:{...s.dustMaterial,type:"ignored"}});
+  assert.deepEqual([a.mode,b.mode,c.mode,d.mode],["current","fresh-basic","fresh-node","restored"]);
+  assert.deepEqual(clean(a),clean(b));assert.deepEqual(clean(a),clean(c));assert.deepEqual(d,{...a,mode:"restored"});
+}
+compileFixture.dispose();
 for(const diagnostic of ["bounds","camera"]){
   const f=fixture(),camera=f.game.camera.matrixWorld.toArray();let bound,copy;
   await assert.rejects(withStructuralDustReview(f.game,{diagnostic},async s=>{
@@ -85,7 +137,7 @@ const freezeSource=html.slice(html.indexOf("async function withFrozenShaderTime(
 const runFixture=fixture(),links=[],controls=[{disabled:false},{disabled:true}],review={running:false};
 runFixture.game.renderPipeline={direct:false,profile:"unit-test-no-renderer"};
 runFixture.game.renderer={info:{render:{drawCalls:0,triangles:0},memory:{}}};
-const elements={"dust-gameplay":{checked:true},"dust-diagnostic":{value:"bounds"},"camera-captures":{replaceChildren:()=>{links.length=0;},append:link=>links.push(link)}};
+const elements={"dust-gameplay":{checked:true},"dust-diagnostic":{value:"profile"},"camera-captures":{replaceChildren:()=>{links.length=0;},append:link=>links.push(link)}};
 const document={querySelectorAll:()=>controls,createElement:()=>({dataset:{}}),querySelector:()=>({toDataURL:()=>"unit-test-only"})};
 const makeRunner=(stress=false,fail=false)=>new Function("game","withStructuralDustReview","select","document","cameraReview","stress","fail",`
   const withoutSurfaceResources=false,resetReview={},cacheReview={},decoyReview={},sceneSerial=1,resetPhase="ready",errorCount=0,innerWidth=747,innerHeight=698,devicePixelRatio=1;
@@ -94,9 +146,10 @@ const makeRunner=(stress=false,fail=false)=>new Function("game","withStructuralD
   ${runner};return runStructuralDustReview;
 `)(runFixture.game,withStructuralDustReview,id=>elements[id],document,review,stress,fail);
 await makeRunner(true)();assert.match(review.error,/Stop stress/);assert.equal(links.length,0);
-await makeRunner()();assert.equal(review.error,null);assert.equal(links.length,21);assert.equal(review.running,false);assert.equal(review.shell,false);
+await makeRunner()();assert.equal(review.error,null);assert.equal(links.length,28);assert.equal(review.running,false);assert.equal(review.shell,false);
 const stamp=JSON.parse(links[0].dataset.review);assert.equal(stamp.gameplay,true);assert.equal(stamp.shaderClockSeconds,3);assert.equal(stamp.mode,"current");
-assert.equal(stamp.diagnostic,"bounds");assert.equal(JSON.parse(links[1].dataset.review).mode,"fresh-bounds");
+assert.equal(stamp.diagnostic,"profile");assert.equal(JSON.parse(links[1].dataset.review).mode,"constant-one");
+assert.equal(JSON.parse(links[2].dataset.review).mode,"soft-edge");assert.equal(JSON.parse(links[3].dataset.review).mode,"restored");
 assert.deepEqual(controls.map(c=>c.disabled),[false,true]);
 review.samples[0].cohorts[0].landing=true;assert.equal(JSON.parse(links[0].dataset.review).cohorts[0].landing,false,"saved stamp is immutable");
 runFixture.dispose();
