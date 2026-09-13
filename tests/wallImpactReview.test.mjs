@@ -58,7 +58,7 @@ const run = async (options, inspect = () => {}) => {
   await withWallImpactReview(game, { impactBurst: "previous", previousContact: true, previousSparks: !options?.sparkAspect, ...options }, async state => {
     inspect(state);
     assert.equal(Math.random, globalRng);
-    if(options?.sparkAspect || options?.previousSparks===false) for(const spark of state.sparkLayers) {
+    if(!options?.hideImpactSparks && (options?.sparkAspect || options?.previousSparks===false)) for(const spark of state.sparkLayers) {
       const x=new THREE.Vector3().fromArray(spark.matrix,0), y=new THREE.Vector3().fromArray(spark.matrix,4), z=new THREE.Vector3().fromArray(spark.matrix,8);
       assert.ok(Math.abs(y.length()/x.length()-2)<1e-6 && Math.abs(y.length()/z.length()-2)<1e-6,"actual spark aspect is 2:1 on both transverse axes");
       const velocity=game.combatVisuals.sparks[spark.index].velocity;
@@ -303,6 +303,34 @@ for(const gameplay of [false,true]) {
   }
   assert.deepEqual(await run(options),current);
 }
+for(const grazing of [false,true]) {
+  const options={previousContact:false,previousSparks:false,ringDissipation:"integrated",impactBurst:"off",grazing};
+  const untouchedIndex=game.combatVisuals.sparks.length-1, untouched=new THREE.Matrix4().makeTranslation(73,74,75).toArray();
+  game.combatVisuals.sparkLayer.setMatrixAt(untouchedIndex,new THREE.Matrix4().fromArray(untouched));
+  const current=await run(options), masked=await run({...options,hideImpactSparks:true},state=>{
+    assert.equal(state.hideImpactSparks,true);
+    assert.equal(state.surfaceBurst,true,"diagnostic must retain the actual122 surface pulse");
+    assert.ok(state.sparkInstanceCount<untouchedIndex,"sentinel is outside submitted draw range");
+    const targets=new Set(state.sparkLayers.map(s=>s.index));
+    for(let i=0;i<game.combatVisuals.sparks.length;i++) if(!targets.has(i))
+      assert.deepEqual(Array.from(game.combatVisuals.sparkLayer.instanceMatrix.array.slice(i*16,i*16+16)),i===untouchedIndex?untouched:new THREE.Matrix4().makeScale(0,0,0).toArray(),"non-target instances remain untouched, including nonzero out-of-range sentinel");
+  });
+  for(let i=0;i<current.length;i++) {
+    const a=current[i],b=masked[i];
+    const aa={...a},bb={...b};delete aa.hideImpactSparks;delete bb.hideImpactSparks;delete aa.sparkLayers;delete bb.sparkLayers;
+    assert.deepEqual(bb,aa,"spark diagnostic preserves every other recorded simulation/render field");
+    assert.equal(b.sparkLayers.length,a.sparkLayers.length);
+    for(let j=0;j<a.sparkLayers.length;j++) {
+      assert.equal(b.sparkLayers[j].index,a.sparkLayers[j].index);assert.deepEqual(b.sparkLayers[j].color,a.sparkLayers[j].color);
+      assert.deepEqual(b.sparkLayers[j].matrix,new THREE.Matrix4().makeScale(0,0,0).toArray());
+    }
+  }
+  assert.deepEqual(await run(options),current,"mask restores later actual-product captures exactly");
+  game.combatVisuals.sparkLayer.setMatrixAt(untouchedIndex,new THREE.Matrix4().makeScale(0,0,0));
+}
+await assert.rejects(withWallImpactReview(game,{hideImpactSparks:true,ringDissipation:"integrated",impactBurst:"previous"},async()=>{}),/requires current product/);
+await assert.rejects(withWallImpactReview(game,{hideImpactSparks:true,ringDissipation:"integrated"},async()=>{throw Error("mask interrupted");}),/mask interrupted/);
+assert.equal(game.combatVisuals.updateSparks,sparkUpdate);
 await assert.rejects(withWallImpactReview(game,{impactBurst:"invalid"},async()=>{}),/Unknown impact burst/);
 for(const oblique of [false,true])for(const gameplay of [false,true]) {
   const options={previousContact:false,previousSparks:false,ringDissipation:"integrated",oblique,gameplay};
@@ -367,6 +395,7 @@ Object.assign(game, { renderPipeline: { direct: false, profile: "unit-test-no-re
 const document = { querySelectorAll: () => controls, createElement: () => ({ dataset: {} }), querySelector: () => ({ toDataURL: () => "unit-test-only" }) };
 elements["wall-burst"] = {value:"off"};
 elements["wall-grazing"] = {checked:false};
+elements["wall-hide-sparks"] = {checked:false};
 const makeRunner = (stress = false, fail = false, withoutSurfaceResources = false) => new Function("game", "withWallImpactReview", "select", "document", "cameraReview", "stress", "fail", "withoutSurfaceResources", `
   const resetReview={},cacheReview={},decoyReview={},sceneSerial=5,resetPhase='ready',errorCount=0,innerWidth=747,innerHeight=698,devicePixelRatio=1;
   let renderedFrames=100; const shaderTime={value:17,update(){}}; ${freezeSource}
@@ -403,6 +432,11 @@ await makeRunner()();
 assert.equal(review.error,null); assert.equal(JSON.parse(links[0].dataset.review).impactBurst,"trial");
 assert.notDeepEqual(JSON.parse(links[0].dataset.review).displayRingLayers,JSON.parse(links[0].dataset.review).ringLayers);
 elements["wall-burst"].value = "off";
+elements["wall-hide-sparks"].checked=true;
+await makeRunner()();assert.equal(review.error,null);
+const maskedStamp=JSON.parse(links[0].dataset.review);assert.equal(maskedStamp.hideImpactSparks,true);assert.equal(maskedStamp.surfaceBurst,true);
+assert.ok(maskedStamp.sparkLayers.every(s=>s.matrix[0]===0&&s.matrix[5]===0&&s.matrix[10]===0));
+elements["wall-hide-sparks"].checked=false;
 elements["wall-gameplay"].checked=false;elements["wall-grazing"].checked=true;
 await makeRunner()();assert.equal(review.error,null);assert.equal(JSON.parse(links[0].dataset.review).cameraKind,"fixed-surface-grazing");
 elements["wall-grazing"].checked=false;elements["wall-gameplay"].checked=true;

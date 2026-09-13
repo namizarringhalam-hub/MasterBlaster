@@ -5,7 +5,7 @@ import { seededRandom } from "../src/gameData.js";
 
 // QA only: an actual paid Blaster shot against the existing east arena wall.
 // Never synthesize an impact or replace collision, damage, or effect generation.
-export async function withWallImpactReview(game, { oblique = false, turn = false, gameplay = false, grazing = false, surfaceContact = false, previousContact = false, ringDissipation = "off", sparkAspect = false, previousSparks = false, ringLayer = "both", nestedRing = false, outerProfile = "off", impactBurst = "off" } = {}, capture) {
+export async function withWallImpactReview(game, { oblique = false, turn = false, gameplay = false, grazing = false, surfaceContact = false, previousContact = false, ringDissipation = "off", sparkAspect = false, previousSparks = false, ringLayer = "both", nestedRing = false, outerProfile = "off", impactBurst = "off", hideImpactSparks = false } = {}, capture) {
   if (grazing && gameplay) throw Error("Choose grazing or gameplay camera, not both");
   if (!["off", "current", "trial", "integrated"].includes(ringDissipation)) throw Error("Unknown ring dissipation review");
   if (!["both", "outer", "inner"].includes(ringLayer)) throw Error("Unknown ring layer review");
@@ -14,6 +14,8 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
   if (["control", "trial"].includes(impactBurst) && (ringDissipation !== "integrated" || surfaceContact || previousContact || sparkAspect || previousSparks || ringLayer !== "both" || nestedRing || outerProfile !== "off"))
     throw Error("Impact burst review requires published contact, fade, sparks and both ring layers");
   if (sparkAspect && previousSparks) throw Error("Choose either reference or previous sparks, not both");
+  if (hideImpactSparks && (impactBurst !== "off" || ringDissipation !== "integrated" || surfaceContact || previousContact || sparkAspect || previousSparks || ringLayer !== "both" || nestedRing || outerProfile !== "off"))
+    throw Error("Spark isolation requires current product contact, pulse, fade and spark shape");
   const visuals = game.combatVisuals, pools = [visuals.flashes, visuals.tracers, visuals.rings, visuals.sparks, visuals.bloodDecals];
   if (!game.paused || game.players[0]?.weapon.id !== "blaster" || game.projectiles.length || game.hazards.length || game.decoys.length || game.effects.length ||
       pools.some(pool => pool.some(slot => slot.life > 0)) || visuals.combatLights.some(light => light.userData.life > 0 || light.intensity > 1e-10))
@@ -67,6 +69,14 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
           this.sparkLayer.setMatrixAt(index, matrix.scale(aspect));
           this.sparkLayer.instanceMatrix.needsUpdate = true;
         }
+      };
+    }
+    if (hideImpactSparks) {
+      const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
+      visuals.updateSparks = function(dt) {
+        saved.updateSparks.call(this, dt);
+        for (const index of sparkIndices) this.sparkLayer.setMatrixAt(index, hidden);
+        if (sparkIndices.length) this.sparkLayer.instanceMatrix.needsUpdate = true;
       };
     }
     if (ringDissipation === "trial" || ringLayer !== "both" || nestedRing) {
@@ -202,12 +212,13 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
     const ringLayers = (layers = ringSources) => layers.map(layer => ({
       matrix: Array.from(layer.instanceMatrix.array.slice(ringIndex * 16, ringIndex * 16 + 16)),
       color: Array.from(layer.instanceColor.array.slice(ringIndex * 3, ringIndex * 3 + 3)) }));
-    const state = frame => ({ frame, effectAge: (frame + 1) / 60, flightFrames, initial, impact, oblique, turn, gameplay, grazing, surfaceContact, previousContact, ringDissipation, sparkAspect, previousSparks, ringLayer, nestedRing, outerProfile, impactBurst,
+    const state = frame => ({ frame, effectAge: (frame + 1) / 60, flightFrames, initial, impact, oblique, turn, gameplay, grazing, surfaceContact, previousContact, ringDissipation, sparkAspect, previousSparks, ringLayer, nestedRing, outerProfile, impactBurst, hideImpactSparks,
       poseClockMs: 1000, cameraKind: gameplay ? "production-collision-aware-camera-settled-240" : grazing ? "fixed-surface-grazing" : "fixed-close-oblique",
       cameraState: { firstPerson: game.cameraFirstPerson, fov: game.camera.fov, clearance: { ...game.cameraClearance } },
       paidAmmo: hero.ammo.blaster, projectiles: game.projectiles.length,
       rings: visuals.rings.filter(s => s.life > 0).map(slotState), sparks: visuals.sparks.filter(s => s.life > 0).map(slotState),
       ringLayers: ringLayers(),
+      surfaceBurst: Boolean(visuals.rings[ringIndex]?.surfaceBurst), sparkInstanceCount: visuals.sparkLayer.count,
       displayRingLayers: ringLayers(burstLayers.length ? burstLayers : visuals.rings[ringIndex]?.surfaceBurst ? [visuals.surfaceFront, visuals.surfaceCore] : ringSources),
       sparkLayers: sparkIndices.filter(index => visuals.sparks[index].life > 0).map(index => ({ index,
         matrix: Array.from(visuals.sparkLayer.instanceMatrix.array.slice(index * 16, index * 16 + 16)),
