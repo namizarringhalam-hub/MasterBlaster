@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import "./wallImpactReview.test.mjs";
+import "./structuralDustReview.test.mjs";
 import "./projectileContact.test.mjs";
 import "./blasterRing.test.mjs";
 import "./blasterSpark.test.mjs";
