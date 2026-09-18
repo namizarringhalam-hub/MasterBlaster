@@ -297,8 +297,7 @@ function combineMaterialBatches(root, excludedRoots = []) {
 }
 
 const armDown = new THREE.Vector3(0, -1, 0);
-const handRest = new THREE.Vector3(0, -.58, .05).normalize();
-const handLength = Math.hypot(.58, .05);
+const handRest = new THREE.Vector3();
 const armDirection = new THREE.Vector3(), armBend = new THREE.Vector3(), armElbow = new THREE.Vector3();
 const handDirection = new THREE.Vector3(), palmNormal = new THREE.Vector3(), desiredPalm = new THREE.Vector3(), palmCross = new THREE.Vector3();
 const handRotation = new THREE.Quaternion(), palmTwist = new THREE.Quaternion();
@@ -307,11 +306,14 @@ function alignArmGrip(upper, forearm, grip, forward) {
   // Analytic two-link solve in rig space. Only existing joint rotations change;
   // weapon transforms, projectile origins and the authored limb lengths do not.
   armDirection.copy(grip).sub(upper.position);
-  const distance = THREE.MathUtils.clamp(armDirection.length(), .035, .55 + handLength - .001);
+  const upperLength = -forearm.position.y;
+  const handLength = forearm.userData.handRest.length();
+  handRest.copy(forearm.userData.handRest).normalize();
+  const distance = THREE.MathUtils.clamp(armDirection.length(), .035, upperLength + handLength - .001);
   armDirection.normalize();
   armBend.set(Math.sign(upper.position.x), -.75, -.2).projectOnPlane(armDirection).normalize();
-  const along = (.55 * .55 - handLength * handLength + distance * distance) / (2 * distance);
-  armElbow.copy(armDirection).multiplyScalar(along).addScaledVector(armBend, Math.sqrt(Math.max(0, .55 * .55 - along * along)));
+  const along = (upperLength * upperLength - handLength * handLength + distance * distance) / (2 * distance);
+  armElbow.copy(armDirection).multiplyScalar(along).addScaledVector(armBend, Math.sqrt(Math.max(0, upperLength * upperLength - along * along)));
   upper.quaternion.setFromUnitVectors(armDown, palmNormal.copy(armElbow).normalize());
   handDirection.copy(grip).sub(upper.position).sub(armElbow).normalize();
   handRotation.setFromUnitVectors(handRest, handDirection);
@@ -410,7 +412,7 @@ export class Fighter {
     group.add(createMechaRig(this));
 
     this.weaponGroup = new THREE.Group();
-    this.weaponGroup.position.set(.38, 1.4, .28);
+    this.weaponGroup.position.set(.26, 1.6, .22);
     this.weaponGrip = new THREE.Vector3();
     this.weaponSupportGrip = new THREE.Vector3();
     this.gripTarget = new THREE.Vector3();
@@ -907,7 +909,7 @@ export class Fighter {
     this.boosted = false;
     this.group.visible = true;
     this.group.scale.setScalar(1);
-    this.rig.position.y = 0;
+    this.rig.position.y = -.035;
     this.rig.rotation.set(0, 0, 0);
     this.rig.scale.set(1.07, 1.04, 1.07);
     this.leftArm.rotation.set(0, 0, 0);
@@ -1136,9 +1138,9 @@ export class Fighter {
     this.weaponGroup.rotation.x = THREE.MathUtils.damp(this.weaponGroup.rotation.x, -aimPitch + this.recoilVisual * .46 + overheadPitch, 22, dt);
     this.weaponGroup.rotation.y = THREE.MathUtils.damp(this.weaponGroup.rotation.y, melee && !thrustMotion ? attackSwing * (meleeMotion === "saw" ? .12 : .72) : 0, 19, dt);
     this.weaponGroup.rotation.z = THREE.MathUtils.damp(this.weaponGroup.rotation.z, melee ? -.18 - attackSwing * (meleeMotion === "overhead" ? .26 : meleeMotion === "saw" ? .1 : .85) : grappled ? Math.sin(time * .42) * .035 : 0, 16, dt);
-    this.weaponGroup.position.x = THREE.MathUtils.damp(this.weaponGroup.position.x, melee ? .45 : reloadingPose ? .22 : .38, 18, dt);
-    this.weaponGroup.position.y = THREE.MathUtils.damp(this.weaponGroup.position.y, 1.4 - landing * .11 + (this.grounded && moving && !grappled ? gait * .025 : 0), 20, dt);
-    this.weaponGroup.position.z = THREE.MathUtils.damp(this.weaponGroup.position.z, .28 - this.recoilVisual * .46 + thrustMotion * .58, 24, dt);
+    this.weaponGroup.position.x = THREE.MathUtils.damp(this.weaponGroup.position.x, melee ? .34 : reloadingPose ? .18 : .26, 18, dt);
+    this.weaponGroup.position.y = THREE.MathUtils.damp(this.weaponGroup.position.y, 1.6 - landing * .11 + (this.grounded && moving && !grappled ? gait * .025 : 0), 20, dt);
+    this.weaponGroup.position.z = THREE.MathUtils.damp(this.weaponGroup.position.z, .22 - this.recoilVisual * .46 + thrustMotion * .58, 24, dt);
     this.weaponGroup.scale.set(1 + this.recoilVisual * .04, 1 + this.recoilVisual * .04, 1 - this.recoilVisual * .08);
     this.weaponGroup.updateMatrix();
     this.gripForward.set(0, 0, 1).transformDirection(this.weaponGroup.matrix);
@@ -1155,7 +1157,7 @@ export class Fighter {
     if (this.weaponGlowMaterial) this.weaponGlowMaterial.emissiveIntensity = .25 + this.recoilVisual * .9 + this.chargeLevel * (2.4 + Math.sin(time * 2.4) * .55);
     if (this.weaponSpinner) this.weaponSpinner.rotation.z += dt * (this.attackTimer > 0 ? 32 : 5);
     if (this.weaponPiston) this.weaponPiston.position.z = THREE.MathUtils.damp(this.weaponPiston.position.z, attacking ? .42 * attackSwing : 0, 24, dt);
-    const bob = this.grounded ? this.locomotionVisual * (-.045 + Math.cos(this.gaitPhase * 2) * .009) - landing * .14 : 0;
+    const bob = this.grounded ? -.035 + this.locomotionVisual * (-.01 + Math.cos(this.gaitPhase * 2) * .009) - landing * .14 : 0;
     this.rig.position.y = THREE.MathUtils.damp(this.rig.position.y, bob, 18, dt);
     this.rig.scale.set(1.07, 1.04, 1.07);
     const strafe = this.velocity.x * this.aim.z - this.velocity.z * this.aim.x;

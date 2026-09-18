@@ -32,11 +32,17 @@ for (let variant = 0; variant < 4; variant++) for (const [color, accent] of colo
   });
   assert.ok(matches > 1000, "player paint covers large armor surfaces");
   assert.ok(meshes <= 22, `bounded draw count: ${meshes}`);
-  assert.ok(triangles < 14000, `bounded geometry budget: ${triangles}`);
+  assert.ok(triangles < 16000, `bounded geometry budget: ${triangles}`);
   assert.equal(fighter.visor.parent, fighter.helmet);
   assert.equal(fighter.leftKnee.parent, fighter.leftLeg);
   assert.equal(fighter.rightKnee.parent, fighter.rightLeg);
   fighter.group.updateMatrixWorld(true);
+  for (const side of [-1, 1]) {
+    const origin = new THREE.Vector3(side * .10, .037, 1).applyMatrix4(fighter.helmet.matrixWorld);
+    const direction = new THREE.Vector3(0, 0, -1).transformDirection(fighter.helmet.matrixWorld);
+    const hits = new THREE.Raycaster(origin, direction).intersectObjects(fighter.helmet.children, true);
+    assert.equal(hits[0]?.object, fighter.visor, "the brow and face armor cannot occlude either eye lens");
+  }
   const eyeTransform = fighter.helmet.matrixWorld.clone().invert().multiply(fighter.visor.matrixWorld);
   for (const pitch of [-1.2, 0, 1.2]) {
     look.set(0, Math.sin(pitch), Math.cos(pitch));

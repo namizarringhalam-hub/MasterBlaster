@@ -29,14 +29,14 @@ for (const scale of [.65, 1.2, 1.8]) {
   bot.update(0, new THREE.Vector3(), new THREE.Vector3(0, 0, 1), {}, { resolve: () => ({ grounded: true }), boostAt: () => null });
   bot.thrusterLights.updateMatrix();
   assert.equal(bot.thrusterLights.scale.y, scale, "actual fighter update animates only the pair's local scale");
-  assert.deepEqual(bot.thrusterLights.position.toArray(), [0, 1.02, -.49], "thrust cannot move the common anchor");
+  assert.deepEqual(bot.thrusterLights.position.toArray(), [0, 1.356, -.402], "thrust cannot move the common anchor");
   const actual = bot.thrusterLights.geometry.clone().applyMatrix4(bot.thrusterLights.matrix);
   const expectedBounds = new THREE.Box3();
   assert.equal(actual.index.count, referenceFlame.index.count * 2);
   assert.equal(actual.groups.length, 0, "both flames retain a single material batch");
   for (let instance = 0; instance < 2; instance++) {
-    referenceTransform.position.set(instance ? .2 : -.2, 1.02, -.49);
-    referenceTransform.rotation.set(Math.PI, 0, 0); referenceTransform.scale.set(1, scale, 1); referenceTransform.updateMatrix();
+    referenceTransform.position.set(instance ? .124 : -.124, 1.356, -.402);
+    referenceTransform.rotation.set(Math.PI, 0, 0); referenceTransform.scale.set(.62, scale, .82); referenceTransform.updateMatrix();
     // Old instance matrices are float32, as are the new merged vertex buffers.
     const matrix = new THREE.Matrix4().fromArray(new Float32Array(referenceTransform.matrix.elements));
     const expected = referenceFlame.clone().applyMatrix4(matrix);

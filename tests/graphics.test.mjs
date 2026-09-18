@@ -874,7 +874,7 @@ const captureFrame = new Function("THREE", "game", "renderedFrames", "sceneSeria
   assert.deepEqual(captured.handPose.rightForearmMatrix, hero.rightForearm.matrixWorld.toArray());
   assert.deepEqual(captured.handPose.leftForearmMatrix, hero.leftForearm.matrixWorld.toArray());
   assert.deepEqual(captured.handPose.weaponMatrix, hero.weaponGroup.matrixWorld.toArray());
-  assert.deepEqual(captured.handPose.rightHandLocal, [0, -.58, .05]);
+  assert.deepEqual(captured.handPose.rightHandLocal, hero.rightHand.position.toArray());
   const stored = JSON.stringify(captured);
   hero.rightHand.position.x = 8; hero.rightForearm.matrixWorld.elements[12] = 9; hero.weaponGrip.y = 8;
   camera.matrixWorld.elements[12] = 10; review.requested = "reload";
@@ -1705,7 +1705,7 @@ for (const fighter of stealingFighters) {
 }
 for (let frame = 0; frame < 60; frame++) gripFighter.update(1 / 60, new THREE.Vector3(), new THREE.Vector3(0, 0, -1), {}, world);
 gripFighter.group.updateMatrixWorld(true);
-const handCenter = new THREE.Vector3(0, -.58, .05).applyMatrix4(gripFighter.rightForearm.matrixWorld);
+const handCenter = gripFighter.rightHand.position.clone().applyMatrix4(gripFighter.rightForearm.matrixWorld);
 const gripCenter = new THREE.Vector3(.05, -.2, .11).applyMatrix4(gripFighter.weaponGroup.matrixWorld);
 assert.ok(handCenter.distanceTo(gripCenter) < .03, `aiming hand must meet its grip, gap=${handCenter.distanceTo(gripCenter).toFixed(3)}m`);
 gripFighter.dispose();
@@ -1722,13 +1722,13 @@ for (const weaponId of ["blaster", "rocket_launcher", "machine_gun"]) for (const
   }
   fighter.group.updateMatrixWorld(true);
   const rigInverse = fighter.rig.matrixWorld.clone().invert();
-  const previousPalm = new THREE.Vector3(0, -.58, .05).applyMatrix4(fighter.leftForearm.matrixWorld).applyMatrix4(rigInverse);
+  const previousPalm = fighter.leftHand.position.clone().applyMatrix4(fighter.leftForearm.matrixWorld).applyMatrix4(rigInverse);
   const localPalm = new THREE.Vector3();
   fighter.reloadTimer = 0; fighter.grapple = null;
   for (let frame = 0; frame < 24; frame++) {
     fighter.update(1 / 60, noMovement, new THREE.Vector3(0, 0, -1), {}, poseWorld);
     fighter.group.updateMatrixWorld(true);
-    posedHand.set(0, -.58, .05).applyMatrix4(fighter.leftForearm.matrixWorld);
+    posedHand.copy(fighter.leftHand.position).applyMatrix4(fighter.leftForearm.matrixWorld);
     // Isolate joint return from the existing grapple-release body roll/movement.
     rigInverse.copy(fighter.rig.matrixWorld).invert();
     localPalm.copy(posedHand).applyMatrix4(rigInverse);
@@ -1755,14 +1755,14 @@ for (const weapon of Object.values(WEAPONS)) {
     const hands = [[fighter.rightArm, fighter.rightForearm, fighter.weaponGrip]];
     if (fighter.weaponHasSupportGrip && pose !== "reload" && pose !== "grapple") hands.push([fighter.leftArm, fighter.leftForearm, fighter.weaponSupportGrip]);
     for (const [upper, forearm, grip] of hands) {
-      posedHand.set(0, -.58, .05).applyMatrix4(forearm.matrixWorld);
+      posedHand.copy(forearm.userData.handRest).applyMatrix4(forearm.matrixWorld);
       posedGrip.copy(grip).applyMatrix4(fighter.weaponGroup.matrixWorld);
       const gap = posedHand.distanceTo(posedGrip);
       assert.ok(gap < .04, `${weapon.id}/${pitch}/${pose}: grip gap ${gap.toFixed(3)}m`);
-      assert.deepEqual(forearm.position.toArray(), [0, -.55, 0], "joint solve never stretches a limb");
+      assert.deepEqual(forearm.position.toArray(), [0, -.44, 0], "joint solve never stretches a limb");
       assert.ok(Math.abs(upper.quaternion.length() - 1) < .000001);
       assert.ok(Math.abs(forearm.quaternion.length() - 1) < .000001);
-      wristAxis.set(0, -.58, .05).transformDirection(forearm.matrixWorld);
+      wristAxis.copy(forearm.userData.handRest).transformDirection(forearm.matrixWorld);
       wristNormal.set(0, 0, 1).transformDirection(forearm.matrixWorld).projectOnPlane(wristAxis).normalize();
       barrelNormal.set(0, 0, 1).transformDirection(fighter.weaponGroup.matrixWorld).projectOnPlane(wristAxis).normalize();
       assert.ok(wristNormal.dot(barrelNormal) > .998, `${weapon.id}/${pitch}/${pose}: wrist follows the weapon instead of twisting across its grip`);
