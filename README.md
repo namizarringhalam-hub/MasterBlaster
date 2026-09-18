@@ -21,7 +21,7 @@ npm.cmd run dev:multiplayer
 - Move: `WASD`
 - Camera/aim: click the arena, then move the mouse
 - Fire: left click
-- Grapple: `E` or right click. Swing freely; hold `W` (or push the mobile movement stick forward) to reel toward the anchor. Release forward to swing again.
+- Grapple: `E` or right click
 - Jump: `Space`
 - Weapons: `1`–`5` or `Q`
 - Reload: `R`

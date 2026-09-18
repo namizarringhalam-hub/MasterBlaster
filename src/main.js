@@ -1968,9 +1968,8 @@ class BlasterBattle {
       this.sound.stopChargeLoop(player.id);
       return;
     }
-    const localMove = directionFromKeys(this.input).add(directionFromTouch(this.input.touchDirection()));
-    const reeling = localMove.z < -.1;
-    const move = cameraRelative(localMove, this.cameraYaw);
+    let move = cameraRelative(directionFromKeys(this.input), this.cameraYaw);
+    move.add(cameraRelative(directionFromTouch(this.input.touchDirection()), this.cameraYaw));
     if (move.lengthSq() > 1) move.normalize();
     this.aimTargets.length = 0;
     this.aimTargets.push(...this.players, ...this.decoys);
@@ -1981,7 +1980,7 @@ class BlasterBattle {
     this.touch.jumpTap = false;
     if (this.input.tapped("KeyE") || this.input.tapped("MouseRight") || this.touch.grappleTap) this.toggleGrapple(player);
     this.touch.grappleTap = false;
-    this.updateGrapple(player, dt, reeling);
+    this.updateGrapple(player, dt);
     if (this.input.tapped("KeyR") && !this.beginReload(player)) this.sound.play("uiInvalid");
     const fireHeld = this.input.mouse.left || this.touch.fire;
     const fireTapped = this.input.tapped("MouseLeft") || this.touch.fireTap;
@@ -2238,14 +2237,14 @@ class BlasterBattle {
     const line = new Line2(geometry, ropeMaterial);
     line.frustumCulled = false;
     this.scene.add(line);
-    player.grapple = { anchor, line, wraps: [], ropeLength: Math.max(5, start.distanceTo(anchor)), pullSpeed: 0, launchLift: true };
+    player.grapple = { anchor, line, wraps: [], ropeLength: Math.max(5, start.distanceTo(anchor) * .92), pullSpeed: 0, launchLift: true };
     const direction = anchor.clone().sub(start).normalize();
     const approachSpeed = player.velocity.dot(direction);
     player.grapple.pullSpeed = Math.max(0, approachSpeed);
     this.sound.play("grappleAttach", null, this.audioSpatial(anchor, local, local ? 1 : .42, player.id));
   }
 
-  updateGrapple(player, dt, reeling = player.isBot) {
+  updateGrapple(player, dt) {
     if (!player.grapple || !player.alive) return;
     const previousWrapCount = player.grapple.wraps.length;
     const chest = player.position.clone().add(new THREE.Vector3(0, 1.4, 0));
@@ -2259,7 +2258,7 @@ class BlasterBattle {
     }
     player.grapple.wraps = wraps;
     if (wraps.length !== previousWrapCount) this.sound.play("grappleWrap", null, this.audioSpatial(player.position, player === this.players[0], player === this.players[0] ? .8 : .25, player.id));
-    applyGrapplePhysics(player, dt, reeling);
+    applyGrapplePhysics(player, dt);
     const ropePoints = [chest, ...wraps, player.grapple.anchor];
     updateGrappleRopeGeometry(player.grapple.line.geometry, ropePoints);
   }

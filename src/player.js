@@ -1240,7 +1240,7 @@ export class Fighter {
 
 export const GRAPPLE_SPEED_CAP = 48;
 
-export function applyGrapplePhysics(player, dt, reeling = false) {
+export function applyGrapplePhysics(player, dt) {
   if (!player.grapple) return;
   const chest = player.position.clone().add(new THREE.Vector3(0, 1.4, 0));
   const wraps = player.grapple.wraps || [];
@@ -1251,32 +1251,16 @@ export function applyGrapplePhysics(player, dt, reeling = false) {
 
   const direction = towardAnchor.multiplyScalar(1 / distance);
   const movementScale = player.slowTimer > 0 ? .55 : 1;
-  if (reeling) player.grapple.ropeLength = Math.max(5, player.grapple.ropeLength - 18 * movementScale * dt);
+  player.grapple.ropeLength = Math.max(5, player.grapple.ropeLength - 18 * movementScale * dt);
   let wrappedLength = 0;
   for (let index = 0; index < wraps.length; index++) wrappedLength += wraps[index].distanceTo(wraps[index + 1] || player.grapple.anchor);
   const stretch = Math.max(0, distance - Math.max(1, player.grapple.ropeLength - wrappedLength));
-  const targetPullSpeed = (reeling ? 31 : 18) * movementScale;
+  const targetPullSpeed = 31 * movementScale;
   player.grapple.pullSpeed = THREE.MathUtils.damp(Math.max(0, player.grapple.pullSpeed || 0), targetPullSpeed, 8.5, dt);
   const radialSpeed = player.velocity.dot(direction);
-  // Keep making headway even on a slack rope, so sideways momentum cannot
-  // strand the player in an orbit. Swing mode keeps gravity and tangent motion.
-  const nextRadialSpeed = reeling
-    ? THREE.MathUtils.damp(radialSpeed, player.grapple.pullSpeed, stretch > 0 ? 15 : 10, dt)
-    : Math.max(radialSpeed, THREE.MathUtils.damp(radialSpeed, player.grapple.pullSpeed, 4, dt),
-      stretch > 0 ? Math.min(31 * movementScale, stretch * 10) : radialSpeed);
+  const nextRadialSpeed = THREE.MathUtils.damp(radialSpeed, player.grapple.pullSpeed, stretch > 0 ? 15 : 10, dt);
   player.velocity.addScaledVector(direction, nextRadialSpeed - radialSpeed);
-  // Arrest downward drift across the rope without erasing the launch arc,
-  // sideways steering, or the pull toward a lower anchor / nearest wrap.
-  const ropeUp = new THREE.Vector3(0, 1, 0).addScaledVector(direction, -direction.y);
-  const ropeUpLengthSq = ropeUp.lengthSq();
-  const sagSpeed = player.velocity.dot(ropeUp);
-  if (reeling && sagSpeed < 0 && ropeUpLengthSq > .001) {
-    player.velocity.addScaledVector(ropeUp, -sagSpeed * (1 - Math.exp(-18 * dt)) / ropeUpLengthSq);
-  }
   if (player.grapple.launchLift) {
-    // All shots need an attachment tug, including level and downward shots.
-    const approachSpeed = player.velocity.dot(direction);
-    player.velocity.addScaledVector(direction, Math.max(0, 14 * movementScale - approachSpeed));
     const elevation = Math.max(0, direction.y);
     if (elevation > .03) {
       const forward = direction.clone().setY(0);
