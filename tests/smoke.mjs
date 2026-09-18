@@ -1089,6 +1089,46 @@ const pull60 = smoothPull(60);
 assert.ok(pull60.speeds.every((speed, index) => index === 0 || speed >= pull60.speeds[index - 1] - .001), "grapple pull accelerates smoothly without stop-start velocity spikes");
 assert.ok(pull60.player.velocity.x > 30 && pull60.player.velocity.x < 31.1, "grapple pull converges on one predictable travel speed");
 assert.ok(Math.abs(smoothPull(30).player.velocity.x - smoothPull(120).player.velocity.x) < .05, "grapple pull is stable across frame rates");
+// Match gameplay order: gravity and movement, then grapple correction. Single
+// impulses miss the sustained sag that used to ruin long platform crossings.
+const grappleCrossing = (fps, rise, slowTimer = 0) => {
+  const player = {
+    position: new THREE.Vector3(0, 30, 0), velocity: new THREE.Vector3(), controlMove: new THREE.Vector3(), slowTimer,
+    grapple: { anchor: new THREE.Vector3(100, 31.4 + rise, 0), wraps: [], ropeLength: 92, pullSpeed: 0, launchLift: true }
+  };
+  let minimumHeight = player.position.y;
+  for (let frame = 0; frame < fps * 10 && player.position.x < 90; frame++) {
+    player.velocity.y -= 19 / fps;
+    player.position.addScaledVector(player.velocity, 1 / fps);
+    applyGrapplePhysics(player, 1 / fps);
+    minimumHeight = Math.min(minimumHeight, player.position.y);
+    assert.ok(player.velocity.length() <= GRAPPLE_SPEED_CAP + 1e-8, "sag assistance respects the speed cap");
+  }
+  assert.ok(player.position.x >= 90, "the grapple completes the long crossing");
+  return { player, minimumHeight };
+};
+for (const fps of [30, 60, 120]) {
+  for (const rise of [0, 12, 35]) {
+    const crossing = grappleCrossing(fps, rise);
+    assert.ok(crossing.minimumHeight > 27.5, "long level/upward crossings stay within 2.5 metres of launch height");
+    if (rise > 0) assert.ok(crossing.player.position.y > 30 + rise * .75, "elevated crossings climb before reaching the wall");
+  }
+  assert.ok(grappleCrossing(fps, 0, 1).minimumHeight > 26, "slowed grapples retain sag assistance");
+  assert.ok(grappleCrossing(fps, -20).player.position.y < 15, "lower anchors still pull downhill");
+}
+assert.ok(Math.abs(grappleCrossing(30, 12).player.position.y - grappleCrossing(120, 12).player.position.y) < 1,
+  "assisted crossing trajectories remain consistent across frame rates");
+const fallingGrappler = {
+  position: new THREE.Vector3(), velocity: new THREE.Vector3(0, -20, 8), controlMove: new THREE.Vector3(), slowTimer: 0,
+  grapple: { anchor: new THREE.Vector3(100, 1.4, 0), wraps: [], ropeLength: 92 }
+};
+applyGrapplePhysics(fallingGrappler, 1 / 60);
+assert.ok(fallingGrappler.velocity.y > -20 && fallingGrappler.velocity.y < 0, "reattaching during a fall arrests sag smoothly");
+assert.equal(fallingGrappler.velocity.z, 8, "sag correction preserves sideways momentum");
+fallingGrappler.grapple = null;
+const releasedVelocity = fallingGrappler.velocity.clone();
+applyGrapplePhysics(fallingGrappler, 1 / 60);
+assert.deepEqual(fallingGrappler.velocity, releasedVelocity, "release immediately removes sag assistance");
 const groundedGrappler = new Fighter(
   worldScene,
   { id: "grounded-grapple", name: "Grounded Grappler", color: 0x26d9ff, accent: 0xd9fbff },

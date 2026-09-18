@@ -1260,6 +1260,14 @@ export function applyGrapplePhysics(player, dt) {
   const radialSpeed = player.velocity.dot(direction);
   const nextRadialSpeed = THREE.MathUtils.damp(radialSpeed, player.grapple.pullSpeed, stretch > 0 ? 15 : 10, dt);
   player.velocity.addScaledVector(direction, nextRadialSpeed - radialSpeed);
+  // Arrest downward drift across the rope without erasing the launch arc,
+  // sideways steering, or the pull toward a lower anchor / nearest wrap.
+  const ropeUp = new THREE.Vector3(0, 1, 0).addScaledVector(direction, -direction.y);
+  const ropeUpLengthSq = ropeUp.lengthSq();
+  const sagSpeed = player.velocity.dot(ropeUp);
+  if (sagSpeed < 0 && ropeUpLengthSq > .001) {
+    player.velocity.addScaledVector(ropeUp, -sagSpeed * (1 - Math.exp(-18 * dt)) / ropeUpLengthSq);
+  }
   if (player.grapple.launchLift) {
     const elevation = Math.max(0, direction.y);
     if (elevation > .03) {
