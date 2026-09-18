@@ -1071,6 +1071,17 @@ const levelLaunch = {
 };
 applyGrapplePhysics(levelLaunch, 1 / 60, true);
 assert.equal(levelLaunch.velocity.y, 0, "level grapple shots do not receive artificial upward lift");
+for (const height of [1.4, -15, 20]) {
+  const shot = {
+    position: new THREE.Vector3(), velocity: new THREE.Vector3(0, 0, 8), controlMove: new THREE.Vector3(), slowTimer: 0,
+    grapple: { anchor: new THREE.Vector3(80, height, 0), wraps: [], ropeLength: 90, pullSpeed: 0, launchLift: true }
+  };
+  const direction = shot.grapple.anchor.clone().sub(new THREE.Vector3(0, 1.4, 0)).normalize();
+  applyGrapplePhysics(shot, 1 / 60);
+  assert.ok(shot.velocity.dot(direction) >= 14 - 1e-8, "every free-swing attachment launches toward its target without forward input");
+  assert.equal(shot.velocity.z, 8, "attachment thrust retains sideways swing momentum");
+  assert.equal(shot.grapple.launchLift, false, "attachment thrust is a one-shot impulse");
+}
 const smoothPull = (fps) => {
   const dt = 1 / fps;
   const player = {
@@ -1146,13 +1157,15 @@ for (const yaw of [0, Math.PI / 2, Math.PI]) {
     assert.ok(result.move.length() <= 1 + 1e-8, "combined input retains the movement speed limit");
   }
 }
-// Swing mode must keep gravity and tangential momentum, only tightening a taut rope.
+// Swing mode adds gentle traction without cancelling tangential momentum.
 const swinger = {
   position: new THREE.Vector3(), velocity: new THREE.Vector3(4, -8, 6), controlMove: new THREE.Vector3(), slowTimer: 0,
   grapple: { anchor: new THREE.Vector3(0, 21.4, 0), wraps: [], ropeLength: 25, pullSpeed: 0 }
 };
 applyGrapplePhysics(swinger, 1 / 60);
-assert.deepEqual(swinger.velocity, new THREE.Vector3(4, -8, 6), "a slack swinging rope does not cancel falling or sideways momentum");
+assert.ok(swinger.velocity.y > -8 && swinger.velocity.y < 0, "a slack rope gently pulls toward the elevated anchor");
+assert.equal(swinger.velocity.x, 4, "slack-rope traction preserves transverse momentum");
+assert.equal(swinger.velocity.z, 6, "slack-rope traction preserves sideways momentum");
 assert.equal(swinger.grapple.ropeLength, 25, "swinging does not reel in automatically");
 swinger.grapple.ropeLength = 19.9;
 applyGrapplePhysics(swinger, 1 / 60);
@@ -1176,8 +1189,31 @@ for (const fps of [30, 60, 120]) {
     crossed ||= swinger.position.x > 5;
     maxDistance = Math.max(maxDistance, swinger.position.clone().add(new THREE.Vector3(0, 1.4, 0)).distanceTo(swinger.grapple.anchor));
   }
-  assert.ok(low < 27 && crossed, "a free grapple sweeps below and across the anchor instead of zipping straight toward it");
+  assert.ok(low < 29.9 && crossed, "a free grapple keeps a gravity-driven arc and sweeps across the anchor");
   assert.ok(maxDistance < 26, "swing tension keeps the rope within one metre of its resting length");
+}
+// Use real collision and rope routing between two walls, with pre-existing
+// sideways speed. Traction should carry the player across, not orbit the start.
+const crossingWalls = [-50, 50].map(x => ({ x, z: 0, w: 2, d: 200, baseY: 0, top: 100 }));
+const wallWorld = Object.create(worldB);
+wallWorld.nearbyObstacles = () => crossingWalls;
+for (const fps of [30, 60, 120]) {
+  const traveler = {
+    position: new THREE.Vector3(-48.28, 30, 0), velocity: new THREE.Vector3(0, 0, 24), controlMove: new THREE.Vector3(), slowTimer: 0,
+    grapple: { anchor: new THREE.Vector3(49, 31.4, 0), wraps: [], ropeLength: 97.28, pullSpeed: 0, launchLift: true }
+  };
+  for (let frame = 0; frame < fps * 5; frame++) {
+    const previous = traveler.position.clone();
+    traveler.velocity.y -= 19 / fps;
+    traveler.position.addScaledVector(traveler.velocity, 1 / fps);
+    const collision = wallWorld.resolve(traveler.position, .72, previous);
+    if (collision.grounded && traveler.velocity.y < 0) traveler.velocity.y = 0;
+    const chest = traveler.position.clone().add(new THREE.Vector3(0, 1.4, 0));
+    assert.equal(wallWorld.ropeWrapPoint(chest, traveler.grapple.anchor), null, "an unobstructed wall shot must not invent a sideways wrap");
+    applyGrapplePhysics(traveler, 1 / fps);
+  }
+  assert.ok(traveler.position.x > 20, "unpowered grapple makes sustained progress away from the starting wall despite sideways momentum");
+  assert.ok(traveler.position.x <= 48.28 + 1e-8, "grapple respects the destination wall collision");
 }
 const groundedGrappler = new Fighter(
   worldScene,

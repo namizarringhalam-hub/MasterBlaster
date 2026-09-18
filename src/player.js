@@ -1255,14 +1255,15 @@ export function applyGrapplePhysics(player, dt, reeling = false) {
   let wrappedLength = 0;
   for (let index = 0; index < wraps.length; index++) wrappedLength += wraps[index].distanceTo(wraps[index + 1] || player.grapple.anchor);
   const stretch = Math.max(0, distance - Math.max(1, player.grapple.ropeLength - wrappedLength));
-  const targetPullSpeed = reeling ? 31 * movementScale : 0;
+  const targetPullSpeed = (reeling ? 31 : 18) * movementScale;
   player.grapple.pullSpeed = THREE.MathUtils.damp(Math.max(0, player.grapple.pullSpeed || 0), targetPullSpeed, 8.5, dt);
   const radialSpeed = player.velocity.dot(direction);
-  // A slack rope leaves momentum alone; a taut rope only resists escape.
-  // Powered reeling deliberately controls approach speed instead.
+  // Keep making headway even on a slack rope, so sideways momentum cannot
+  // strand the player in an orbit. Swing mode keeps gravity and tangent motion.
   const nextRadialSpeed = reeling
     ? THREE.MathUtils.damp(radialSpeed, player.grapple.pullSpeed, stretch > 0 ? 15 : 10, dt)
-    : stretch > 0 ? Math.max(radialSpeed, Math.min(31 * movementScale, stretch * 10)) : radialSpeed;
+    : Math.max(radialSpeed, THREE.MathUtils.damp(radialSpeed, player.grapple.pullSpeed, 4, dt),
+      stretch > 0 ? Math.min(31 * movementScale, stretch * 10) : radialSpeed);
   player.velocity.addScaledVector(direction, nextRadialSpeed - radialSpeed);
   // Arrest downward drift across the rope without erasing the launch arc,
   // sideways steering, or the pull toward a lower anchor / nearest wrap.
@@ -1273,6 +1274,9 @@ export function applyGrapplePhysics(player, dt, reeling = false) {
     player.velocity.addScaledVector(ropeUp, -sagSpeed * (1 - Math.exp(-18 * dt)) / ropeUpLengthSq);
   }
   if (player.grapple.launchLift) {
+    // All shots need an attachment tug, including level and downward shots.
+    const approachSpeed = player.velocity.dot(direction);
+    player.velocity.addScaledVector(direction, Math.max(0, 14 * movementScale - approachSpeed));
     const elevation = Math.max(0, direction.y);
     if (elevation > .03) {
       const forward = direction.clone().setY(0);
