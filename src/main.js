@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu";
 import { materialOpacity } from "three/tsl";
-import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { LIGHTING, setupEnvironment } from "./lighting.js";
 import { Line2 } from "three/addons/lines/webgpu/Line2.js";
 import { SoundBoard } from "./audio.js";
 import { CombatVisuals } from "./combatVisuals.js";
@@ -162,11 +162,11 @@ class BlasterBattle {
     this.renderer.setPixelRatio(this.graphics.pixelRatio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.02;
+    this.renderer.toneMappingExposure = LIGHTING.exposure;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x07111d);
+    // ArenaWorld supplies the procedural sky; background color is not lighting.
     this.scene.fog = new THREE.FogExp2(0x07111d, .006);
     this.camera = new THREE.PerspectiveCamera(62, 1, .1, 520);
     this.timer = new THREE.Timer();
@@ -269,13 +269,7 @@ class BlasterBattle {
     await this.renderer.init();
     this.renderer.shadowMap.type = this.renderer.backend.isWebGPUBackend ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     this.capabilities[this.renderer.backend.isWebGPUBackend === true ? "webgpu renderer" : "webgl2 fallback"] = true;
-    const environment = new THREE.PMREMGenerator(this.renderer);
-    const room = new RoomEnvironment();
-    this.environmentTarget = environment.fromScene(room, .04);
-    this.scene.environment = this.environmentTarget.texture;
-    this.scene.environmentIntensity = .82;
-    room.dispose();
-    environment.dispose();
+    this.environmentTarget = await setupEnvironment(this.renderer, this.scene);
     this.rebuildRenderPipeline();
     const reportDeviceLost = this.renderer.onDeviceLost.bind(this.renderer);
     this.renderer.onDeviceLost = (info) => {
@@ -326,7 +320,7 @@ class BlasterBattle {
   }
 
   setupLights() {
-    this.scene.add(new THREE.HemisphereLight(0x96d9ff, 0x10182a, 1.18));
+    // Environment IBL supplies diffuse fill and reflections without a flat light.
     const key = this.keyLight = new THREE.DirectionalLight(0xffffff, 1.78);
     key.position.set(-22, 40, 18);
     key.castShadow = true;
