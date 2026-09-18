@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { abs, color, fract, length, max, min, mix, normalWorldGeometry, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
+import { abs, color, fract, length, materialOpacity, max, min, mix, normalViewGeometry, normalWorldGeometry, positionViewDirection, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
 import { ARENA_PORTAL_COOLDOWN_SECONDS, ARENA_PORTAL_PAIRS, ARENA_SPAWN_POINTS, MAP_THEMES, seededRandom, seedFromText, structuralTowerBlueprints } from "./gameData.js";
 import { surfaceTextures, surfaceMaps, projectSurfaceUVs } from "./surfaceTextures.js";
 
@@ -11,6 +11,7 @@ const ZERO_VECTOR = new THREE.Vector3();
 const ONE_VECTOR = new THREE.Vector3(1, 1, 1);
 const ZERO_EULER = new THREE.Euler();
 const BOOST_PLUME_OPACITY = smoothstep(.5, 1, uv().y).oneMinus().mul(.055);
+const STRUCTURAL_DUST_OPACITY = materialOpacity.mul(normalViewGeometry.dot(positionViewDirection).clamp(0, 1).pow(2));
 const DISTRICT_PALETTES = {
   foundry: [0x28e7ff, 0xff4f87, 0xffc247, 0x9d7bff],
   solar: [0xffc34f, 0xff526f, 0x43ddff, 0xa7ff66],
@@ -1626,11 +1627,14 @@ export class ArenaWorld {
     this.group.add(mesh);
 
     const dustCount = 128;
-    const dustMaterial = new THREE.MeshBasicMaterial({
-      color: 0x66727a, transparent: true, opacity: .16, depthWrite: false,
+    const dustMaterial = new THREE.MeshBasicNodeMaterial({
+      color: 0xffffff, transparent: true, opacity: .16, depthWrite: false,
       blending: THREE.NormalBlending, toneMapped: false
     });
+    dustMaterial.opacityNode = STRUCTURAL_DUST_OPACITY;
     this.dustMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 6), dustMaterial, dustCount);
+    // Establish the color layout before shader compilation; setColorAt initializes every slot white.
+    this.dustMesh.setColorAt(0, new THREE.Color(0xffffff));
     this.dustMesh.count = 0;
     this.dustMesh.name = "Pooled structural dust volumes";
     this.dustMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);

@@ -14,8 +14,10 @@ const controller=source.slice(source.indexOf("class BlasterBattle"),source.index
 const bindings={THREE,...data,TEXT,cameraCollisionFirstPerson,clamp:THREE.MathUtils.clamp};
 const collapseSource=source.slice(source.indexOf("const STRUCTURAL_COLLAPSE"),source.indexOf("function projectileNeedsLoop"));
 const Game=new Function(...Object.keys(bindings),`${collapseSource};return ${controller}`)(...Object.values(bindings));
-function fixture(){
+function fixture(integrated=false){
   const scene=new THREE.Scene(),world=new ArenaWorld(scene,"FOUNDRY111"),hero=new Fighter(scene,{id:"dust-review",color:0x129dba,accent:0x6ff6ff},["blaster"],new THREE.Vector3(0,15,8));
+  // Historical diagnostic tests retain their explicit pre-integration material.
+  if(!integrated){world.dustMesh.material.dispose();world.dustMesh.material=new THREE.MeshBasicMaterial({color:0x66727a,transparent:true,opacity:.16,depthWrite:false,blending:THREE.NormalBlending,toneMapped:false});}
   world.dustMesh.computeBoundingSphere();world.debrisMesh.computeBoundingSphere();
   const sounds=[],game=Object.assign(Object.create(Game.prototype),{scene,world,players:[hero],paused:true,mode:"training",
     settings:{graphics:"high",reducedMotion:false},camera:new THREE.PerspectiveCamera(62,747/698,.1,520),updateCamera(){},
@@ -90,9 +92,10 @@ for(const gameplay of [false,true]){
   }
   f.dispose();
 }
-for(const failMode of ["constant-one","soft-edge","soft-grey","authored-tint"]){
-  const f=fixture(),mesh=f.game.world.dustMesh,material=mesh.material,owned=new Map();let colors,version,bytes,count,bound;
-  await assert.rejects(withStructuralDustReview(f.game,{diagnostic:["soft-grey","authored-tint"].includes(failMode)?"tint":"profile"},async s=>{
+for(const failMode of ["constant-one","soft-edge","soft-grey","authored-tint","previous-hard-grey","approved-reference"]){
+  const integrated=["previous-hard-grey","approved-reference"].includes(failMode);
+  const f=fixture(integrated),mesh=f.game.world.dustMesh,material=mesh.material,owned=new Map();let colors,version,bytes,count,bound;
+  await assert.rejects(withStructuralDustReview(f.game,{diagnostic:integrated?"integrated":["soft-grey","authored-tint"].includes(failMode)?"tint":"profile"},async s=>{
     if(s.mode==="current"){colors=mesh.instanceColor;version=colors.version;bytes=Array.from(colors.array);count=mesh.count;bound=mesh.boundingSphere.clone();}
     if(mesh.material!==material&&!owned.has(mesh.material)){const m=mesh.material;owned.set(m,0);m.addEventListener("dispose",()=>owned.set(m,owned.get(m)+1));}
     if(s.mode===failMode)throw Error("profile interrupted");
@@ -130,6 +133,23 @@ for(let i=0;i<28;i+=4){
   assert.deepEqual(clean(a),clean(b));assert.deepEqual(clean(a),clean(c));assert.deepEqual(d,{...a,mode:"restored"});
 }
 assert.equal(tintMesh.material,tintMaterial);assert.ok(tintMesh.instanceColor);tintFixture.dispose();
+const integratedFixture=fixture(true),integratedSamples=[],integratedMesh=integratedFixture.game.world.dustMesh;
+const integratedMaterial=integratedMesh.material,integratedColors=integratedMesh.instanceColor;
+await assert.rejects(withStructuralDustReview(integratedFixture.game,{diagnostic:"tint"},async()=>{}),/Archived/);
+await withStructuralDustReview(integratedFixture.game,{diagnostic:"integrated",gameplay:true},async s=>{
+  integratedSamples.push(structuredClone(s));
+  if(s.mode==="previous-hard-grey"){assert.equal(integratedMesh.instanceColor,null);assert.equal(integratedMesh.material.color.getHex(),0x66727a);}
+  else assert.equal(integratedMesh.instanceColor,integratedColors);
+  if(s.mode==="current"||s.mode==="restored")assert.equal(integratedMesh.material,integratedMaterial);
+});
+assert.equal(integratedSamples.length,28);
+for(let i=0;i<28;i+=4){
+  const [a,b,c,d]=integratedSamples.slice(i,i+4);
+  assert.deepEqual([a.mode,b.mode,c.mode,d.mode],["current","previous-hard-grey","approved-reference","restored"]);
+  assert.deepEqual(c,{...a,mode:"approved-reference"});assert.deepEqual(d,{...a,mode:"restored"});
+  assert.deepEqual({...b,mode:a.mode,dustRenderInstanceColors:a.dustRenderInstanceColors,dustMaterial:a.dustMaterial},a);
+}
+assert.equal(integratedMesh.material,integratedMaterial);assert.equal(integratedMesh.instanceColor,integratedColors);integratedFixture.dispose();
 for(const diagnostic of ["bounds","camera"]){
   const f=fixture(),camera=f.game.camera.matrixWorld.toArray();let bound,copy;
   await assert.rejects(withStructuralDustReview(f.game,{diagnostic},async s=>{
@@ -147,10 +167,10 @@ failed.dispose();
 const html=readFileSync(new URL("./graphics.browser.html",import.meta.url),"utf8");
 const runner=html.slice(html.indexOf("async function runStructuralDustReview("),html.indexOf("function makeTrailShading("));
 const freezeSource=html.slice(html.indexOf("async function withFrozenShaderTime("),html.indexOf("async function runWallImpactReview("));
-const runFixture=fixture(),links=[],controls=[{disabled:false},{disabled:true}],review={running:false};
+const runFixture=fixture(true),links=[],controls=[{disabled:false},{disabled:true}],review={running:false};
 runFixture.game.renderPipeline={direct:false,profile:"unit-test-no-renderer"};
 runFixture.game.renderer={info:{render:{drawCalls:0,triangles:0},memory:{}}};
-const elements={"dust-gameplay":{checked:true},"dust-diagnostic":{value:"profile"},"camera-captures":{replaceChildren:()=>{links.length=0;},append:link=>links.push(link)}};
+const elements={"dust-gameplay":{checked:true},"dust-diagnostic":{value:"integrated"},"camera-captures":{replaceChildren:()=>{links.length=0;},append:link=>links.push(link)}};
 const document={querySelectorAll:()=>controls,createElement:()=>({dataset:{}}),querySelector:()=>({toDataURL:()=>"unit-test-only"})};
 const makeRunner=(stress=false,fail=false)=>new Function("game","withStructuralDustReview","select","document","cameraReview","stress","fail",`
   const withoutSurfaceResources=false,resetReview={},cacheReview={},decoyReview={},sceneSerial=1,resetPhase="ready",errorCount=0,innerWidth=747,innerHeight=698,devicePixelRatio=1;
@@ -161,8 +181,8 @@ const makeRunner=(stress=false,fail=false)=>new Function("game","withStructuralD
 await makeRunner(true)();assert.match(review.error,/Stop stress/);assert.equal(links.length,0);
 await makeRunner()();assert.equal(review.error,null);assert.equal(links.length,28);assert.equal(review.running,false);assert.equal(review.shell,false);
 const stamp=JSON.parse(links[0].dataset.review);assert.equal(stamp.gameplay,true);assert.equal(stamp.shaderClockSeconds,3);assert.equal(stamp.mode,"current");
-assert.equal(stamp.diagnostic,"profile");assert.equal(JSON.parse(links[1].dataset.review).mode,"constant-one");
-assert.equal(JSON.parse(links[2].dataset.review).mode,"soft-edge");assert.equal(JSON.parse(links[3].dataset.review).mode,"restored");
+assert.equal(stamp.diagnostic,"integrated");assert.equal(JSON.parse(links[1].dataset.review).mode,"previous-hard-grey");
+assert.equal(JSON.parse(links[2].dataset.review).mode,"approved-reference");assert.equal(JSON.parse(links[3].dataset.review).mode,"restored");
 assert.deepEqual(controls.map(c=>c.disabled),[false,true]);
 review.samples[0].cohorts[0].landing=true;assert.equal(JSON.parse(links[0].dataset.review).cohorts[0].landing,false,"saved stamp is immutable");
 runFixture.dispose();

@@ -7,9 +7,17 @@ import { graphicsProfile } from "../src/gameData.js";
 // Deterministic shard/shrink baseline: matrix/color bytes and physical fields
 // stay repeatable across pool reuse and bound refresh.
 const goldenWorld=new ArenaWorld(new THREE.Scene(),"POOL-BOUNDS");
+const initialDustColors=goldenWorld.dustMesh.instanceColor;
+assert.ok(initialDustColors,"dust color layout exists before any render or collapse");
+assert.equal(initialDustColors.count,128);assert.equal(initialDustColors.itemSize,3);
+assert.ok(initialDustColors.array.every(v=>v===1),"unused eager slots start neutral white");
+assert.equal(goldenWorld.dustMesh.material.isMeshBasicNodeMaterial,true);
+assert.equal(goldenWorld.dustMesh.material.color.getHex(),0xffffff,"authored RGB is not multiplied by a second grey tint");
+const sharedDustOpacity=goldenWorld.dustMesh.material.opacityNode;assert.ok(sharedDustOpacity?.isNode);
 const point=new THREE.Vector3(-50,6,-42),bounds={w:5,h:3,d:5};
 goldenWorld.spawnStructuralDebris(point,0xc468ff,14,bounds,"golden");
 goldenWorld.spawnStructuralDust(point,0xc468ff,18,bounds,"golden");
+assert.equal(goldenWorld.dustMesh.instanceColor,initialDustColors,"first collapse fills the existing stream instead of changing vertex layout");
 const hash=createHash("sha256");
 for(const dt of [0,1/60,.25,1,3,10]){
   goldenWorld.updateStructuralDebris(dt);
@@ -22,6 +30,8 @@ goldenWorld.dispose();
 
 for(const tier of ["low","medium","high"]){
   const world=new ArenaWorld(new THREE.Scene(),"POOL-BOUNDS");world.setGraphicsProfile(graphicsProfile(tier));
+  assert.equal(world.dustMesh.material.opacityNode,sharedDustOpacity,"all worlds and tiers share one dust opacity graph");
+  const colorStream=world.dustMesh.instanceColor;
   const pairs=[[world.debrisMesh,world.debrisParticles],[world.dustMesh,world.dustParticles]];
   let refreshes=0;
   for(const [mesh] of pairs){
@@ -30,6 +40,7 @@ for(const tier of ["low","medium","high"]){
     const compute=mesh.computeBoundingSphere;mesh.computeBoundingSphere=function(){refreshes++;return compute.call(this);};
   }
   const verify=()=>{
+    assert.equal(world.dustMesh.instanceColor,colorStream,"updates/expiry/reuse never replace or unbind the authored color stream");
     for(const [mesh,pool] of pairs){
       const active=pool.flatMap((p,i)=>p.active?[i]:[]);
       assert.equal(mesh.count,active.length?active.at(-1)+1:0,"draw tail retains sparse stable slot indices");

@@ -6,10 +6,11 @@ import { Fighter } from "../src/player.js";
 // The structure stays destroyed; reset the fixture before another run. This is
 // not a weapon/damage test. No synthetic dust, suppressed landing or live match.
 export async function withStructuralDustReview(game, { gameplay = false, diagnostic = "hide" } = {}, capture) {
-  if(!["hide","bounds","camera","profile","compile","tint"].includes(diagnostic))throw Error("Unknown dust diagnostic");
-  const materialComparison=["profile","compile","tint"].includes(diagnostic);
-  const materialModes=diagnostic==="compile"?["fresh-basic","fresh-node"]:diagnostic==="tint"?["soft-grey","authored-tint"]:["constant-one","soft-edge"];
+  if(!["hide","bounds","camera","profile","compile","tint","integrated"].includes(diagnostic))throw Error("Unknown dust diagnostic");
+  const materialComparison=["profile","compile","tint","integrated"].includes(diagnostic);
+  const materialModes=diagnostic==="integrated"?["previous-hard-grey","approved-reference"]:diagnostic==="compile"?["fresh-basic","fresh-node"]:diagnostic==="tint"?["soft-grey","authored-tint"]:["constant-one","soft-edge"];
   const world=game.world,v=game.combatVisuals,original=game.players[0];
+  if(world.dustMesh.material.isNodeMaterial&&["profile","compile","tint"].includes(diagnostic))throw Error("Archived dust comparisons require the pre-integration material fixture");
   const pools=[v.flashes,v.tracers,v.rings,v.sparks,v.bloodDecals];
   if(game.mode!=="training"||game.isOnlineMatch()||!game.paused||!original||world.collapseSerial||world.structuralChanges.length||
       world.dustParticles.some(p=>p.active)||world.debrisParticles.some(p=>p.active)||
@@ -77,7 +78,7 @@ export async function withStructuralDustReview(game, { gameplay = false, diagnos
         for(let i=0;i<profileMaterials.length;i++){
           const colors=world.dustMesh.instanceColor;
           try{
-            if(diagnostic==="profile"||(diagnostic==="tint"&&i===0)){
+            if(diagnostic==="profile"||(["tint","integrated"].includes(diagnostic)&&i===0)){
               if(!game.paused||!colors)throw Error("Dust profile requires paused simulation and its saved color stream");
               // QA control: the published graph was cached before first-spawn colors existed.
               // Preserve their bytes, but render each trial with that same no-color graph.
@@ -111,7 +112,7 @@ export async function withStructuralDustReview(game, { gameplay = false, diagnos
       // Equal classic material properties otherwise reuse the original cached node graph.
       fresh.customProgramCacheKey=()=>"qa-structural-dust-fresh-classic";
       profileMaterials.push(new THREE.MeshBasicNodeMaterial().copy(originalDustMaterial));
-    }else if(diagnostic==="profile"||diagnostic==="tint"){
+    }else if(["profile","tint","integrated"].includes(diagnostic)){
       const control=new THREE.MeshBasicNodeMaterial().copy(originalDustMaterial);profileMaterials.push(control);
       // These accessors normalize interpolated geometry normals and perspective view direction.
       const edge=normalViewGeometry.dot(positionViewDirection).clamp(0,1).pow(2);
@@ -119,6 +120,7 @@ export async function withStructuralDustReview(game, { gameplay = false, diagnos
       const soft=control.clone();profileMaterials.push(soft);
       soft.opacityNode=materialOpacity.mul(edge);
       if(diagnostic==="tint")soft.color.set(0xffffff);
+      if(diagnostic==="integrated"){control.color.set(0x66727a);soft.color.set(0xffffff);}
     }
     world.spawnStructuralDust=function(...args){
       const start=this.dustCursor,result=spawn.apply(this,args),indices=[];
