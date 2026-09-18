@@ -20,16 +20,22 @@
 - Live browser inspection confirms updated copy, readable layout and menu controls.
   HTTP checks with Googlebot user-agent return 200 for homepage, robots and sitemap,
   with correct content types and no X-Robots-Tag header blocking indexing.
-- Blocker: the available browser is not signed into Google Search Console.
-  User was asked to sign in; sitemap submission and URL indexing request are
-  still pending. Bing dashboard is also signed out, but IndexNow submission was
-  accepted. No claim of indexing or guaranteed ranking is made.
-- Next unfinished step: after user signs in, verify Search Console ownership,
-  submit sitemap, inspect homepage and request indexing. Monitor indexing through
-  the search engine dashboards; no recurring automation was requested or created.
+- Initial Search Console sign-in blocker resolved in the follow-up below.
+  Bing dashboard remains signed out, but IndexNow submission was accepted.
+  No recurring automation was requested or created.
 
 ## Google verification follow-up
 
 - User signed into Search Console. Added URL-prefix property https://masterblaster.se/.
 - Added the account's actual HTML verification meta tag to index.html.
-- Next: build and publish tag, verify ownership, submit sitemap, request indexing.
+- Build and hosting checks passed; committed/pushed tag in fec8db4 and confirmed
+  the exact verification tag is live on the production homepage.
+- Google confirmed "Ownership verified" using the HTML tag. Keep the tag in place.
+- Submitted sitemap.xml: Google reports "Success", last read 18 Sept 2026,
+  one discovered page and zero videos.
+- URL Inspection reports "URL is on Google" and "Page is indexed" for the homepage.
+- Requested indexing of the updated page: Google confirmed "Indexing requested"
+  and addition to a priority crawl queue. Updated snippets/ranking timing is not
+  guaranteed. No duplicate submission needed.
+- All setup/submission steps are complete. Future performance/indexing reports
+  can be checked in the verified https://masterblaster.se/ Search Console property.
