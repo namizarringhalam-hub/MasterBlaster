@@ -1265,6 +1265,14 @@ export function applyGrapplePhysics(player, dt, reeling = false) {
     : Math.max(radialSpeed, THREE.MathUtils.damp(radialSpeed, player.grapple.pullSpeed, 4, dt),
       stretch > 0 ? Math.min(31 * movementScale, stretch * 10) : radialSpeed);
   player.velocity.addScaledVector(direction, nextRadialSpeed - radialSpeed);
+  // Arrest downward drift across the rope without erasing the launch arc,
+  // sideways steering, or the pull toward a lower anchor / nearest wrap.
+  const ropeUp = new THREE.Vector3(0, 1, 0).addScaledVector(direction, -direction.y);
+  const ropeUpLengthSq = ropeUp.lengthSq();
+  const sagSpeed = player.velocity.dot(ropeUp);
+  if (reeling && sagSpeed < 0 && ropeUpLengthSq > .001) {
+    player.velocity.addScaledVector(ropeUp, -sagSpeed * (1 - Math.exp(-18 * dt)) / ropeUpLengthSq);
+  }
   if (player.grapple.launchLift) {
     // All shots need an attachment tug, including level and downward shots.
     const approachSpeed = player.velocity.dot(direction);
@@ -1279,15 +1287,8 @@ export function applyGrapplePhysics(player, dt, reeling = false) {
     player.grapple.launchLift = false;
   }
 
-  if (reeling) {
-    // Forward means zip along the rope, regardless of camera heading or prior
-    // sideways momentum. Keep the approach speed, not the orbiting component.
-    const approachSpeed = Math.max(0, player.velocity.dot(direction));
-    player.velocity.copy(direction).multiplyScalar(approachSpeed);
-  } else {
-    const steering = player.controlMove.clone().sub(direction.clone().multiplyScalar(player.controlMove.dot(direction)));
-    if (steering.lengthSq() > .01) player.velocity.addScaledVector(steering.normalize(), 14 * movementScale * dt);
-  }
+  const steering = player.controlMove.clone().sub(direction.clone().multiplyScalar(player.controlMove.dot(direction)));
+  if (steering.lengthSq() > .01) player.velocity.addScaledVector(steering.normalize(), 14 * movementScale * dt);
   if (player.ledgeContact && Math.max(pullPoint.y, player.grapple.anchor.y) >= player.ledgeContact.top - .35) {
     player.velocity.y = Math.max(player.velocity.y, 11);
     const inwardSpeed = player.velocity.dot(player.ledgeContact.inward);
