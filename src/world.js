@@ -157,6 +157,19 @@ function box(w, h, d, color, x, y, z, emissive = 0) {
   return mesh;
 }
 
+export function fractureShardGeometry() {
+  const geometry = new THREE.IcosahedronGeometry(.5, 0);
+  const position = geometry.attributes.position;
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i), y = position.getY(i), z = position.getZ(i);
+    // Coordinate-based deformation keeps duplicated face vertices watertight.
+    const chip = .76 + .2 * Math.sin(x * 23 + y * 17 + z * 31);
+    position.setXYZ(i, x * chip + y * .17, y * chip, z * chip - y * .11);
+  }
+  geometry.computeVertexNormals();
+  return projectSurfaceUVs(geometry);
+}
+
 // One inset plate per module face, with a machined perimeter. It remains one
 // instanced draw and stays inside the original collision envelope.
 export function structuralPanelGeometry(uvScale = 1) {
@@ -1584,8 +1597,8 @@ export class ArenaWorld {
 
   createDebrisPool() {
     const count = 128;
-    const geometry = new THREE.BoxGeometry(1, 1, 1);
-    const debrisMaterial = material(0x253646, this.theme.danger, .55, { roughness: .7, metalness: .45, emissiveIntensity: .08 });
+    const geometry = fractureShardGeometry();
+    const debrisMaterial = material(0xffffff, 0, 1, { roughness: .7, metalness: .45 });
     const mesh = new THREE.InstancedMesh(geometry, debrisMaterial, count);
     mesh.count = 0;
     mesh.name = "Pooled structural scrap";
@@ -1634,7 +1647,8 @@ export class ArenaWorld {
     this.group.add(this.dustMesh);
   }
 
-  spawnStructuralDebris(position, colorValue, count = 14, bounds = null, eventSeed = "debris") {
+  spawnStructuralDebris(position, colorValue, count = 10, bounds = null, eventSeed = "debris") {
+    count = Math.min(12, Math.max(0, Math.floor(count)));
     const random = seededRandom(seedFromText(`${this.seed}:${eventSeed}`));
     const spreadX = bounds?.w || 2.4;
     const spreadY = bounds?.h || 1.3;
@@ -1677,6 +1691,10 @@ export class ArenaWorld {
       } else if (slab && piece < Math.ceil(count * .42)) particle.scale.set(.7 + random() * 1.7, .12 + random() * .22, .55 + random() * 1.45);
       else particle.scale.set(.16 + random() * .55, .1 + random() * .38, .18 + random() * .72);
       particle.life = 3.2 + random() * 2.2;
+      particle.visualLife = particle.maxVisualLife = 1.2 + (particle.life - 3.2) / 2.2 * .8;
+      // Deck landing events still need their bounded ballistic simulation even
+      // after the cosmetic shards vanish; other debris expires with its visual.
+      if (!particle.majorFragment) particle.life = particle.visualLife;
       this.debrisMesh.setColorAt(index, new THREE.Color(colorValue).lerp(new THREE.Color(0x263746), random() * .6));
       spawned.push(particle);
     }
@@ -1712,6 +1730,7 @@ export class ArenaWorld {
       if (!particle.active) continue;
       changed = true;
       particle.life -= dt;
+      particle.visualLife = Math.max(0, particle.visualLife - dt);
       particle.velocity.y -= 22 * dt;
       particle.position.addScaledVector(particle.velocity, dt);
       particle.rotation.addScaledVector(particle.spin, dt);
@@ -1738,7 +1757,13 @@ export class ArenaWorld {
         this.debrisMesh.setMatrixAt(index, HIDDEN_INSTANCE);
         continue;
       }
+      if (particle.visualLife <= 0) {
+        this.debrisMesh.setMatrixAt(index, HIDDEN_INSTANCE);
+        continue;
+      }
       dummy.position.copy(particle.position);
+      const fade = THREE.MathUtils.smoothstep(particle.visualLife / particle.maxVisualLife, 0, .55);
+      dummy.scale.copy(particle.scale).multiplyScalar(fade);
       dummy.updateMatrix();
       this.debrisMesh.setMatrixAt(index, dummy.matrix);
       debrisCount = index + 1;
@@ -1932,7 +1957,7 @@ export class ArenaWorld {
     part.visualOffset = null;
     part.visualRotation = null;
     this.updateStructuralVisual(part);
-    const debrisCount = part.structuralKind === "platform" ? 18 : (structure.major ? 30 : 18);
+    const debrisCount = 12;
     if (!change.silent) {
       change.fragmentDebris = this.spawnStructuralDebris(breakPosition, structure.color, debrisCount, part, change.id);
       this.spawnStructuralDust(breakPosition, structure.color, change.major ? 24 : 14, part, change.id);
@@ -3056,7 +3081,7 @@ export class ArenaWorld {
       const effectColor = item.mesh.material.emissive?.getHex() || item.mesh.material.color.getHex();
       const effectBounds = { w: item.w, h: item.h, d: item.d };
       const scale = Math.cbrt(item.w * item.h * item.d);
-      this.spawnStructuralDebris(center, effectColor, THREE.MathUtils.clamp(Math.round(8 + scale * 1.8), 10, 22), effectBounds, effectSeed);
+      this.spawnStructuralDebris(center, effectColor, THREE.MathUtils.clamp(Math.round(6 + scale), 6, 12), effectBounds, effectSeed);
       this.spawnStructuralDust(center, effectColor, THREE.MathUtils.clamp(Math.round(7 + scale * 1.3), 10, 16), effectBounds, effectSeed);
       if (item.batch) {
         item.batch.mesh.setMatrixAt(item.batch.index, HIDDEN_INSTANCE);

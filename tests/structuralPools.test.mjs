@@ -4,8 +4,8 @@ import * as THREE from "three/webgpu";
 import { ArenaWorld } from "../src/world.js";
 import { graphicsProfile } from "../src/gameData.js";
 
-// Recorded before the culling correction: every matrix/color byte and physical
-// fields listed below must survive the new draw tails and bound refresh.
+// Deterministic shard/shrink baseline: matrix/color bytes and physical fields
+// stay repeatable across pool reuse and bound refresh.
 const goldenWorld=new ArenaWorld(new THREE.Scene(),"POOL-BOUNDS");
 const point=new THREE.Vector3(-50,6,-42),bounds={w:5,h:3,d:5};
 goldenWorld.spawnStructuralDebris(point,0xc468ff,14,bounds,"golden");
@@ -17,7 +17,7 @@ for(const dt of [0,1/60,.25,1,3,10]){
   for(const pool of [goldenWorld.debrisParticles,goldenWorld.dustParticles])hash.update(JSON.stringify(pool.map(p=>({active:p.active,life:p.life,maxLife:p.maxLife,
     position:p.position.toArray(),velocity:p.velocity.toArray(),scale:p.scale.toArray(),rotation:p.rotation?.toArray(),contacted:p.contacted}))));
 }
-assert.equal(hash.digest("hex"),"6cdee2e45c4621ed46096dcbaa41eaa870de7ba49088c1899710f3efb3fa5411");
+assert.equal(hash.digest("hex"),"b70be71b09f7a715fb3a429bdda3189bfb6c0d2225867674f1bfd57e298e073c");
 goldenWorld.dispose();
 
 for(const tier of ["low","medium","high"]){

@@ -3,6 +3,8 @@ import { materialOpacity, uv } from "three/tsl";
 import { weaponPresentation } from "./weaponPresentation.js";
 import { seededRandom } from "./gameData.js";
 import { surfaceMaps } from "./surfaceTextures.js";
+import { emissiveEffectMaterial } from "./effectMaterials.js";
+import { ExplosionParticles } from "./explosionParticles.js";
 
 const clamp = THREE.MathUtils.clamp;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -44,8 +46,7 @@ function sharedGeometry(Type, ...parameters) {
 }
 
 function glowMaterial(opacity = 1, opacityNode = null) {
-  const Material = opacityNode ? THREE.MeshBasicNodeMaterial : THREE.MeshBasicMaterial;
-  const material = new Material({
+  const material = emissiveEffectMaterial({
     color: new THREE.Color(0xffffff).multiplyScalar(HDR_GLOW),
     transparent: true,
     opacity,
@@ -194,8 +195,8 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
   const radius = Math.max(.08, collisionRadius);
   const profile = weaponPresentation(weapon);
   const family = mine ? "grenade" : ["wall", "decoy"].includes(profile.delivery) ? "plasma" : profile.delivery;
-  const core = new THREE.MeshBasicMaterial({ color: new THREE.Color(weapon.color).multiplyScalar(1.85), toneMapped: false });
-  const hot = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffffff).multiplyScalar(3), toneMapped: false });
+  const core = emissiveEffectMaterial({ color: new THREE.Color(weapon.color).multiplyScalar(1.85) });
+  const hot = emissiveEffectMaterial({ color: new THREE.Color(0xffffff).multiplyScalar(3) });
   const shotIdentity = ownerColor(owner, weapon);
   let identity;
   const identityMaterial = () => {
@@ -449,6 +450,15 @@ export class CombatVisuals {
     });
     this.combatLightCursor = 0;
     this.group.add(this.combatLightGroup);
+    this.explosions = new ExplosionParticles(this.group);
+    // Keep the scene light layout fixed; attach by reference and follow in world
+    // space so firing/removing a projectile never recompiles every lit material.
+    this.projectileLights = Array.from({ length: 4 }, () => {
+      const light = new THREE.PointLight(0xffffff, 0, 7, 2);
+      light.castShadow = false; light.userData.projectile = null;
+      this.combatLightGroup.add(light); return light;
+    });
+    this.projectileLightCursor = 0;
 
     this.fireballs = new Set();
     this.fireballCount = 0;
@@ -500,19 +510,37 @@ export class CombatVisuals {
         ownerColor: ownerColor(owner, weapon)
       };
       this.fireballs.add(anchor);
+      this.attachProjectileLight(anchor, weapon);
       return anchor;
     }
-    return createProjectileVisual(weapon, owner, radius, options);
+    const mesh = createProjectileVisual(weapon, owner, radius, options);
+    this.attachProjectileLight(mesh, weapon);
+    return mesh;
+  }
+
+  attachProjectileLight(mesh, weapon) {
+    const profile = weaponPresentation(weapon);
+    if (!profile.energy && !["rocket", "plasma"].includes(profile.delivery) && profile.payload !== "fireball") return;
+    const limit = Math.min(this.projectileLights.length, this.lightLimit ?? 4);
+    if (!limit) return;
+    const light = this.projectileLights[this.projectileLightCursor++ % limit];
+    light.userData.projectile = mesh; light.color.set(weapon.color);
+    light.intensity = this.reducedMotion ? .65 : 1.4;
+    light.position.copy(mesh.position);
   }
 
   removeProjectile(shot) {
     if (shot?.mesh?.userData?.combatVisual?.instancedFireball) this.fireballs.delete(shot.mesh);
+    for (const light of this.projectileLights) if (light.userData.projectile === shot?.mesh) {
+      light.userData.projectile = null; light.intensity = 0;
+    }
   }
 
   updateProjectile(shot, dt) {
     const visual = shot.mesh?.userData?.combatVisual;
     if (!visual) return;
     visual.time += dt;
+    for (const light of this.projectileLights) if (light.userData.projectile === shot.mesh) shot.mesh.getWorldPosition(light.position);
     if (visual.instancedFireball) return;
     const moving = shot.velocity?.lengthSq() > .001;
     if (moving) {
@@ -766,6 +794,7 @@ export class CombatVisuals {
 
     const blastLike = family === "blast" || family === "cluster"
       || (explosive && !["gravity", "implosion", "pulse", "disrupt"].includes(family));
+    if (blastLike || family === "flame") this.explosions.spawn(position, size, this.quality, this.reducedMotion);
     const count = this.reducedMotion ? 3
       : blastLike ? 14
         : family === "freeze" ? 10
@@ -874,6 +903,15 @@ export class CombatVisuals {
 
   update(dt) {
     this.effectTime += dt;
+    this.explosions.update(dt);
+    for (let i = 0; i < this.projectileLights.length; i++) {
+      const light = this.projectileLights[i], projectile = light.userData.projectile;
+      if (!projectile?.parent || i >= (this.lightLimit ?? 4)) {
+        light.intensity = 0; light.userData.projectile = null; continue;
+      }
+      projectile.getWorldPosition(light.position);
+      light.intensity = this.reducedMotion ? .65 : 1.4;
+    }
     this.updateFireballs();
     this.updateFlashes(dt);
     this.updateTracers(dt);
@@ -1286,6 +1324,7 @@ export class CombatVisuals {
   }
 
   dispose() {
+    for (const light of this.projectileLights) light.userData.projectile = null;
     for (const pool of [this.flashes, this.tracers, this.combatLights]) for (const slot of pool) slot.muzzleOwner = null;
     this.fireballs.clear();
     this.scene.remove(this.group);
