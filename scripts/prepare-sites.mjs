@@ -7,7 +7,7 @@ await copyFile(".openai/hosting.json", "dist/.openai/hosting.json");
 await copyFile("dist/index.html", "dist/client/index.html");
 await cp("dist/assets", "dist/client/assets", { recursive: true });
 await cp("dist/audio", "dist/client/audio", { recursive: true });
-for (const file of ["favicon.svg", "manifest.webmanifest", "menu-arena-v2.webp", "og.png", "sw.js", "robots.txt", "sitemap.xml"]) {
+for (const file of ["favicon.svg", "manifest.webmanifest", "menu-arena-v2.webp", "og.png", "sw.js", "robots.txt", "sitemap.xml", "indexnow.txt"]) {
   await copyFile(`dist/${file}`, `dist/client/${file}`);
 }
 await writeFile(

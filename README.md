@@ -76,6 +76,15 @@ inspect `https://masterblaster.se/` and request indexing. Submit the same sitema
 in [Bing Webmaster Tools](https://www.bing.com/webmasters/). Ownership verification
 requires the account's actual DNS record or verification token; do not invent one.
 
+For participating engines, [IndexNow](https://www.indexnow.org/documentation)
+can receive the homepage URL without dashboard sign-in. The generated ownership
+key is intentionally served at `https://masterblaster.se/indexnow.txt`. Send a
+POST to `https://api.indexnow.org/indexnow` with `host: "masterblaster.se"`,
+`key` equal to that file's trimmed contents, `keyLocation` equal to its absolute
+URL, and `urlList: ["https://masterblaster.se/"]`. Submit only after deployment
+and when content changes. HTTP 200 means received; 202 means key validation is
+pending. Neither means indexed. Google still needs the Search Console flow above.
+
 The sitemap is also advertised in robots.txt for automatic discovery. Search
 engines decide whether and when to index the game; deployment or submission does
 not guarantee inclusion or ranking. See [Google's indexing guidance](https://developers.google.com/search/docs/crawling-indexing/ask-google-to-recrawl).

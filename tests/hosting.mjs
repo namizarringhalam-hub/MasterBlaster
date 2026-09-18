@@ -57,7 +57,8 @@ assert.equal(game.url, "https://masterblaster.se/");
 assert.equal(game.isAccessibleForFree, true);
 for (const [file, type, content] of [
   ["robots.txt", "text/plain", /Sitemap: https:\/\/masterblaster\.se\/sitemap\.xml/],
-  ["sitemap.xml", "application/xml", /<loc>https:\/\/masterblaster\.se\/<\/loc>/]
+  ["sitemap.xml", "application/xml", /<loc>https:\/\/masterblaster\.se\/<\/loc>/],
+  ["indexnow.txt", "text/plain", /^[a-f0-9]{32}\s*$/]
 ]) {
   const crawlerResponse = await worker.fetch(new Request(`https://example.test/${file}`), { ASSETS: clientAssets });
   assert.equal(crawlerResponse.status, 200, `${file} is deployed`);
