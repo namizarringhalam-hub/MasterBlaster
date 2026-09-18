@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu";
 import { materialOpacity } from "three/tsl";
-import { LIGHTING, setupEnvironment } from "./lighting.js";
+import { LIGHTING, fitArenaShadow, setupEnvironment } from "./lighting.js";
 import { Line2 } from "three/addons/lines/webgpu/Line2.js";
 import { SoundBoard } from "./audio.js";
 import { CombatVisuals } from "./combatVisuals.js";
@@ -164,7 +164,8 @@ class BlasterBattle {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = LIGHTING.exposure;
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Both backends use WebGPURenderer's node-based shadow pipeline.
+    this.renderer.shadowMap.type = THREE.VSMShadowMap;
     this.scene = new THREE.Scene();
     // ArenaWorld supplies the procedural sky; background color is not lighting.
     this.scene.fog = new THREE.FogExp2(0x07111d, .006);
@@ -267,7 +268,6 @@ class BlasterBattle {
 
   async init() {
     await this.renderer.init();
-    this.renderer.shadowMap.type = this.renderer.backend.isWebGPUBackend ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     this.capabilities[this.renderer.backend.isWebGPUBackend === true ? "webgpu renderer" : "webgl2 fallback"] = true;
     this.environmentTarget = await setupEnvironment(this.renderer, this.scene);
     this.rebuildRenderPipeline();
@@ -325,10 +325,9 @@ class BlasterBattle {
     key.position.set(-22, 40, 18);
     key.castShadow = true;
     key.shadow.mapSize.set(this.graphics.shadowMapSize, this.graphics.shadowMapSize);
-    key.shadow.bias = -.00018;
-    key.shadow.normalBias = .035;
-    Object.assign(key.shadow.camera, { left: -135, right: 135, top: 135, bottom: -135, near: 1, far: 260 });
-    this.scene.add(key);
+    key.shadow.bias = LIGHTING.shadowBias;
+    key.shadow.normalBias = LIGHTING.shadowNormalBias;
+    this.scene.add(key, key.target);
     const rim = new THREE.DirectionalLight(0xff315f, .88);
     rim.position.set(22, 15, -25);
     this.scene.add(rim);
@@ -1339,6 +1338,7 @@ class BlasterBattle {
     // tier remains unchanged at maximum room capacity.
     this.renderPipeline.setHighLoadMode(fighterCount >= 13);
     this.world = new ArenaWorld(this.scene, this.seed);
+    fitArenaShadow(this.keyLight, this.world);
     this.world.setGraphicsProfile(this.graphics, this.renderer.getMaxAnisotropy());
     if (welcome?.structuralState) {
       this.world.applyStructuralState(welcome.structuralState, welcome);

@@ -7,8 +7,37 @@ export const LIGHTING = {
   // An empty URL uses the generated HDR room, with no network dependency.
   hdrUrl: "",
   exposure: 1.0,
-  environmentIntensity: .82
+  environmentIntensity: .82,
+  shadowBias: -.0005,
+  shadowNormalBias: .02,
+  shadowPadding: 2
 };
+
+// Fit once per arena, not per frame, so moving players cannot shimmer the map.
+export function fitArenaShadow(light, { size, height }) {
+  const padding = LIGHTING.shadowPadding;
+  const bounds = new THREE.Box3(
+    new THREE.Vector3(-size, -1, -size),
+    new THREE.Vector3(size, height + 4, size)
+  );
+  const direction = light.position.clone().sub(light.target.position).normalize();
+  bounds.getCenter(light.target.position);
+  // Keep the entire playable volume in front of the light, preserving sun angle.
+  light.position.copy(light.target.position).addScaledVector(direction,
+    bounds.getSize(new THREE.Vector3()).length() / 2 + padding + 1);
+  light.updateMatrixWorld(true);
+  light.target.updateMatrixWorld(true);
+  light.shadow.updateMatrices(light);
+  const camera = light.shadow.camera;
+  bounds.applyMatrix4(camera.matrixWorldInverse);
+  Object.assign(camera, {
+    left: bounds.min.x - padding, right: bounds.max.x + padding,
+    bottom: bounds.min.y - padding, top: bounds.max.y + padding,
+    near: Math.max(.1, -bounds.max.z - padding), far: -bounds.min.z + padding
+  });
+  camera.updateProjectionMatrix();
+  light.shadow.updateMatrices(light);
+}
 
 // Call after renderer.init(), before constructing the world: its selectively
 // tuned materials retain references to this same environment texture.

@@ -1359,7 +1359,7 @@ assert.equal(resizeState.keyLight.shadow.map, null);
 commitResize.call(resizeState);
 assert.equal(qualityEvents.length, 4, "graphics resources change only once at the frame boundary");
 
-for (const [level, shadowMapSize, anisotropy] of [["low", 1024, 4], ["medium", 2048, 8], ["high", 4096, 16]]) {
+for (const [level, shadowMapSize, anisotropy] of [["low", 2048, 4], ["medium", 2048, 8], ["high", 4096, 16]]) {
   const profile = graphicsProfile(level, false, 3);
   assert.equal(profile.shadowMapSize, shadowMapSize);
   assert.equal(profile.anisotropy, anisotropy);

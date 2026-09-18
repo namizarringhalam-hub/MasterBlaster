@@ -4,7 +4,26 @@ import { readFile } from "node:fs/promises";
 import * as THREE from "three/webgpu";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { LIGHTING, setupEnvironment } from "../src/lighting.js";
+import { LIGHTING, fitArenaShadow, setupEnvironment } from "../src/lighting.js";
+
+const sun = new THREE.DirectionalLight();
+sun.position.set(-22, 40, 18);
+const direction = sun.position.clone().normalize();
+for (const arena of [{ size: 112, height: 78 }, { size: 32, height: 20 }]) {
+  fitArenaShadow(sun, arena);
+  assert.ok(sun.position.clone().sub(sun.target.position).normalize().distanceTo(direction) < 1e-12);
+  const camera = sun.shadow.camera;
+  assert.ok(camera.near > 0 && camera.far > camera.near);
+  for (const x of [-arena.size, arena.size]) for (const y of [-1, arena.height + 4]) for (const z of [-arena.size, arena.size]) {
+    const projected = new THREE.Vector3(x, y, z).project(camera);
+    assert.ok(Math.max(Math.abs(projected.x), Math.abs(projected.y), Math.abs(projected.z)) < 1,
+      "all playable corners, including elevated casters, stay inside the shadow frustum");
+  }
+  const projection = camera.projectionMatrix.clone();
+  fitArenaShadow(sun, arena);
+  assert.ok(camera.projectionMatrix.elements.every((value, i) => Math.abs(value - projection.elements[i]) < 1e-12),
+    "refitting the same arena keeps the shadow projection stable");
+}
 
 // Exercise the actual RGBE parser, including highlights above display white.
 const hdrBytes = Buffer.concat([
