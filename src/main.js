@@ -1921,6 +1921,7 @@ class BlasterBattle {
       return;
     }
     this.world.update(dt, this.players);
+    for (const player of this.players) this.syncGrappleTarget(player);
     this.handleWeaponSwitch();
     this.updateHuman(dt);
     if (!this.isOnlineMatch() || this.multiplayer.controlsBots) this.updateBotPlanner(dt);
@@ -1935,6 +1936,7 @@ class BlasterBattle {
     this.updateHazards(dt);
     this.updateDecoys(dt);
     this.processStructuralEvents();
+    for (const player of this.players) this.syncGrappleTarget(player);
     this.updateEffects(dt);
     this.combatVisuals?.update(dt);
     this.updateRespawns(realDt);
@@ -2213,7 +2215,8 @@ class BlasterBattle {
     if (player.grapple) return this.releaseGrapple(player, true);
     const start = player.position.clone().add(new THREE.Vector3(0, 1.4, 0));
     const sightline = grappleSightline(player, this.camera);
-    const anchor = this.world.grapplePoint(sightline.origin, sightline.direction);
+    const target = this.world.grappleTarget(sightline.origin, sightline.direction);
+    const anchor = target?.point;
     const local = player === this.players[0];
     if (!anchor) {
       this.sound.play("grappleMiss", null, this.audioSpatial(player.position, local, local ? 1 : .3, player.id));
@@ -2237,11 +2240,28 @@ class BlasterBattle {
     const line = new Line2(geometry, ropeMaterial);
     line.frustumCulled = false;
     this.scene.add(line);
-    player.grapple = { anchor, line, wraps: [], ropeLength: Math.max(5, start.distanceTo(anchor) * .92), pullSpeed: 0, launchLift: true };
+    player.grapple = { anchor, target, line, wraps: [], ropeLength: Math.max(5, start.distanceTo(anchor) * .92), pullSpeed: 0, launchLift: true };
     const direction = anchor.clone().sub(start).normalize();
     const approachSpeed = player.velocity.dot(direction);
     player.grapple.pullSpeed = Math.max(0, approachSpeed);
     this.sound.play("grappleAttach", null, this.audioSpatial(anchor, local, local ? 1 : .42, player.id));
+  }
+
+  syncGrappleTarget(player) {
+    const grapple = player.grapple;
+    if (!grapple?.target) return;
+    const previousAnchor = grapple.anchor.clone();
+    if (!this.world.resolveGrappleTarget(grapple.target, grapple.anchor)) return this.releaseGrapple(player);
+    const delta = grapple.anchor.clone().sub(previousAnchor);
+    // Subtract only motion already applied by riding this exact platform.
+    if (grapple.carriedDelta) {
+      delta.sub(grapple.carriedDelta);
+      grapple.carriedDelta = null;
+    }
+    if (!player.alive || delta.lengthSq() < 1e-12) return;
+    const previous = player.position.clone();
+    player.position.add(delta);
+    this.world.resolve(player.position, player.radius, previous);
   }
 
   updateGrapple(player, dt, reelFaster = false) {

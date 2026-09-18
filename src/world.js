@@ -2035,6 +2035,9 @@ export class ArenaWorld {
       // Riders stay attached to the deck. Everyone trapped beneath it must have a
       // full-height escape gap; otherwise the descending slab is lethal.
       if (overlapsDeck && !carriedPlayers.has(player.id) && player.grounded && Math.abs(player.position.y - previousPlatformTop) <= .48) {
+        if (player.grapple?.target?.item === platform) {
+          player.grapple.carriedDelta = new THREE.Vector3(0, platform.top - player.position.y, 0);
+        }
         player.position.y = platform.top;
         carriedPlayers.add(player.id);
         continue;
@@ -2852,6 +2855,7 @@ export class ArenaWorld {
       for (const player of players) {
         if (!player.alive || !player.grounded || Math.abs(player.position.y - oldTop) > .4) continue;
         if (Math.abs(player.position.x - oldX) <= item.w / 2 && Math.abs(player.position.z - item.z) <= item.d / 2) {
+          if (player.grapple?.target?.item === item) player.grapple.carriedDelta = new THREE.Vector3(dx, dy, 0);
           player.position.x += dx;
           player.position.y += dy;
         }
@@ -3116,6 +3120,10 @@ export class ArenaWorld {
   }
 
   grapplePoint(origin, direction) {
+    return this.grappleTarget(origin, direction)?.point ?? null;
+  }
+
+  grappleTarget(origin, direction) {
     if (!direction.lengthSq()) return null;
     this.group.updateMatrixWorld(true);
     const surfaces = [...new Set([
@@ -3125,7 +3133,36 @@ export class ArenaWorld {
       ...this.boostPads.filter((pad) => pad.active).map((pad) => pad.mesh)
     ].filter(Boolean))];
     const ray = new THREE.Raycaster(origin, direction.clone().normalize(), .05);
-    return ray.intersectObjects(surfaces, false)[0]?.point.clone() ?? null;
+    for (const hit of ray.intersectObjects(surfaces, false)) {
+      const matches = (item) => item.mesh === hit.object &&
+        (hit.instanceId === undefined || item.instanceVisuals?.some((visual) => visual.mesh === hit.object && visual.index === hit.instanceId));
+      const collection = [this.obstacles, this.anchors, this.boostPads].find((items) => items.some(matches));
+      const item = collection?.find(matches);
+      if (!item && hit.object !== this.ground) continue;
+      const matrix = hit.object.matrixWorld.clone();
+      if (hit.instanceId !== undefined) {
+        const instance = new THREE.Matrix4();
+        hit.object.getMatrixAt(hit.instanceId, instance);
+        matrix.multiply(instance);
+      }
+      return { point: hit.point.clone(), mesh: hit.object, instanceId: hit.instanceId, item, collection,
+        localPoint: hit.point.clone().applyMatrix4(matrix.invert()) };
+    }
+    return null;
+  }
+
+  resolveGrappleTarget(target, point) {
+    const { item, collection, mesh, instanceId, localPoint } = target;
+    if (item ? item.removed || item.active === false || !collection.includes(item) : mesh !== this.ground) return false;
+    mesh.updateWorldMatrix(true, false);
+    const matrix = mesh.matrixWorld.clone();
+    if (instanceId !== undefined) {
+      const instance = new THREE.Matrix4();
+      mesh.getMatrixAt(instanceId, instance);
+      matrix.multiply(instance);
+    }
+    point.copy(localPoint).applyMatrix4(matrix);
+    return true;
   }
 
   ropeObstacle(origin, target) {
