@@ -1071,7 +1071,7 @@ const levelLaunch = {
 };
 applyGrapplePhysics(levelLaunch, 1 / 60);
 assert.equal(levelLaunch.velocity.y, 0, "level grapple shots do not receive artificial upward lift");
-const smoothPull = (fps) => {
+const smoothPull = (fps, reelFaster = false) => {
   const dt = 1 / fps;
   const player = {
     position: new THREE.Vector3(), velocity: new THREE.Vector3(), controlMove: new THREE.Vector3(), slowTimer: 0,
@@ -1079,7 +1079,7 @@ const smoothPull = (fps) => {
   };
   const speeds = [];
   for (let frame = 0; frame < fps; frame++) {
-    applyGrapplePhysics(player, dt);
+    applyGrapplePhysics(player, dt, reelFaster);
     speeds.push(player.velocity.x);
     player.position.addScaledVector(player.velocity, dt);
   }
@@ -1089,6 +1089,11 @@ const pull60 = smoothPull(60);
 assert.ok(pull60.speeds.every((speed, index) => index === 0 || speed >= pull60.speeds[index - 1] - .001), "grapple pull accelerates smoothly without stop-start velocity spikes");
 assert.ok(pull60.player.velocity.x > 30 && pull60.player.velocity.x < 31.1, "grapple pull converges on one predictable travel speed");
 assert.ok(Math.abs(smoothPull(30).player.velocity.x - smoothPull(120).player.velocity.x) < .05, "grapple pull is stable across frame rates");
+const fastPull = smoothPull(60, true);
+assert.ok(fastPull.player.velocity.x > 45 && fastPull.player.velocity.x < 46.1, "forward reels toward the anchor faster");
+assert.ok(Math.abs(fastPull.player.grapple.ropeLength - 54) < 1e-9, "forward doubles rope take-up");
+assert.ok(Math.abs(pull60.player.grapple.ropeLength - 72) < 1e-9, "default rope take-up remains unchanged");
+assert.ok(Math.abs(smoothPull(30, true).player.velocity.x - smoothPull(120, true).player.velocity.x) < .08, "forward reeling is stable across frame rates");
 const groundedGrappler = new Fighter(
   worldScene,
   { id: "grounded-grapple", name: "Grounded Grappler", color: 0x26d9ff, accent: 0xd9fbff },

@@ -1980,7 +1980,7 @@ class BlasterBattle {
     this.touch.jumpTap = false;
     if (this.input.tapped("KeyE") || this.input.tapped("MouseRight") || this.touch.grappleTap) this.toggleGrapple(player);
     this.touch.grappleTap = false;
-    this.updateGrapple(player, dt);
+    this.updateGrapple(player, dt, this.input.down("KeyW") || this.input.touchDirection().y < -.1);
     if (this.input.tapped("KeyR") && !this.beginReload(player)) this.sound.play("uiInvalid");
     const fireHeld = this.input.mouse.left || this.touch.fire;
     const fireTapped = this.input.tapped("MouseLeft") || this.touch.fireTap;
@@ -2244,7 +2244,7 @@ class BlasterBattle {
     this.sound.play("grappleAttach", null, this.audioSpatial(anchor, local, local ? 1 : .42, player.id));
   }
 
-  updateGrapple(player, dt) {
+  updateGrapple(player, dt, reelFaster = false) {
     if (!player.grapple || !player.alive) return;
     const previousWrapCount = player.grapple.wraps.length;
     const chest = player.position.clone().add(new THREE.Vector3(0, 1.4, 0));
@@ -2258,7 +2258,7 @@ class BlasterBattle {
     }
     player.grapple.wraps = wraps;
     if (wraps.length !== previousWrapCount) this.sound.play("grappleWrap", null, this.audioSpatial(player.position, player === this.players[0], player === this.players[0] ? .8 : .25, player.id));
-    applyGrapplePhysics(player, dt);
+    applyGrapplePhysics(player, dt, reelFaster);
     const ropePoints = [chest, ...wraps, player.grapple.anchor];
     updateGrappleRopeGeometry(player.grapple.line.geometry, ropePoints);
   }
