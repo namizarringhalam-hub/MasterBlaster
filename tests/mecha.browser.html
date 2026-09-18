@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Master Blaster — Mecha review</title>
+<style>
+  *{box-sizing:border-box}body{margin:0;background:#0a1220;color:#d9e5f2;font:13px system-ui}canvas{display:block;width:100%;height:calc(100vh - 118px)}
+  header{height:118px;padding:14px 20px;background:#0e1a2a}h1{font-size:17px;margin:0 0 10px;letter-spacing:2px}label{margin-right:12px;display:inline-block;margin-bottom:8px}
+  select,button{color:#edf8ff;background:#182d43;border:1px solid #3c5874;padding:5px;border-radius:4px}#status{font:11px monospace;color:#91b5d3;margin-top:0}
+</style>
+<header><h1>MASTER BLASTER / MECHA REVIEW</h1>
+<label>View <select id="view"><option value="single">Single fighter</option><option value="lineup">Six colors</option><option value="back">Rear</option><option value="side">Side</option></select></label>
+<label>Color <select id="color"><option>Cyan</option><option>Crimson</option><option>Lime</option><option>Violet</option><option>Amber</option><option>Magenta</option></select></label>
+<label>Armor <select id="variant"><option value="0">Vanguard</option><option value="1">Striker</option><option value="2">Bulwark</option><option value="3">Lancer</option></select></label>
+<label>Pose <select id="pose"><option value="ready">Ready</option><option value="aim">Aim</option><option value="run">Run</option><option value="jump">Jump</option><option value="grapple">Grapple</option><option value="fire">Fire</option><option value="reload">Reload</option><option value="hit">Hit</option></select></label>
+<label>Weapon <select id="weapon"></select></label><button id="pause">Pause</button><div id="status">Loading renderer…</div></header>
+<script type="module">
+import * as THREE from "three/webgpu";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { Fighter } from "../src/player.js";
+import { WEAPONS } from "../src/gameData.js";
+const select = id => document.getElementById(id), scene = new THREE.Scene();
+const renderer = new THREE.WebGPURenderer({antialias:true});
+await renderer.init(); renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = .9;
+document.body.append(renderer.domElement);
+scene.background = new THREE.Color(0x0a1422);
+const pmrem = new THREE.PMREMGenerator(renderer), room = new RoomEnvironment();
+const environment = pmrem.fromScene(room);
+scene.environment = environment.texture; scene.environmentIntensity = .55;
+room.dispose(); pmrem.dispose();
+scene.add(new THREE.HemisphereLight(0xcde9ff, 0x344a61, .6));
+for (const [color, intensity, x, y, z] of [[0xf1f7ff,2.5,-3,6,5],[0x77d5ff,1.5,4,3,-4],[0xffd1a6,.5,3,3,5]]) {
+  const light = new THREE.DirectionalLight(color,intensity);light.position.set(x,y,z);scene.add(light);
+}
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(40,40), new THREE.MeshStandardMaterial({color:0x142438,roughness:.8,metalness:.2}));
+floor.rotation.x = -Math.PI/2; floor.position.y = -.015; scene.add(floor);
+scene.add(new THREE.GridHelper(40,40,0x315e7a,0x1d3547));
+const camera = new THREE.PerspectiveCamera(34,1,.05,100);
+const colors = [[0x129dba,0x6ff6ff],[0xc82849,0xff6b82],[0x6bad22,0xb9ff55],[0x7847ca,0xc793ff],[0xd77a16,0xffc14f],[0xb92d86,0xff75cf]];
+for (const weapon of Object.values(WEAPONS)) select("weapon").add(new Option(weapon.name,weapon.id));
+let fighters = [], paused = false, elapsed = 0, previous = performance.now(), errors = 0;
+window.addEventListener("error",()=>errors++); window.addEventListener("unhandledrejection",()=>errors++);
+const world = { resolve(position) { const grounded = position.y <= 0; if(grounded) position.y=0; return {grounded}; }, boostAt:()=>null };
+const still = new THREE.Vector3(), aim = new THREE.Vector3(0,0,1), move = new THREE.Vector3(0,0,1);
+function rebuild() {
+  for(const fighter of fighters) fighter.dispose(); fighters=[];
+  const lineup = select("view").value === "lineup", count = lineup ? 6 : 1;
+  for(let i=0;i<count;i++) {
+    const [color,accent] = colors[lineup?i:select("color").selectedIndex];
+    const variant = lineup ? i%4 : Number(select("variant").value);
+    // The suffix maps exactly to the production id hash's four armor variants.
+    let id = `review-${i}-`; while([...id].reduce((n,c)=>n+c.charCodeAt(0),0)%4!==variant) id+='a';
+    const f = new Fighter(scene,{id,color,accent},[select("weapon").value],new THREE.Vector3());
+    f.identityBeacon.visible=false; f.identityRing.visible=false; f.freezeRing.visible=false;
+    for(let step=0;step<60;step++) f.update(1/60,still,aim,{},world);
+    fighters.push(f);
+  }
+  frameCamera();
+}
+function frameCamera() {
+  const view=select("view").value;
+  camera.position.set(...(view==="lineup"?[.8,3.1,11]:view==="back"?[-2.5,2.4,-4.8]:view==="side"?[5.1,2.1,.2]:[2.55,2.25,4.9]));
+  camera.lookAt(0,view==="lineup"?1.15:1.27,0);
+}
+for(const id of ["view","color","variant","weapon"]) select(id).onchange=rebuild;
+select("pause").onclick=()=>{paused=!paused;select("pause").textContent=paused?"Resume":"Pause";};
+function resize(){renderer.setSize(innerWidth,innerHeight-118);camera.aspect=innerWidth/(innerHeight-118);camera.updateProjectionMatrix();}
+addEventListener("resize",resize);resize();rebuild();
+renderer.setAnimationLoop(()=>{
+  const now=performance.now(),dt=Math.min((now-previous)/1000,.035);previous=now;
+  if(!paused) {
+    elapsed+=dt;
+    fighters.forEach((f,i)=>{
+      const pose=select("pose").value;
+      f.position.set(0,pose==="jump"?.65:pose==="grapple"?.7:0,0);
+      f.grapple=pose==="grapple"?{anchor:new THREE.Vector3(-5,9,8),wraps:[],ropeLength:12}:null;
+      f.grounded=pose!=="jump"&&pose!=="grapple";
+      if(pose==="jump") f.velocity.set(0,3,5);
+      if(pose==="fire") f.recoilVisual=.12+.1*Math.sin(elapsed*16);
+      f.reloadTimer=pose==="reload"?.8:0;
+      if(pose==="hit") f.hitTimer=.3;
+      f.update(dt,pose==="run"?move:still,aim,{},world);
+      f.position.x=select("view").value==="lineup"?(i-2.5)*1.8:0;f.position.z=0;
+      if(pose==="ready") { f.weaponGroup.visible=false; f.leftArm.rotation.set(.05,0,.10);f.rightArm.rotation.set(.05,0,-.10);f.leftForearm.rotation.set(-.1,0,0);f.rightForearm.rotation.set(-.1,0,0); }
+      else f.weaponGroup.visible=true;
+    });
+  }
+  renderer.render(scene,camera);
+  select("status").textContent=`${renderer.backend.isWebGPUBackend?'WebGPU':'WebGL'} · ${fighters.length} fighters · ${renderer.info.render.drawCalls} draws · ${renderer.info.render.triangles} triangles · ${errors} errors · ${select("pose").value}`;
+});
+</script>
+</html>

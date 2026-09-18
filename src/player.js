@@ -3,6 +3,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { weaponUsesAmmo, WEAPONS } from "./gameData.js";
 import { weaponPresentation } from "./weaponPresentation.js";
+import { createMechaRig } from "./mecha.js";
 
 const clamp = THREE.MathUtils.clamp;
 export const PROJECTILE_SPAWN_OFFSET = .08;
@@ -123,16 +124,6 @@ export function exhaustShroudGeometry(variant = 0) {
   return geometry;
 }
 
-function sharedExhaustGeometry(variant) {
-  const key = `exhaust:${variant === 2 ? "large" : "standard"}`;
-  if (!roundedParts.has(key)) {
-    const geometry = exhaustShroudGeometry(variant);
-    geometry.userData.sharedFighterGeometry = true;
-    roundedParts.set(key, geometry);
-  }
-  return roundedParts.get(key);
-}
-
 export function clipLegPolygon(polygon, plane, above) {
   const out = [];
   for (let i = 0; i < polygon.length; i++) {
@@ -184,19 +175,6 @@ export function legAssemblyGeometry(original, centerY, lowerCut, connector = fal
   return geometry;
 }
 
-function legGeometry(shin = false) {
-  const key = shin ? "leg-assembly-shin" : "leg-assembly-body";
-  if (!roundedParts.has(key)) {
-    const source = shin ? new RoundedBoxGeometry(.255, .4, .39, 1, .0357) : new RoundedBoxGeometry(.3, .78, .34, 1, .042);
-    const geometry = legAssemblyGeometry(source, shin ? -.54 : -.39, shin ? -.70 : -.65, !shin);
-    source.dispose();
-    geometry.userData.sharedFighterGeometry = true;
-    geometry.userData.legAssembly = true;
-    roundedParts.set(key, geometry);
-  }
-  return roundedParts.get(key);
-}
-
 export function kneeTaperGeometry(original) {
   const geometry = new THREE.BufferGeometry().copy(original);
   geometry.userData = {};
@@ -212,17 +190,6 @@ export function kneeTaperGeometry(original) {
   }
   geometry.computeBoundingBox(); geometry.computeBoundingSphere();
   return geometry;
-}
-
-function kneeGeometry() {
-  if (!roundedParts.has("knee-taper")) {
-    const source = new RoundedBoxGeometry(.29, .18, .13, 1, .0182);
-    const geometry = kneeTaperGeometry(source);
-    source.dispose();
-    geometry.userData.sharedFighterGeometry = true;
-    roundedParts.set("knee-taper", geometry);
-  }
-  return roundedParts.get("knee-taper");
 }
 
 function disposeGeometry(geometry) {
@@ -262,13 +229,6 @@ function part(geometry, mat, x, y, z, shadows = false) {
   mesh.castShadow = shadows;
   mesh.receiveShadow = shadows;
   return mesh;
-}
-
-function limb(geometry, mat, x, y, z, height) {
-  const pivot = new THREE.Group();
-  pivot.position.set(x, y, z);
-  pivot.add(part(geometry, mat, 0, -height / 2, 0));
-  return pivot;
 }
 
 function mergeStaticParts(mat, meshes) {
@@ -365,35 +325,6 @@ function alignArmGrip(upper, forearm, grip, forward) {
   forearm.quaternion.copy(upper.quaternion).invert().multiply(handRotation);
 }
 
-function articulatedArm(dark, armor, accent, x, elbowMaterial, elbowGeometry, shoulderRadius) {
-  const upper = new THREE.Group();
-  upper.position.set(x, 1.67, 0);
-  const upperArmor = part(new THREE.CapsuleGeometry(.145, .27, 3, 8), dark, 0, -.28, 0);
-  const shoulderJoint = part(new THREE.SphereGeometry(shoulderRadius, 10, 6), dark, 0, -.045, 0);
-  const upperStripe = part(new THREE.BoxGeometry(.21, .045, .055), accent, 0, -.19, .155, false);
-  const forearm = new THREE.Group();
-  forearm.position.y = -.55;
-  const bracer = part(new THREE.CylinderGeometry(.18, .145, .5, 8), armor, 0, -.24, .035);
-  bracer.scale.set(.92, 1, 1.06);
-  const wristLight = part(new THREE.BoxGeometry(.19, .045, .04), accent, 0, -.43, .22, false);
-  // Fixed armored fist: keep the exact grip anchor and existing render batches.
-  const hand = part(new THREE.CylinderGeometry(.075, .105, .2, 8), dark, 0, -.58, .05);
-  hand.scale.z = 1.05;
-  const thumb = part(new THREE.CapsuleGeometry(.04, .05, 2, 6), dark, -Math.sign(x) * .06, -.604, .132);
-  thumb.rotation.z = Math.sign(x) * .85;
-  const fingerCenters = [-.07125, -.02375, .02375, .07125];
-  const curledFingers = fingerCenters.map(center => part(new THREE.BoxGeometry(.0415, .065, .09), dark, center, -.651, .138));
-  // Flush luminous insets sit on each finger's flat face, leaving its bevel and
-  // the three shallow separations readable instead of bridging them with a bar.
-  const knuckles = fingerCenters.map(center => part(new THREE.PlaneGeometry(.026, .02), accent, center, -.654, .184, false));
-  const elbowJoint = part(elbowGeometry, elbowMaterial, 0, .015, 0);
-  forearm.add(bracer, mergeStaticParts(accent, [wristLight, ...knuckles]), mergeStaticParts(dark, [hand, thumb, ...curledFingers]), elbowJoint);
-  upper.add(mergeStaticParts(elbowMaterial, [upperArmor, shoulderJoint]), upperStripe, forearm);
-  // The visible hand is baked into the forearm; keep only its grip anchor,
-  // not the disposed source mesh and its redundant per-fighter CPU buffers.
-  return { upper, forearm, hand: { position: hand.position.clone() } };
-}
-
 function disposeChildren(group) {
   const geometries = new Set();
   const materials = new Set();
@@ -476,208 +407,7 @@ export class Fighter {
 
   createModel() {
     const group = new THREE.Group();
-    const costumeVariant = [...this.id].reduce((sum, letter) => sum + letter.charCodeAt(0), 0) % 4;
-    const armor = material(this.color, this.color, {
-      emissiveIntensity: .14, roughness: .24, metalness: .52, clearcoat: .58,
-      sheen: .22, sheenColor: new THREE.Color(this.color).lerp(new THREE.Color(0xffffff), .28), sheenRoughness: .42
-    });
-    const accent = material(this.accent, this.accent, {
-      emissiveIntensity: .25, roughness: .42, metalness: .12, clearcoat: .25,
-      iridescence: .34, iridescenceIOR: 1.32, iridescenceThicknessRange: [120, 340]
-    });
-    const dark = material(0x07101d, this.accent, { emissiveIntensity: .022, roughness: .4, metalness: .68, clearcoat: .32 });
-    this.armorMaterial = armor;
-    this.accentMaterial = accent;
-    this.darkMaterial = dark;
-    // Upper-arm connectors and elbows share one owned finish; the fist stays unchanged.
-    this.elbowMaterial = dark.clone();
-    this.elbowMaterial.roughness = .56;
-    this.elbowMaterial.clearcoatRoughness = .4;
-    this.shellMaterial = dark;
-    accent.color.multiplyScalar(.38);
-
-    this.rig = new THREE.Group();
-    this.rig.scale.set(1.07, 1.04, 1.07);
-    group.add(this.rig);
-    const torso = part(fittedTorsoGeometry(costumeVariant), dark, 0, 0, 0);
-    const chest = part(new THREE.CylinderGeometry(.37, .49, .65, [6, 8, 5, 7][costumeVariant]), armor, 0, 1.43, .015);
-    chest.scale.z = .76;
-    const pelvis = part(new THREE.BoxGeometry(.72, .23, .45), armor, 0, .91, -.01);
-    const spine = part(new THREE.BoxGeometry(.38, .56, .18), armor, 0, 1.38, -.37);
-    const breastplate = part(new THREE.CylinderGeometry(.31, .38, .42, 6), armor, 0, 1.51, .31);
-    breastplate.scale.z = .22;
-    breastplate.rotation.x = -.08;
-    const sternum = part(new THREE.OctahedronGeometry(.13, 0), accent, 0, 1.51, .405, false);
-    sternum.scale.set(.72, 1.3, .5);
-    const chestLight = part(new THREE.BoxGeometry(.48, .075, .055), accent, 0, 1.47, .36, false);
-    chestLight.rotation.z = -.18;
-    const helmetGeometry = costumeVariant === 0
-      ? new THREE.DodecahedronGeometry(.47, 1)
-      : costumeVariant === 1
-        ? new THREE.SphereGeometry(.47, 16, 10)
-        : costumeVariant === 2
-          ? new THREE.CapsuleGeometry(.37, .22, 4, 10)
-          : new THREE.IcosahedronGeometry(.47, 1);
-    const helmet = part(helmetGeometry, dark, 0, 2.08, 0);
-    helmet.scale.set(1, .92, .94);
-    // Inset lenses sit behind a mechanical rim, instead of a solid luminous bar.
-    const visor = mergeStaticParts(accent, [-.225, 0, .225].map(x =>
-      part(new THREE.BoxGeometry(.195, .095, .035), accent, x, 0, 0, false)));
-    visor.position.set(0, .02, .469);
-    visor.name = "Segmented inset visor";
-    this.visor = visor;
-    let browGeometry;
-    if (costumeVariant === 2) {
-      // One beveled armor strip wraps the capsule temples, with a straight central brow.
-      const outline = new THREE.Shape([
-        [-.38, .075], [.38, .075], [.45, -.1], [.36, -.2], [.33, -.15], [.38, -.07],
-        [.33, -.045], [-.33, -.045], [-.38, -.07], [-.33, -.15], [-.36, -.2], [-.45, -.1]
-      ].map(([x, z]) => new THREE.Vector2(x, z)));
-      browGeometry = new THREE.ExtrudeGeometry(outline, {
-        depth: .05, steps: 1, bevelEnabled: true, bevelSegments: 1, bevelSize: .007, bevelThickness: .01
-      });
-      browGeometry.rotateX(Math.PI / 2).translate(0, .025, 0);
-    } else browGeometry = new THREE.BoxGeometry(.78, .1, .16);
-    const brow = part(browGeometry, armor, 0, 2.27, .3);
-    brow.rotation.x = -.18;
-    const helmetCrest = part(new THREE.BoxGeometry(.13, .34, .48), armor, 0, 2.35, -.08);
-    helmetCrest.rotation.x = -.32;
-    const leftEar = part(new THREE.CylinderGeometry(.12, .12, .09, 8), accent, -.47, 2.08, 0, false);
-    const rightEar = part(new THREE.CylinderGeometry(.12, .12, .09, 8), accent, .47, 2.08, 0, false);
-    leftEar.rotation.z = rightEar.rotation.z = Math.PI / 2;
-
-    const elbowGeometry = new THREE.SphereGeometry(.135, 16, 10);
-    const shoulderRadius = .16;
-    const leftArmRig = articulatedArm(dark, armor, accent, -.61, this.elbowMaterial, elbowGeometry, shoulderRadius);
-    const rightArmRig = articulatedArm(dark, armor, accent, .61, this.elbowMaterial, elbowGeometry, shoulderRadius);
-    this.leftArm = leftArmRig.upper;
-    this.rightArm = rightArmRig.upper;
-    this.leftForearm = leftArmRig.forearm;
-    this.rightForearm = rightArmRig.forearm;
-    this.leftHand = leftArmRig.hand;
-    this.rightHand = rightArmRig.hand;
-    this.leftLeg = limb(legGeometry(), dark, -.23, .82, 0, .78);
-    this.rightLeg = limb(legGeometry(), dark, .23, .82, 0, .78);
-    this.leftLeg.add(part(legGeometry(true), armor, 0, -.54, .035));
-    this.rightLeg.add(part(legGeometry(true), armor, 0, -.54, .035));
-    const leftKnee = part(kneeGeometry(), accent, 0, -.39, .23, false);
-    const rightKnee = part(kneeGeometry(), accent, 0, -.39, .23, false);
-    this.leftLeg.add(leftKnee);
-    this.rightLeg.add(rightKnee);
-    const shoulderGeometry = costumeVariant === 1
-      ? new THREE.CylinderGeometry(.2, .25, .42, 6)
-      : costumeVariant === 3
-        ? new THREE.DodecahedronGeometry(.25, 0)
-        : new THREE.BoxGeometry(.34, .27, .48);
-    const shoulderX = .61;
-    const leftShoulder = part(shoulderGeometry, armor, -shoulderX, 1.62, -.02);
-    const rightShoulder = part(shoulderGeometry, armor, shoulderX, 1.62, -.02);
-    if (costumeVariant === 1) leftShoulder.rotation.x = rightShoulder.rotation.x = Math.PI / 2;
-    leftShoulder.rotation.z = -.16;
-    rightShoulder.rotation.z = .16;
-    const leftFin = part(new THREE.ConeGeometry(.13, .48, 4), accent, -.46, 1.83, -.25, false);
-    const rightFin = part(new THREE.ConeGeometry(.13, .48, 4), accent, .46, 1.83, -.25, false);
-    leftFin.rotation.z = -.42;
-    rightFin.rotation.z = .42;
-    const backpack = part(new THREE.BoxGeometry(.58, .72, .25), dark, 0, 1.42, -.43);
-    const packLight = part(new THREE.BoxGeometry(.38, .32, .055), accent, 0, 1.42, -.64, false);
-    const leftNozzle = part(sharedExhaustGeometry(costumeVariant), dark, -.2, 0, -.49);
-    const rightNozzle = part(sharedExhaustGeometry(costumeVariant), dark, .2, 0, -.49);
-    const packMount = part(new THREE.BoxGeometry(.38 * (costumeVariant === 3 ? .72 : 1) - .020,
-      .32 * (costumeVariant === 3 ? 1.28 : 1) - .020, .075), dark, 0, 1.42, -.58);
-    const thrusterMaterial = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(this.accent).multiplyScalar(2.1), transparent: true, opacity: .5,
-      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false
-    });
-    this.thrusterMaterial = thrusterMaterial;
-    // Both flames share one animated scale and material. An ordinary indexed
-    // pair avoids per-fighter instance shader keys and per-frame buffer uploads.
-    const flame = new THREE.ConeGeometry(.105, .36, 6, 1, true).rotateX(Math.PI);
-    const leftFlame = flame.clone().translate(-.2, 0, 0), rightFlame = flame.translate(.2, 0, 0);
-    this.thrusterLights = new THREE.Mesh(mergeGeometries([leftFlame, rightFlame], false), thrusterMaterial);
-    leftFlame.dispose(); rightFlame.dispose();
-    this.thrusterLights.name = "Fighter thruster pair";
-    this.thrusterLights.position.set(0, 1.02, -.49);
-    this.thrusterScale = 1;
-    if (costumeVariant === 0) {
-      leftShoulder.scale.set(1.3, .82, 1.22); rightShoulder.scale.copy(leftShoulder.scale);
-      helmetCrest.scale.set(.94, 1.34, 1.12);
-      breastplate.scale.set(1.06, .94, .22 * 1.18);
-    } else if (costumeVariant === 1) {
-      helmet.scale.set(.92, 1.02, .96);
-      breastplate.scale.set(.88, 1.18, .22 * 1.08);
-      leftFin.scale.set(.66, 1.46, .66); rightFin.scale.copy(leftFin.scale);
-    } else if (costumeVariant === 2) {
-      leftShoulder.scale.set(1.15, 1.34, .92); rightShoulder.scale.copy(leftShoulder.scale);
-      backpack.scale.set(1.08, 1.16, 1.08);
-    } else {
-      helmetCrest.rotation.z = .28;
-      helmetCrest.scale.set(.72, 1.12, 1.3);
-      packLight.scale.set(.72, 1.28, 1);
-      leftFin.scale.set(1.2, .82, 1.16); rightFin.scale.copy(leftFin.scale);
-    }
-    armor.roughness += costumeVariant * .025;
-    armor.clearcoat = .68 - costumeVariant * .08;
-    this.shinMaterial = armor.clone();
-    this.shinMaterial.roughness = .56;
-    this.leftLeg.children[1].material = this.rightLeg.children[1].material = this.shinMaterial;
-    const visorFrame = [
-      part(new THREE.BoxGeometry(.76, .055, .12), dark, 0, 2.185, .45),
-      part(new THREE.BoxGeometry(.76, .055, .12), dark, 0, 2.015, .45),
-      ...[-.354, .354].map(x => part(new THREE.BoxGeometry(.052, .17, .12), dark, x, 2.1, .45)),
-      ...[-.1125, .1125].map(x => part(new THREE.BoxGeometry(.027, .11, .09), dark, x, 2.1, .45))
-    ];
-    // Close the capsule's shell-to-frame gap with a tapered, closed socket.
-    // Its rear is inside the shell; its front stays behind all three lenses.
-    if (costumeVariant === 2) {
-      const socket = new THREE.BoxGeometry(1, 1, 1);
-      const positions = socket.attributes.position;
-      for (let i = 0; i < positions.count; i++) {
-        const front = positions.getZ(i) > 0;
-        positions.setXYZ(i, positions.getX(i) * (front ? .75 : .52),
-          positions.getY(i) * (front ? .21 : .15), front ? .405 : .13);
-      }
-      socket.computeVertexNormals();
-      const backing = new THREE.Mesh(socket, dark);
-      backing.position.y = 2.1;
-      visorFrame.push(backing);
-      // The narrow shell also needs a physical seat for the unchanged ear caps.
-      const mountGeometry = new THREE.CylinderGeometry(.09, .09, .19, 8);
-      for (const side of [-1, 1]) {
-        const mount = part(mountGeometry, dark, side * .345, 2.08, 0);
-        mount.rotation.z = Math.PI / 2;
-        visorFrame.push(mount);
-      }
-    }
-    const helmetAssembly = mergeStaticParts(dark, costumeVariant === 2 ? visorFrame : [helmet, ...visorFrame]);
-    helmetAssembly.geometry.translate(0, -2.08, 0);
-    helmetAssembly.position.y = 2.08;
-    helmetAssembly.name = "Helmet and recessed visor housing";
-    this.helmet = helmetAssembly;
-    if (costumeVariant === 2) {
-      // Separate only the shell finish; hardware keeps the shared polished dark material.
-      this.shellMaterial = dark.clone();
-      this.shellMaterial.roughness = .56;
-      this.shellMaterial.clearcoatRoughness = .4;
-      this.helmetShell = mergeStaticParts(this.shellMaterial, [helmet]);
-      this.helmetShell.geometry.translate(0, -2.08, 0);
-      this.helmetShell.name = "Capsule satin shell";
-      helmetAssembly.add(this.helmetShell);
-    }
-    // Keep all head surfaces on the same pitch pivot. Matching rotations on
-    // separate lens/helmet pivots pulls the lenses out of their apertures.
-    const headArmor = mergeStaticParts(armor, [brow, helmetCrest]);
-    headArmor.geometry.translate(0, -2.08, 0);
-    headArmor.name = "Helmet brow and crest";
-    helmetAssembly.add(visor, headArmor);
-    const staticDark = mergeStaticParts(dark, [torso, spine, backpack, leftNozzle, rightNozzle, packMount]);
-    const staticArmor = mergeStaticParts(armor, [chest, breastplate, pelvis, leftShoulder, rightShoulder]);
-    const staticAccent = mergeStaticParts(accent, [sternum, chestLight, leftEar, rightEar, leftFin, rightFin, packLight]);
-    this.rig.add(
-      staticDark, staticArmor, staticAccent, helmetAssembly,
-      this.leftArm, this.rightArm, this.leftLeg, this.rightLeg,
-      this.thrusterLights
-    );
+    group.add(createMechaRig(this));
 
     this.weaponGroup = new THREE.Group();
     this.weaponGroup.position.set(.38, 1.4, .28);
@@ -1158,9 +888,9 @@ export class Fighter {
     this.leftLeg.rotation.x = .35 + progress * .9;
     this.rightLeg.rotation.x = -.2 - progress * .7;
     this.group.scale.setScalar(1 + burst * .1 - progress * .78);
-    this.armorMaterial.emissiveIntensity = this.shinMaterial.emissiveIntensity = 1.65 * fade;
+    this.armorMaterial.emissiveIntensity = 1.65 * fade;
     this.accentMaterial.emissiveIntensity = 2.8 * fade;
-    this.darkMaterial.emissiveIntensity = this.shellMaterial.emissiveIntensity = this.elbowMaterial.emissiveIntensity = .5 * burst;
+
     this.identityRing.material.opacity = .62 * fade;
     this.identityBeacon.material.opacity = fade;
     if (this.deathTimer === 0) this.group.visible = false;
@@ -1184,9 +914,11 @@ export class Fighter {
     this.rightArm.rotation.set(0, 0, 0);
     this.leftLeg.rotation.set(0, 0, 0);
     this.rightLeg.rotation.set(0, 0, 0);
-    this.armorMaterial.emissiveIntensity = this.shinMaterial.emissiveIntensity = .16;
-    this.accentMaterial.emissiveIntensity = .25;
-    this.darkMaterial.emissiveIntensity = this.shellMaterial.emissiveIntensity = this.elbowMaterial.emissiveIntensity = .025;
+    this.leftKnee.rotation.set(0, 0, 0);
+    this.rightKnee.rotation.set(0, 0, 0);
+    this.armorMaterial.emissiveIntensity = .025;
+    this.accentMaterial.emissiveIntensity = .7;
+
     this.identityRing.material.opacity = .46;
     this.identityBeacon.material.opacity = .94;
     this.ammo = Object.fromEntries(this.loadout.map((id) => [id, WEAPONS[id].ammo]));
@@ -1313,6 +1045,12 @@ export class Fighter {
     }
     this.leftLeg.rotation.x = THREE.MathUtils.damp(this.leftLeg.rotation.x, leftLegTarget, 15, dt);
     this.rightLeg.rotation.x = THREE.MathUtils.damp(this.rightLeg.rotation.x, rightLegTarget, 15, dt);
+    // Keep the existing hip gait; flex the new lower legs on the recovery stride.
+    const kneeTuck = grappled ? .7 : !this.grounded ? .48 : landing * .5;
+    this.leftKnee.rotation.x = THREE.MathUtils.damp(this.leftKnee.rotation.x,
+      kneeTuck + (this.grounded && moving ? Math.max(0, gait) * locomotion * .8 : 0), 15, dt);
+    this.rightKnee.rotation.x = THREE.MathUtils.damp(this.rightKnee.rotation.x,
+      kneeTuck + (this.grounded && moving ? Math.max(0, -gait) * locomotion * .8 : 0), 15, dt);
 
     const aimPitch = Math.asin(clamp(this.aim.y, -1, 1));
     const melee = this.weapon.type === "melee";
@@ -1431,15 +1169,16 @@ export class Fighter {
     this.leftLeg.rotation.z = THREE.MathUtils.damp(this.leftLeg.rotation.z, legBrace, 14, dt);
     this.rightLeg.rotation.z = THREE.MathUtils.damp(this.rightLeg.rotation.z, -legBrace, 14, dt);
     this.helmet.rotation.x = THREE.MathUtils.damp(this.helmet.rotation.x, -aimPitch * .18 + landing * .07, 12, dt);
+    if (this.grounded) this.plantFeet();
     const thrust = landing > .05 ? 1.7 + landing * .7 : grappled ? 1.8 : this.grounded ? .65 : 1.2 + clamp(horizontalSpeed / 32, 0, .65);
     this.thrusterScale = THREE.MathUtils.damp(this.thrusterScale, thrust, 11, dt);
     this.thrusterLights.scale.y = this.thrusterScale;
     if (this.thrusterMaterial) this.thrusterMaterial.opacity = .32 + clamp(thrust / 2.4, 0, 1) * .48;
     const hit = this.hitTimer > 0;
     const hitFlash = hit ? .55 + hitWave * .95 : 0;
-    this.armorMaterial.emissiveIntensity = this.shinMaterial.emissiveIntensity = .16 + hitFlash * 1.45;
-    this.accentMaterial.emissiveIntensity = .25 + hitFlash * 1.15;
-    this.darkMaterial.emissiveIntensity = this.shellMaterial.emissiveIntensity = this.elbowMaterial.emissiveIntensity = .025 + hitFlash * .44;
+    this.armorMaterial.emissiveIntensity = .025 + hitFlash * 1.45;
+    this.accentMaterial.emissiveIntensity = .7 + hitFlash * 1.15;
+
     const pulse = .5 + Math.sin(time * .55 + this.id.length) * .5;
     const frozen = this.slowTimer > 0;
     const freezePulse = .5 + Math.sin(time * 1.8) * .5;

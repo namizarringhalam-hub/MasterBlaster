@@ -78,12 +78,10 @@ for (const weaponId of Object.keys(WEAPONS)) for (let variant = 0; variant < 4; 
   let count = 0;
   fighter.group.traverse((object) => { if (object.isMesh || object.isLine || object.isPoints) count++; });
   maximumFighterRenderables = Math.max(maximumFighterRenderables, count);
-  const elbows = [fighter.leftForearm.children[3], fighter.rightForearm.children[3]];
-  assert.ok(elbows.every(elbow => elbow.isMesh && elbow.material === fighter.elbowMaterial));
-  assert.ok(count - elbows.length <= 30, `${weaponId} costume ${variant}: unchanged body budget plus two isolated elbow draws`);
+  assert.ok(count <= 30, `${weaponId} costume ${variant}: complete mecha stays within the existing draw budget`);
   fighter.dispose();
 }
-assert.ok(maximumFighterRenderables <= 32, "all forty-seven weapons and four costumes: original30 plus two explicitly accounted elbow draws");
+assert.ok(maximumFighterRenderables <= 30, "all forty-seven weapons and four costumes stay within thirty renderables");
 
 const scene = new THREE.Scene();
 const world = new ArenaWorld(scene, "PERFORMANCE-GRID");
@@ -259,30 +257,13 @@ Object.assign(decoyHarness, { scene: new THREE.Scene(), world: { surfaceHeightAt
 const decoyOwner = new Fighter(decoyHarness.scene, { id: "helmet-2", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
 const decoyDisposals = new Map();
 function trackDecoy(mesh) {
-  const shins = [];
-  mesh.traverse(child => { if (child.geometry?.userData?.legAssembly && child.position.y === -.54) shins.push(child); });
-  assert.equal(shins.length, 2, "holograms preserve both shin finish batches");
-  for (const shin of shins) {
-    assert.ok(shin.material !== decoyOwner.shinMaterial && shin.geometry !== decoyOwner.leftLeg.children[1].geometry);
-    for (const key of ["roughness", "clearcoat", "clearcoatRoughness", "metalness"])
-      assert.equal(shin.material[key], decoyOwner.shinMaterial[key]);
-    for (const key of ["position", "normal", "uv"])
-      assert.deepEqual(shin.geometry.attributes[key].array, decoyOwner.leftLeg.children[1].geometry.attributes[key].array);
-  }
-  const elbows = [];
-  mesh.traverse(child => { if (child.geometry?.parameters?.radius === .135) elbows.push(child); });
-  assert.equal(elbows.length, 2, "every hologram retains both elbow meshes");
-  for (const elbow of elbows) {
-    assert.equal(elbow.geometry.parameters.widthSegments, 16);
-    assert.equal(elbow.geometry.parameters.heightSegments, 10);
-    assert.equal(elbow.material.roughness, .56);
-    assert.equal(elbow.material.clearcoatRoughness, .4);
-    assert.notEqual(elbow.material, decoyOwner.elbowMaterial);
-    const shoulder = elbow.parent.parent.children[0];
-    assert.equal(shoulder.material.roughness, .56);
-    assert.equal(shoulder.material.clearcoatRoughness, .4);
-    assert.notEqual(shoulder.material, decoyOwner.elbowMaterial, "hologram upper-arm finish has independent flicker ownership");
-    for (const arm of [decoyOwner.leftForearm, decoyOwner.rightForearm]) assert.notEqual(elbow.geometry, arm.children[3].geometry);
+  for (const name of ["Mecha left shin and boot", "Mecha right shin and boot", "Mecha left bracer and hand", "Mecha right bracer and hand"]) {
+    const clone = mesh.getObjectByName(name), source = decoyOwner.group.getObjectByName(name);
+    assert.ok(clone?.isMesh, "holograms retain all articulated armor batches");
+    assert.notEqual(clone.material, source.material);
+    assert.notEqual(clone.geometry, source.geometry);
+    for (const key of ["roughness", "clearcoat", "metalness"]) assert.equal(clone.material[key], source.material[key]);
+    for (const key of ["position", "normal", "uv", "color"]) assert.deepEqual(clone.geometry.attributes[key].array, source.geometry.attributes[key].array);
   }
   mesh.traverse(child => {
     for (const resource of [child.geometry, ...(Array.isArray(child.material) ? child.material : [child.material])].filter(Boolean)) {
@@ -295,8 +276,8 @@ decoyOwner.helmet.rotation.x = -.18;
 decoyOwner.group.updateMatrixWorld(true);
 decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
 const firstDecoy = decoyHarness.decoys[0]; trackDecoy(firstDecoy.mesh);
-const frozenHead = firstDecoy.mesh.getObjectByName("Helmet and recessed visor housing");
-for (const name of ["Segmented inset visor", "Helmet brow and crest", "Capsule satin shell"]) {
+const frozenHead = firstDecoy.mesh.getObjectByName("Mecha helmet");
+for (const name of ["Mecha twin eye lenses", "Mecha helmet armor"]) {
   const frozen = firstDecoy.mesh.getObjectByName(name), source = decoyOwner.group.getObjectByName(name);
   assert.equal(frozen.parent, frozenHead, "a decoy preserves nested head ownership");
   assert.deepEqual(frozen.matrix.elements, source.matrix.elements, "a decoy freezes the local head pose");
