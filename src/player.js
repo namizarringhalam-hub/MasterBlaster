@@ -4,6 +4,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { weaponUsesAmmo, WEAPONS } from "./gameData.js";
 import { weaponPresentation } from "./weaponPresentation.js";
 import { createMechaRig } from "./mecha.js";
+import { surfaceMaps, projectSurfaceUVs } from "./surfaceTextures.js";
 
 const clamp = THREE.MathUtils.clamp;
 export const PROJECTILE_SPAWN_OFFSET = .08;
@@ -121,7 +122,7 @@ export function exhaustShroudGeometry(variant = 0) {
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
   geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-  return geometry;
+  return projectSurfaceUVs(geometry);
 }
 
 export function clipLegPolygon(polygon, plane, above) {
@@ -198,6 +199,8 @@ function disposeGeometry(geometry) {
 
 function material(color, emissive = 0, options = {}) {
   return new THREE.MeshPhysicalMaterial({
+    ...surfaceMaps(),
+    normalScale: new THREE.Vector2(.3, .3),
     color,
     roughness: .29,
     metalness: .42,

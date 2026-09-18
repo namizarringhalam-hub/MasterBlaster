@@ -2,6 +2,7 @@ import * as THREE from "three/webgpu";
 import { materialOpacity, uv } from "three/tsl";
 import { weaponPresentation } from "./weaponPresentation.js";
 import { seededRandom } from "./gameData.js";
+import { surfaceMaps } from "./surfaceTextures.js";
 
 const clamp = THREE.MathUtils.clamp;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -225,7 +226,7 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
     group.add(needle, railHalo);
     pulseParts.push(railHalo);
   } else if (family === "rocket") {
-    const dark = new THREE.MeshStandardMaterial({ color: 0x07101c, roughness: .32, metalness: .65 });
+    const dark = new THREE.MeshStandardMaterial({ ...surfaceMaps(), color: 0x07101c, roughness: .32, metalness: .65 });
     const body = visualMesh(sharedGeometry(THREE.CylinderGeometry, radius * .68, radius * .9, radius * 2.7, 8), dark);
     body.rotation.x = Math.PI / 2;
     const nose = visualMesh(sharedGeometry(THREE.ConeGeometry, radius * .82, radius * 1.45, 8), core);

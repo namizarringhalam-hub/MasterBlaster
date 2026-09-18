@@ -1,6 +1,7 @@
 import * as THREE from "three/webgpu";
 import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
-import { attribute } from "three/tsl";
+import { attribute, texture } from "three/tsl";
+import { surfaceMaps, projectSurfaceUVs } from "./surfaceTextures.js";
 
 // Cross sections author the volume, not just the front outline: shoulders taper
 // on all three axes, breastplates have a prow, and calves flare behind the shin.
@@ -29,7 +30,7 @@ function shell(rings) {
   const smooth = mergeVertices(geometry);
   geometry.dispose();
   smooth.computeVertexNormals();
-  return smooth;
+  return projectSurfaceUVs(smooth);
 }
 function plate(outline, depth, bevel = .006) {
   const shape = new THREE.Shape(outline.map(([x, y]) => new THREE.Vector2(x, y)));
@@ -76,11 +77,12 @@ export function createMechaRig(fighter) {
   const paint=fighter.color,light=fighter.accent,frame=0x111a25,steel=0x536777,ceramic=0xcbd5db;
   const darkPaint=new THREE.Color(paint).multiplyScalar(.42);
   const edge=new THREE.Color(paint).lerp(new THREE.Color(0xc6e2ed),.35);
-  const armor=new THREE.MeshPhysicalNodeMaterial({color:0xffffff,vertexColors:true,roughness:.38,
+  const armor=new THREE.MeshPhysicalNodeMaterial({...surfaceMaps(),normalScale:new THREE.Vector2(.3,.3),color:0xffffff,vertexColors:true,roughness:.38,
     metalness:.52,clearcoat:.16,clearcoatRoughness:.27,envMapIntensity:.85,emissive:light,emissiveIntensity:.025});
   const surface=attribute("surface","vec2");
-  armor.roughnessNode=surface.x;armor.metalnessNode=surface.y;armor.clearcoatNode=surface.y.mul(.25);
-  const glow=new THREE.MeshPhysicalMaterial({color:paint,emissive:light,emissiveIntensity:.7,
+  armor.roughnessNode=surface.x.mul(texture(armor.roughnessMap).g);
+  armor.metalnessNode=surface.y.mul(texture(armor.metalnessMap).b);armor.clearcoatNode=surface.y.mul(.25);
+  const glow=new THREE.MeshPhysicalMaterial({...surfaceMaps(),normalScale:new THREE.Vector2(.2,.2),color:paint,emissive:light,emissiveIntensity:.7,
     roughness:.8,metalness:0,toneMapped:false});
   fighter.armorMaterial=armor;fighter.accentMaterial=glow;
   const rig=new THREE.Group();rig.name="Mecha articulated armor";rig.scale.set(1.07,1.04,1.07);rig.position.y=-.035;fighter.rig=rig;

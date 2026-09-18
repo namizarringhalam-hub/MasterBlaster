@@ -19,7 +19,7 @@ import { CombatVisuals } from "../src/combatVisuals.js";
 import { NeonRenderPipeline, recoverInvalidAONormals } from "../src/renderPipeline.js";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { surfaceTextures } from "../src/surfaceTextures.js";
+import { surfaceTextures, surfaceMaps, projectSurfaceUVs } from "../src/surfaceTextures.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { weaponUsesAmmo } from "../src/gameData.js";
@@ -218,8 +218,8 @@ for (const reducedMotion of [false, true]) {
 {
   let clock = 1000, landingFrame = -1, checked = false;
   const plain = playerMergeSource.replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "");
-  const Type = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation", "createMechaRig", "performance",
-    `${plain}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation, createMechaRig, { now: () => clock });
+  const Type = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation", "createMechaRig", "surfaceMaps", "projectSurfaceUVs", "performance",
+    `${plain}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation, createMechaRig, surfaceMaps, projectSurfaceUVs, { now: () => clock });
   const p = new Type(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3(0, 15, 8));
   const still = new THREE.Vector3(), aim = new THREE.Vector3(0, 0, -1);
   const world = { resolve(position) { const grounded = position.y <= 15; if (grounded) position.y = 15; return { grounded }; }, boostAt: () => null };
@@ -1181,11 +1181,11 @@ for (const all of [false, true]) {
 }
 
 for (const [seed, expected] of [
-  ["GRAPHICS-QA-structure", ["3fcaf9d84ec4401241287fef3d3288259e9493dd3171fc3d3bd7ccf8cec086ec", "39cdd4e5bbe8932bb96e6b805f99647f9c5723cf63edace962550765be1769f5", "183e544aca3ae4ebc7b6ada691287b7adfd03daeab38bd51a0c6056b5153a381"]],
-  ["FOUNDRY111-ground", ["8464cd7f25660d46d3c91713d3f67e7a41d2a473a713646b75f8c02a6c5ec38b", "39cdd4e5bbe8932bb96e6b805f99647f9c5723cf63edace962550765be1769f5", "0ad986808bd82a92fd56401c5747bee252f9a867a786b82e462f4839fd7ca2bf"]]
+  ["GRAPHICS-QA-structure", ["3fcaf9d84ec4401241287fef3d3288259e9493dd3171fc3d3bd7ccf8cec086ec", "39cdd4e5bbe8932bb96e6b805f99647f9c5723cf63edace962550765be1769f5", "2c41abb3a5ae6b9dc7230be392ef85426db453f65d008e6d32255b7b30ae66e4"]],
+  ["FOUNDRY111-ground", ["8464cd7f25660d46d3c91713d3f67e7a41d2a473a713646b75f8c02a6c5ec38b", "39cdd4e5bbe8932bb96e6b805f99647f9c5723cf63edace962550765be1769f5", "f10f355514250bf4724da5431b3d72f8e755612343c6c73d9735ce8cf18da9e7"]]
 ]) {
   const maps = surfaceTextures(seed, 4);
-  assert.deepEqual(maps.map(map => createHash("sha256").update(map.image.data).digest("hex")), expected, "height-field reuse preserves every texture byte");
+  assert.deepEqual(maps.map(map => createHash("sha256").update(map.image.data).digest("hex")), expected, "matched albedo, normals and packed ORM stay deterministic");
   maps.forEach(map => map.dispose());
 }
 
@@ -1508,7 +1508,7 @@ assert.equal(world.boostAt(trigger.clone().add(new THREE.Vector3(2.5, 0, 0))), u
 assert.equal(world.boostAt(trigger.clone().add(new THREE.Vector3(0, .35, 0))), undefined);
 assertCompatibleAONormals(world.group);
 const coverSource = readFileSync(new URL("../src/world.js", import.meta.url), "utf8");
-const legacyLightGeometry = new Function("THREE", `${coverSource.slice(coverSource.indexOf("function coverLightGeometry("), coverSource.indexOf("function segmentCircle("))}; return coverLightGeometry;`)(THREE);
+const legacyLightGeometry = new Function("THREE", "projectSurfaceUVs", `${coverSource.slice(coverSource.indexOf("function coverLightGeometry("), coverSource.indexOf("function segmentCircle("))}; return coverLightGeometry;`)(THREE, projectSurfaceUVs);
 const legacyDecorateSource = coverSource.slice(coverSource.indexOf("  decorateBreakable("), coverSource.indexOf("  addBox(", coverSource.indexOf("  decorateBreakable(")))
   .replace(/^\s*if \(inset\) slats = bakeCoverSlats\(slats\);\r?\n/m, "");
 const legacyDecorate = new Function("THREE", "coverLightGeometry", `return function ${legacyDecorateSource};`)(THREE, legacyLightGeometry);
@@ -1548,7 +1548,8 @@ for (const [coverIndex, light] of legacyCoverLights.entries()) {
       }
     }
   }
-  const { position, normal, uv, color } = light.geometry.attributes;
+  const { position, normal, uv1: uv, color } = light.geometry.attributes;
+  assert.equal(light.material.emissiveMap.channel, 1, "emission lookup is independent of PBR surface UVs");
   assert.equal((light.geometry.index?.count ?? position.count) / 3, 20, "closed light housing uses ten planar quads within its existing draw");
   assert.equal(light.count, 4);
   assert.equal(light.material.color.getHex(), 0xffffff, "vertex colors separate neutral housing from colored diffuser");

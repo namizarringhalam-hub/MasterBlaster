@@ -2,7 +2,7 @@ import * as THREE from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { abs, color, fract, length, max, min, mix, normalWorldGeometry, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
 import { ARENA_PORTAL_COOLDOWN_SECONDS, ARENA_PORTAL_PAIRS, ARENA_SPAWN_POINTS, MAP_THEMES, seededRandom, seedFromText, structuralTowerBlueprints } from "./gameData.js";
-import { surfaceTextures } from "./surfaceTextures.js";
+import { surfaceTextures, surfaceMaps, projectSurfaceUVs } from "./surfaceTextures.js";
 
 const TAU = Math.PI * 2;
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -140,10 +140,12 @@ function material(color, emissive = 0, opacity = 1, options = {}) {
     opacity,
     depthWrite: opacity >= .4,
     side: options.side ?? THREE.FrontSide,
-    map: options.map ?? null,
-    normalMap: options.normalMap ?? null,
+    map: options.map ?? surfaceMaps().map,
+    normalMap: options.normalMap ?? surfaceMaps().normalMap,
     normalScale: options.normalScale ?? new THREE.Vector2(.42, .42),
-    roughnessMap: options.roughnessMap ?? null
+    roughnessMap: options.roughnessMap ?? surfaceMaps().roughnessMap,
+    metalnessMap: options.metalnessMap ?? options.roughnessMap ?? surfaceMaps().metalnessMap,
+    aoMap: options.aoMap ?? options.roughnessMap ?? surfaceMaps().aoMap
   });
 }
 
@@ -254,8 +256,9 @@ function coverLightGeometry(diffuserColor, horizontal) {
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geometry.setAttribute("uv", new THREE.Float32BufferAttribute(textureUVs, 2));
+  geometry.setAttribute("uv1", geometry.attributes.uv);
   geometry.computeVertexNormals(); geometry.computeBoundingSphere();
-  return geometry;
+  return projectSurfaceUVs(geometry);
 }
 
 function segmentCircle(a, b, c, radius) {
@@ -352,6 +355,7 @@ export class ArenaWorld {
     this.textures.push(...this.coverTextures);
     this.coverLightMask = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255, 255, 255, 255, 255]), 2, 1, THREE.RGBAFormat);
     this.coverLightMask.name = "Cover diffuser emission mask";
+    this.coverLightMask.channel = 1;
     this.coverLightMask.colorSpace = THREE.SRGBColorSpace;
     this.coverLightMask.needsUpdate = true;
     this.textures.push(this.coverLightMask);
@@ -405,6 +409,8 @@ export class ArenaWorld {
     this.ground.material.normalMap = this.groundNormal;
     this.ground.material.normalScale.set(.36, .36);
     this.ground.material.roughnessMap = this.groundRoughness;
+    this.ground.material.metalnessMap = this.groundRoughness;
+    this.ground.material.aoMap = this.groundRoughness;
     this.ground.material.roughness = .9;
     this.ground.material.metalness = .14;
     this.group.add(this.ground);
@@ -749,12 +755,12 @@ export class ArenaWorld {
       const entries = specs.filter((spec) => spec.district === district);
       const base = new THREE.InstancedMesh(
         family.base,
-        new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: .82, metalness: .28, emissive: 0x02070c, emissiveIntensity: .14 }),
+        new THREE.MeshStandardMaterial({ ...surfaceMaps(), color: 0xffffff, vertexColors: true, roughness: .82, metalness: .28, emissive: 0x02070c, emissiveIntensity: .14 }),
         entries.length
       );
       const crowns = new THREE.InstancedMesh(
         family.crown,
-        new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: .66, metalness: .42, emissive: 0x02070c, emissiveIntensity: .22 }),
+        new THREE.MeshStandardMaterial({ ...surfaceMaps(), color: 0xffffff, vertexColors: true, roughness: .66, metalness: .42, emissive: 0x02070c, emissiveIntensity: .22 }),
         entries.length
       );
       entries.forEach((spec, index) => {
@@ -1514,6 +1520,8 @@ export class ArenaWorld {
     mesh.material.normalMap = this.panelNormal;
     mesh.material.normalScale.set(.42, .42);
     mesh.material.roughnessMap = this.panelRoughness;
+    mesh.material.metalnessMap = this.panelRoughness;
+    mesh.material.aoMap = this.panelRoughness;
     mesh.material.roughness = destructible ? .72 : .82;
     mesh.material.metalness = destructible ? .38 : .31;
     if (destructible) {
@@ -1548,7 +1556,7 @@ export class ArenaWorld {
     const marker = new THREE.Object3D();
     for (const entries of groups.values()) {
       const coverMaterial = entries[0].mesh.material.clone();
-      [coverMaterial.map, coverMaterial.normalMap, coverMaterial.roughnessMap] = this.coverTextures;
+      Object.assign(coverMaterial, surfaceMaps(this.coverTextures));
       coverMaterial.vertexColors = true;
       coverMaterial.envMap = this.scene.environment;
       coverMaterial.envMapIntensity = .24;
