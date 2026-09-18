@@ -27,3 +27,9 @@
 - Next unfinished step: after user signs in, verify Search Console ownership,
   submit sitemap, inspect homepage and request indexing. Monitor indexing through
   the search engine dashboards; no recurring automation was requested or created.
+
+## Google verification follow-up
+
+- User signed into Search Console. Added URL-prefix property https://masterblaster.se/.
+- Added the account's actual HTML verification meta tag to index.html.
+- Next: build and publish tag, verify ownership, submit sitemap, request indexing.
