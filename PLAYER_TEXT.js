@@ -210,7 +210,7 @@ export const PLAYER_TEXT = {
     activeWeapon: "ACTIVE WEAPON",
     grappleReadyDesktop: "GRAPPLE READY · E / RIGHT CLICK",
     grappleReadyTouch: "GRAPPLE READY · TAP HOOK",
-    grapplePulling: "GRAPPLE PULLING · RELEASE TO SLINGSHOT",
+    grapplePulling: "HOOKED · FORWARD TO REEL · RELEASE TO SLINGSHOT",
     clickToStart: "CLICK TO START · FIRST CLICK ONLY CAPTURES AIM",
     tapToStart: "TAP TO START",
     charge: "CHARGE {percent}%",

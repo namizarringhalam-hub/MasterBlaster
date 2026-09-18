@@ -1052,7 +1052,7 @@ assert.ok(reticleAim(fighter, cameraOrigin, overlapDirection, { grapplePoint: ()
 fighter.velocity.set(0, 0, 8);
 fighter.grapple = { anchor: new THREE.Vector3(20, 20, 0), ropeLength: 24 };
 const ropeBefore = fighter.grapple.ropeLength;
-applyGrapplePhysics(fighter, .1);
+applyGrapplePhysics(fighter, .1, true);
 assert.ok(fighter.velocity.x > 0 && fighter.velocity.y > 0, "the grapple actively pulls toward elevated anchors");
 assert.ok(ropeBefore - fighter.grapple.ropeLength >= 1.79, "the grapple reels in decisively while attached");
 const upwardLaunch = {
@@ -1060,7 +1060,7 @@ const upwardLaunch = {
   grapple: { anchor: new THREE.Vector3(20, 20, 0), wraps: [], ropeLength: 24, pullSpeed: 0, launchLift: true }
 };
 const upwardDirection = upwardLaunch.grapple.anchor.clone().sub(new THREE.Vector3(0, 1.4, 0)).normalize();
-applyGrapplePhysics(upwardLaunch, 1 / 60);
+applyGrapplePhysics(upwardLaunch, 1 / 60, true);
 const upwardArc = upwardLaunch.velocity.y - upwardLaunch.velocity.dot(upwardDirection) * upwardDirection.y;
 assert.ok(upwardArc > 1, "an upward grapple launches above its straight rope line to begin a visible lift arc");
 assert.ok(upwardLaunch.velocity.y > 9 && upwardLaunch.velocity.x > 8, "an upward grapple immediately launches strongly upward and toward its anchor");
@@ -1069,7 +1069,7 @@ const levelLaunch = {
   position: new THREE.Vector3(), velocity: new THREE.Vector3(), controlMove: new THREE.Vector3(), slowTimer: 0,
   grapple: { anchor: new THREE.Vector3(20, 1.4, 0), wraps: [], ropeLength: 18, pullSpeed: 0, launchLift: true }
 };
-applyGrapplePhysics(levelLaunch, 1 / 60);
+applyGrapplePhysics(levelLaunch, 1 / 60, true);
 assert.equal(levelLaunch.velocity.y, 0, "level grapple shots do not receive artificial upward lift");
 const smoothPull = (fps) => {
   const dt = 1 / fps;
@@ -1079,7 +1079,7 @@ const smoothPull = (fps) => {
   };
   const speeds = [];
   for (let frame = 0; frame < fps; frame++) {
-    applyGrapplePhysics(player, dt);
+    applyGrapplePhysics(player, dt, true);
     speeds.push(player.velocity.x);
     player.position.addScaledVector(player.velocity, dt);
   }
@@ -1100,7 +1100,7 @@ const grappleCrossing = (fps, rise, slowTimer = 0) => {
   for (let frame = 0; frame < fps * 10 && player.position.x < 90; frame++) {
     player.velocity.y -= 19 / fps;
     player.position.addScaledVector(player.velocity, 1 / fps);
-    applyGrapplePhysics(player, 1 / fps);
+    applyGrapplePhysics(player, 1 / fps, true);
     minimumHeight = Math.min(minimumHeight, player.position.y);
     assert.ok(player.velocity.length() <= GRAPPLE_SPEED_CAP + 1e-8, "sag assistance respects the speed cap");
   }
@@ -1122,13 +1122,63 @@ const fallingGrappler = {
   position: new THREE.Vector3(), velocity: new THREE.Vector3(0, -20, 8), controlMove: new THREE.Vector3(), slowTimer: 0,
   grapple: { anchor: new THREE.Vector3(100, 1.4, 0), wraps: [], ropeLength: 92 }
 };
-applyGrapplePhysics(fallingGrappler, 1 / 60);
+applyGrapplePhysics(fallingGrappler, 1 / 60, true);
 assert.ok(fallingGrappler.velocity.y > -20 && fallingGrappler.velocity.y < 0, "reattaching during a fall arrests sag smoothly");
 assert.equal(fallingGrappler.velocity.z, 8, "sag correction preserves sideways momentum");
 fallingGrappler.grapple = null;
 const releasedVelocity = fallingGrappler.velocity.clone();
-applyGrapplePhysics(fallingGrappler, 1 / 60);
+applyGrapplePhysics(fallingGrappler, 1 / 60, true);
 assert.deepEqual(fallingGrappler.velocity, releasedVelocity, "release immediately removes sag assistance");
+// Run the real controller input calculation before camera rotation.
+const inputStart = mainSource.indexOf("    const localMove =");
+const humanInputSource = mainSource.slice(inputStart, mainSource.indexOf("    this.aimTargets.length = 0;", inputStart));
+const readGrappleInput = new Function("directionFromKeys", "directionFromTouch", "cameraRelative",
+  `return function () { ${humanInputSource}; return { reeling, move }; }`)(directionFromKeys, directionFromTouch, cameraRelative);
+for (const yaw of [0, Math.PI / 2, Math.PI]) {
+  for (const [keys, touch, expected] of [
+    [["KeyW"], { x: 0, y: 0 }, true], [[], { x: 0, y: -1 }, true],
+    [[], { x: .7, y: -.7 }, true], [[], { x: 1, y: 0 }, false],
+    [["KeyS"], { x: 0, y: 0 }, false], [["KeyD"], { x: 0, y: 0 }, false],
+    [[], { x: 0, y: 0 }, false], [[], { x: 0, y: -.05 }, false]
+  ]) {
+    const result = readGrappleInput.call({ cameraYaw: yaw, input: { down: key => keys.includes(key), touchDirection: () => touch } });
+    assert.equal(result.reeling, expected, "only keyboard/mobile forward reels, independent of camera heading");
+    assert.ok(result.move.length() <= 1 + 1e-8, "combined input retains the movement speed limit");
+  }
+}
+// Swing mode must keep gravity and tangential momentum, only tightening a taut rope.
+const swinger = {
+  position: new THREE.Vector3(), velocity: new THREE.Vector3(4, -8, 6), controlMove: new THREE.Vector3(), slowTimer: 0,
+  grapple: { anchor: new THREE.Vector3(0, 21.4, 0), wraps: [], ropeLength: 25, pullSpeed: 0 }
+};
+applyGrapplePhysics(swinger, 1 / 60);
+assert.deepEqual(swinger.velocity, new THREE.Vector3(4, -8, 6), "a slack swinging rope does not cancel falling or sideways momentum");
+assert.equal(swinger.grapple.ropeLength, 25, "swinging does not reel in automatically");
+swinger.grapple.ropeLength = 19.9;
+applyGrapplePhysics(swinger, 1 / 60);
+assert.ok(swinger.velocity.y > 0, "a stretched rope resists outward movement");
+assert.equal(swinger.velocity.x, 4, "rope tension preserves swing momentum");
+assert.equal(swinger.velocity.z, 6, "rope tension preserves lateral momentum");
+applyGrapplePhysics(swinger, 1 / 60, true);
+assert.ok(swinger.grapple.ropeLength < 19.9, "forward input starts powered reeling on the existing rope");
+const reeledLength = swinger.grapple.ropeLength;
+applyGrapplePhysics(swinger, 1 / 60, false);
+assert.equal(swinger.grapple.ropeLength, reeledLength, "releasing forward immediately stops rope shortening");
+for (const fps of [30, 60, 120]) {
+  swinger.position.set(-15, 30, 0); swinger.velocity.set(12, 0, 0);
+  swinger.grapple = { anchor: new THREE.Vector3(0, 51.4, 0), wraps: [], ropeLength: 25, pullSpeed: 0 };
+  let low = 30, crossed = false, maxDistance = 0;
+  for (let frame = 0; frame < fps * 3; frame++) {
+    swinger.velocity.y -= 19 / fps;
+    swinger.position.addScaledVector(swinger.velocity, 1 / fps);
+    applyGrapplePhysics(swinger, 1 / fps);
+    low = Math.min(low, swinger.position.y);
+    crossed ||= swinger.position.x > 5;
+    maxDistance = Math.max(maxDistance, swinger.position.clone().add(new THREE.Vector3(0, 1.4, 0)).distanceTo(swinger.grapple.anchor));
+  }
+  assert.ok(low < 27 && crossed, "a free grapple sweeps below and across the anchor instead of zipping straight toward it");
+  assert.ok(maxDistance < 26, "swing tension keeps the rope within one metre of its resting length");
+}
 const groundedGrappler = new Fighter(
   worldScene,
   { id: "grounded-grapple", name: "Grounded Grappler", color: 0x26d9ff, accent: 0xd9fbff },
@@ -1145,7 +1195,7 @@ let maximumGroundRelaxation = 0;
 for (let frame = 0; frame < 120; frame++) {
   groundedGrappler.update(1 / 60, new THREE.Vector3(-1, 0, 0), new THREE.Vector3(1, 0, 0), { jump: false }, flatFloor);
   maximumGroundRelaxation = Math.max(maximumGroundRelaxation, previousPullSpeed - groundedGrappler.velocity.x);
-  applyGrapplePhysics(groundedGrappler, 1 / 60);
+  applyGrapplePhysics(groundedGrappler, 1 / 60, true);
   previousPullSpeed = groundedGrappler.velocity.x;
 }
 assert.ok(maximumGroundRelaxation < .001, "ground contact and opposing walking input cannot relax grapple velocity between pulls");
@@ -1155,14 +1205,14 @@ const wrappedPlayer = {
   position: new THREE.Vector3(), velocity: new THREE.Vector3(), controlMove: new THREE.Vector3(), slowTimer: 0,
   grapple: { anchor: new THREE.Vector3(20, 10, 0), wraps: [new THREE.Vector3(0, 10, 10)], ropeLength: 25 }
 };
-applyGrapplePhysics(wrappedPlayer, .1);
+applyGrapplePhysics(wrappedPlayer, .1, true);
 assert.ok(wrappedPlayer.velocity.z > 0 && Math.abs(wrappedPlayer.velocity.x) < .001, "a bent rope pulls toward its nearest wrap point instead of through the obstacle");
 const ledgePlayer = {
   position: new THREE.Vector3(21.72, 12.5, 10), velocity: new THREE.Vector3(), controlMove: new THREE.Vector3(), slowTimer: 0,
   ledgeContact: ledgeCollision.ledge,
   grapple: { anchor: new THREE.Vector3(10, 15, 10), wraps: [], ropeLength: 14 }
 };
-applyGrapplePhysics(ledgePlayer, .1);
+applyGrapplePhysics(ledgePlayer, .1, true);
 assert.ok(ledgePlayer.velocity.y >= 11 && ledgePlayer.velocity.dot(ledgeCollision.ledge.inward) >= 6.99, "grappling a platform top automatically lifts and pulls a stuck player over its ledge");
 const speedBeforeRelease = fighter.velocity.length();
 boostGrappleRelease(fighter);
