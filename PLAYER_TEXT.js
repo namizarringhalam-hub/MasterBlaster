@@ -10,8 +10,9 @@
 export const PLAYER_TEXT = {
   site: {
     title: "Master Blaster",
+    searchTitle: "Master Blaster — Free Online Multiplayer Arena Shooter",
     socialTitle: "Master Blaster — Neon Arena Shooter",
-    description: "Grapple anything, shatter towers, and flatten your friends with 47 wildly different weapons in fast online arena combat.",
+    description: "Play Master Blaster, a free online multiplayer arena shooter. Grapple, destroy towers and battle with 47 weapons in your browser. No download needed.",
     socialImageAlt: "Master Blaster neon arena combat"
   },
 
@@ -21,7 +22,7 @@ export const PLAYER_TEXT = {
     kicker: "GRAPPLE. BLAST. BRING THE ARENA DOWN.",
     headlineLine1: "Swing wild.",
     headlineLine2: "Break everything.",
-    lead: "Grapple anything. Shatter towers. Flatten your friends with 47 wildly different weapons. Every fight leaves the battlefield a little less intact.",
+    lead: "Play Master Blaster, a free online multiplayer arena shooter in your browser. Grapple anything, shatter towers and battle friends or bots with 47 weapons. No download needed.",
     highlightsAria: "Game highlights",
     highlights: "GRAPPLE ANY SURFACE · DESTRUCTIBLE TOWERS · UP TO 16 FIGHTERS · ZERO INSTALL",
     buttons: {

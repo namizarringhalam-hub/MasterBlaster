@@ -4,6 +4,7 @@ import { extname, join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { MUSIC_ASSET_REVISION } from "../src/audio.js";
 import { MUSIC_SAMPLE_MANIFEST } from "../src/musicScore.js";
+import { PLAYER_TEXT } from "../PLAYER_TEXT.js";
 
 const types = {
   ".css": "text/css",
@@ -13,7 +14,9 @@ const types = {
   ".png": "image/png",
   ".svg": "image/svg+xml",
   ".webp": "image/webp",
-  ".wav": "audio/wav"
+  ".wav": "audio/wav",
+  ".txt": "text/plain",
+  ".xml": "application/xml"
 };
 
 const { default: worker } = await import(`../dist/server/index.js?test=${Date.now()}`);
@@ -33,16 +36,36 @@ const response = await worker.fetch(new Request("https://example.test/"), { ASSE
 assert.equal(response.status, 200, "the deployed root falls back to client/index.html");
 assert.match(response.headers.get("cache-control"), /max-age=0/, "the HTML shell always revalidates so releases cannot become stale");
 const deployedHtml = await response.text();
-assert.match(deployedHtml, /<title>Master Blaster<\/title>/, "the deployed root serves the rebranded game shell");
+assert.ok(deployedHtml.includes(`<title>${PLAYER_TEXT.site.searchTitle}</title>`), "the search title describes the game without changing its installed name");
 assert.match(deployedHtml, /<meta property="og:title" content="Master Blaster — Neon Arena Shooter"/, "shared links use the Master Blaster title");
 assert.match(deployedHtml, /<link rel="canonical" href="https:\/\/masterblaster\.se\/"/, "the public domain is canonical");
 assert.match(deployedHtml, /<meta property="og:url" content="https:\/\/masterblaster\.se\/"/, "shared links identify the public domain");
 assert.match(deployedHtml, /<meta property="og:image" content="https:\/\/masterblaster\.se\/og\.png"/, "social crawlers receive an absolute preview image URL");
-assert.match(deployedHtml, /Grapple anything, shatter towers, and flatten your friends with 47 wildly different weapons/, "shared links describe the game's destructive grapple-and-weapons fantasy");
+assert.ok(deployedHtml.includes(`<meta name="description" content="${PLAYER_TEXT.site.description}"`), "search and social metadata use the editable description");
 assert.match(deployedHtml, /<span>MASTER<\/span><b>BLASTER<\/b>/, "the server-rendered menu uses the Master Blaster brand");
 assert.doesNotMatch(deployedHtml, /Blaster Battle/i, "the deployed shell contains no retired title");
 assert.match(deployedHtml, /data-boot-mode="quick"/, "the interactive menu shell is server-rendered before the deferred game engine executes");
 assert.match(deployedHtml, /src="\/assets\//, "the production shell loads only its hashed boot module eagerly");
+assert.doesNotMatch(deployedHtml, /\{\{[a-zA-Z0-9_.]+\}\}|noindex/, "crawlers receive rendered, indexable HTML");
+assert.ok(deployedHtml.includes(`<p class="lead">${PLAYER_TEXT.landing.lead}</p>`), "the game description is readable without JavaScript");
+const schema = JSON.parse(deployedHtml.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)?.[1]);
+assert.equal(schema["@context"], "https://schema.org");
+const game = schema["@graph"].find(item => item["@type"] === "VideoGame");
+assert.equal(game.name, PLAYER_TEXT.site.title);
+assert.equal(game.description, PLAYER_TEXT.site.description);
+assert.equal(game.url, "https://masterblaster.se/");
+assert.equal(game.isAccessibleForFree, true);
+for (const [file, type, content] of [
+  ["robots.txt", "text/plain", /Sitemap: https:\/\/masterblaster\.se\/sitemap\.xml/],
+  ["sitemap.xml", "application/xml", /<loc>https:\/\/masterblaster\.se\/<\/loc>/]
+]) {
+  const crawlerResponse = await worker.fetch(new Request(`https://example.test/${file}`), { ASSETS: clientAssets });
+  assert.equal(crawlerResponse.status, 200, `${file} is deployed`);
+  assert.equal(crawlerResponse.headers.get("content-type"), type, `${file} is not an HTML fallback`);
+  const body = await crawlerResponse.text();
+  assert.match(body, content);
+  assert.equal(body, await readFile(`dist/${file}`, "utf8"), `${file} matches in both hosting layouts`);
+}
 
 const assetNames = await readdir("dist/client/assets");
 const jsAssets = assetNames.filter((name) => name.endsWith(".js"));
@@ -88,7 +111,7 @@ for (const file of Object.values(MUSIC_SAMPLE_MANIFEST).flatMap((role) => role.f
 const manifest = JSON.parse(await readFile("dist/client/manifest.webmanifest", "utf8"));
 assert.equal(manifest.name, "Master Blaster", "the installable app uses the Master Blaster name");
 assert.equal(manifest.short_name, "Master Blaster", "the installed app label uses the Master Blaster name");
-assert.match(manifest.description, /Grapple anything, shatter towers, and flatten your friends with 47 wildly different weapons/, "installed-game metadata keeps the same destructive, playful voice");
+assert.equal(manifest.description, PLAYER_TEXT.site.description, "installed-game metadata uses the editable description");
 assert.ok(manifest.icons.some((icon) => icon.src === "/favicon.svg"), "the installable app publishes its brand icon");
 
 const previewResponse = await worker.fetch(new Request("https://example.test/og.png"), { ASSETS: clientAssets });

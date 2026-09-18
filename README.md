@@ -62,3 +62,20 @@ The client is deployed by Cloudflare Pages from the GitHub `main` branch. The mu
 ```powershell
 npm.cmd run deploy:multiplayer
 ```
+
+## Search indexing
+
+The production build includes a descriptive search title, crawlable landing text,
+canonical URL, social previews, WebSite/VideoGame JSON-LD, `robots.txt`, and
+`sitemap.xml`. Search copy is editable in `PLAYER_TEXT.js`; the installed app name
+stays separate from the search title. `npm.cmd run build` verifies these assets.
+
+After deployment, use an owner account in [Google Search Console](https://search.google.com/search-console)
+to verify `masterblaster.se`, submit `https://masterblaster.se/sitemap.xml`, then
+inspect `https://masterblaster.se/` and request indexing. Submit the same sitemap
+in [Bing Webmaster Tools](https://www.bing.com/webmasters/). Ownership verification
+requires the account's actual DNS record or verification token; do not invent one.
+
+The sitemap is also advertised in robots.txt for automatic discovery. Search
+engines decide whether and when to index the game; deployment or submission does
+not guarantee inclusion or ranking. See [Google's indexing guidance](https://developers.google.com/search/docs/crawling-indexing/ask-google-to-recrawl).

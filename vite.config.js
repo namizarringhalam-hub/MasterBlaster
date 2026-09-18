@@ -16,11 +16,26 @@ function escapeHtml(value) {
 }
 
 function renderPlayerText(html) {
-  return html.replace(/\{\{([a-zA-Z0-9_.]+)\}\}/g, (token, path) => {
+  const rendered = html.replace(/\{\{([a-zA-Z0-9_.]+)\}\}/g, (token, path) => {
     const value = textAt(path);
     if (value === undefined || typeof value === "object") throw new Error(`Unknown player-text token: ${token}`);
     return escapeHtml(value);
   });
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@graph": [
+      { "@type": "WebSite", "@id": "https://masterblaster.se/#website", url: "https://masterblaster.se/", name: PLAYER_TEXT.site.title, inLanguage: "en" },
+      {
+        "@type": "VideoGame", "@id": "https://masterblaster.se/#game",
+        name: PLAYER_TEXT.site.title, url: "https://masterblaster.se/",
+        description: PLAYER_TEXT.site.description, image: "https://masterblaster.se/og.png",
+        genre: ["Arena shooter", "Action"], gamePlatform: "Web browser",
+        playMode: ["https://schema.org/SinglePlayer", "https://schema.org/MultiPlayer"], isAccessibleForFree: true, inLanguage: "en"
+      }
+    ]
+  };
+  // Escape script delimiters independently of HTML attribute escaping.
+  return rendered.replace("</head>", `<script type="application/ld+json">${JSON.stringify(structuredData).replaceAll("<", "\\u003c")}</script>\n  </head>`);
 }
 
 function manifest() {
