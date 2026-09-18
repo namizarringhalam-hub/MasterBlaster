@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import "./cameraMotion.test.mjs";
 import { readFile } from "node:fs/promises";
 import * as THREE from "three/webgpu";
 import { chooseBotSlot, botFireChance, botWeaponPolicy, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";

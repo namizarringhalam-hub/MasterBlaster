@@ -1939,6 +1939,9 @@ class BlasterBattle {
     this.combatVisuals?.update(dt);
     this.updateRespawns(realDt);
     for (const player of this.players) if (player.trainingStandStill && player.alive) this.lockTrainingBot(player);
+    // Aim is prepared before simulation; render from the final player position
+    // without advancing camera smoothing a second time this frame.
+    this.updateCamera(0);
     this.updateAudio(dt);
     this.updateHud();
     if (!this.isOnlineMatch() && (this.matchTime <= 0 || Math.max(...this.scores) >= this.targetScore)) this.finishMatch();
@@ -3490,6 +3493,7 @@ class BlasterBattle {
     const player = this.players[0];
     const scratch = this.cameraScratch;
     if (!player) {
+      this.cameraFollowPlayer = null;
       this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, 62, cameraBlend);
       this.camera.updateProjectionMatrix();
       this.camera.position.lerp(scratch.menuPosition, cameraBlend);
@@ -3499,8 +3503,13 @@ class BlasterBattle {
     const forward = this.mouseAim(scratch.forward);
     const flatForward = scratch.flatForward.copy(forward).setY(0).normalize();
     const right = scratch.right.set(flatForward.z, 0, -flatForward.x);
+    // Carry the camera with its pivot; ease only boom offset/FOV, not movement.
+    const following = this.cameraFollowPlayer === player;
+    if (following) this.camera.position.sub(scratch.pivot);
     const pivot = scratch.pivot.copy(player.position);
     pivot.y += 1.65;
+    if (following) this.camera.position.add(pivot);
+    this.cameraFollowPlayer = player;
     const desired = scratch.desired.copy(pivot)
       .addScaledVector(flatForward, -8.25)
       .addScaledVector(right, 1.05);
