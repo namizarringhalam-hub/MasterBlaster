@@ -32,7 +32,7 @@ for (let variant = 0; variant < 4; variant++) for (const [color, accent] of colo
   });
   assert.ok(matches > 1000, "player paint covers large armor surfaces");
   assert.ok(meshes <= 22, `bounded draw count: ${meshes}`);
-  assert.ok(triangles < 10000, `bounded geometry budget: ${triangles}`);
+  assert.ok(triangles < 14000, `bounded geometry budget: ${triangles}`);
   assert.equal(fighter.visor.parent, fighter.helmet);
   assert.equal(fighter.leftKnee.parent, fighter.leftLeg);
   assert.equal(fighter.rightKnee.parent, fighter.rightLeg);
@@ -79,4 +79,36 @@ for (let variant = 0; variant < 4; variant++) for (const [color, accent] of colo
   assert.ok([...disposals.values()].every(count => count === 1), "all owned model resources dispose exactly once");
 }
 assert.equal(variants.size, 4, "all four deterministic armor families have distinct helmets");
+// The rejected gait passed pose-only checks. Sample complete strides and input
+// changes instead: no bounding-box-driven body jumps, sliding ankle rotations,
+// direction-normalization snaps, floor crossings, or frame-rate-dependent gait.
+const steadyHeights = [];
+for (const fps of [30, 60, 144]) {
+  const f = new Fighter(new THREE.Scene(), { id: "motion", color: colors[0][0], accent: colors[0][1] }, ["blaster"], new THREE.Vector3());
+  const heights = [], bodySteps = [], ankleSteps = [];
+  let previousBody, previousFeet;
+  for (let frame = 0; frame < fps * 8; frame++) {
+    const time = frame / fps;
+    const direction = time < 2 ? new THREE.Vector3(0, 0, 1) : time < 4 ? new THREE.Vector3(0, 0, -1)
+      : time < 6 ? new THREE.Vector3(1, 0, 0) : still;
+    f.update(1 / fps, direction, look, {}, world); f.group.updateMatrixWorld(true);
+    const feet = [f.leftAnkle, f.rightAnkle].map(ankle => ankle.getWorldPosition(new THREE.Vector3()).sub(f.position));
+    for (const leg of [f.leftLeg, f.rightLeg]) assert.ok(new THREE.Box3().setFromObject(leg, true).min.y >= -.001, "moving armor clears the floor");
+    for (const ankle of [f.leftAnkle, f.rightAnkle]) {
+      const up = new THREE.Vector3(0, 1, 0).transformDirection(ankle.matrixWorld);
+      assert.ok(up.y > .998, "soles counter-rotate the hip, knee and body lean");
+    }
+    if (previousFeet) ankleSteps.push(...feet.map((foot, i) => foot.distanceTo(previousFeet[i]) * fps));
+    if (previousBody !== undefined) bodySteps.push(Math.abs(f.rig.position.y - previousBody) * fps);
+    if (time > 1 && time < 2) heights.push(f.rig.position.y);
+    previousFeet = feet; previousBody = f.rig.position.y;
+  }
+  assert.ok(Math.max(...heights) - Math.min(...heights) < .015, "steady running keeps the pelvis stable");
+  assert.ok(Math.max(...bodySteps) < .4, "start/stop and stride root motion remain continuous");
+  assert.ok(Math.max(...ankleSteps) < 5, "feet remain continuous through reversals and strafing");
+  assert.ok(f.locomotionVisual < .001, "stopping settles the gait instead of freezing a raised foot");
+  steadyHeights.push(heights.reduce((sum, y) => sum + y, 0) / heights.length);
+  f.dispose();
+}
+assert.ok(Math.max(...steadyHeights) - Math.min(...steadyHeights) < .002, "pelvis height agrees across 30, 60 and 144 fps");
 console.log("Mecha colors, geometry budgets, head tracking, knee animation, jumping, hit feedback and disposal passed.");

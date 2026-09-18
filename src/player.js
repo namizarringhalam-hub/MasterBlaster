@@ -916,6 +916,11 @@ export class Fighter {
     this.rightLeg.rotation.set(0, 0, 0);
     this.leftKnee.rotation.set(0, 0, 0);
     this.rightKnee.rotation.set(0, 0, 0);
+    this.leftAnkle.rotation.set(0, 0, 0);
+    this.rightAnkle.rotation.set(0, 0, 0);
+    this.locomotionVisual = 0;
+    this.gaitPhase = 0;
+    this.strideVelocity.set(0, 0);
     this.armorMaterial.emissiveIntensity = .025;
     this.accentMaterial.emissiveIntensity = .7;
 
@@ -1016,7 +1021,9 @@ export class Fighter {
     const horizontalSpeed = Math.hypot(this.velocity.x, this.velocity.z);
     const locomotion = clamp(horizontalSpeed / 9, 0, 1);
     const grappled = Boolean(this.grapple);
-    if (this.grounded && moving && !grappled) this.gaitPhase = (this.gaitPhase + dt * (5.2 + horizontalSpeed * .72)) % (Math.PI * 2);
+    this.locomotionVisual = THREE.MathUtils.damp(this.locomotionVisual || 0,
+      this.grounded && !grappled ? locomotion : 0, 10, dt);
+    if (this.grounded && !grappled) this.gaitPhase = (this.gaitPhase + dt * (4 + horizontalSpeed * .72) * this.locomotionVisual) % (Math.PI * 2);
     const gait = Math.sin(this.gaitPhase);
     const landing = this.landTimer > 0
       ? this.landStrength * Math.sin((1 - this.landTimer / .22) * Math.PI)
@@ -1030,27 +1037,23 @@ export class Fighter {
       const dz = anchor.z - this.position.z;
       grappleSide = (dx * this.aim.z - dz * this.aim.x) / Math.max(1, Math.hypot(dx, dz));
     }
-    let leftLegTarget;
-    let rightLegTarget;
-    if (grappled) {
-      leftLegTarget = .94 + clamp(-this.velocity.y * .024, -.28, .34) - grappleSide * .18;
-      rightLegTarget = -.52 + clamp(-this.velocity.y * .018, -.2, .28) + grappleSide * .18;
-    } else if (this.grounded) {
-      leftLegTarget = moving ? gait * (.5 + locomotion * .34) + landing * .8 : landing * .8;
-      rightLegTarget = moving ? -gait * (.5 + locomotion * .34) + landing * .8 : landing * .8;
-    } else {
+    // Air poses blend normally; grounded hips, knees and ankles are solved
+    // together after the body's lean below.
+    if (!this.grounded) {
       const tuck = clamp(Math.abs(this.velocity.y) / 18, .12, .52);
-      leftLegTarget = this.velocity.y > 0 ? .48 + tuck * .55 : .18 + tuck;
-      rightLegTarget = this.velocity.y > 0 ? -.32 + tuck * .38 : -.14 + tuck * .78;
+      const leftLegTarget = grappled ? .94 + clamp(-this.velocity.y * .024, -.28, .34) - grappleSide * .18
+        : this.velocity.y > 0 ? .48 + tuck * .55 : .18 + tuck;
+      const rightLegTarget = grappled ? -.52 + clamp(-this.velocity.y * .018, -.2, .28) + grappleSide * .18
+        : this.velocity.y > 0 ? -.32 + tuck * .38 : -.14 + tuck * .78;
+      this.leftLeg.rotation.x = THREE.MathUtils.damp(this.leftLeg.rotation.x, leftLegTarget, 15, dt);
+      this.rightLeg.rotation.x = THREE.MathUtils.damp(this.rightLeg.rotation.x, rightLegTarget, 15, dt);
+      this.leftKnee.rotation.x = THREE.MathUtils.damp(this.leftKnee.rotation.x, grappled ? .7 : .48, 15, dt);
+      this.rightKnee.rotation.x = THREE.MathUtils.damp(this.rightKnee.rotation.x, grappled ? .7 : .48, 15, dt);
+      this.leftAnkle.rotation.x = THREE.MathUtils.damp(this.leftAnkle.rotation.x, -.18, 15, dt);
+      this.rightAnkle.rotation.x = THREE.MathUtils.damp(this.rightAnkle.rotation.x, -.18, 15, dt);
+      this.leftAnkle.rotation.y = this.rightAnkle.rotation.y = 0;
+      this.leftAnkle.rotation.z = this.rightAnkle.rotation.z = 0;
     }
-    this.leftLeg.rotation.x = THREE.MathUtils.damp(this.leftLeg.rotation.x, leftLegTarget, 15, dt);
-    this.rightLeg.rotation.x = THREE.MathUtils.damp(this.rightLeg.rotation.x, rightLegTarget, 15, dt);
-    // Keep the existing hip gait; flex the new lower legs on the recovery stride.
-    const kneeTuck = grappled ? .7 : !this.grounded ? .48 : landing * .5;
-    this.leftKnee.rotation.x = THREE.MathUtils.damp(this.leftKnee.rotation.x,
-      kneeTuck + (this.grounded && moving ? Math.max(0, gait) * locomotion * .8 : 0), 15, dt);
-    this.rightKnee.rotation.x = THREE.MathUtils.damp(this.rightKnee.rotation.x,
-      kneeTuck + (this.grounded && moving ? Math.max(0, -gait) * locomotion * .8 : 0), 15, dt);
 
     const aimPitch = Math.asin(clamp(this.aim.y, -1, 1));
     const melee = this.weapon.type === "melee";
@@ -1144,7 +1147,7 @@ export class Fighter {
     if (this.weaponHasSupportGrip && !grappled && !reloadingPose) {
       this.gripTarget.copy(this.weaponSupportGrip).applyMatrix4(this.weaponGroup.matrix);
       alignArmGrip(this.leftArm, this.leftForearm, this.gripTarget, this.gripForward);
-      this.supportGripProgress = Math.min(1, this.supportGripProgress + dt / .16);
+      this.supportGripProgress = Math.min(1, this.supportGripProgress + dt / .20);
       const t = this.supportGripProgress, blend = t * t * (3 - 2 * t);
       this.leftArm.quaternion.slerp(this.supportArmStart, 1 - blend);
       this.leftForearm.quaternion.slerp(this.supportForearmStart, 1 - blend);
@@ -1152,10 +1155,9 @@ export class Fighter {
     if (this.weaponGlowMaterial) this.weaponGlowMaterial.emissiveIntensity = .25 + this.recoilVisual * .9 + this.chargeLevel * (2.4 + Math.sin(time * 2.4) * .55);
     if (this.weaponSpinner) this.weaponSpinner.rotation.z += dt * (this.attackTimer > 0 ? 32 : 5);
     if (this.weaponPiston) this.weaponPiston.position.z = THREE.MathUtils.damp(this.weaponPiston.position.z, attacking ? .42 * attackSwing : 0, 24, dt);
-    const bob = this.grounded && moving && !grappled ? Math.abs(gait) * .075 : Math.sin(time * .45) * .018;
-    this.rig.position.y = bob;
-    const airStretch = this.grounded ? 0 : clamp(Math.abs(this.velocity.y) / 36, 0, .09);
-    this.rig.scale.set(1.07 + landing * .14 - airStretch * .35, 1.04 - landing * .27 + airStretch, 1.07 + landing * .14 - airStretch * .35);
+    const bob = this.grounded ? this.locomotionVisual * (-.045 + Math.cos(this.gaitPhase * 2) * .009) - landing * .14 : 0;
+    this.rig.position.y = THREE.MathUtils.damp(this.rig.position.y, bob, 18, dt);
+    this.rig.scale.set(1.07, 1.04, 1.07);
     const strafe = this.velocity.x * this.aim.z - this.velocity.z * this.aim.x;
     const bodyRoll = clamp(-strafe * .032, -.2, .2) + grappleSide * .36 + this.hitStagger * hitWave * .4;
     this.rig.rotation.z = THREE.MathUtils.damp(this.rig.rotation.z, bodyRoll, 12, dt);
@@ -1169,7 +1171,7 @@ export class Fighter {
     this.leftLeg.rotation.z = THREE.MathUtils.damp(this.leftLeg.rotation.z, legBrace, 14, dt);
     this.rightLeg.rotation.z = THREE.MathUtils.damp(this.rightLeg.rotation.z, -legBrace, 14, dt);
     this.helmet.rotation.x = THREE.MathUtils.damp(this.helmet.rotation.x, -aimPitch * .18 + landing * .07, 12, dt);
-    if (this.grounded) this.plantFeet();
+    if (this.grounded) this.poseGroundedLegs(dt, this.gaitPhase, this.locomotionVisual);
     const thrust = landing > .05 ? 1.7 + landing * .7 : grappled ? 1.8 : this.grounded ? .65 : 1.2 + clamp(horizontalSpeed / 32, 0, .65);
     this.thrusterScale = THREE.MathUtils.damp(this.thrusterScale, thrust, 11, dt);
     this.thrusterLights.scale.y = this.thrusterScale;

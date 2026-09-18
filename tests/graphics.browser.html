@@ -644,8 +644,8 @@ function settlePose() {
       maxHorizontalCorrection = Math.max(maxHorizontalCorrection, Math.hypot(hero.position.x - beforeX - hero.velocity.x / 60, hero.position.z - beforeZ - hero.velocity.z / 60));
       if (pose.startsWith("gait-") && maxHorizontalCorrection > .001) throw new Error("Locomotion review route obstructed");
       const angle = hero.leftLeg.rotation.x, delta = angle - previousAngle;
-      const extremum = pose === "gait-positive" ? previousDelta > 0 && delta <= 0 && angle > .3
-        : previousDelta < 0 && delta >= 0 && angle < -.3;
+      const extremum = pose === "gait-positive" ? previousDelta > 0 && delta <= 0
+        : previousDelta < 0 && delta >= 0;
       if (pose === "landing" ? hero.grounded && hero.landTimer > 0 && hero.landTimer <= .12 : i >= 60 && hero.grounded && extremum) {
         poseReview.locomotion = { sampledFrames: i + 1, position: hero.position.toArray(), velocity: hero.velocity.toArray(),
           gaitPhase: hero.gaitPhase, grounded: hero.grounded, landTimer: hero.landTimer, landStrength: hero.landStrength,

@@ -480,8 +480,10 @@ for (const pose of ["gait-positive", "gait-negative", "landing"]) {
     assert.ok(sample.landTimer > 0 && sample.landTimer <= .12); assert.ok(sample.landStrength > 0);
   } else {
     assert.ok(sample.sampledFrames > 60); assert.ok(sample.velocity[2] < -8.9);
-    if (pose === "gait-positive") assert.ok(sample.previousDelta > 0 && sample.delta <= 0 && sample.angle > .3);
-    else assert.ok(sample.previousDelta < 0 && sample.delta >= 0 && sample.angle < -.3);
+    // Foot-driven IK has a bent neutral hip; capture its extrema without
+    // assuming that neutral is the old straight-leg sine wave's zero angle.
+    if (pose === "gait-positive") assert.ok(sample.previousDelta > 0 && sample.delta <= 0);
+    else assert.ok(sample.previousDelta < 0 && sample.delta >= 0);
     const resolve = world.resolve;
     world.resolve = position => { position.z = Math.max(position.z, 7.9); return resolve(position); };
     assert.throws(() => new Function("THREE", "game", "select", `${settleReviewSource}; settlePose();`)(THREE,
@@ -631,7 +633,6 @@ for (const fail of [false, true]) {
   }
   mesh.traverse(child => child.material?.dispose()); effects.dispose();
 }
-assert.ok(playerMergeSource.includes("this.rig.position.y = bob;"), "QA previous-drop control requires the corrected production translation");
 for (const weaponId of Object.keys(WEAPONS)) {
   const hero = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, [weaponId], new THREE.Vector3(8, 15, 8));
   hero.grounded = true; hero.landTimer = .11; hero.landStrength = .36; hero.rig.position.y = -.07; hero.group.updateMatrixWorld(true);

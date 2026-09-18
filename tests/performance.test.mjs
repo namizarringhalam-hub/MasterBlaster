@@ -257,7 +257,7 @@ Object.assign(decoyHarness, { scene: new THREE.Scene(), world: { surfaceHeightAt
 const decoyOwner = new Fighter(decoyHarness.scene, { id: "helmet-2", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
 const decoyDisposals = new Map();
 function trackDecoy(mesh) {
-  for (const name of ["Mecha left shin and boot", "Mecha right shin and boot", "Mecha left bracer and hand", "Mecha right bracer and hand"]) {
+  for (const name of ["Mecha left shin", "Mecha right shin", "Mecha left foot armor", "Mecha right foot armor", "Mecha left bracer and hand", "Mecha right bracer and hand"]) {
     const clone = mesh.getObjectByName(name), source = decoyOwner.group.getObjectByName(name);
     assert.ok(clone?.isMesh, "holograms retain all articulated armor batches");
     assert.notEqual(clone.material, source.material);
