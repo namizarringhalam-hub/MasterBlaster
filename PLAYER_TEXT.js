@@ -164,10 +164,10 @@ export const PLAYER_TEXT = {
   },
 
   credits: {
-    section: "MASTER BLASTER v0.1",
-    title: "Built for the open web.",
+    section: "MASTER BLASTER",
+    title: "Built by Sam & Kian",
     technology: "Three.js rendering, WebGPU enhancement with WebGL fallback, physical projectiles, deterministic arena generation, adaptive bots, and touch-friendly controls.",
-    direction: "Game direction follows the Master Blaster browser-native specification, inspired by the immediate projectile combat and grappling movement of classic arena games."
+    direction: "Master Blaster is a browser-native game, inspired by the immediate projectile combat and grappling movement of classic arena games."
   },
 
   errors: {
