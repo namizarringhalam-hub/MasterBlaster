@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as THREE from "three/webgpu";
+import { materialOpacity } from "three/tsl";
+import { Line2 } from "three/addons/lines/webgpu/Line2.js";
 import { ArenaWorld, structuralPanelGeometry } from "../src/world.js";
 import { applyGrapplePhysics } from "../src/player.js";
 import { createGrappleRopeGeometry, updateGrappleRopeGeometry } from "../src/grappleRope.js";
@@ -8,7 +10,9 @@ import { createGrappleRopeGeometry, updateGrappleRopeGeometry } from "../src/gra
 const source = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
 const controller = source.slice(source.indexOf("class BlasterBattle"), source.indexOf("\nconst game = new BlasterBattle"))
   .replaceAll("import.meta.url", JSON.stringify(new URL("../src/main.js", import.meta.url).href));
-const Game = new Function("THREE", "applyGrapplePhysics", "updateGrappleRopeGeometry", `return ${controller}`)(THREE, applyGrapplePhysics, updateGrappleRopeGeometry);
+const bindings = { THREE, applyGrapplePhysics, createGrappleRopeGeometry, updateGrappleRopeGeometry, materialOpacity, Line2,
+  grappleSightline: (player) => ({ origin: player.position.clone().add(new THREE.Vector3(0, 1.4, 0)), direction: new THREE.Vector3(-1, 0, 0) }) };
+const Game = new Function(...Object.keys(bindings), `return ${controller}`)(...Object.values(bindings));
 const world = Object.create(ArenaWorld.prototype);
 Object.assign(world, { group: new THREE.Group(), obstacles: [], anchors: [], boostPads: [], ground: null });
 const mesh = new THREE.Mesh(new THREE.BoxGeometry(8, 1, 8), new THREE.MeshBasicMaterial());
@@ -113,16 +117,28 @@ for (const normal of [new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
 }
 const front = new THREE.Vector3(12, 3, 0);
 const insetTarget = world.grappleTarget(front, new THREE.Vector3(-1, 0, 0));
-const ropeGeometry = createGrappleRopeGeometry();
 const grappler = { alive: true, position: front.clone().sub(new THREE.Vector3(0, 1.4, 0)),
-  velocity: new THREE.Vector3(), controlMove: new THREE.Vector3(),
-  grapple: { target: insetTarget, anchor: insetTarget.point, wraps: [], ropeLength: 10, line: { geometry: ropeGeometry } } };
+  color: 0xff3366, accent: 0xffaacc, velocity: new THREE.Vector3(), controlMove: new THREE.Vector3() };
+Object.assign(game, { scene: new THREE.Scene(), players: [grappler], sound: { play() {}, updateGrappleLoop() {} }, audioSpatial() {} });
+game.toggleGrapple(grappler);
+const { hook, line } = grappler.grapple;
+const ropeGeometry = line.geometry;
+assert.equal(hook.material.color.getHex(), grappler.color, "the hook uses its player's color");
+assert.equal(hook.geometry.type, "OctahedronGeometry", "the hook has a diamond silhouette");
+assert.ok(hook.position.equals(grappler.grapple.anchor), "the hook starts at the rope endpoint");
 for (let frame = 0; frame < 60; frame++) game.updateGrapple(grappler, 1 / 60);
 assert.equal(grappler.grapple.wraps.length, 0, "the game update keeps the attachment free of repeated bends");
 assert.equal(ropeGeometry.instanceCount, 1, "the renderer receives one straight rope segment");
 assert.ok(grappler.velocity.x < 0 && grappler.velocity.y === 0 && grappler.velocity.z === 0,
   "the grapple pulls toward its actual attachment instead of an artificial corner");
-ropeGeometry.dispose();
+grappler.grapple.anchor.y += 1;
+game.updateGrapple(grappler, 1 / 60);
+assert.ok(hook.position.equals(grappler.grapple.anchor), "the hook follows a moving endpoint");
+let hookDisposed = false;
+hook.geometry.addEventListener("dispose", () => { hookDisposed = true; });
+Game.prototype.releaseGrapple.call(game, grappler);
+assert.equal(line.parent, null, "release removes the rope and its hook from the scene");
+assert.ok(hookDisposed, "release disposes the hook geometry");
 world.obstacles.push({ x: 8, z: 0, w: 1, d: 2, baseY: 0, top: 6 });
 assert.ok(world.ropeWrapPoint(front, insetTarget.point, insetTarget), "other cover still bends the rope");
 panel.geometry.dispose(); panel.material.dispose();

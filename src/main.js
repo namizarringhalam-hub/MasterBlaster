@@ -2239,8 +2239,13 @@ class BlasterBattle {
     });
     const line = new Line2(geometry, ropeMaterial);
     line.frustumCulled = false;
+    const hook = new THREE.Mesh(new THREE.OctahedronGeometry(.22), new THREE.MeshBasicMaterial({ color: player.color, toneMapped: false }));
+    hook.name = "Grapple hook";
+    hook.scale.y = 1.4;
+    hook.position.copy(anchor);
+    line.add(hook);
     this.scene.add(line);
-    player.grapple = { anchor, target, line, wraps: [], ropeLength: Math.max(5, start.distanceTo(anchor) * .92), pullSpeed: 0, launchLift: true };
+    player.grapple = { anchor, target, line, hook, wraps: [], ropeLength: Math.max(5, start.distanceTo(anchor) * .92), pullSpeed: 0, launchLift: true };
     const direction = anchor.clone().sub(start).normalize();
     const approachSpeed = player.velocity.dot(direction);
     player.grapple.pullSpeed = Math.max(0, approachSpeed);
@@ -2281,6 +2286,7 @@ class BlasterBattle {
     applyGrapplePhysics(player, dt, reelFaster);
     const ropePoints = [chest, ...wraps, player.grapple.anchor];
     updateGrappleRopeGeometry(player.grapple.line.geometry, ropePoints);
+    player.grapple.hook.position.copy(player.grapple.anchor);
   }
 
   releaseGrapple(player, boost = false, silent = false) {
