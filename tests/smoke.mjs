@@ -1115,6 +1115,23 @@ for (let frame = 0; frame < 120; frame++) {
 }
 assert.ok(maximumGroundRelaxation < .001, "ground contact and opposing walking input cannot relax grapple velocity between pulls");
 assert.ok(groundedGrappler.velocity.x > 30, "the grapple retains authority over grounded locomotion until release");
+for (const fps of [30, 60, 120]) for (const reelFaster of [false, true]) for (const floor of [0, 15]) {
+  groundedGrappler.position.set(0, floor, 0);
+  groundedGrappler.velocity.set(-8, 0, 24);
+  groundedGrappler.grapple = { anchor: new THREE.Vector3(20, floor, 0), wraps: [], ropeLength: 20, pullSpeed: 0, launchLift: true };
+  const surface = {
+    resolve(position) { position.y = floor; return { grounded: true, ceiling: false, ledge: null, floor }; },
+    boostAt() { return null; }
+  };
+  for (let frame = 0; frame < fps * 8; frame++) {
+    groundedGrappler.update(1 / fps, new THREE.Vector3(0, 0, 1), new THREE.Vector3(1, 0, 0), {}, surface);
+    applyGrapplePhysics(groundedGrappler, 1 / fps, reelFaster);
+    if (frame >= fps * 4) {
+      assert.ok(groundedGrappler.position.distanceTo(groundedGrappler.grapple.anchor) < .01, `floor grapple arrives and stays at its anchor (${fps} fps, fast=${reelFaster}, floor=${floor})`);
+      assert.ok(groundedGrappler.velocity.length() < .01, "floor grapple stops instead of orbiting, even with held sideways input");
+    }
+  }
+}
 groundedGrappler.dispose();
 const wrappedPlayer = {
   position: new THREE.Vector3(), velocity: new THREE.Vector3(), controlMove: new THREE.Vector3(), slowTimer: 0,

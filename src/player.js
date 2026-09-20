@@ -1257,6 +1257,16 @@ export function applyGrapplePhysics(player, dt, reelFaster = false) {
   const stretch = Math.max(0, distance - Math.max(1, player.grapple.ropeLength - wrappedLength));
   const targetPullSpeed = (reelFaster ? 46 : 31) * movementScale;
   player.grapple.pullSpeed = THREE.MathUtils.damp(Math.max(0, player.grapple.pullSpeed || 0), targetPullSpeed, 8.5, dt);
+  if (player.grounded && !wraps.length && Math.abs(pullPoint.y - player.position.y) < .35) {
+    // On the floor, arrive at the anchor with the feet and brake sideways drift.
+    const offset = pullPoint.clone().sub(player.position).setY(0);
+    const desired = offset.clone().clampLength(0, player.grapple.pullSpeed / 4).multiplyScalar(4);
+    player.velocity.x = THREE.MathUtils.damp(player.velocity.x, desired.x, 16, dt);
+    player.velocity.z = THREE.MathUtils.damp(player.velocity.z, desired.z, 16, dt);
+    player.grapple.launchLift = false;
+    if (player.velocity.length() > GRAPPLE_SPEED_CAP) player.velocity.setLength(GRAPPLE_SPEED_CAP);
+    return;
+  }
   const radialSpeed = player.velocity.dot(direction);
   const nextRadialSpeed = THREE.MathUtils.damp(radialSpeed, player.grapple.pullSpeed, stretch > 0 ? 15 : 10, dt);
   player.velocity.addScaledVector(direction, nextRadialSpeed - radialSpeed);
