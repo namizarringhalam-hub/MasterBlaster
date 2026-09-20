@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as THREE from "three/webgpu";
-import { ArenaWorld } from "../src/world.js";
+import { ArenaWorld, structuralPanelGeometry } from "../src/world.js";
+import { applyGrapplePhysics } from "../src/player.js";
+import { createGrappleRopeGeometry, updateGrappleRopeGeometry } from "../src/grappleRope.js";
 
 const source = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
 const controller = source.slice(source.indexOf("class BlasterBattle"), source.indexOf("\nconst game = new BlasterBattle"))
   .replaceAll("import.meta.url", JSON.stringify(new URL("../src/main.js", import.meta.url).href));
-const Game = new Function(`return ${controller}`)();
+const Game = new Function("THREE", "applyGrapplePhysics", "updateGrappleRopeGeometry", `return ${controller}`)(THREE, applyGrapplePhysics, updateGrappleRopeGeometry);
 const world = Object.create(ArenaWorld.prototype);
 Object.assign(world, { group: new THREE.Group(), obstacles: [], anchors: [], boostPads: [], ground: null });
 const mesh = new THREE.Mesh(new THREE.BoxGeometry(8, 1, 8), new THREE.MeshBasicMaterial());
@@ -82,4 +84,46 @@ assert.equal(world.resolveGrappleTarget(floorTarget, floorTarget.point), true, "
 world.ground = null;
 assert.equal(world.resolveGrappleTarget(floorTarget, floorTarget.point), false);
 mesh.geometry.dispose(); mesh.material.dispose(); batch.dispose();
+
+// Pillar panels sit inside their box collider: a visible attachment is not cover.
+const panel = new THREE.Mesh(structuralPanelGeometry(.25), new THREE.MeshBasicMaterial());
+panel.scale.set(7, 6, 7);
+panel.position.set(0, 3, 0);
+world.group.clear(); world.group.add(panel);
+const pillar = { mesh: panel, x: 0, z: 0, w: 7, d: 7, baseY: 0, top: 6 };
+Object.assign(world, { obstacles: [pillar], anchors: [], boostPads: [],
+  nearbyObstacles: () => world.obstacles,
+  collisionDirection: new THREE.Vector3(), collisionBox: new THREE.Box3(),
+  collisionRay: new THREE.Ray(), collisionHit: new THREE.Vector3() });
+for (const normal of [new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
+  new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, -1, 0),
+  new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)]) {
+  const origin = panel.position.clone().addScaledVector(normal, 12);
+  const attachment = world.grappleTarget(origin, normal.clone().negate());
+  assert.equal(attachment.item, pillar);
+  assert.ok(world.ropeObstacle(origin, attachment.point), "fixture reproduces the inset collider mismatch");
+  assert.equal(world.ropeWrapPoint(origin, attachment.point, attachment), null,
+    "a visible inset face must not produce zigzag wraps");
+  const tangent = new THREE.Vector3(normal.y || 0, normal.z || normal.x, 0).multiplyScalar(8);
+  assert.equal(world.ropeWrapPoint(origin.clone().add(tangent), attachment.point, attachment), null,
+    "grazing approaches to the same face remain straight");
+  const behind = panel.position.clone().addScaledVector(normal, -12);
+  assert.ok(world.ropeWrapPoint(behind, attachment.point, attachment),
+    "the attached pillar still blocks a rope approaching from its opposite side");
+}
+const front = new THREE.Vector3(12, 3, 0);
+const insetTarget = world.grappleTarget(front, new THREE.Vector3(-1, 0, 0));
+const ropeGeometry = createGrappleRopeGeometry();
+const grappler = { alive: true, position: front.clone().sub(new THREE.Vector3(0, 1.4, 0)),
+  velocity: new THREE.Vector3(), controlMove: new THREE.Vector3(),
+  grapple: { target: insetTarget, anchor: insetTarget.point, wraps: [], ropeLength: 10, line: { geometry: ropeGeometry } } };
+for (let frame = 0; frame < 60; frame++) game.updateGrapple(grappler, 1 / 60);
+assert.equal(grappler.grapple.wraps.length, 0, "the game update keeps the attachment free of repeated bends");
+assert.equal(ropeGeometry.instanceCount, 1, "the renderer receives one straight rope segment");
+assert.ok(grappler.velocity.x < 0 && grappler.velocity.y === 0 && grappler.velocity.z === 0,
+  "the grapple pulls toward its actual attachment instead of an artificial corner");
+ropeGeometry.dispose();
+world.obstacles.push({ x: 8, z: 0, w: 1, d: 2, baseY: 0, top: 6 });
+assert.ok(world.ropeWrapPoint(front, insetTarget.point, insetTarget), "other cover still bends the rope");
+panel.geometry.dispose(); panel.material.dispose();
 console.log("Grapple moving targets, rider carry, instance identity and disappearing surfaces passed.");

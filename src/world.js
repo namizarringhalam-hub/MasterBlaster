@@ -3145,7 +3145,9 @@ export class ArenaWorld {
         hit.object.getMatrixAt(hit.instanceId, instance);
         matrix.multiply(instance);
       }
-      return { point: hit.point.clone(), mesh: hit.object, instanceId: hit.instanceId, item, collection,
+      const localNormal = hit.face.normal.clone();
+      const normal = localNormal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(matrix));
+      return { point: hit.point.clone(), normal, localNormal, mesh: hit.object, instanceId: hit.instanceId, item, collection,
         localPoint: hit.point.clone().applyMatrix4(matrix.invert()) };
     }
     return null;
@@ -3162,10 +3164,11 @@ export class ArenaWorld {
       matrix.multiply(instance);
     }
     point.copy(localPoint).applyMatrix4(matrix);
+    target.normal.copy(target.localNormal).applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(matrix));
     return true;
   }
 
-  ropeObstacle(origin, target) {
+  ropeObstacle(origin, target, attachment = null) {
     const delta = this.collisionDirection.copy(target).sub(origin);
     const length = delta.length();
     if (length < .1) return null;
@@ -3177,6 +3180,12 @@ export class ArenaWorld {
       Math.min(origin.x, target.x), Math.max(origin.x, target.x),
       Math.min(origin.z, target.z), Math.max(origin.z, target.z)
     )) {
+      // Recessed panels lie inside their collider. Approaching the attached
+      // face from outside is clear; approaching through its back still wraps.
+      if (item === attachment?.item && attachment.normal &&
+        (origin.x - target.x) * attachment.normal.x +
+        (origin.y - target.y) * attachment.normal.y +
+        (origin.z - target.z) * attachment.normal.z >= 0) continue;
       box.min.set(item.x - item.w / 2, item.baseY, item.z - item.d / 2);
       box.max.set(item.x + item.w / 2, item.top, item.z + item.d / 2);
       if (box.containsPoint(origin) || !ray.intersectBox(box, hit)) continue;
@@ -3215,8 +3224,8 @@ export class ArenaWorld {
     return false;
   }
 
-  ropeWrapPoint(origin, target) {
-    const obstruction = this.ropeObstacle(origin, target);
+  ropeWrapPoint(origin, target, attachment = null) {
+    const obstruction = this.ropeObstacle(origin, target, attachment);
     if (!obstruction) return null;
     const { item, hit } = obstruction;
     const clearance = .3;

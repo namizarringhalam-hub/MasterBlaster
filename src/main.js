@@ -2271,7 +2271,7 @@ class BlasterBattle {
     const wraps = [];
     let routeStart = chest;
     for (let index = 0; index < 8; index++) {
-      const wrap = this.world.ropeWrapPoint(routeStart, player.grapple.anchor);
+      const wrap = this.world.ropeWrapPoint(routeStart, player.grapple.anchor, player.grapple.target);
       if (!wrap) break;
       wraps.push(wrap);
       routeStart = wrap;
