@@ -360,7 +360,7 @@ button.primary:hover:not(:disabled) { background: #ff4862; border-color: #fff; }
 .hero-panel h1 em { color: #ef3f58; font-style: italic; text-shadow: 0 0 38px rgba(239,63,88,.17); }
 .lead { max-width: 600px; color: #b4c5d2; font-size: clamp(15px, 2vw, 18px); line-height: 1.6; }
 
-.primary-actions { display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 10px; margin-top: 30px; }
+.primary-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 30px; }
 .primary-actions button { min-height: 92px; text-align: left; display: flex; flex-direction: column; justify-content: center; }
 .primary-actions span { font: 800 19px/1 "Barlow Condensed", sans-serif; letter-spacing: .06em; }
 .primary-actions small { margin-top: 8px; color: #9db0c0; font-size: 11px; font-weight: 500; letter-spacing: 0; }

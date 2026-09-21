@@ -34,6 +34,24 @@ export function sanitizeLoadout(value, weapons, fallback = []) {
   return unique.length === 5 ? unique : [...fallback].slice(0, 5);
 }
 
+// Waiting rooms preserve holes: clearing slot 2 must not move slots 3–5.
+export function sanitizeLoadoutSlots(value, weapons) {
+  const ids = Array.isArray(value) ? value : String(value || "").split(",");
+  const seen = new Set();
+  return Array.from({ length: 5 }, (_, index) => {
+    const id = typeof ids[index] === "string" ? ids[index] : "";
+    if (!Object.hasOwn(weapons, id) || seen.has(id)) return null;
+    seen.add(id);
+    return id;
+  });
+}
+
+export function fillLoadoutSlots(value, weapons, random = Math.random) {
+  const slots = sanitizeLoadoutSlots(value, weapons);
+  const remaining = Object.keys(weapons).filter((id) => !slots.includes(id));
+  return slots.map((id) => id || remaining.splice(Math.floor(random() * remaining.length), 1)[0]);
+}
+
 export function finiteNumber(value, fallback = 0, minimum = -Infinity, maximum = Infinity) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.min(maximum, Math.max(minimum, number)) : fallback;

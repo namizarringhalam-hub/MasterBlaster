@@ -28,6 +28,7 @@ export const PLAYER_TEXT = {
     buttons: {
       quick: { label: "QUICK PLAY", description: "Eight-player chaos in seconds" },
       private: { label: "PRIVATE ROOM", description: "Bring friends. Break everything." },
+      global: { label: "GLOBAL MULTIPLAYER", description: "Find open rounds. See who’s online." },
       training: { label: "TRAINING", description: "Test 47 weapons on up to 15 bots" },
       settings: "Settings",
       credits: "Credits"
@@ -37,6 +38,29 @@ export const PLAYER_TEXT = {
       { number: "02", title: "BREAK THE ARENA", description: "Blast towers apart and drop floors on your rivals." },
       { number: "03", title: "47 WEAPONS", description: "Rockets. Fireballs. Black holes. Chainsaws. Choose five." }
     ]
+  },
+
+  globalLobby: {
+    title: "Global lobby", section: "GLOBAL MULTIPLAYER", back: "← Global lobby",
+    description: "Find an open round or create your own. Everyone here is visible to other players.",
+    create: "Create round", join: "Join round", open: "Waiting for players", online: "Online players",
+    empty: "No rounds waiting yet. Create one and invite the lobby to join.",
+    noneOnline: "Connecting to the global lobby…", connecting: "Connecting…", retry: "Reconnect",
+    roomName: "Round name", capacity: "Player spots", capacityHint: "Includes you. Bots are added separately; up to 16 fighters total.",
+    createDescription: "Your round will appear in the global lobby. Start when at least two players have joined.",
+    defaultName: "{name}’s round", hosted: "Hosted by {name}", players: "{count}/{capacity} players · {bots} bots",
+    you: "YOU", host: "HOST", full: "Full", version: "Update required", leave: "Leave round",
+    waitingRoom: "Waiting room · Listed in the global lobby", joinsClosed: "Starting · New joins closed",
+    openSpot: "Open player spot", closedSpot: "Joins closed", weapons: "Your weapons",
+    slotHelp: "Choose weapons below. Changes save immediately. Clear a slot with ×; your other slots stay in place.",
+    emptySlot: "Random at zero", selected: "{count}/5 selected", randomHelp: "Your selections stay. Only empty slots receive random weapons when the countdown reaches zero.",
+    start: "Start round", cancel: "Cancel countdown", getReady: "Get ready", countdownHelp: "You can still choose weapons. Empty slots are filled at zero.",
+    waitHost: "Waiting for the host to start…", waitPlayer: "Waiting for at least one more player…", ready: "Start when you’re ready. No ready-up required.",
+    saving: "Saving…", saved: "Changes saved", bots: "Bots", cancelCreate: "Cancel",
+    connectionRequired: "Connect to the global lobby before joining a round.", roundUnavailable: "This round is no longer available. Choose another round.",
+    connectionLost: "Connection interrupted. Reconnecting…", joinFailed: "Could not join. The round may be full or already starting. Please try another round.",
+    favorite: "Mark {name} as a favorite", unfavorite: "Unmark {name} as a favorite", favoritesNote: "Star friends to show them first on this browser.",
+    statuses: { lobby: "In the lobby", countdown: "Starting a round", playing: "Playing", waiting: "Waiting in a round" }
   },
 
   boot: {
@@ -58,6 +82,7 @@ export const PLAYER_TEXT = {
     back: "← Back",
     start: "START",
     modes: {
+      global: { tag: "GLOBAL", title: "Global Multiplayer", description: "Find open rounds and play together." },
       quick: { tag: "QUICK", title: "Quick Play", description: "Join an online regional room, filled with AI combatants until more players arrive." },
       private: { tag: "PRIVATE", title: "Private Room", description: "Create or join an online room by sharing its short room code." },
       training: { tag: "TRAINING", title: "Training", description: "Choose up to fifteen bots and master movement, trajectories, recoil, and grappling." }

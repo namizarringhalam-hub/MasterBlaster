@@ -39,7 +39,27 @@ Touch controls appear automatically on phones and tablets.
 - Deathmatch scoring, respawns, results, and rematch
 - Cloudflare Durable Object multiplayer rooms with server-owned health, ammunition, scoring, respawns, and match timing
 - Online Quick Play and private room codes with server-managed bot fill; offline adaptive-bot Training
+- Global Multiplayer: live online-player list, favorite players on this browser, discoverable public rounds, and host-controlled bots
 - Local accessibility/content preferences and installable PWA shell
+
+## Global Multiplayer
+
+Choose **Global Multiplayer** to see everyone in the lobby and all waiting rounds.
+Create a round with player spots and bots, or join an existing one. Player spots
+include the host; humans and bots together are limited to 16 fighters.
+Star players to keep them at the top of the online list on this browser.
+
+Select weapons directly in the waiting room. Each choice saves immediately.
+The host can start with at least two humans, without filling all player spots.
+Everyone sees a five-second countdown and can keep choosing weapons until zero.
+At zero the server preserves each selected slot and fills only empty slots with
+distinct random weapons. New joins close during the countdown; the host can
+cancel it. A disconnect cancels the countdown and host duties transfer to the
+longest-connected player. Finished rounds return their players to the waiting room.
+
+With the local multiplayer service running, `npm.cmd run test:global-live`
+checks presence, discovery, host permissions, countdown, partial loadouts, and
+cleanup with separate WebSocket clients.
 
 ## Verify
 

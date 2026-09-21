@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+export { GlobalLobby } from "./globalLobby.js";
 import { ARENA_PORTAL_COOLDOWN_SECONDS, ARENA_SPAWN_POINTS, DEFAULT_LOADOUT, WEAPONS, isArenaPortalTransition, structuralPartBounds, structuralTowerBlueprints, weaponFireMode, weaponUsesAmmo } from "../src/gameData.js";
 import TEXT, { formatText } from "../src/playerText.js";
 import { hitProposalLimit, lineBlockedByStructure, playerCapsuleIntersectsStructure, validateHitProposal, validateImpactProposal, weaponAuthorityStrategy } from "../src/combatAuthority.js";
@@ -14,6 +15,8 @@ import {
   normalizeRoomCode,
   parseClientMessage,
   sanitizeLoadout,
+  sanitizeLoadoutSlots,
+  fillLoadoutSlots,
   sanitizePlayerName,
   sanitizeVector,
   squaredDistance,
@@ -61,6 +64,7 @@ function publicPlayer(player) {
     color: player.color,
     accent: player.accent,
     loadout: player.loadout,
+    pendingLoadout: player.pendingLoadout,
     bot: Boolean(player.bot),
     score: player.score || 0,
     health: player.health,
@@ -304,7 +308,7 @@ export class MatchRoom extends DurableObject {
     try { player = socket.deserializeAttachment(); }
     catch { return; }
     const token = player?.resumeToken;
-    if (!RESUME_TOKEN_PATTERN.test(token || "") || this.meta?.ended) return;
+    if (!RESUME_TOKEN_PATTERN.test(token || "") || this.meta?.ended || player.leaving) return;
     if (this.humanEntries(socket).some(([, active]) => active.resumeToken === token)) this.resumeSessions.delete(token);
     else {
       const now = Date.now();
@@ -324,6 +328,7 @@ export class MatchRoom extends DurableObject {
     const entries = [];
     for (const socket of this.ctx.getWebSockets()) {
       if (socket === excludedSocket) continue;
+      if (this.meta?.mode === "global" && socket.readyState !== 1) continue;
       try {
         const player = socket.deserializeAttachment();
         if (player?.id) entries.push([socket, player]);
@@ -369,9 +374,9 @@ export class MatchRoom extends DurableObject {
   }
 
   async initialize(url) {
-    if (this.meta && (this.meta.phase === "lobby" || (!this.meta.ended && matchTimeRemaining(this.meta.endsAt) > 0))) return;
+    if (this.meta && (["lobby", "countdown"].includes(this.meta.phase) || (!this.meta.ended && matchTimeRemaining(this.meta.endsAt) > 0))) return;
     const now = Date.now();
-    const mode = this.reservation ? "quick" : url.searchParams.get("mode") === "private" ? "private" : "quick";
+    const mode = this.reservation ? "quick" : ["private", "global"].includes(url.searchParams.get("mode")) ? url.searchParams.get("mode") : "quick";
     const targetSize = this.reservation?.targetSize ?? Math.min(MAX_MATCH_PLAYERS, Math.max(1, Math.trunc(finiteNumber(url.searchParams.get("botCount"), 7, 0, 15)) + 1));
     const timeLimitMinutes = this.reservation?.timeLimitMinutes ?? clampMatchMinutes(url.searchParams.get("timeLimitMinutes"));
     const difficulty = this.reservation?.difficulty ?? (DIFFICULTIES.has(url.searchParams.get("difficulty")) ? url.searchParams.get("difficulty") : "normal");
@@ -380,17 +385,20 @@ export class MatchRoom extends DurableObject {
       roomCode: normalizeRoomCode(url.pathname.split("/").filter(Boolean).at(-2), "ROOM"),
       seed: normalizeRoomCode(url.searchParams.get("seed"), normalizeRoomCode(url.pathname.split("/").filter(Boolean).at(-2), TEXT.loading.defaultSeed)),
       mode,
-      phase: mode === "private" ? "lobby" : "playing",
+      phase: mode !== "quick" ? "lobby" : "playing",
+      roomName: sanitizePlayerName(url.searchParams.get("roomName")),
+      humanCapacity: Math.trunc(finiteNumber(url.searchParams.get("humanCapacity") || 4, 4, 2, MAX_MATCH_PLAYERS)),
       difficulty,
       targetSize,
       configuredBotCount: Math.max(0, targetSize - 1),
-      startedAt: mode === "private" ? 0 : now + 4_000,
-      endsAt: mode === "private" ? 0 : now + 4_000 + timeLimitMinutes * 60_000,
+      startedAt: mode !== "quick" ? 0 : now + 4_000,
+      endsAt: mode !== "quick" ? 0 : now + 4_000 + timeLimitMinutes * 60_000,
       timeLimitMinutes,
       targetScore: MATCH_TARGET_SCORE,
       ended: false,
       lastResult: null
     };
+    if (mode === "global") this.meta.configuredBotCount = Math.min(this.meta.configuredBotCount, MAX_MATCH_PLAYERS - this.meta.humanCapacity);
     this.bots.clear();
     this.recentFires.clear();
     this.terrainEvents = [];
@@ -470,7 +478,7 @@ export class MatchRoom extends DurableObject {
 
   async reconcileBots(excludedSocket = null) {
     const humans = this.humanEntries(excludedSocket).length;
-    const requested = this.meta.mode === "private"
+    const requested = this.meta.mode !== "quick"
       ? this.meta.configuredBotCount
       : this.meta.targetSize - humans;
     const desired = this.meta.phase === "playing"
@@ -508,6 +516,8 @@ export class MatchRoom extends DurableObject {
       hostId: this.botHostId(excludedSocket),
       mode: this.meta.mode,
       phase: this.meta.phase,
+      roomName: this.meta.roomName,
+      humanCapacity: this.meta.humanCapacity,
       difficulty: this.meta.difficulty,
       configuredBotCount: this.meta.configuredBotCount,
       timeLimitMinutes: this.meta.timeLimitMinutes,
@@ -581,7 +591,8 @@ export class MatchRoom extends DurableObject {
         activeHumans: new Set(this.humanEntries().map(([, player]) => player.id)).size,
         initialized: Boolean(this.meta),
         arenaRevision: settings?.arenaRevision || 1,
-        capacity: MAX_MATCH_PLAYERS,
+        capacity: this.meta?.mode === "global" ? this.meta.humanCapacity : MAX_MATCH_PLAYERS,
+        globalSummary: this.globalSummary(),
         targetSize: settings?.targetSize || 0,
         difficulty: settings?.difficulty || "normal",
         timeLimitMinutes: settings?.timeLimitMinutes || clampMatchMinutes(),
@@ -592,6 +603,12 @@ export class MatchRoom extends DurableObject {
     if (Number(url.searchParams.get("v")) !== MULTIPLAYER_PROTOCOL_VERSION) return json({ error: TEXT.errors.unsupportedProtocol }, 426);
     const arenaRevision = Number(url.searchParams.get("arenaRevision") || 1);
     if (![1, ARENA_REVISION].includes(arenaRevision)) return json({ error: TEXT.errors.unsupportedProtocol }, 426);
+    let globalIdentity = null;
+    if (url.searchParams.get("mode") === "global" || this.meta?.mode === "global") {
+      globalIdentity = await this.env.GLOBAL_LOBBY.getByName("global").identity(url.searchParams.get("identity"));
+      if (!globalIdentity) return json({ error: TEXT.globalLobby.connectionRequired }, 403);
+      if (!this.meta && url.searchParams.get("create") !== "1") return json({ error: TEXT.globalLobby.roundUnavailable }, 404);
+    }
     await this.initialize(url);
     if ((this.meta.arenaRevision || 1) !== arenaRevision) {
       // Existing sockets and reconnect reservations keep their arena until they drain.
@@ -605,8 +622,11 @@ export class MatchRoom extends DurableObject {
     const requestedResumeToken = String(url.searchParams.get("resumeToken") || "");
     const resumed = requestedResumeToken ? this.resumableSession(requestedResumeToken) : null;
     if (requestedResumeToken && !resumed) return json({ error: TEXT.errors.sessionExpired }, 409);
-    if (this.meta.mode === "private" && this.meta.phase === "playing" && !resumed) return json({ error: TEXT.errors.matchInProgress }, 409);
-    if ((this.effectiveHumanCount() >= MAX_MATCH_PLAYERS && !resumed) || this.meta.ended) return json({ error: TEXT.errors.roomFull }, 409);
+    if (this.meta.mode === "global" && !resumed && url.searchParams.get("create") !== "1" && !this.humanEntries().length) return json({ error: TEXT.globalLobby.roundUnavailable }, 409);
+    if (this.meta.mode !== "quick" && this.meta.phase !== "lobby" && !resumed) return json({ error: TEXT.errors.matchInProgress }, 409);
+    const capacity = this.meta.mode === "global" ? this.meta.humanCapacity : MAX_MATCH_PLAYERS;
+    if ((this.effectiveHumanCount() >= capacity && !resumed) || this.meta.ended) return json({ error: TEXT.errors.roomFull }, 409);
+    if (globalIdentity && !resumed && this.humanEntries().some(([, player]) => player.globalId === globalIdentity.id)) return json({ error: TEXT.errors.roomFull }, 409);
 
     const id = resumed?.player.id || `player-${crypto.randomUUID().slice(0, 12)}`;
     if (resumed && (this.pendingResumePlayerIds.has(id) || this.resumeTokenClaims.has(requestedResumeToken))) return json({ error: TEXT.errors.sessionExpired }, 409);
@@ -621,6 +641,10 @@ export class MatchRoom extends DurableObject {
       const humans = this.humanEntries().length;
       const loadout = resumed?.player.loadout || sanitizeLoadout(url.searchParams.get("loadout"), WEAPONS, DEFAULT_LOADOUT);
       const player = resumed ? structuredClone(resumed.player) : roomPlayer(id, sanitizePlayerName(url.searchParams.get("name")), loadout, humans);
+      if (this.meta.mode === "global") {
+        player.globalId = globalIdentity.id;
+        player.pendingLoadout ??= sanitizeLoadoutSlots(url.searchParams.get("loadout"), WEAPONS);
+      }
       player.lifeStateCapable = url.searchParams.get("lifeState") === "1";
       player.respawnId ||= "";
       player.respawnSpawnIndex = Number.isInteger(player.respawnSpawnIndex) ? player.respawnSpawnIndex : -1;
@@ -648,11 +672,14 @@ export class MatchRoom extends DurableObject {
         this.resumeSessions.set(priorResumeToken, { player: aliasPlayer, expiresAt: Date.now() + RESUME_ACK_GRACE_MS });
       }
       await this.persistResumeSessions();
+      // Identity/storage awaits may let another join or host start run first.
+      if (this.meta.mode === "global" && !resumed && (this.meta.phase !== "lobby" || this.effectiveHumanCount() >= this.meta.humanCapacity)) return json({ error: TEXT.errors.roomFull }, 409);
       server.serializeAttachment(player);
       this.ctx.acceptWebSocket(server);
       await this.reconcileBots(supersededSocket);
       server.send(JSON.stringify({ ...this.rosterMessage("welcome", supersededSocket), playerId: id, resumeToken: player.resumeToken }));
       this.broadcast(this.rosterMessage("roster", supersededSocket));
+      await this.publishGlobalRoom();
       if (resumed) console.log(JSON.stringify({ event: "socket_resumed", roomCode: this.meta.roomCode, playerId: id, phase: this.meta.phase }));
       resumeEstablished = true;
       return new Response(null, { status: 101, webSocket: client });
@@ -1150,8 +1177,109 @@ export class MatchRoom extends DurableObject {
     if (changed) await this.persistResumeSessions();
   }
 
+  globalSummary(excludedSocket = null) {
+    if (this.meta?.mode !== "global") return null;
+    const humans = this.humanEntries(excludedSocket).map(([, player]) => player);
+    return {
+      roomCode: this.meta.roomCode, name: this.meta.roomName, phase: this.meta.phase,
+      capacity: this.meta.humanCapacity, bots: this.meta.configuredBotCount,
+      hostName: humans.find((player) => player.id === this.botHostId(excludedSocket))?.name || "",
+      arenaRevision: this.meta.arenaRevision,
+      players: humans.map((player) => ({ id: player.globalId, name: player.name }))
+    };
+  }
+
+  async publishGlobalRoom(excludedSocket = null) {
+    const summary = this.globalSummary(excludedSocket);
+    if (!summary) return;
+    try { await this.env.GLOBAL_LOBBY.getByName("global").updateRoom(summary); }
+    catch (error) { console.error(JSON.stringify({ event: "directory_update_failed", roomCode: summary.roomCode, error: String(error) })); }
+  }
+
+  async cancelGlobalCountdown() {
+    this.meta.phase = "lobby";
+    this.meta.startedAt = 0;
+    await this.ctx.storage.put("meta", this.meta);
+    await this.ctx.storage.deleteAlarm();
+  }
+
+  async handleGlobalLobbyMessage(socket, message) {
+    const player = socket.deserializeAttachment();
+    if (!player?.id) return;
+    if (message.type === "lobby_leave") {
+      player.leaving = true;
+      socket.serializeAttachment(player);
+      for (const [token, session] of this.resumeSessions) if (session.player.id === player.id) this.resumeSessions.delete(token);
+      await this.persistResumeSessions();
+      socket.close(1000, "Left round");
+      return;
+    }
+    if (!["lobby", "countdown"].includes(this.meta.phase)) return;
+    if (this.meta.phase === "countdown" && Date.now() >= this.meta.startedAt) return this.alarm();
+    if (message.type === "lobby_loadout") {
+      player.pendingLoadout = sanitizeLoadoutSlots(message.loadout, WEAPONS);
+      socket.serializeAttachment(player);
+      this.broadcast(this.rosterMessage("lobby"));
+      return;
+    }
+    if (player.id !== this.botHostId()) return;
+    if (message.type === "lobby_settings" && this.meta.phase === "lobby") {
+      this.meta.configuredBotCount = Math.trunc(finiteNumber(message.botCount, this.meta.configuredBotCount, 0, MAX_MATCH_PLAYERS - this.meta.humanCapacity));
+      await this.ctx.storage.put("meta", this.meta);
+    } else if (message.type === "lobby_cancel" && this.meta.phase === "countdown") await this.cancelGlobalCountdown();
+    else return;
+    this.broadcast(this.rosterMessage("lobby"));
+    await this.publishGlobalRoom();
+  }
+
+  async alarm() {
+    await this.ready;
+    if (this.meta?.mode !== "global" || this.meta.phase !== "countdown") return;
+    if (Date.now() < this.meta.startedAt) { await this.ctx.storage.setAlarm(this.meta.startedAt); return; }
+    if (this.humanEntries().length < 2) {
+      await this.cancelGlobalCountdown();
+      this.broadcast(this.rosterMessage("lobby"));
+      await this.publishGlobalRoom();
+      return;
+    }
+    this.meta.phase = "playing";
+    this.meta.ended = false;
+    this.meta.startedAt = Date.now();
+    this.meta.endsAt = this.meta.startedAt + this.meta.timeLimitMinutes * 60_000;
+    this.meta.lastResult = null;
+    this.clearStateBroadcast();
+    this.bots.clear();
+    this.recentFires.clear();
+    this.terrainEvents = [];
+    this.structuralHealth.clear();
+    this.structuralFailures.clear();
+    for (const [socket, player] of this.humanEntries()) {
+      player.loadout = fillLoadoutSlots(player.pendingLoadout, WEAPONS);
+      socket.serializeAttachment(resetRoomPlayer(player));
+    }
+    for (const session of this.resumeSessions.values()) {
+      session.player.loadout = fillLoadoutSlots(session.player.pendingLoadout, WEAPONS);
+      resetRoomPlayer(session.player);
+      session.expiresAt = this.meta.endsAt + PRIVATE_MATCH_REJOIN_GRACE_MS;
+    }
+    await this.persistResumeSessions();
+    await this.reconcileBots();
+    this.broadcast(this.rosterMessage("match_start"));
+    await this.publishGlobalRoom();
+  }
+
   async handleLobbyStart(socket) {
     const session = socket.deserializeAttachment();
+    if (this.meta.mode === "global") {
+      if (this.meta.phase !== "lobby" || session?.id !== this.botHostId() || this.humanEntries().length < 2) return;
+      this.meta.phase = "countdown";
+      this.meta.startedAt = Date.now() + 5_000;
+      await this.ctx.storage.put("meta", this.meta);
+      await this.ctx.storage.setAlarm(this.meta.startedAt);
+      this.broadcast(this.rosterMessage("lobby"));
+      await this.publishGlobalRoom();
+      return;
+    }
     if (this.meta.mode !== "private" || this.meta.phase !== "lobby" || session?.id !== this.botHostId()) return;
     const now = Date.now();
     this.meta.phase = "playing";
@@ -1183,7 +1311,7 @@ export class MatchRoom extends DurableObject {
     if (now < this.meta.endsAt && (winner?.score || 0) < this.meta.targetScore) return;
     const scores = Object.fromEntries(players.map((player) => [player.id, player.score]));
     this.clearStateBroadcast();
-    if (this.meta.mode === "private") {
+    if (this.meta.mode !== "quick") {
       const winners = players.filter((player) => player.score === (winner?.score || 0));
       this.meta.phase = "lobby";
       this.meta.startedAt = 0;
@@ -1204,6 +1332,7 @@ export class MatchRoom extends DurableObject {
       await this.persistResumeSessions();
       await this.reconcileBots();
       this.broadcast(this.rosterMessage("lobby"));
+      await this.publishGlobalRoom();
       return;
     }
     this.meta.ended = true;
@@ -1220,6 +1349,7 @@ export class MatchRoom extends DurableObject {
     if (!message) return;
     if (message.type === "ping") return socket.send(JSON.stringify({ type: "pong", serverTime: Date.now() }));
     if (message.type === "resume_ack") return this.handleResumeAck(socket, message);
+    if (this.meta?.mode === "global" && ["lobby_loadout", "lobby_settings", "lobby_cancel", "lobby_leave"].includes(message.type)) return this.handleGlobalLobbyMessage(socket, message);
     if (message.type === "lobby_start") return this.handleLobbyStart(socket);
     if (this.meta?.ended || this.meta?.phase !== "playing") return;
     if (message.type === "state") await this.handleState(socket, message);
@@ -1245,7 +1375,9 @@ export class MatchRoom extends DurableObject {
     await this.rememberDisconnectedPlayer(socket);
     if (resumeToken) this.releaseResumeClaims(playerId);
     await this.reconcileBots(socket);
+    if (this.meta?.mode === "global" && this.meta.phase === "countdown") await this.cancelGlobalCountdown();
     this.broadcast(this.rosterMessage("roster", socket));
+    await this.publishGlobalRoom(socket);
     console.log(JSON.stringify({ event: "socket_close", roomCode: this.meta?.roomCode, playerId, code, reason, wasClean, phase: this.meta?.phase }));
   }
 
@@ -1261,7 +1393,9 @@ export class MatchRoom extends DurableObject {
     await this.rememberDisconnectedPlayer(socket);
     if (resumeToken) this.releaseResumeClaims(playerId);
     await this.reconcileBots(socket);
+    if (this.meta?.mode === "global" && this.meta.phase === "countdown") await this.cancelGlobalCountdown();
     this.broadcast(this.rosterMessage("roster", socket));
+    await this.publishGlobalRoom(socket);
     console.error(JSON.stringify({ event: "socket_error", roomCode: this.meta?.roomCode, playerId, error: String(error), phase: this.meta?.phase }));
   }
 }
@@ -1274,6 +1408,7 @@ export default {
       headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET,POST,OPTIONS", "access-control-allow-headers": "content-type" }
     });
     if (url.pathname === "/api/health") return json({ ok: true, service: "master-blaster-multiplayer", protocol: MULTIPLAYER_PROTOCOL_VERSION, arenaRevision: ARENA_REVISION });
+    if (url.pathname === "/api/lobby/connect") return env.GLOBAL_LOBBY.getByName("global").fetch(request);
     if (url.pathname === "/api/quick" && request.method === "POST") {
       return env.MATCHMAKER.getByName("global").fetch(request);
     }

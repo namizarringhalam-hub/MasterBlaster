@@ -7,14 +7,16 @@
   "durable_objects": {
     "bindings": [
       { "name": "MATCH_ROOMS", "class_name": "MatchRoom" },
-      { "name": "MATCHMAKER", "class_name": "Matchmaker" }
+      { "name": "MATCHMAKER", "class_name": "Matchmaker" },
+      { "name": "GLOBAL_LOBBY", "class_name": "GlobalLobby" }
     ]
   },
   "migrations": [
     {
       "tag": "v1",
       "new_sqlite_classes": ["MatchRoom", "Matchmaker"]
-    }
+    },
+    { "tag": "v2", "new_sqlite_classes": ["GlobalLobby"] }
   ],
   "routes": [
     { "pattern": "masterblaster.se/api/*", "zone_name": "masterblaster.se" },

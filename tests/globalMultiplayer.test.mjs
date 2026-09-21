@@ -1,0 +1,27 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { WEAPONS } from "../src/gameData.js";
+import TEXT, { formatText } from "../src/playerText.js";
+import { sanitizeLoadoutSlots } from "../src/multiplayerProtocol.js";
+
+const source = await readFile(new URL("../src/globalMultiplayer.js", import.meta.url), "utf8");
+const Controller = new Function("MultiplayerClient", "sanitizeLoadoutSlots", "sanitizePlayerName", "activePresetLoadout", "saveSettings", "WEAPONS", "TEXT", "formatText", `${source.replace(/^import .*;\r?\n/gm, "").replace("export class", "class")}\nreturn GlobalMultiplayer;`)(null, sanitizeLoadoutSlots, null, null, null, WEAPONS, TEXT, formatText);
+const sent = [], status = {};
+const game = { mode: "global", state: "lobby", multiplayer: { send: (type, payload) => { sent.push({ type, payload }); return true; } } };
+const controller = new Controller(game, { querySelector: () => status }, () => "");
+controller.updateSlots = () => {};
+controller.slots = ["rocket_launcher", "shotgun", "railgun", null, null];
+controller.handleClick({ dataset: { loadoutRemove: "1" } });
+assert.deepEqual(controller.slots, ["rocket_launcher", null, "railgun", null, null]);
+controller.handleClick({ dataset: { weaponChoice: "mine" } });
+assert.deepEqual(controller.slots, ["rocket_launcher", "mine", "railgun", null, null]);
+controller.moveSlot(0, 4);
+assert.deepEqual(controller.slots, [null, "mine", "railgun", null, "rocket_launcher"]);
+assert.equal(sent.at(-1).type, "lobby_loadout");
+assert.deepEqual(sent.at(-1).payload.loadout, controller.slots);
+const before = [...controller.slots]; controller.moveSlot(1, 8); assert.deepEqual(controller.slots, before);
+game.multiplayer.send = () => false; controller.sendSlots(); assert.equal(status.textContent, TEXT.globalLobby.connectionLost);
+assert.equal(TEXT.setup.modes.global.tag, "GLOBAL", "the game HUD must support the public mode, not just its menus");
+const main = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
+assert.match(main, /const countdown = this.mode === "global" \? null : this.sound.startCountdown/, "public rounds do not add a second audio countdown after their server countdown");
+console.log("Global waiting-room slot edits, server updates, offline feedback, HUD mode, and single-countdown checks passed.");

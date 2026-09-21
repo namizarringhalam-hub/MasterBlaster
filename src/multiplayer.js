@@ -78,7 +78,7 @@ export class MultiplayerClient extends EventTarget {
     }
   }
 
-  async connectOnce({ mode, roomCode, name, loadout, botCount, difficulty, timeLimitMinutes }, excludeRoomCode = "", resumeToken = "", directRoomCode = "") {
+  async connectOnce({ mode, roomCode, name, loadout, botCount, difficulty, timeLimitMinutes, identity, create, roomName, humanCapacity }, excludeRoomCode = "", resumeToken = "", directRoomCode = "") {
     this.stopHeartbeat();
     this.clearTerrainHits();
     const priorSocket = this.socket;
@@ -109,7 +109,7 @@ export class MultiplayerClient extends EventTarget {
       const status = await fetch(new URL(`/api/rooms/${this.roomCode}/status`, origin)).then((response) => response.ok ? response.json() : null).catch(() => null);
       if (status?.initialized && status.humans > 0 && (status.arenaRevision || 1) !== ARENA_REVISION) throw new Error(TEXT.errors.arenaVersionMismatch);
     }
-    const url = socketUrl(origin, this.roomCode, {
+    let url = socketUrl(origin, this.roomCode, {
       v: MULTIPLAYER_PROTOCOL_VERSION,
       name,
       loadout,
@@ -119,8 +119,13 @@ export class MultiplayerClient extends EventTarget {
       timeLimitMinutes,
       lifeState: 1,
       arenaRevision: ARENA_REVISION,
-      resumeToken
+      resumeToken, identity, create, roomName, humanCapacity
     });
+    if (mode === "directory") {
+      const directoryUrl = new URL(url);
+      directoryUrl.pathname = "/api/lobby/connect";
+      url = directoryUrl.toString();
+    }
     let socket;
     try { socket = new WebSocket(url); }
     catch { throw new Error(TEXT.errors.couldNotConnect); }

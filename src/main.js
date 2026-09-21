@@ -15,6 +15,7 @@ import { MultiplayerClient } from "./multiplayer.js";
 import { advanceRespawnRetry, respawnDisposition, serverRemainingSeconds, uniquePlayersById } from "./multiplayerProtocol.js";
 import { createGrappleRopeGeometry, updateGrappleRopeGeometry } from "./grappleRope.js";
 import TEXT, { formatText } from "./playerText.js";
+import { GlobalMultiplayer } from "./globalMultiplayer.js";
 
 const canvas = document.querySelector("#game-canvas");
 const ui = document.querySelector("#ui-root");
@@ -473,6 +474,8 @@ class BlasterBattle {
   }
 
   renderMain() {
+    if (this.mode === "global") this.multiplayer?.send("lobby_leave");
+    this.globalMultiplayer?.close();
     clearTimeout(this.menuLaunchTimer);
     this.menuLaunchTimer = 0;
     this.state = "menu";
@@ -496,6 +499,7 @@ class BlasterBattle {
           <div class="primary-actions">
             <button class="primary" data-mode="quick"><span>${TEXT.landing.buttons.quick.label}</span><small>${TEXT.landing.buttons.quick.description}</small></button>
             <button data-mode="private"><span>${TEXT.landing.buttons.private.label}</span><small>${TEXT.landing.buttons.private.description}</small></button>
+            <button data-mode="global"><span>${TEXT.landing.buttons.global.label}</span><small>${TEXT.landing.buttons.global.description}</small></button>
             <button data-mode="training"><span>${TEXT.landing.buttons.training.label}</span><small>${TEXT.landing.buttons.training.description}</small></button>
           </div>
           <div class="secondary-actions">
@@ -512,6 +516,10 @@ class BlasterBattle {
   }
 
   renderSetup(mode) {
+    if (mode === "global") {
+      this.globalMultiplayer ||= new GlobalMultiplayer(this, ui, menuAtmosphereMarkup);
+      return this.globalMultiplayer.open();
+    }
     this.mode = mode;
     const savedDefault = activePresetLoadout(this.settings);
     if (savedDefault) this.settings.loadout = [...savedDefault];
@@ -560,6 +568,7 @@ class BlasterBattle {
   }
 
   renderPrivateLobby(message) {
+    if (message.mode === "global" || this.mode === "global") return this.globalMultiplayer.renderRoom(message);
     clearTimeout(this.privateStartTimer);
     this.privateStartTimer = 0;
     const returnedFromMatch = this.state === "play";
@@ -615,13 +624,13 @@ class BlasterBattle {
     queueMicrotask(() => this.pulseMenuEnergy(.5, MENU_ACCENTS.private, 2300));
   }
 
-  weaponCategoriesMarkup() {
+  weaponCategoriesMarkup(loadout = this.settings.loadout) {
     return WEAPON_GROUPS.map((group) => `<section class="weapon-category" data-weapon-category="${group.id}" style="--category:${group.color}" aria-labelledby="weapon-category-${group.id}">
       <header><h3 id="weapon-category-${group.id}"><i></i>${group.name}</h3><span>${formatText(TEXT.setup.loadout.categorySummary, { count: group.ids.length })}</span></header>
       <div class="weapon-grid">
         ${group.ids.map((id) => {
           const weapon = WEAPONS[id];
-          const slot = this.settings.loadout.indexOf(id);
+          const slot = loadout.indexOf(id);
           return `<button class="weapon-choice ${slot >= 0 ? "selected" : ""}" data-weapon-choice="${id}" data-weapon="${id}" data-category="${group.id}" data-shape="${weapon.type}" data-slot="${slot >= 0 ? slot + 1 : ""}" style="--weapon:#${weapon.color.toString(16).padStart(6, "0")};--category:${group.color};${weaponPreviewVariables(weapon, WEAPON_INDEX_BY_ID[id])}">
             <i></i><span class="weapon-preview" aria-hidden="true"></span>
             <b>${weapon.name}</b><em>${group.name}</em><small>${weapon.description}</small><span class="weapon-capacity">${weaponUsesAmmo(weapon) ? formatText(TEXT.setup.loadout.magazineAndReload, { ammo: weapon.ammo, seconds: weapon.reload.toFixed(1) }) : TEXT.setup.loadout.noReload}</span>
@@ -631,9 +640,9 @@ class BlasterBattle {
     </section>`).join("");
   }
 
-  loadoutOrderMarkup() {
+  loadoutOrderMarkup(loadout = this.settings.loadout) {
     return Array.from({ length: 5 }, (_, index) => {
-      const id = this.settings.loadout[index];
+      const id = loadout[index];
       const weapon = WEAPONS[id];
       if (!weapon) return `<div class="loadout-slot empty"><span>${index + 1}</span><small>${TEXT.setup.loadout.emptySlot}</small></div>`;
       const color = `#${weapon.color.toString(16).padStart(6, "0")}`;
@@ -642,7 +651,7 @@ class BlasterBattle {
         <span>${index + 1}</span><b>${escapeHtml(weapon.name)}</b><small>${category.name} · ${weaponUsesAmmo(weapon) ? formatText(TEXT.setup.loadout.magazine, { ammo: weapon.ammo }) : TEXT.setup.loadout.noReload}</small>
         <div>
           <button data-loadout-move="${index}" data-direction="-1" aria-label="${formatText(TEXT.setup.loadout.moveLeftAria, { weapon: escapeHtml(weapon.name) })}" ${index === 0 ? "disabled" : ""}>‹</button>
-          <button data-loadout-move="${index}" data-direction="1" aria-label="${formatText(TEXT.setup.loadout.moveRightAria, { weapon: escapeHtml(weapon.name) })}" ${index === this.settings.loadout.length - 1 ? "disabled" : ""}>›</button>
+          <button data-loadout-move="${index}" data-direction="1" aria-label="${formatText(TEXT.setup.loadout.moveRightAria, { weapon: escapeHtml(weapon.name) })}" ${index === loadout.length - 1 ? "disabled" : ""}>›</button>
           <button data-loadout-remove="${index}" aria-label="${formatText(TEXT.setup.loadout.removeAria, { weapon: escapeHtml(weapon.name) })}">×</button>
         </div>
       </div>`;
@@ -776,6 +785,7 @@ class BlasterBattle {
           : button.dataset.mode ? .48 : .38;
       this.pulseMenuEnergy(menuLevel, this.menuAccent(button), button.dataset.action === "start" ? 2400 : 2300);
       if (this.state !== "play") this.sound.accentMenuAction(menuLevel, button.dataset.action === "start");
+      if (this.globalMultiplayer?.handleClick(button)) return;
       if (button.dataset.screen === "main") {
         this.renderMain();
         queueMicrotask(() => this.pulseMenuEnergy(menuLevel, this.menuAccent(button), 2300));
@@ -834,6 +844,7 @@ class BlasterBattle {
       if (button.dataset.action === "save-settings") return this.saveSettingsForm();
     };
     ui.onchange = (event) => {
+      if (this.globalMultiplayer?.handleChange(event)) return;
       if (event.target.dataset.presetName) this.renamePreset(Number(event.target.dataset.presetName), event.target.value);
       if (event.target.closest?.(".setup-form")) this.captureSetupPreferences();
       if (event.target.closest?.(".setup-form")) {
@@ -883,6 +894,7 @@ class BlasterBattle {
       const slot = event.target.closest?.("[data-loadout-drag]");
       if (!slot) return;
       event.preventDefault();
+      if (this.mode === "global" && this.state === "lobby") return this.globalMultiplayer.moveSlot(Number(event.dataTransfer.getData("text/plain")), Number(slot.dataset.loadoutDrag));
       this.moveLoadoutTo(Number(event.dataTransfer.getData("text/plain")), Number(slot.dataset.loadoutDrag));
     };
   }
@@ -1157,11 +1169,11 @@ class BlasterBattle {
   async connectOnlineMatch() {
     const client = new MultiplayerClient();
     this.multiplayer = client;
-    client.addEventListener("message", ({ detail }) => this.handleNetworkMessage(detail));
-    client.addEventListener("reconnecting", () => this.showNetworkReconnecting());
-    client.addEventListener("reconnected", ({ detail }) => this.handleNetworkReconnect(detail));
+    client.addEventListener("message", ({ detail }) => { if (this.multiplayer === client) this.handleNetworkMessage(detail); });
+    client.addEventListener("reconnecting", () => { if (this.multiplayer === client) this.showNetworkReconnecting(); });
+    client.addEventListener("reconnected", ({ detail }) => { if (this.multiplayer === client) this.handleNetworkReconnect(detail); });
     client.addEventListener("disconnect", ({ detail }) => {
-      if (detail.expected) return;
+      if (detail.expected || this.multiplayer !== client) return;
       this.networkRecovering = false;
       this.hideNetworkReconnecting();
       if (this.state === "play") this.showNetworkDisconnect(detail.reason);
@@ -1170,6 +1182,11 @@ class BlasterBattle {
         this.privateStartTimer = 0;
         this.setMatchLoading(false);
         this.multiplayer = null;
+        if (this.mode === "global") {
+          this.globalMultiplayer.renderLobby();
+          this.globalMultiplayer.connectionStatus(detail.reason);
+          return;
+        }
         this.renderSetup("private");
         ui.querySelector(".setup-dialog")?.insertAdjacentHTML("afterbegin", `<p class="network-error" role="alert">${formatText(TEXT.errors.onlineService, { message: escapeHtml(detail.reason) })}</p>`);
       }
@@ -1178,10 +1195,11 @@ class BlasterBattle {
       mode: this.mode,
       roomCode: this.seed,
       name: this.settings.displayName,
-      loadout: this.settings.loadout,
+      loadout: this.mode === "global" ? this.globalMultiplayer.slots : this.settings.loadout,
       botCount: this.settings.botCount,
       difficulty: this.botDifficulty,
-      timeLimitMinutes: this.timeLimitMinutes
+      timeLimitMinutes: this.timeLimitMinutes,
+      ...(this.mode === "global" ? this.globalMultiplayer.options : {})
     });
     this.onlineWelcome = welcome;
     this.seed = welcome.seed;
@@ -1213,7 +1231,8 @@ class BlasterBattle {
     this.hideNetworkReconnecting();
     this.onlineWelcome = { ...(this.onlineWelcome || {}), ...welcome };
     this.networkEndsAt = welcome.endsAt || this.networkEndsAt;
-    if (welcome.phase === "lobby") return this.renderPrivateLobby(welcome);
+    if (["lobby", "countdown"].includes(welcome.phase)) return this.renderPrivateLobby(welcome);
+    if (this.mode === "global" && welcome.phase === "playing" && this.state === "lobby") return this.startMatch(welcome);
     if (!this.world || this.state !== "play") return;
     this.clearTransientNetworkCombat();
     this.syncOnlineRoster(welcome);
@@ -1305,6 +1324,7 @@ class BlasterBattle {
 
   async startMatch(welcomeOverride = null) {
     if (!welcomeOverride && !this.freshSessionReady) return this.queueMatchStart(false);
+    this.globalMultiplayer?.clearCountdown();
     if (!welcomeOverride) this.freshSessionReady = false;
     this.clearMatch(Boolean(welcomeOverride));
     let welcome = welcomeOverride;
@@ -1321,7 +1341,7 @@ class BlasterBattle {
         return;
       }
     }
-    if (welcome?.phase === "lobby") return this.renderPrivateLobby(welcome);
+    if (["lobby", "countdown"].includes(welcome?.phase)) return this.renderPrivateLobby(welcome);
     this.state = "play";
     this.paused = false;
     this.matchTime = welcome
@@ -1396,11 +1416,15 @@ class BlasterBattle {
     // compileAsync walk can outlive teardown and recreate already-disposed data.
     this.sound.startAmbience(this.world.theme.id);
     this.sound.setMusicIntensity(.42);
-    const countdown = this.sound.startCountdown(this.seed, .42);
+    const countdown = this.mode === "global" ? null : this.sound.startCountdown(this.seed, .42);
     if (countdown) {
       this.audioCountdown = true;
       this.matchStartDelay = countdown.remaining;
       this.countdownBeat = countdown.beatsRemaining;
+    } else if (this.mode === "global") {
+      this.matchStartDelay = 0;
+      this.sound.setMusicScene("combat");
+      this.sound.startMusic("combat", this.seed);
     } else this.sound.play("countdown");
     this.sound.setPaused(false);
     this.hideMatchLoadingAfterFrame = true;
@@ -1464,7 +1488,7 @@ class BlasterBattle {
     if (!message || message.type === "welcome") return;
     if (message.botHostId && this.multiplayer) this.multiplayer.botHostId = message.botHostId;
     if (message.endsAt) this.networkEndsAt = message.endsAt;
-    if (message.type === "lobby" || (message.type === "roster" && message.phase === "lobby" && this.state === "lobby")) {
+    if (message.type === "lobby" || (message.type === "roster" && ["lobby", "countdown"].includes(message.phase) && this.state === "lobby")) {
       return this.renderPrivateLobby(message);
     }
     if (message.type === "match_start") {
@@ -1794,7 +1818,7 @@ class BlasterBattle {
           <p>${TEXT.pause.section}</p><h1 id="pause-title">${TEXT.pause.title}</h1>
           <button class="primary" data-action="pause" autofocus>${TEXT.pause.resume}</button>
           ${this.trainingControlsMarkup()}
-          <button data-action="rematch">${TEXT.pause.restart}</button>
+          ${this.mode === "global" ? `<button data-global="leave">${TEXT.globalLobby.back}</button>` : `<button data-action="rematch">${TEXT.pause.restart}</button>`}
           <button data-screen="main">${TEXT.pause.mainMenu}</button>
         </section>`, { kind: "pause", cancel: "resume" });
     this.bindUi();
