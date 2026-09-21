@@ -6,6 +6,30 @@ import { lineBlockedByStructure, playerCapsuleIntersectsStructure, validateHitPr
 
 const corners = [[-72, -66, 40], [72, 66, 54], [70, -62, 72], [-68, 66, 62]];
 const seed = "CORNER-PILLARS";
+// Walk into the opening left by a broken support while the next section falls.
+for (const supportIndex of [0, 1]) {
+  for (const dt of [1 / 60, .1]) {
+    const collapseWorld = new ArenaWorld(new THREE.Scene(), seed);
+    const tower = collapseWorld.structures[16], support = tower.segments[supportIndex];
+    const floor = support.baseY, radius = .72;
+    collapseWorld.destroy(collapseWorld.structuralCenter(support), 0, { structuralDamage: WEAPONS.rocket_launcher.structureDamage });
+    collapseWorld.updateStructuralChanges(.53, []);
+    const position = new THREE.Vector3(tower.x - support.w / 2 + (supportIndex ? .1 : -radius - .1), floor, tower.z);
+    for (let frame = 0; frame < Math.ceil(2 / dt); frame++) {
+      collapseWorld.updateStructuralChanges(dt, []);
+      const previous = position.clone();
+      position.x = Math.min(tower.x, position.x + 12 * dt);
+      position.y -= 18 * dt * dt;
+      collapseWorld.resolve(position, radius, previous);
+      const aboveSupport = Math.abs(position.x - tower.x) <= support.w / 2 && Math.abs(position.z - tower.z) <= support.d / 2;
+      assert.ok(position.y >= (aboveSupport ? floor : 0), `falling pillar must not push a player through the supporting surface (support ${supportIndex}, dt ${dt})`);
+    }
+    const landed = tower.segments[supportIndex];
+    assert.ok(Math.abs(position.x - tower.x) >= landed.w / 2 + radius - 1e-9 || Math.abs(position.z - tower.z) >= landed.d / 2 + radius - 1e-9,
+      "a player without headroom escapes sideways from the descending pillar");
+    collapseWorld.dispose();
+  }
+}
 const world = new ArenaWorld(new THREE.Scene(), seed);
 const blueprints = structuralTowerBlueprints(seed);
 const structuralState = {};

@@ -2937,7 +2937,9 @@ export class ArenaWorld {
       const horizontalDepth = Math.min(position.x - minX, maxX - position.x, position.z - minZ, maxZ - position.z);
       const risingIntoUnderside = position.y > previous.y && previous.y + 2.25 <= item.baseY + .08 && position.y + 2.25 >= item.baseY;
       const trappedUnderneath = position.y < item.baseY && position.y + 2.25 > item.baseY + .08 && undersideDepth <= horizontalDepth;
-      if (insideFootprint && (risingIntoUnderside || trappedUnderneath)) {
+      // A descending obstacle can close the gap above the supporting surface.
+      // Resolve sideways when pushing down would put the feet through that surface.
+      if (insideFootprint && (risingIntoUnderside || trappedUnderneath) && item.baseY - 2.251 >= floor) {
         position.y = item.baseY - 2.251;
         ceiling = true;
         continue;
