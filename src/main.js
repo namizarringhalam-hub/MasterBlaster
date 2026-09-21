@@ -3681,7 +3681,8 @@ class BlasterBattle {
     const cameraTarget = this.world.constrainCamera(pivot, desired, .45, scratch.target);
     const availableDistance = cameraTarget.distanceTo(pivot);
     this.cameraFirstPerson = this.cameraFirstPersonRequested || cameraCollisionFirstPerson(availableDistance, this.cameraFirstPerson);
-    if (this.cameraFirstPerson) cameraTarget.copy(pivot).addScaledVector(forward, .38).setY(pivot.y + .24);
+    // Standing mecha eye level, kept stable through cosmetic body bob and lean.
+    if (this.cameraFirstPerson) cameraTarget.copy(pivot).addScaledVector(forward, .38).setY(player.position.y + 2.28);
     this.camera.position.lerp(cameraTarget, cameraBlend);
     this.world.constrainCamera(pivot, this.camera.position, .45, scratch.constrained);
     this.camera.position.copy(scratch.constrained);
