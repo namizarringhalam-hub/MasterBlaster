@@ -633,7 +633,7 @@ class BlasterBattle {
           const slot = loadout.indexOf(id);
           return `<button class="weapon-choice ${slot >= 0 ? "selected" : ""}" data-weapon-choice="${id}" data-weapon="${id}" data-category="${group.id}" data-shape="${weapon.type}" data-slot="${slot >= 0 ? slot + 1 : ""}" style="--weapon:#${weapon.color.toString(16).padStart(6, "0")};--category:${group.color};${weaponPreviewVariables(weapon, WEAPON_INDEX_BY_ID[id])}">
             <i></i><span class="weapon-preview" aria-hidden="true"></span>
-            <b>${weapon.name}</b><em>${group.name}</em><small>${weapon.description}</small><span class="weapon-capacity">${weaponUsesAmmo(weapon) ? formatText(TEXT.setup.loadout.magazineAndReload, { ammo: weapon.ammo, seconds: weapon.reload.toFixed(1) }) : TEXT.setup.loadout.noReload}</span>
+            <b>${weapon.name}</b><em>${group.name}</em><small>${weapon.description}</small><span class="weapon-capacity"><span title="${formatText(TEXT.setup.loadout.directHitDamageTitle, { damage: weapon.damage })}">${formatText(TEXT.setup.loadout.directHitDamage, { damage: weapon.damage })}</span> · ${weaponUsesAmmo(weapon) ? formatText(TEXT.setup.loadout.magazineAndReload, { ammo: weapon.ammo, seconds: weapon.reload.toFixed(1) }) : TEXT.setup.loadout.noReload}</span>
           </button>`;
         }).join("")}
       </div>

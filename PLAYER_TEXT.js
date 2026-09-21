@@ -105,6 +105,8 @@ export const PLAYER_TEXT = {
       savedSetsAria: "Saved weapon sets",
       categorySummary: "{count} weapons · A–Z",
       magazineAndReload: "MAG {ammo} · {seconds}S RELOAD",
+      directHitDamage: "DMG {damage}",
+      directHitDamageTitle: "{damage} damage per direct hit",
       magazine: "MAG {ammo}",
       noReload: "NO RELOAD",
       emptySlot: "Empty slot",
