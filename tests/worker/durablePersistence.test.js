@@ -4,6 +4,42 @@ import { describe, expect, it } from "vitest";
 import { ARENA_SPAWN_POINTS, DEFAULT_LOADOUT, structuralPartBounds, structuralTowerBlueprints, WEAPONS } from "../../src/gameData.js";
 
 describe("MatchRoom durable authority", () => {
+  it("awards a dead shooter one point for an in-flight kill", async () => {
+    const stub = env.MATCH_ROOMS.getByName("POSTHUMOUS-KILL");
+    await runInDurableObject(stub, async (room) => {
+      await room.ready;
+      room.meta = { seed: "AUTHORITY", phase: "playing", ended: false, endsAt: Date.now() + 60_000, targetScore: 10, arenaRevision: 2 };
+      const attacker = {
+        id: "shooter", bot: true, alive: true, health: 100, score: 0, deaths: 0,
+        loadout: ["rocket_launcher"], ammo: { rocket_launcher: 5 }, lastFireAt: {}, reloadEndsAt: {},
+        position: { x: 0, y: 0, z: 0 }
+      };
+      const target = { ...attacker, id: "target", health: 1, position: { x: 8, y: 0, z: 0 } };
+      room.bots.set(attacker.id, attacker);
+      room.bots.set(target.id, target);
+      const socket = { deserializeAttachment: () => ({ id: attacker.id }) };
+      const broadcasts = [];
+      room.broadcast = (message) => broadcasts.push(message);
+      const fire = { playerId: attacker.id, weaponId: "rocket_launcher", slotIndex: 0, shotId: crypto.randomUUID(), direction: { x: 1, y: 0, z: 0 } };
+      await room.handleFire(socket, fire);
+      expect(room.recentFires.get(attacker.id)).toHaveLength(1);
+      attacker.alive = false;
+      attacker.health = 0;
+      await room.handleFire(socket, { ...fire, shotId: crypto.randomUUID() });
+      expect(room.recentFires.get(attacker.id)).toHaveLength(1);
+      const hit = { attackerId: attacker.id, targetId: target.id, weaponId: fire.weaponId, shotId: fire.shotId, impact: { x: 8, y: 1.05, z: 0 } };
+      await room.handleHit(socket, { ...hit, shotId: crypto.randomUUID() });
+      expect(target.alive).toBe(true);
+      await room.handleHit(socket, hit);
+      expect(target.alive).toBe(false);
+      expect(attacker.score).toBe(1);
+      expect(broadcasts.at(-1)).toMatchObject({ type: "damage", killed: true, scores: { shooter: 1 } });
+      await room.handleHit(socket, hit);
+      expect(attacker.score).toBe(1);
+      if (room.persistenceTask) await room.persistenceTask;
+    });
+  });
+
   it("keeps legacy arenas isolated until all active and reserved identities drain", async () => {
     const stub = env.MATCH_ROOMS.getByName("ARENA-BRIDGE");
     await runInDurableObject(stub, async (room) => {

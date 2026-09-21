@@ -174,7 +174,7 @@ export function validateImpactProposal({ shot, weapon, impact, now = Date.now() 
 }
 
 export function validateHitProposal({ shot, attacker, target, weapon, impact, phase = "impact", now = Date.now(), seed = "", structuralHealth = new Map(), arenaRevision = 2, structuralFailures }) {
-  if (!shot || !attacker?.alive || !target?.alive || !(weapon?.damage > 0) || shot.playerId !== attacker.id || shot.weaponId !== weapon.id) return null;
+  if (!shot || !attacker || !target?.alive || !(weapon?.damage > 0) || shot.playerId !== attacker.id || shot.weaponId !== weapon.id) return null;
   const ageMs = now - shot.firedAt;
   if (ageMs < 0 || ageMs > shotLifetimeMs(weapon)) return null;
   const origin = shot.origin;

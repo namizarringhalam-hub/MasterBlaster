@@ -893,7 +893,8 @@ export class MatchRoom extends DurableObject {
   async handleHit(socket, message) {
     const attackerEntry = this.authorizedActor(socket, message.attackerId);
     const weapon = WEAPONS[message.weaponId];
-    if (!playerCanAct(attackerEntry?.player) || !weapon) return;
+    // Already-authorized shots can land after their shooter dies.
+    if (!attackerEntry || !weapon) return;
     const attacker = attackerEntry.player;
     if (!attacker.loadout.includes(weapon.id)) return;
     const now = Date.now();
