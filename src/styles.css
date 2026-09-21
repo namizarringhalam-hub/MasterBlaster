@@ -790,7 +790,7 @@ summary:focus-visible { outline: 2px solid #52e9ff; outline-offset: 4px; }
 .picker-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .picker-heading h3 { margin: 0; font: 800 22px/1.1 "Barlow Condensed", sans-serif; text-transform: uppercase; }
 .picker-heading button { min-height: 40px; padding: 7px 18px; }
-.weapon-filters { scrollbar-width: thin; scrollbar-color: #294a62 transparent; display: flex; gap: 6px; overflow-x: auto; margin-top: 12px; padding-bottom: 5px; }
+.weapon-filters { scrollbar-width: thin; scrollbar-color: #294a62 transparent; display: flex; gap: 6px; overflow-x: auto; margin: 6px -6px 0; padding: 6px; }
 .weapon-filters button { flex: 0 0 auto; min-height: 40px; padding: 8px 12px; color: #92adbe; background: transparent; border-color: #294052; font-size: 11px; }
 .weapon-filters button[aria-pressed="true"] { color: #dffaff; border-color: #52e9ff; background: #123040; }
 .weapon-picker .weapon-choice em { display: none; }
