@@ -1,4 +1,5 @@
 const IMMUTABLE_CACHE = "blaster-immutable-v1";
+const SHELL_CACHE = "blaster-shell-v1";
 const inFlight = new Map();
 
 function isImmutable(request) {
@@ -32,18 +33,42 @@ async function loadAsset(request) {
   return { response: await fetch(request), cache };
 }
 
-self.addEventListener("install", () => self.skipWaiting());
+async function loadShell(request) {
+  const key = new Request(`${self.location.origin}/`);
+  try {
+    const response = await fetch(request);
+    if (response.ok && /text\/html/i.test(response.headers.get("content-type") || "")) {
+      try { await (await caches.open(SHELL_CACHE)).put(key, response.clone()); } catch {}
+    }
+    return response;
+  } catch (error) {
+    const cached = await (await caches.open(SHELL_CACHE)).match(key);
+    if (cached) return cached;
+    throw error;
+  }
+}
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(loadShell(new Request(`${self.location.origin}/`)).catch(() => {}));
+  self.skipWaiting();
+});
 
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     await Promise.all((await caches.keys())
-      .filter((key) => key.startsWith("blaster-") && key !== IMMUTABLE_CACHE)
+      .filter((key) => key.startsWith("blaster-") && key !== IMMUTABLE_CACHE && key !== SHELL_CACHE)
       .map((key) => caches.delete(key)));
     await self.clients.claim();
   })());
 });
 
 self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
+  if (event.request.method === "GET" && event.request.mode === "navigate" &&
+      url.origin === self.location.origin && ["/", "/index.html"].includes(url.pathname)) {
+    event.respondWith(loadShell(event.request));
+    return;
+  }
   if (!isImmutable(event.request)) return;
   const mode = ["reload", "no-cache"].includes(event.request.cache) ? event.request.cache : "reuse";
   const key = `${mode}:${event.request.url}`;

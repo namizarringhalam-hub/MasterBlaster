@@ -188,7 +188,7 @@ assert.match(mainSource, /pointercancel", cancel/, "cancelled action touches can
 assert.match(serviceWorkerSource, /pathname\.startsWith\("\/assets\/"\)/, "content-hashed engine assets use the local immutable cache");
 assert.match(serviceWorkerSource, /pathname\.startsWith\("\/audio\/"\).*searchParams\.has\("bank"\)/s, "only versioned audio enters the immutable cache");
 assert.match(serviceWorkerSource, /cache\.match\(request\)[\s\S]*if \(cached && isAssetResponse\(request, cached\)\) return \{ response: cached \}/, "repeat sessions read validated immutable assets without revalidation");
-assert.doesNotMatch(serviceWorkerSource, /index\.html|navigate\(/, "HTML and navigation requests stay network-managed so new releases cannot go stale");
+assert.match(serviceWorkerSource, /async function loadShell[\s\S]*?await fetch\(request\)[\s\S]*?catch \(error\)[\s\S]*?match\(key\)/, "navigation fetches current releases first and uses the cached shell only offline");
 assert.match(serviceWorkerSource, /clients\.claim/, "the cache takes control without forcing a disruptive refresh");
 
 const documentedWeaponIds = [

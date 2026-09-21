@@ -1278,7 +1278,7 @@ class BlasterBattle {
   }
 
   isOnlineMatch() {
-    return this.mode !== "training" && Boolean(this.multiplayer);
+    return ["private", "global"].includes(this.mode) && Boolean(this.multiplayer);
   }
 
   controlsNetworkPlayer(player) {
@@ -1448,7 +1448,7 @@ class BlasterBattle {
     if (!welcomeOverride) this.freshSessionReady = false;
     this.clearMatch(Boolean(welcomeOverride));
     let welcome = welcomeOverride;
-    if (this.mode !== "training" && !welcome) {
+    if (["private", "global"].includes(this.mode) && !welcome) {
       this.setMatchLoading(true, this.seed, false);
       try {
         welcome = await this.connectOnlineMatch();
@@ -2026,6 +2026,7 @@ class BlasterBattle {
   }
 
   update(dt, realDt = dt) {
+    if (this.paused) return;
     if (this.awaitingAudioGesture) {
       this.updateAudio(dt);
       this.updateHud();

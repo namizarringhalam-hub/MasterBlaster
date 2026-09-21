@@ -15,7 +15,7 @@ const cache = {
   }
 };
 vm.runInNewContext(source, {
-  URL, Map,
+  URL, Map, Request,
   self: { location: { origin: "https://game.test" }, addEventListener: (name, fn) => { handlers[name] = fn; } },
   caches: { async open() { if (failOpen) throw new Error("Storage disabled"); return cache; } },
   async fetch() {
@@ -67,3 +67,19 @@ for (const [path, options] of [["/", {}], ["/api/health", {}], ["/assets/game-ab
   assert.equal(request(path, options).response, undefined, `${path} ${JSON.stringify(options)} stays outside the immutable cache`);
 }
 console.log("Asset cache deduplication, warm reuse, repair, and storage-failure checks passed.");
+
+function navigate() {
+  let response;
+  handlers.fetch({ request: { url: "https://game.test/", method: "GET", mode: "navigate" }, respondWith: (p) => { response = p; } });
+  return response;
+}
+html = true;
+assert.match(await (await navigate()).text(), /<html>/);
+offline = true;
+assert.match(await (await navigate()).text(), /<html>/, "cached navigation supports offline launch and rematches");
+offline = false;
+html = false;
+await navigate();
+offline = true;
+assert.match(await (await navigate()).text(), /<html>/, "non-HTML responses never replace the offline page");
+console.log("Offline shell fallback and online navigation refresh passed.");

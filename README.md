@@ -30,6 +30,12 @@ npm.cmd run dev:multiplayer
 
 Touch controls appear automatically on phones and tablets.
 
+Quick Play and Training simulate the entire match on your device, including bots,
+combat and the timer. Pausing freezes all gameplay. Load the game and its assets
+online once before playing offline; cached files support subsequent launches and
+rematches when browser storage is available. Private and Global Multiplayer need
+a live connection.
+
 ## Included
 
 - Three.js WebGPU rendering with a WebGL 2 fallback
@@ -38,7 +44,8 @@ Touch controls appear automatically on phones and tablets.
 - 47 functionally categorized weapons and five-weapon loadouts
 - Deathmatch scoring, respawns, results, and rematch
 - Cloudflare Durable Object multiplayer rooms with server-owned health, ammunition, scoring, respawns, and match timing
-- Online Quick Play and private room codes with server-managed bot fill; offline adaptive-bot Training
+- Offline Quick Play and Training with local bots, full pause, and no live server connection during matches
+- Online private room codes with server-managed bot fill
 - Global Multiplayer: live online-player list, favorite players on this browser, discoverable public rounds, and host-controlled bots
 - Local accessibility/content preferences and installable PWA shell
 

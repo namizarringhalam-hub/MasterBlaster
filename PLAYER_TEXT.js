@@ -26,7 +26,7 @@ export const PLAYER_TEXT = {
     highlightsAria: "Game highlights",
     highlights: "GRAPPLE ANY SURFACE · DESTRUCTIBLE TOWERS · UP TO 16 FIGHTERS · ZERO INSTALL",
     buttons: {
-      quick: { label: "QUICK PLAY", description: "Eight-player chaos in seconds" },
+      quick: { label: "QUICK PLAY", description: "Instant offline battles against bots" },
       private: { label: "PRIVATE ROOM", description: "Bring friends. Break everything." },
       global: { label: "GLOBAL MULTIPLAYER", description: "Find open rounds. See who’s online." },
       training: { label: "TRAINING", description: "Test 47 weapons on up to 15 bots" },
@@ -85,7 +85,7 @@ export const PLAYER_TEXT = {
     matchSummary: "{bots} bots · {difficulty} · {minutes} min",
     modes: {
       global: { tag: "GLOBAL", title: "Global Multiplayer", description: "Find open rounds and play together." },
-      quick: { tag: "QUICK", title: "Quick Play", description: "Join an online regional room, filled with AI combatants until more players arrive." },
+      quick: { tag: "QUICK", title: "Quick Play", description: "Battle up to fifteen bots locally. No live connection needed; pausing freezes the entire match." },
       private: { tag: "PRIVATE", title: "Private Room", description: "Create or join an online room by sharing its short room code." },
       training: { tag: "TRAINING", title: "Training", description: "Choose up to fifteen bots and master movement, trajectories, recoil, and grappling." }
     },
@@ -155,7 +155,7 @@ export const PLAYER_TEXT = {
       clearConfirm: "Clear {name}? This cannot be undone.",
       presetCleared: "{name} cleared."
     },
-    onlineNote: "Guest session · Quick Play and Private Room use the live multiplayer fleet · Training remains offline"
+    onlineNote: "Guest session · Quick Play and Training run offline · Private Room and Global Multiplayer require a connection"
   },
 
   privateLobby: {
@@ -222,7 +222,7 @@ export const PLAYER_TEXT = {
     connectionTitle: "The arena link dropped.",
     connectionDescription: "Return to the menu and start a new match.",
     returnToMenu: "RETURN TO MENU",
-    onlineService: "ONLINE SERVICE: {message} Training remains available offline.",
+    onlineService: "ONLINE SERVICE: {message} Quick Play and Training remain available offline.",
     matchmakingUnavailable: "Matchmaking unavailable ({status})",
     invalidRoomCode: "Enter a valid room code.",
     roomTimeout: "The multiplayer room did not respond in time.",
@@ -325,7 +325,7 @@ export const PLAYER_TEXT = {
   defaults: {
     displayName: "Rookie",
     presetName: "Set {number}",
-    quickBotName: "Region Bot {number}",
+    quickBotName: "Arena Bot {number}",
     botName: "Atlas Bot {number}"
   },
 
