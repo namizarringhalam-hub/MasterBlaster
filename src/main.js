@@ -521,6 +521,7 @@ class BlasterBattle {
       return this.globalMultiplayer.open();
     }
     this.mode = mode;
+    this.activeLoadoutSlot = null;
     const savedDefault = activePresetLoadout(this.settings);
     if (savedDefault) this.settings.loadout = [...savedDefault];
     if (mode === "quick" && !savedDefault) this.settings.loadout = randomLoadout();
@@ -535,13 +536,18 @@ class BlasterBattle {
       <main class="screen menu-scene setup-scene" data-menu-scene="${mode}" data-menu-quality="${this.settings.graphics}" style="--menu-energy:.28;--menu-accent:${MENU_ACCENTS[mode]}">
         ${menuAtmosphereMarkup(mode)}
         <section class="dialog setup-dialog">
-          <header><button class="back" data-screen="main">${TEXT.setup.back}</button><p>${modeText.tag}</p></header>
+          <header><button class="back" data-screen="main">${TEXT.setup.back}</button></header>
           <h1>${modeText.title}</h1>
           <p class="dialog-lead">${modeText.description}</p>
           <button class="launch primary" data-action="start">${TEXT.setup.start}</button>
-          <div class="setup-form">
+          <div class="setup-identity">
             <label>${TEXT.setup.labels.displayName}<input id="display-name" maxlength="18" value="${escapeHtml(this.settings.displayName)}"></label>
-            <label>${mode === "private" ? TEXT.setup.labels.roomCode : TEXT.setup.labels.mapSeed}<input id="map-seed" maxlength="12" value="${escapeHtml(this.seed)}"></label>
+            ${mode === "private" ? `<label>${TEXT.setup.labels.roomCode}<input id="map-seed" maxlength="12" value="${escapeHtml(this.seed)}"></label>` : ""}
+          </div>
+          <details class="setup-options">
+            <summary><span>${TEXT.setup.editSettings}</span><span data-match-summary>${this.matchSummary()}</span></summary>
+            <div class="setup-form">
+            ${mode !== "private" ? `<label>${TEXT.setup.labels.mapSeed}<input id="map-seed" maxlength="12" value="${escapeHtml(this.seed)}"></label>` : ""}
             <label>${TEXT.setup.labels.botDifficulty}
               <select id="bot-difficulty">
                 ${["rookie", "normal", "veteran"].map((level) => `<option value="${level}" ${this.botDifficulty === level ? "selected" : ""}>${TEXT.setup.difficulties[level]}</option>`).join("")}
@@ -551,15 +557,8 @@ class BlasterBattle {
             <label>${TEXT.setup.labels.timeLimit}<input id="time-limit" type="number" min="1" max="30" step="1" value="${this.timeLimitMinutes}"></label>
           </div>
           ${this.trainingControlsMarkup()}
-          <section class="loadout-builder">
-            <div><h2>${TEXT.setup.loadout.title}</h2><span data-loadout-count>${formatText(TEXT.setup.loadout.selected, { count: this.settings.loadout.length })}</span></div>
-            <p class="loadout-help">${TEXT.setup.loadout.help}</p>
-            <div class="loadout-order" data-loadout-order>${this.loadoutOrderMarkup()}</div>
-            <div class="preset-heading"><h3>${TEXT.setup.loadout.savedSets}</h3><span>${TEXT.setup.loadout.savedSetsDescription}</span></div>
-            <section class="loadout-presets" aria-label="${TEXT.setup.loadout.savedSetsAria}" data-loadout-presets>${this.loadoutPresetsMarkup()}</section>
-            <p class="loadout-status" data-loadout-status aria-live="polite"></p>
-            <div class="weapon-categories">${this.weaponCategoriesMarkup()}</div>
-          </section>
+          </details>
+          ${this.loadoutEditorMarkup()}
           <p class="prototype-note">${TEXT.setup.onlineNote}</p>
         </section>
       </main>`;
@@ -631,7 +630,7 @@ class BlasterBattle {
         ${group.ids.map((id) => {
           const weapon = WEAPONS[id];
           const slot = loadout.indexOf(id);
-          return `<button class="weapon-choice ${slot >= 0 ? "selected" : ""}" data-weapon-choice="${id}" data-weapon="${id}" data-category="${group.id}" data-shape="${weapon.type}" data-slot="${slot >= 0 ? slot + 1 : ""}" style="--weapon:#${weapon.color.toString(16).padStart(6, "0")};--category:${group.color};${weaponPreviewVariables(weapon, WEAPON_INDEX_BY_ID[id])}">
+          return `<button class="weapon-choice ${slot >= 0 ? "selected" : ""}" aria-pressed="${slot >= 0}" data-weapon-choice="${id}" data-weapon="${id}" data-category="${group.id}" data-shape="${weapon.type}" data-slot="${slot >= 0 ? slot + 1 : ""}" style="--weapon:#${weapon.color.toString(16).padStart(6, "0")};--category:${group.color};${weaponPreviewVariables(weapon, WEAPON_INDEX_BY_ID[id])}">
             <i></i><span class="weapon-preview" aria-hidden="true"></span>
             <b>${weapon.name}</b><em>${group.name}</em><small>${weapon.description}</small><span class="weapon-capacity"><span title="${formatText(TEXT.setup.loadout.directHitDamageTitle, { damage: weapon.damage })}">${formatText(TEXT.setup.loadout.directHitDamage, { damage: weapon.damage })}</span> · ${weaponUsesAmmo(weapon) ? formatText(TEXT.setup.loadout.magazineAndReload, { ammo: weapon.ammo, seconds: weapon.reload.toFixed(1) }) : TEXT.setup.loadout.noReload}</span>
           </button>`;
@@ -640,22 +639,111 @@ class BlasterBattle {
     </section>`).join("");
   }
 
+  matchSummary() {
+    const base = formatText(TEXT.setup.matchSummary, { bots: this.settings.botCount, difficulty: TEXT.setup.difficulties[this.botDifficulty], minutes: this.timeLimitMinutes });
+    const training = this.settings.matchSettings.training;
+    return base + (this.mode === "training" ? ` · ${TEXT.trainingControls.botsStandStill}: ${training.botsStandStill ? TEXT.trainingControls.on : TEXT.trainingControls.off} · ${TEXT.trainingControls.botsDontAttack}: ${training.botsDontAttack ? TEXT.trainingControls.on : TEXT.trainingControls.off}` : "");
+  }
+
+  menuLoadout() {
+    return this.mode === "global" && this.state === "lobby" ? this.globalMultiplayer.slots : this.settings.loadout;
+  }
+
+  presetOptionsMarkup() {
+    const loadout = this.menuLoadout();
+    const matched = this.settings.loadoutPresets.findIndex(preset => preset && preset.weaponIds.every((id, index) => id === loadout[index]));
+    return `<option value="" disabled ${matched < 0 ? "selected" : ""}>${TEXT.setup.loadout.custom}</option>` + this.settings.loadoutPresets.map((preset, index) => preset ? `<option value="${index}" ${matched === index ? "selected" : ""}>${escapeHtml(preset.name)}${this.settings.defaultLoadoutPreset === index ? ` · ${TEXT.setup.loadout.defaultActive}` : ""}</option>` : "").join("");
+  }
+
+  loadoutEditorMarkup(global = false) {
+    const loadout = global ? this.globalMultiplayer.slots : this.settings.loadout;
+    return `<section class="loadout-builder">
+      <div class="loadout-heading"><h2>${global ? TEXT.globalLobby.weapons : TEXT.setup.loadout.title}</h2><span ${global ? "data-global-selected" : "data-loadout-count"}>${formatText(TEXT.setup.loadout.selected, { count: loadout.filter(Boolean).length })}</span></div>
+      <div class="preset-toolbar"><label>${TEXT.setup.loadout.preset}<select data-preset-select>${this.presetOptionsMarkup()}</select></label></div>
+      <details class="preset-manager"><summary>${TEXT.setup.loadout.manageSets}</summary>
+        <p class="loadout-help">${TEXT.setup.loadout.savedSetsDescription}</p>
+        <section class="loadout-presets" aria-label="${TEXT.setup.loadout.savedSetsAria}" data-loadout-presets>${this.loadoutPresetsMarkup()}</section>
+      </details>
+      <p class="loadout-help">${TEXT.setup.loadout.help}</p>
+      <details class="loadout-instructions"><summary>${TEXT.setup.loadout.controlsHelp}</summary><p>${TEXT.setup.loadout.detailedHelp}</p></details>
+      <div class="loadout-order" ${global ? "data-global-slots" : "data-loadout-order"}>${this.loadoutOrderMarkup(loadout)}</div>
+      ${global ? `<p class="global-loadout-note">${TEXT.globalLobby.randomHelp}</p><p class="loadout-status" data-global-save role="status"></p><div class="global-room-start" data-global-start></div>` : ""}
+      <p class="loadout-status" data-loadout-status aria-live="polite"></p>
+      <section class="weapon-picker" data-weapon-picker hidden aria-label="${TEXT.setup.loadout.picker}">
+        <div class="picker-heading"><h3 data-picker-title></h3><button data-picker-close>${TEXT.setup.loadout.done}</button></div>
+        <label>${TEXT.setup.loadout.search}<input type="search" data-weapon-search></label>
+        <div class="weapon-filters" role="group" aria-label="${TEXT.setup.loadout.categories}">${WEAPON_GROUPS.map((group,index) => `<button data-weapon-filter="${group.id}" aria-pressed="${index === 0}">${group.name}</button>`).join("")}</div>
+        <p data-weapon-empty hidden role="status">${TEXT.setup.loadout.noResults}</p>
+        <div class="weapon-categories">${this.weaponCategoriesMarkup(loadout)}</div>
+      </section>
+    </section>`;
+  }
+
   loadoutOrderMarkup(loadout = this.settings.loadout) {
     return Array.from({ length: 5 }, (_, index) => {
-      const id = loadout[index];
-      const weapon = WEAPONS[id];
-      if (!weapon) return `<div class="loadout-slot empty"><span>${index + 1}</span><small>${TEXT.setup.loadout.emptySlot}</small></div>`;
-      const color = `#${weapon.color.toString(16).padStart(6, "0")}`;
-      const category = WEAPON_CATEGORY_BY_ID[id];
-      return `<div class="loadout-slot" draggable="true" data-loadout-drag="${index}" style="--weapon:${color};--category:${category.color}">
-        <span>${index + 1}</span><b>${escapeHtml(weapon.name)}</b><small>${category.name} · ${weaponUsesAmmo(weapon) ? formatText(TEXT.setup.loadout.magazine, { ammo: weapon.ammo }) : TEXT.setup.loadout.noReload}</small>
-        <div>
-          <button data-loadout-move="${index}" data-direction="-1" aria-label="${formatText(TEXT.setup.loadout.moveLeftAria, { weapon: escapeHtml(weapon.name) })}" ${index === 0 ? "disabled" : ""}>‹</button>
-          <button data-loadout-move="${index}" data-direction="1" aria-label="${formatText(TEXT.setup.loadout.moveRightAria, { weapon: escapeHtml(weapon.name) })}" ${index === loadout.length - 1 ? "disabled" : ""}>›</button>
-          <button data-loadout-remove="${index}" aria-label="${formatText(TEXT.setup.loadout.removeAria, { weapon: escapeHtml(weapon.name) })}">×</button>
+      const weapon = WEAPONS[loadout[index]];
+      const name = weapon?.name || (this.mode === "global" ? TEXT.globalLobby.emptySlot : TEXT.setup.loadout.emptySlot);
+      const active = index === this.activeLoadoutSlot;
+      return `<div class="loadout-slot ${weapon ? "" : "empty"} ${active ? "active" : ""}" draggable="${Boolean(weapon)}" data-loadout-drag="${index}" style="--category:${weapon ? WEAPON_CATEGORY_BY_ID[weapon.id].color : "#617b8d"}">
+        <button class="slot-select" data-loadout-edit="${index}" aria-expanded="${active}" aria-label="${formatText(TEXT.setup.loadout.editSlot, { slot: index + 1, weapon: escapeHtml(name) })}"><span>${index + 1}</span><b>${escapeHtml(name)}</b></button>
+        <div class="slot-actions" ${active && weapon ? "" : "hidden"}>
+          <button data-loadout-move="${index}" data-direction="-1" aria-label="${formatText(TEXT.setup.loadout.moveLeftAria, { weapon: escapeHtml(name) })}" ${index === 0 ? "disabled" : ""}>‹</button>
+          <button data-loadout-move="${index}" data-direction="1" aria-label="${formatText(TEXT.setup.loadout.moveRightAria, { weapon: escapeHtml(name) })}" ${index >= loadout.length - 1 ? "disabled" : ""}>›</button>
+          <button data-loadout-remove="${index}" aria-label="${formatText(TEXT.setup.loadout.removeAria, { weapon: escapeHtml(name) })}">×</button>
         </div>
       </div>`;
     }).join("");
+  }
+
+  editLoadoutSlot(index) {
+    this.activeLoadoutSlot = Math.min(index, this.menuLoadout().length);
+    const picker = ui.querySelector("[data-weapon-picker]");
+    picker.hidden = false;
+    const weapon = this.menuLoadout()[this.activeLoadoutSlot];
+    this.weaponFilter = weapon ? WEAPON_CATEGORY_BY_ID[weapon].id : WEAPON_GROUPS[0].id;
+    ui.querySelector("[data-weapon-search]").value = "";
+    this.updateLoadoutUi();
+    this.filterWeaponPicker();
+    ui.querySelector("[data-weapon-search]").focus({ preventScroll: true });
+    picker.scrollIntoView({ block: "nearest" });
+  }
+
+  closeWeaponPicker() {
+    const index = this.activeLoadoutSlot;
+    this.activeLoadoutSlot = null;
+    ui.querySelector("[data-weapon-picker]").hidden = true;
+    this.updateLoadoutUi(`[data-loadout-edit="${index}"]`);
+  }
+
+  filterWeaponPicker() {
+    const query = ui.querySelector("[data-weapon-search]").value.trim().toLowerCase();
+    let count = 0;
+    for (const group of ui.querySelectorAll("[data-weapon-category]")) {
+      let matches = 0;
+      for (const button of group.querySelectorAll("[data-weapon-choice]")) {
+        const weapon = WEAPONS[button.dataset.weaponChoice];
+        button.hidden = !(query ? `${weapon.name} ${weapon.description} ${weapon.category}`.toLowerCase().includes(query) : group.dataset.weaponCategory === this.weaponFilter);
+        if (!button.hidden) matches++;
+      }
+      group.hidden = matches === 0;
+      group.querySelector("header > span").textContent = formatText(query ? TEXT.setup.loadout.searchSummary : TEXT.setup.loadout.categorySummary, { count: matches });
+      count += matches;
+    }
+    for (const button of ui.querySelectorAll("[data-weapon-filter]")) button.setAttribute("aria-pressed", String(!query && button.dataset.weaponFilter === this.weaponFilter));
+    ui.querySelector("[data-weapon-empty]").hidden = count > 0;
+  }
+
+  equipLoadoutSlot(id) {
+    if (!WEAPONS[id] || !Number.isInteger(this.activeLoadoutSlot)) return;
+    const current = this.menuLoadout();
+    const slot = Math.min(this.activeLoadoutSlot, current.length);
+    const previous = current.indexOf(id);
+    if (previous >= 0) [current[previous], current[slot]] = [current[slot] || null, id];
+    else current[slot] = id;
+    if (this.mode === "global" && this.state === "lobby") this.globalMultiplayer.sendSlots();
+    else { this.settings.loadout = current.filter(Boolean); saveSettings(this.settings); }
+    this.closeWeaponPicker();
+    this.announceLoadout(formatText(TEXT.setup.loadout.added, { weapon: WEAPONS[id].name, slot: slot + 1 }));
   }
 
   loadoutPresetsMarkup() {
@@ -673,7 +761,7 @@ class BlasterBattle {
         <div class="preset-summary">${summary}</div>
         <footer>
           <button data-preset-load="${index}" ${preset ? "" : "disabled"} aria-label="${formatText(TEXT.setup.loadout.loadAria, { name: label })}">${TEXT.setup.loadout.load}</button>
-          <button data-preset-save="${index}" ${this.settings.loadout.length === 5 ? "" : "disabled"} aria-label="${formatText(TEXT.setup.loadout.saveAria, { name: label })}">${TEXT.setup.loadout.saveCurrent}</button>
+          <button data-preset-save="${index}" ${this.menuLoadout().filter(Boolean).length === 5 ? "" : "disabled"} aria-label="${formatText(TEXT.setup.loadout.saveAria, { name: label })}">${TEXT.setup.loadout.saveCurrent}</button>
           <button data-preset-clear="${index}" ${preset ? "" : "disabled"} aria-label="${formatText(TEXT.setup.loadout.clearAria, { name: label })}">${TEXT.setup.loadout.clear}</button>
         </footer>
       </article>`;
@@ -785,6 +873,14 @@ class BlasterBattle {
           : button.dataset.mode ? .48 : .38;
       this.pulseMenuEnergy(menuLevel, this.menuAccent(button), button.dataset.action === "start" ? 2400 : 2300);
       if (this.state !== "play") this.sound.accentMenuAction(menuLevel, button.dataset.action === "start");
+      if (button.dataset.loadoutEdit !== undefined) return this.editLoadoutSlot(Number(button.dataset.loadoutEdit));
+      if (button.hasAttribute("data-picker-close")) return this.closeWeaponPicker();
+      if (button.dataset.weaponFilter) {
+        this.weaponFilter = button.dataset.weaponFilter;
+        ui.querySelector("[data-weapon-search]").value = "";
+        return this.filterWeaponPicker();
+      }
+      if (button.dataset.weaponChoice && Number.isInteger(this.activeLoadoutSlot)) return this.equipLoadoutSlot(button.dataset.weaponChoice);
       if (this.globalMultiplayer?.handleClick(button)) return;
       if (button.dataset.screen === "main") {
         this.renderMain();
@@ -809,6 +905,8 @@ class BlasterBattle {
         button.setAttribute("aria-pressed", String(enabled));
         button.classList.toggle("primary", enabled);
         button.querySelector("[data-toggle-state]").textContent = enabled ? TEXT.trainingControls.on : TEXT.trainingControls.off;
+        const summary = ui.querySelector("[data-match-summary]");
+        if (summary) summary.textContent = this.matchSummary();
         return;
       }
       if (button.dataset.action === "copy-room") {
@@ -843,10 +941,15 @@ class BlasterBattle {
       if (button.dataset.action === "rematch") return this.queueRematch();
       if (button.dataset.action === "save-settings") return this.saveSettingsForm();
     };
+    ui.onkeydown = (event) => {
+      if (event.key === "Escape" && Number.isInteger(this.activeLoadoutSlot) && ui.querySelector("[data-weapon-picker]")) { event.preventDefault(); this.closeWeaponPicker(); }
+    };
     ui.onchange = (event) => {
+      if (event.target.hasAttribute("data-preset-select")) { if (event.target.value !== "") this.loadPreset(Number(event.target.value)); return; }
+      if (event.target.dataset.presetName) { this.renamePreset(Number(event.target.dataset.presetName), event.target.value); return; }
       if (this.globalMultiplayer?.handleChange(event)) return;
-      if (event.target.dataset.presetName) this.renamePreset(Number(event.target.dataset.presetName), event.target.value);
       if (event.target.closest?.(".setup-form")) this.captureSetupPreferences();
+      if (event.target.id === "map-seed" && event.target.closest(".setup-identity")) this.captureSetupPreferences();
       if (event.target.closest?.(".setup-form")) {
         const difficulty = { rookie: .34, normal: .43, veteran: .56 }[this.botDifficulty] || .4;
         const energy = Math.min(.68, difficulty + this.settings.botCount / 75);
@@ -856,6 +959,7 @@ class BlasterBattle {
       if (event.target.closest?.(".settings-grid")) this.captureSettingsPreferences();
     };
     ui.oninput = (event) => {
+      if (event.target.hasAttribute("data-weapon-search")) return this.filterWeaponPicker();
       if (event.target.id === "display-name") {
         this.settings.displayName = event.target.value.trim().slice(0, 18) || TEXT.defaults.displayName;
         saveSettings(this.settings);
@@ -917,6 +1021,7 @@ class BlasterBattle {
     const name = WEAPONS[this.settings.loadout[index]].name;
     [this.settings.loadout[index], this.settings.loadout[next]] = [this.settings.loadout[next], this.settings.loadout[index]];
     saveSettings(this.settings);
+    this.activeLoadoutSlot = next;
     const focusDirection = next + direction >= 0 && next + direction < this.settings.loadout.length ? direction : -direction;
     this.updateLoadoutUi(`[data-loadout-move="${next}"][data-direction="${focusDirection}"]`);
     this.announceLoadout(formatText(TEXT.setup.loadout.moved, { weapon: name, slot: next + 1 }));
@@ -926,6 +1031,7 @@ class BlasterBattle {
     if (from === to || !this.settings.loadout[from] || !this.settings.loadout[to]) return;
     const [weapon] = this.settings.loadout.splice(from, 1);
     this.settings.loadout.splice(to, 0, weapon);
+    if (Number.isInteger(this.activeLoadoutSlot)) this.activeLoadoutSlot = to;
     saveSettings(this.settings);
     this.updateLoadoutUi();
     this.announceLoadout(formatText(TEXT.setup.loadout.moved, { weapon: WEAPONS[weapon].name, slot: to + 1 }));
@@ -935,7 +1041,8 @@ class BlasterBattle {
     if (index < 0 || index >= this.settings.loadout.length) return;
     const [weapon] = this.settings.loadout.splice(index, 1);
     saveSettings(this.settings);
-    this.updateLoadoutUi(`[data-weapon-choice="${weapon}"]`);
+    this.activeLoadoutSlot = this.settings.loadout.length;
+    this.updateLoadoutUi(`[data-loadout-edit="${this.activeLoadoutSlot}"]`);
     this.announceLoadout(formatText(TEXT.setup.loadout.removed, { weapon: WEAPONS[weapon].name }));
   }
 
@@ -943,19 +1050,21 @@ class BlasterBattle {
     const preset = this.settings.loadoutPresets[index];
     if (!preset) return;
     this.settings.loadout = [...preset.weaponIds];
+    if (this.mode === "global" && this.state === "lobby") { this.globalMultiplayer.slots = [...preset.weaponIds]; this.globalMultiplayer.sendSlots(); }
     saveSettings(this.settings);
     this.updateLoadoutUi(`[data-preset-load="${index}"]`);
     this.announceLoadout(formatText(TEXT.setup.loadout.presetLoaded, { name: preset.name }));
   }
 
   savePreset(index) {
-    if (index < 0 || index >= LOADOUT_PRESET_COUNT || this.settings.loadout.length !== 5) return;
+    const loadout = this.menuLoadout();
+    if (index < 0 || index >= LOADOUT_PRESET_COUNT || loadout.filter(Boolean).length !== 5) return;
     const name = ui.querySelector(`[data-preset-name="${index}"]`)?.value.trim().slice(0, 18) || formatText(TEXT.defaults.presetName, { number: index + 1 });
     const existing = this.settings.loadoutPresets[index];
-    const unchanged = existing?.name === name && existing.weaponIds.every((id, slot) => id === this.settings.loadout[slot]);
+    const unchanged = existing?.name === name && existing.weaponIds.every((id, slot) => id === loadout[slot]);
     if (existing && !unchanged && !globalThis.confirm(formatText(TEXT.setup.loadout.replaceConfirm, { name: existing.name }))) return;
     const firstPreset = !this.settings.loadoutPresets.some(Boolean);
-    this.settings.loadoutPresets[index] = { name, weaponIds: [...this.settings.loadout] };
+    this.settings.loadoutPresets[index] = { name, weaponIds: [...loadout] };
     if (firstPreset) this.settings.defaultLoadoutPreset = index;
     saveSettings(this.settings);
     this.updateLoadoutUi(`[data-preset-save="${index}"]`);
@@ -978,6 +1087,7 @@ class BlasterBattle {
     article?.querySelector("[data-preset-default]")?.setAttribute("aria-label", this.settings.defaultLoadoutPreset === index
       ? formatText(TEXT.setup.loadout.removeDefaultAria, { name: label })
       : formatText(TEXT.setup.loadout.makeDefaultAria, { name: label }));
+    ui.querySelector("[data-preset-select]").innerHTML = this.presetOptionsMarkup();
     this.announceLoadout(formatText(TEXT.setup.loadout.renamed, { name: preset.name }));
   }
 
@@ -987,6 +1097,7 @@ class BlasterBattle {
     else {
       this.settings.defaultLoadoutPreset = index;
       this.settings.loadout = [...this.settings.loadoutPresets[index].weaponIds];
+      if (this.mode === "global" && this.state === "lobby") { this.globalMultiplayer.slots = [...this.settings.loadout]; this.globalMultiplayer.sendSlots(); }
     }
     saveSettings(this.settings);
     this.updateLoadoutUi(`[data-preset-default="${index}"]`);
@@ -1007,9 +1118,16 @@ class BlasterBattle {
   }
 
   updateLoadoutUi(focusSelector = "") {
+    const loadout = this.menuLoadout();
+    if (this.mode === "global" && this.state === "lobby") this.globalMultiplayer.updateSlots();
+    const pickerTitle = ui.querySelector("[data-picker-title]");
+    if (pickerTitle) pickerTitle.textContent = formatText(TEXT.setup.loadout.pickSlot, { slot: (this.activeLoadoutSlot ?? 0) + 1 });
+    const selector = ui.querySelector("[data-preset-select]");
+    if (selector) selector.innerHTML = this.presetOptionsMarkup();
     for (const button of ui.querySelectorAll("[data-weapon-choice]")) {
-      const index = this.settings.loadout.indexOf(button.dataset.weaponChoice);
+      const index = loadout.indexOf(button.dataset.weaponChoice);
       button.classList.toggle("selected", index >= 0);
+      button.setAttribute("aria-pressed", String(index >= 0));
       button.dataset.slot = index >= 0 ? index + 1 : "";
     }
     const order = ui.querySelector("[data-loadout-order]");
@@ -1058,6 +1176,8 @@ class BlasterBattle {
       timeLimitMinutes: this.timeLimitMinutes
     };
     saveSettings(this.settings);
+    const summary = ui.querySelector("[data-match-summary]");
+    if (summary) summary.textContent = this.matchSummary();
   }
 
   captureSettingsPreferences() {

@@ -305,9 +305,9 @@ assert.ok(!WEAPON_GROUPS.some((group) => group.id === "prototype" || group.name 
 assert.ok(WEAPON_GROUPS.every((group) => group.ids.every((id) => WEAPONS[id].category === group.name)), "menu groups and weapon category metadata agree");
 assert.ok(WEAPON_GROUPS.every((group) => /^#[0-9a-f]{6}$/i.test(group.color)), "every weapon category has a stable menu color");
 assert.ok(WEAPON_GROUPS.every((group) => group.ids.map((id) => WEAPONS[id].name).every((name, index, names) => !index || names[index - 1].localeCompare(name) <= 0)), "weapons are alphabetized inside every category");
-assert.match(mainSource, /weapon-categories[\s\S]*?weaponCategoriesMarkup\(\)[\s\S]*?WEAPON_GROUPS\.map/, "Quick Play, Private Room, and Training share the categorized weapon selector");
-assert.match(mainSource, /<small>\$\{weapon\.description\}<\/small><span class="weapon-capacity">\$\{weaponUsesAmmo/, "weapon cards place capacity metadata after their description for bottom alignment");
-assert.match(stylesSource, /\.weapon-choice \.weapon-capacity \{ position: absolute; right: 10px; bottom: 9px;[\s\S]*?font-size: 8px;[\s\S]*?text-align: right/, "weapon capacity is a readable bottom-right classification-style label");
+assert.match(mainSource, /loadoutEditorMarkup\(\)[\s\S]*?weaponCategoriesMarkup\(loadout\)/, "Quick Play, Private Room, and Training share the categorized weapon selector");
+assert.match(mainSource, /<small>\$\{weapon\.description\}<\/small><span class="weapon-capacity">[\s\S]*?\$\{weaponUsesAmmo/, "weapon cards place capacity metadata after their description for bottom alignment");
+assert.match(stylesSource, /\.weapon-choice \.weapon-capacity \{ position: absolute;[\s\S]*?right: 10px; bottom: 9px;[\s\S]*?font-size: 8px;[\s\S]*?text-align: right/, "weapon capacity is a readable bottom-right classification-style label");
 assert.match(mainSource, /weaponUsesAmmo\(player\.weapon\) && fireHeld && player\.ammo\[player\.weapon\.id\] <= 0/, "holding fire automatically begins a reload only for weapons with magazines");
 assert.match(mainSource, /new MultiplayerClient\(\)[\s\S]*?mode: this\.mode[\s\S]*?roomCode: this\.seed/, "online match modes connect through the multiplayer room client");
 assert.ok(Object.values(WEAPONS).every((weapon) => weapon.name && weapon.description && weapon.category), "every weapon has complete menu metadata");

@@ -77,7 +77,7 @@ export class GlobalMultiplayer {
     this.game.sound.setPaused(false);
     this.game.sound.setMusicScene("menu");
     this.game.sound.startMusic("menu", this.game.seed);
-    this.ui.innerHTML = this.shell(`<header><button class="back" data-screen="main">${TEXT.setup.back}</button><p>${copy.section}</p></header><h1>${copy.title}</h1><p class="dialog-lead">${copy.description}</p><div class="global-toolbar"><label>${TEXT.setup.labels.displayName}<input id="display-name" maxlength="18" value="${esc(this.game.settings.displayName)}"></label><button class="primary" data-global="create">${copy.create}</button></div><p class="loadout-status" data-global-status role="status"></p><div class="global-columns"><section><div class="lobby-heading"><h2>${copy.open}</h2><span data-global-room-count></span></div><div data-global-rooms></div></section><aside><div class="lobby-heading"><h2>${copy.online}</h2><span data-global-player-count></span></div><p class="global-help">${copy.favoritesNote}</p><div data-global-players></div></aside></div>`);
+    this.ui.innerHTML = this.shell(`<header><button class="back" data-screen="main">${TEXT.setup.back}</button></header><h1>${copy.title}</h1><p class="dialog-lead">${copy.description}</p><div class="global-toolbar"><label>${TEXT.setup.labels.displayName}<input id="display-name" maxlength="18" value="${esc(this.game.settings.displayName)}"></label><button class="primary" data-global="create">${copy.create}</button></div><p class="loadout-status" data-global-status role="status"></p><div class="global-columns"><section><div class="lobby-heading"><h2>${copy.open}</h2><span data-global-room-count></span></div><div data-global-rooms></div></section><aside><div class="lobby-heading"><h2>${copy.online}</h2><span data-global-player-count></span></div><p class="global-help">${copy.favoritesNote}</p><div data-global-players></div></aside></div>`);
     this.game.bindUi();
     this.updateLobby();
   }
@@ -104,7 +104,7 @@ export class GlobalMultiplayer {
 
   renderCreate() {
     this.game.state = "global-create";
-    this.ui.innerHTML = this.shell(`<header><button class="back" data-global="back">${copy.back}</button><p>${copy.section}</p></header><h1>${copy.create}</h1><p class="dialog-lead">${copy.createDescription}</p><div class="setup-form global-create-form"><label>${copy.roomName}<input id="global-name" maxlength="18" value="${esc(formatText(copy.defaultName, { name: this.game.settings.displayName }).slice(0, 18))}"></label><label>${copy.capacity}<select id="global-capacity">${[2,3,4,6,8,12,16].map((n) => `<option ${n === 4 ? "selected" : ""}>${n}</option>`).join("")}</select></label><label>${copy.bots}<input id="global-bots" type="number" min="0" max="12" step="1" value="2"></label><label>${TEXT.setup.labels.timeLimit}<input id="global-minutes" type="number" min="1" max="30" step="1" value="3"></label><label>${TEXT.setup.labels.botDifficulty}<select id="global-difficulty">${["rookie", "normal", "veteran"].map((level) => `<option value="${level}" ${level === "normal" ? "selected" : ""}>${TEXT.setup.difficulties[level]}</option>`).join("")}</select></label></div><p class="global-help">${copy.capacityHint}</p><p data-global-status class="loadout-status" role="status"></p><button class="launch primary" data-global="open">${copy.create}</button>`);
+    this.ui.innerHTML = this.shell(`<header><button class="back" data-global="back">${copy.back}</button></header><h1>${copy.create}</h1><p class="dialog-lead">${copy.createDescription}</p><div class="setup-form global-create-form"><label>${copy.roomName}<input id="global-name" maxlength="18" value="${esc(formatText(copy.defaultName, { name: this.game.settings.displayName }).slice(0, 18))}"></label><label>${copy.capacity}<select id="global-capacity">${[2,3,4,6,8,12,16].map((n) => `<option ${n === 4 ? "selected" : ""}>${n}</option>`).join("")}</select></label></div><details class="setup-options"><summary>${TEXT.setup.editSettings}<span data-global-create-summary>${formatText(TEXT.setup.matchSummary, { bots: 2, difficulty: TEXT.setup.difficulties.normal, minutes: 3 })}</span></summary><div class="setup-form global-create-form"><label>${copy.bots}<input id="global-bots" type="number" min="0" max="12" step="1" value="2"></label><label>${TEXT.setup.labels.timeLimit}<input id="global-minutes" type="number" min="1" max="30" step="1" value="3"></label><label>${TEXT.setup.labels.botDifficulty}<select id="global-difficulty">${["rookie", "normal", "veteran"].map((level) => `<option value="${level}" ${level === "normal" ? "selected" : ""}>${TEXT.setup.difficulties[level]}</option>`).join("")}</select></label></div><p class="global-help">${copy.capacityHint}</p></details><p data-global-status class="loadout-status" role="status"></p><button class="launch primary" data-global="open">${copy.create}</button>`);
     this.game.bindUi();
   }
 
@@ -148,13 +148,15 @@ export class GlobalMultiplayer {
     if (message.type === "welcome" && local?.pendingLoadout) this.slots = [...local.pendingLoadout];
     const lobby = game.privateLobby, host = lobby.hostId === game.multiplayer?.playerId, countdown = lobby.phase === "countdown";
     if (!this.ui.querySelector("[data-global-waiting]")) {
-      this.ui.innerHTML = this.shell(`<div data-global-waiting><header><button class="back" data-global="leave">${copy.back}</button><p>${copy.section}</p></header><h1>${esc(lobby.roomName)}</h1><p class="dialog-lead" data-global-room-heading></p><div data-global-countdown role="status"></div><div class="lobby-heading"><h2>${TEXT.privateLobby.roster}</h2><span data-global-round-count></span></div><div class="lobby-roster global-roster" data-global-roster></div><div class="global-room-settings" data-global-room-settings></div><section class="loadout-builder"><div><h2>${copy.weapons}</h2><span data-global-selected></span></div><p class="global-help">${copy.slotHelp}</p><div class="loadout-order" data-global-slots></div><p class="global-loadout-note">${copy.randomHelp}</p><p class="loadout-status" data-global-save role="status"></p><div class="global-room-start" data-global-start></div><div class="weapon-categories">${game.weaponCategoriesMarkup(this.slots)}</div></section></div>`);
+      game.activeLoadoutSlot = null;
+      this.ui.innerHTML = this.shell(`<div data-global-waiting><header><button class="back" data-global="leave">${copy.back}</button></header><h1>${esc(lobby.roomName)}</h1><p class="dialog-lead" data-global-room-heading></p><div data-global-countdown role="status"></div><div class="lobby-heading"><h2>${TEXT.privateLobby.roster}</h2><span data-global-round-count></span></div><div class="lobby-roster global-roster" data-global-roster></div><details class="setup-options"><summary>${TEXT.setup.editSettings}<span data-global-rules></span></summary><div class="global-room-settings" data-global-room-settings></div></details>${game.loadoutEditorMarkup(true)}</div>`);
       game.bindUi();
     }
     this.ui.querySelector("[data-global-room-heading]").textContent = countdown ? copy.joinsClosed : host ? copy.waitingRoom : formatText(copy.hosted, { name: lobby.players.find((p) => p.id === lobby.hostId)?.name || "" });
     const humans = lobby.players.filter((p) => !p.bot).sort((a, b) => Number(b.id === lobby.hostId) - Number(a.id === lobby.hostId) || a.name.localeCompare(b.name));
     this.ui.querySelector("[data-global-round-count]").textContent = formatText(copy.players, { count: humans.length, capacity: lobby.humanCapacity, bots: lobby.configuredBotCount });
     this.ui.querySelector("[data-global-roster]").innerHTML = humans.map((p) => `<div><i style="--fighter:#${Number(p.accent || 0x52e9ff).toString(16).padStart(6,"0")}"></i><b>${esc(p.name)}</b><span>${p.id === lobby.hostId ? copy.host : ""}${p.id === game.multiplayer.playerId ? ` · ${copy.you}` : ""}</span></div>`).join("") + Array.from({ length: Math.max(0, lobby.humanCapacity - humans.length) }, () => `<div class="global-open-slot"><i></i><b>${countdown ? copy.closedSpot : copy.openSpot}</b></div>`).join("");
+    this.ui.querySelector("[data-global-rules]").textContent = formatText(TEXT.setup.matchSummary, { bots: lobby.configuredBotCount, difficulty: TEXT.setup.difficulties[lobby.difficulty] || lobby.difficulty, minutes: lobby.timeLimitMinutes });
     this.ui.querySelector("[data-global-room-settings]").innerHTML = `<p class="global-help">${copy.capacityHint}</p><label>${copy.bots}${host ? `<select data-global-bots ${countdown ? "disabled" : ""}>${Array.from({ length: 17 - lobby.humanCapacity }, (_, n) => `<option ${n === lobby.configuredBotCount ? "selected" : ""}>${n}</option>`).join("")}</select>` : `: ${lobby.configuredBotCount}`}</label>`;
     this.ui.querySelector("[data-global-start]").innerHTML = `<p>${countdown ? copy.countdownHelp : !host ? copy.waitHost : humans.length < 2 ? copy.waitPlayer : copy.ready}</p>${host ? `<button class="primary" data-global="${countdown ? "cancel" : "start"}" ${humans.length < 2 || !game.multiplayer?.connected ? "disabled" : ""}>${countdown ? copy.cancel : copy.start}</button>` : ""}`;
     this.updateSlots();
@@ -176,7 +178,17 @@ export class GlobalMultiplayer {
   updateSlots() {
     const order = this.ui.querySelector("[data-global-slots]");
     if (!order) return;
+    for (const button of this.ui.querySelectorAll("[data-preset-save]")) button.disabled = this.slots.filter(Boolean).length !== 5;
+    const focused = document.activeElement;
+    const focusedSlot = focused?.closest?.("[data-loadout-drag]");
+    const focusAttribute = ["data-loadout-edit", "data-loadout-move", "data-loadout-remove"].find(name => focused?.hasAttribute?.(name));
+    const focusSelector = focusedSlot && focusAttribute ? `[${focusAttribute}="${focused.getAttribute(focusAttribute)}"]${focused.hasAttribute("data-direction") ? `[data-direction="${focused.dataset.direction}"]` : ""}` : "";
+    const selector = this.ui.querySelector("[data-preset-select]");
+    if (selector) selector.innerHTML = this.game.presetOptionsMarkup();
+    const title = this.ui.querySelector("[data-picker-title]");
+    if (title) title.textContent = formatText(TEXT.setup.loadout.pickSlot, { slot: (this.game.activeLoadoutSlot ?? 0) + 1 });
     order.innerHTML = this.game.loadoutOrderMarkup(this.slots).replaceAll(TEXT.setup.loadout.emptySlot, copy.emptySlot);
+    if (focusSelector) this.ui.querySelector(!this.slots[Number(focusedSlot.dataset.loadoutDrag)] ? `[data-loadout-edit="${focusedSlot.dataset.loadoutDrag}"]` : focusSelector)?.focus({ preventScroll: true });
     this.ui.querySelector("[data-global-selected]").textContent = formatText(copy.selected, { count: this.slots.filter(Boolean).length });
     for (const button of this.ui.querySelectorAll("[data-weapon-choice]")) {
       const index = this.slots.indexOf(button.dataset.weaponChoice);
@@ -228,7 +240,9 @@ export class GlobalMultiplayer {
   moveSlot(from, to) {
     if (![from, to].every((index) => Number.isInteger(index) && index >= 0 && index < 5)) return;
     [this.slots[from], this.slots[to]] = [this.slots[to], this.slots[from]];
+    if (Number.isInteger(this.game.activeLoadoutSlot)) this.game.activeLoadoutSlot = to;
     this.sendSlots();
+    this.ui.querySelector(`[data-loadout-edit="${to}"]`)?.focus?.({ preventScroll: true });
   }
 
   handleChange(event) {
@@ -244,6 +258,8 @@ export class GlobalMultiplayer {
       bots.max = String(16 - Number(event.target.value));
       bots.value = String(Math.min(Number(bots.value), Number(bots.max)));
     }
+    const summary = this.ui.querySelector("[data-global-create-summary]");
+    if (summary) summary.textContent = formatText(TEXT.setup.matchSummary, { bots: this.ui.querySelector("#global-bots").value, difficulty: TEXT.setup.difficulties[this.ui.querySelector("#global-difficulty").value], minutes: this.ui.querySelector("#global-minutes").value });
     if (event.target.hasAttribute("data-global-bots")) this.game.multiplayer?.send("lobby_settings", { botCount: Number(event.target.value) });
     return ["global", "global-create", "lobby"].includes(this.game.state);
   }
