@@ -125,6 +125,7 @@ import { withSurfaceBurstRuntime } from "./surfaceBurstReview.js";
 import { withStructuralDustReview } from "./structuralDustReview.js";
 document.querySelector("#view").add(new Option("lower-body-oblique", "lower-body-oblique"));
 document.querySelector("#view").add(new Option("thrusters-low", "thrusters-low"));
+document.querySelector("#view").add(new Option("skyline", "skyline"));
 for (const view of ["waist-front", "waist-profile", "waist-low-front", "waist-low-rear"]) document.querySelector("#view").add(new Option(view, view));
 for (const view of ["chest-front", "chest-oblique", "chest-profile"]) document.querySelector("#view").add(new Option(view, view));
 for (const pose of ["hip-hard-peak", "hip-hard-recovery"]) document.querySelector("#pose").add(new Option(pose, pose));
@@ -716,6 +717,7 @@ function setView() {
   if (view === "rope-corner") hero.position.set(-12, 18.6, 0);
   hero.rig.visible = true;
   const poses = { arena: [[70, 47, 98], [0, 25, 0]], grazing: [[3, 1.8, 65], [0, 4, -40]],
+    skyline: [[0, 74, 0], [150, 92, -130]],
     "helmet-three-quarter": [[1.2, 17.35, 6.4], [0, 17.19, 7.85]], "helmet-profile": [[2, 17.24, 8.15], [0, 17.19, 7.95]],
     fighter: [[3.7, 17.1, 3.3], [0, 16.35, 8]],
     "chest-front": [[0, 16.59, 5.4], [0, 16.54, 8]],

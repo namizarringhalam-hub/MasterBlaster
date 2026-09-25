@@ -817,7 +817,10 @@ export class ArenaWorld {
         radius: (this.size + 44) / Math.max(Math.abs(Math.cos(angle)), Math.abs(Math.sin(angle))) + layer * 18 + random() * 10,
         width: 6 + random() * 10 + (district === 2 ? 5 : 0),
         depth: 6 + random() * 9,
-        height: 58 + random() * (layer === 0 ? 92 : 65) + (index % 13 === 0 ? 42 : 0)
+        // Group the skyline into neighbourhood peaks, with occasional landmarks
+        // rising above quieter blocks instead of an equally noisy sawtooth.
+        height: 48 + random() * 35 + Math.pow(.5 + .5 * Math.sin(angle * 4 + .7), 3) * 65
+          + layer * 8 + (index % 13 === 0 ? 45 : 0)
       });
     }
 
@@ -852,12 +855,17 @@ export class ArenaWorld {
       }
     ];
     const marker = new THREE.Object3D();
-    const windowUV = vec2(positionWorld.x.add(positionWorld.z), positionWorld.y).mul(vec2(1.35, 1.6));
+    const windowUV = vec2(positionWorld.x.add(positionWorld.z), positionWorld.y).mul(vec2(.55, .6));
     const cell = windowUV.floor(), f = windowUV.fract();
     const occupied = sin(cell.dot(vec2(127.1, 311.7))).mul(43758.5453).fract();
-    const windows = smoothstep(.12, .22, f.x).mul(smoothstep(.65, .75, f.x).oneMinus())
-      .mul(smoothstep(.12, .22, f.y)).mul(smoothstep(.7, .8, f.y).oneMinus())
-      .mul(smoothstep(.48, .56, occupied)).mul(normalWorldGeometry.y.abs().oneMinus());
+    const offices = smoothstep(.42, .62, hazeNoise(windowUV.mul(vec2(.18, .11))));
+    const aa = windowUV.fwidth().mul(.7).clamp(.02, .3);
+    const windows = smoothstep(aa.x.negate().add(.2), aa.x.add(.2), f.x)
+      .mul(smoothstep(aa.x.negate().add(.7), aa.x.add(.7), f.x).oneMinus())
+      .mul(smoothstep(aa.y.negate().add(.2), aa.y.add(.2), f.y))
+      .mul(smoothstep(aa.y.negate().add(.76), aa.y.add(.76), f.y).oneMinus())
+      .mul(smoothstep(.45, .6, occupied)).mul(offices).mul(normalWorldGeometry.y.abs().oneMinus());
+    const roomLight = mix(color(0x90bed1), color(0xf6cf91), smoothstep(.5, .85, occupied));
     families.forEach((family, district) => {
       const entries = specs.filter((spec) => spec.district === district);
       const base = new THREE.InstancedMesh(
@@ -865,7 +873,7 @@ export class ArenaWorld {
         new THREE.MeshStandardNodeMaterial({ ...surfaceMaps(), color: 0xffffff, vertexColors: true, roughness: .86, metalness: .2 }),
         entries.length
       );
-      base.material.emissiveNode = mix(color(0x9ac8db), color(this.districtColors[district]), smoothstep(.78, .94, occupied)).mul(windows.mul(.9));
+      base.material.emissiveNode = mix(roomLight, color(this.districtColors[district]), .15).mul(windows.mul(.52));
       const crowns = new THREE.InstancedMesh(
         family.crown,
         new THREE.MeshStandardMaterial({ ...surfaceMaps(), color: 0xffffff, vertexColors: true, roughness: .66, metalness: .42, emissive: 0x02070c, emissiveIntensity: .22 }),
@@ -916,7 +924,7 @@ export class ArenaWorld {
         color: 0xffffff,
         vertexColors: true,
         transparent: true,
-        opacity: .28,
+        opacity: .18,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
         toneMapped: false
@@ -2953,7 +2961,7 @@ export class ArenaWorld {
       pulser.object.scale.setScalar(scale);
     }
     if (this.motes) this.motes.rotation.y += dt * .006;
-    if (this.skylineLights) this.skylineLights.material.opacity = .2 + Math.sin(this.time * .42) * .035;
+    if (this.skylineLights) this.skylineLights.material.opacity = .15 + Math.sin(this.time * .42) * .015;
     for (let index = this.temporaryWalls.length - 1; index >= 0; index--) {
       const wall = this.temporaryWalls[index];
       wall.life -= dt;
