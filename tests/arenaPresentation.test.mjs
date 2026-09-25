@@ -53,6 +53,10 @@ for (const level of ["high", "medium", "low", "high"]) {
   assert.equal(world.waterLightStrength.value, level === "low" ? .35 : level === "medium" ? .7 : 1);
 }
 assert.equal(world.ground.material.colorNode, world.waterLight);
+assert.equal(world.ground.material.clearcoatNode, world.wetMask, "puddles use an opaque dielectric coating on the existing surface");
+assert.equal(world.ground.material.transparent, false, "water cannot sort in front of fighters or through geometry");
+assert.equal(world.ground.material.metalness, 0, "water-covered concrete remains dielectric");
+assert.ok(world.platforms.every(item => item.mesh.material.clearcoatNormalNode === world.wetSurface.clearcoatNormalNode), "raised decks share the bounded ripple shader");
 assert.ok(world.platforms.every(item => item.mesh.material.colorNode === world.waterLight), "raised decks share world-space caustics");
 assert.equal(world.ground.material.emissiveIntensity, 0, "caustics receive lighting and shadows instead of emitting bloom");
 assert.equal(world.lightShafts.castShadow, false);

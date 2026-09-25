@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu";
-import { Fn, If, emissive, getNormalFromDepth, metalness, mrt, normalView, output, pass, roughness, screenUV, uniform, vec3, vec4 } from "three/tsl";
+import { Fn, If, clearcoat, clearcoatNormalView, clearcoatRoughness, emissive, getNormalFromDepth, metalness, mix, mrt, normalView, output, pass, roughness, screenUV, uniform, vec3, vec4 } from "three/tsl";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { ssr } from "three/addons/tsl/display/SSRNode.js";
@@ -7,12 +7,18 @@ import TEXT from "./playerText.js";
 
 // AO depth and normals must describe the same surface. Light overlays keep
 // their scene color, but cannot replace the normal of the solid beneath them.
-const aoNormal = Fn(([], builder) => vec4(normalView, builder.material.depthWrite ? 1 : 0));
+const aoNormal = Fn(([], builder) => vec4(builder.material.clearcoat !== undefined
+  ? mix(normalView, clearcoatNormalView, clearcoat).normalize() : normalView, builder.material.depthWrite ? 1 : 0));
 // Pack the finished material response alongside the beauty pass. Transparent
 // light/smoke overlays preserve the solid surface's reflection eligibility.
-const reflectionSurface = Fn(([], builder) => builder.material.metalness !== undefined
-  ? vec4(metalness.mul(roughness.oneMinus().pow(2)), roughness, 0, builder.material.depthWrite ? 1 : 0)
-  : vec4(0, 1, 0, builder.material.depthWrite ? 1 : 0));
+const reflectionSurface = Fn(([], builder) => {
+  const alpha = builder.material.depthWrite ? 1 : 0;
+  if (builder.material.metalness === undefined) return vec4(0, 1, 0, alpha);
+  const coated = builder.material.clearcoat !== undefined;
+  const surfaceRoughness = coated ? mix(roughness, clearcoatRoughness, clearcoat) : roughness;
+  const reflectivity = coated ? metalness.max(clearcoat.mul(.65)) : metalness;
+  return vec4(reflectivity.mul(surfaceRoughness.oneMinus().pow(2)), surfaceRoughness, 0, alpha);
+});
 // Only authored emission enters bloom. Bright diffuse surfaces and normal-blend
 // smoke still occlude it through the same depth/alpha as the beauty attachment.
 const bloomEmission = Fn(([], builder) => builder.material.emissive

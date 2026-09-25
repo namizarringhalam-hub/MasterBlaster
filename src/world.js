@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { abs, color, fog, fract, length, materialColor, materialOpacity, max, min, mix, normalViewGeometry, normalWorldGeometry, positionView, positionViewDirection, positionWorld, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
+import { abs, color, fog, fract, length, materialColor, materialOpacity, materialRoughness, max, min, mix, normalMap, normalViewGeometry, normalWorldGeometry, positionLocal, positionView, positionViewDirection, positionWorld, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
 import { ARENA_PORTAL_COOLDOWN_SECONDS, ARENA_PORTAL_PAIRS, ARENA_SPAWN_POINTS, MAP_THEMES, seededRandom, seedFromText, structuralTowerBlueprints } from "./gameData.js";
 import { surfaceTextures, surfaceMaps, projectSurfaceUVs } from "./surfaceTextures.js";
 
@@ -134,7 +134,7 @@ function platformSilhouetteGeometry(width, height, depth) {
 }
 
 function material(color, emissive = 0, opacity = 1, options = {}) {
-  const Material = options.emissiveNode || options.colorNode ? THREE.MeshStandardNodeMaterial : THREE.MeshStandardMaterial;
+  const Material = options.wetSurface ? THREE.MeshPhysicalNodeMaterial : options.emissiveNode || options.colorNode ? THREE.MeshStandardNodeMaterial : THREE.MeshStandardMaterial;
   const surface = new Material({
     color,
     roughness: options.roughness ?? .62,
@@ -155,6 +155,7 @@ function material(color, emissive = 0, opacity = 1, options = {}) {
   });
   if (options.emissiveNode) surface.emissiveNode = options.emissiveNode;
   if (options.colorNode) surface.colorNode = options.colorNode;
+  if (options.wetSurface) Object.assign(surface, options.wetSurface);
   return surface;
 }
 
@@ -374,6 +375,26 @@ export class ArenaWorld {
     const caustics = smoothstep(.035, .24, waves.abs()).oneMinus()
       .mul(normalWorldGeometry.y.max(0).pow(3)).mul(this.waterLightStrength);
     this.waterLight = materialColor.mul(vec3(1).add(vec3(.55, 1.05, 1.15).mul(caustics)));
+    const wetPosition = positionLocal.xz.mul(.095);
+    const pools = hazeNoise(wetPosition).mul(.75).add(hazeNoise(wetPosition.mul(3.1)).mul(.25));
+    // Surface-local masks move with lifts and stay fixed as the camera moves.
+    // Upward faces collect pools; vertical sides retain their dry material.
+    this.wetMask = smoothstep(.53, .66, pools).mul(smoothstep(.92, .99, normalWorldGeometry.y));
+    this.waterLight = this.waterLight.mul(mix(1, .62, this.wetMask));
+    const dropCell = positionLocal.xz.mul(.6);
+    const dropOffset = dropCell.fract().sub(.5);
+    const dropRadius = dropOffset.length();
+    const dropPhase = fract(this.atmosphereTime.mul(.55).add(hazeNoise(dropCell.floor()).mul(7)));
+    const ripple = sin(dropRadius.mul(48).sub(dropPhase.mul(24)))
+      .mul(dropRadius.sub(dropPhase.mul(.65)).abs().mul(-18).exp())
+      .mul(dropPhase.oneMinus()).mul(.035);
+    const rippleDirection = dropOffset.div(dropRadius.max(.02)).mul(ripple);
+    const wave = vec2(sin(positionLocal.x.mul(1.7).add(drift)), sin(positionLocal.z.mul(2.1).sub(drift))).mul(.006);
+    this.wetSurface = {
+      clearcoat: 1, clearcoatNode: this.wetMask, clearcoatRoughnessNode: mix(.22, .065, this.wetMask),
+      roughnessNode: materialRoughness.mul(mix(1, .72, this.wetMask)),
+      clearcoatNormalNode: normalMap(vec3(rippleDirection.add(wave).mul(.5).add(.5), 1))
+    };
     this.cameraRaycaster = new THREE.Raycaster();
     this.boostPads = [];
     this.movers = [];
@@ -484,7 +505,7 @@ export class ArenaWorld {
   build() {
     const random = seededRandom(seedFromText(this.seed));
     const structuralBlueprints = structuralTowerBlueprints(this.seed, random);
-    this.ground = box(this.size * 2, .5, this.size * 2, this.theme.ground, 0, -.28, 0, 0, { colorNode: this.waterLight });
+    this.ground = box(this.size * 2, .5, this.size * 2, this.theme.ground, 0, -.28, 0, 0, { colorNode: this.waterLight, wetSurface: this.wetSurface });
     this.ground.name = "Arena floor";
     this.ground.material.map = this.groundTexture;
     this.ground.material.normalMap = this.groundNormal;
@@ -1615,7 +1636,7 @@ export class ArenaWorld {
 
   addBox(x, z, w, d, h, color, destructible = false, anchor = false, baseY = 0) {
     const mesh = box(w, h, d, color, x, baseY + h / 2, z, 0,
-      destructible ? {} : { colorNode: this.waterLight });
+      destructible ? {} : { colorNode: this.waterLight, wetSurface: this.wetSurface });
     mesh.material.map = this.panelTexture;
     mesh.material.normalMap = this.panelNormal;
     mesh.material.normalScale.set(.42, .42);
