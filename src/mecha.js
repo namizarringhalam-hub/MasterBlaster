@@ -178,7 +178,9 @@ export function createMechaRig(fighter) {
     add(panel(.078,.158,.025),paint,0,.244,.039);
     add(panel(.049,.083,.015),frame,0,.254,.058);
   }));
-  const eyes=assembly(glow,"Mecha twin eye lenses",add=>{
+  const lens=new THREE.MeshPhysicalMaterial({...surfaceMaps("glass"),color:paint,emissive:light,emissiveIntensity:.7,
+    roughness:.18,metalness:0,clearcoat:1,clearcoatRoughness:.08,ior:1.5});
+  const eyes=assembly(lens,"Mecha twin eye lenses",add=>{
     for(const side of [-1,1])add(plate([[side*.024,.055],[side*.145,.066],[side*.12,.026],[side*.035,.019]],.008,.001),0xffffff,0,0,.182);
     add(new THREE.CylinderGeometry(.021,.021,.009,12),0xffffff,0,.253,.073,Math.PI/2);
   });fighter.visor=eyes;head.add(eyes);rig.add(head);

@@ -1181,8 +1181,8 @@ for (const all of [false, true]) {
 }
 
 for (const [seed, expected] of [
-  ["GRAPHICS-QA-structure", ["3fcaf9d84ec4401241287fef3d3288259e9493dd3171fc3d3bd7ccf8cec086ec", "39cdd4e5bbe8932bb96e6b805f99647f9c5723cf63edace962550765be1769f5", "2c41abb3a5ae6b9dc7230be392ef85426db453f65d008e6d32255b7b30ae66e4"]],
-  ["FOUNDRY111-ground", ["8464cd7f25660d46d3c91713d3f67e7a41d2a473a713646b75f8c02a6c5ec38b", "39cdd4e5bbe8932bb96e6b805f99647f9c5723cf63edace962550765be1769f5", "f10f355514250bf4724da5431b3d72f8e755612343c6c73d9735ce8cf18da9e7"]]
+  ["GRAPHICS-QA-structure", ["4f8f71412d9f7f669f2a21590622b78d079a92dc1cb0d5cd66949fba2dff3087", "abab1ce60fe4c9a15bb0c24d9867eadf450cb06be4667ccdb1503d4907119933", "ae0825c4de57e0fa46cb24a469c0cc2a34686fccf91e10373b4266ed1230674e"]],
+  ["FOUNDRY111-ground", ["0411c64c79af74e5318ec5fa0638170060476bb95009c7718d5932022aaf979a", "760c1dbc8d0d071e21239e66ebaaf09abfa6ab7ba136ee0d03bae9e6789696a1", "0d3e3dcdfdaddd5caa8fec4f6c8ecc410e023f66a861153aae6bb870e7f95a19"]]
 ]) {
   const maps = surfaceTextures(seed, 4);
   assert.deepEqual(maps.map(map => createHash("sha256").update(map.image.data).digest("hex")), expected, "matched albedo, normals and packed ORM stay deterministic");

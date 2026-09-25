@@ -1529,7 +1529,7 @@ export class ArenaWorld {
     const crossOffset = Math.min(platform.w, platform.d) * .26;
     const cables = new THREE.InstancedMesh(
       new THREE.CylinderGeometry(.075, .075, 1, 6),
-      material(0x101419, 0, 1, { roughness: .94, metalness: 0 }),
+      material(0x101419, 0, 1, { ...surfaceMaps("rubber"), roughness: .94, metalness: 0 }),
       3
     );
     const marker = new THREE.Object3D();

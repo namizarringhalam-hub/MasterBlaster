@@ -1,12 +1,24 @@
 import assert from "node:assert/strict";
 import * as THREE from "three/webgpu";
-import { surfaceMaps } from "../src/surfaceTextures.js";
+import { surfaceMaps, surfaceTextures } from "../src/surfaceTextures.js";
 import { ArenaWorld } from "../src/world.js";
 import { Fighter } from "../src/player.js";
 import { createProjectileVisual } from "../src/combatVisuals.js";
 import { WEAPONS } from "../src/gameData.js";
 
 let checked = 0;
+for (const finish of ["metal", "concrete", "rubber", "glass"]) {
+  const a = surfaceTextures("finish-qa", 1, true, finish), b = surfaceTextures("finish-qa", 1, true, finish);
+  for (let i = 0; i < 3; i++) assert.deepEqual(a[i].image.data, b[i].image.data, "finish generation is deterministic");
+  const orm = a[2].image.data;
+  if (finish !== "metal") for (let i = 2; i < orm.length; i += 4) assert.equal(orm[i], 0, `${finish} is dielectric`);
+  const roughness = Array.from({ length: orm.length / 4 }, (_, i) => orm[i * 4 + 1]);
+  assert.ok(Math.max(...roughness) > Math.min(...roughness), "finish contains roughness variation");
+  if (finish === "rubber") assert.ok(Math.min(...roughness) >= 220);
+  if (finish === "glass") assert.ok(Math.max(...roughness) < 180);
+  for (const texture of [...a, ...b]) texture.dispose();
+}
+assert.equal(surfaceMaps("rubber"), surfaceMaps("rubber"), "finish maps are shared across weapons and arenas");
 function check(root) {
   root.traverse(object => {
     for (const material of [object.material].flat().filter(Boolean)) {

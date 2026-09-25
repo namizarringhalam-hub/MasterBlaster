@@ -7,6 +7,17 @@ export function surfaceTextures(seed, repeat, machined = false, finish = "metal"
   const size = 256, tile = machined ? 128 : 64, fastenerInset = machined ? 20 : 6, seedValue = seedFromText(seed);
   const buffers = Array.from({ length: 3 }, () => new Uint8Array(size * size * 4));
   const hash = (x, y) => ((Math.imul(x + seedValue, 374761393) ^ Math.imul(y, 668265263)) >>> 0) % 251 / 251;
+  // Periodic smooth noise bakes broad grime into the existing maps. Keeping
+  // this on the CPU avoids more texture reads or procedural work per pixel.
+  const noise = (x, y, cells) => {
+    const px = x / size * cells, py = y / size * cells;
+    const ix = Math.floor(px), iy = Math.floor(py);
+    const fx = px - ix, fy = py - iy;
+    const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+    const sample = (dx, dy) => hash((ix + dx) % cells, (iy + dy) % cells);
+    return THREE.MathUtils.lerp(THREE.MathUtils.lerp(sample(0, 0), sample(1, 0), u),
+      THREE.MathUtils.lerp(sample(0, 1), sample(1, 1), u), v);
+  };
   const heights = new Float64Array(tile * tile);
   for (let y = 0; y < tile; y++) for (let x = 0; x < tile; x++) {
     const edge = Math.min(x, y, tile - 1 - x, tile - 1 - y);
@@ -35,17 +46,39 @@ export function surfaceTextures(seed, repeat, machined = false, finish = "metal"
     roughnessData[at + 1] = roughness;
     roughnessData[at + 2] = h < .4 ? 145 + h * 180 : 244 + grain;
     roughnessData[at + 3] = 255;
+    const stain = noise(x, y, 4) * .65 + noise(x, y, 16) * .35;
+    const grime = Math.max(0, stain - .35);
+    const edge = Math.min(x % tile, y % tile, tile - 1 - x % tile, tile - 1 - y % tile);
+    const wear = edge > 1 && edge < 5 && noise(x, y, 32) > .48 ? 1 : 0;
+    const scratch = hash(Math.floor(x / 24), y) > .985 && noise(x, y, 8) > .48 ? 1 : 0;
+    for (let channel = 0; channel < 3; channel++) diffuse[at + channel] = Math.min(255,
+      diffuse[at + channel] * (1 - grime * .24) + (wear * 23 + scratch * 17));
+    roughnessData[at] = Math.max(0, roughnessData[at] - grime * 35);
+    roughnessData[at + 1] = Math.min(255, Math.max(95, roughnessData[at + 1] + grime * 35 - wear * 48 - scratch * 40));
+    roughnessData[at + 2] = Math.max(0, roughnessData[at + 2] - grime * 95);
+    normals[at + 1] = Math.max(0, normals[at + 1] - scratch * 12);
     if (finish === "concrete") {
       // Baked aggregate and shallow expansion joints: no extra texture fetches.
-      const aggregate = hash(x, y), patch = hash(Math.floor(x / 16), Math.floor(y / 16));
+      const aggregate = hash(x, y), patch = stain;
       const joint = Math.min(x % tile, y % tile) < 1;
-      const value = joint ? 124 : 173 + patch * 12 + aggregate * 18;
+      const value = joint ? 124 : 177 + patch * 24 + aggregate * 12 - grime * 65;
       diffuse[at] = value; diffuse[at + 1] = value; diffuse[at + 2] = value - 3;
       normals[at] = 127 + (hash(x + 1, y) - aggregate) * 12;
       normals[at + 1] = 127 + (hash(x, y + 1) - aggregate) * 12;
       normals[at + 2] = 255;
       roughnessData[at] = joint ? 208 : 250;
-      roughnessData[at + 1] = 230 + aggregate * 24;
+      roughnessData[at + 1] = 218 + aggregate * 20 + patch * 16;
+      roughnessData[at + 2] = 0;
+    }
+    if (finish === "rubber" || finish === "glass") {
+      const glass = finish === "glass";
+      const value = glass ? 245 - grime * 10 : 185 + hash(x, y) * 22 - grime * 30;
+      diffuse[at] = diffuse[at + 1] = diffuse[at + 2] = value;
+      normals[at] = 128;
+      normals[at + 1] = glass ? 128 : 128 + Math.sin(y * Math.PI / 4) * 10;
+      normals[at + 2] = 255;
+      roughnessData[at] = 255 - grime * (glass ? 0 : 20);
+      roughnessData[at + 1] = glass ? 110 + grime * 65 : 225 + stain * 25;
       roughnessData[at + 2] = 0;
     }
   }
@@ -66,9 +99,13 @@ export function surfaceTextures(seed, repeat, machined = false, finish = "metal"
 
 // One immutable default set lives for the module lifetime, shared by fighters,
 // projectiles and small arena details. Arena-specific sets keep arena ownership.
-let sharedMaps;
+const sharedMaps = new Map();
 export function surfaceMaps(textures) {
-  if (!textures) return sharedMaps ??= surfaceMaps(surfaceTextures("machined-details", 1, true));
+  if (!textures || typeof textures === "string") {
+    const finish = textures || "metal";
+    if (!sharedMaps.has(finish)) sharedMaps.set(finish, surfaceMaps(surfaceTextures(`machined-${finish}`, 1, true, finish)));
+    return sharedMaps.get(finish);
+  }
   const [map, normalMap, orm] = textures;
   return { map, normalMap, roughnessMap: orm, metalnessMap: orm, aoMap: orm };
 }

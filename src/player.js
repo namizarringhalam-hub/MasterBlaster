@@ -501,6 +501,7 @@ export class Fighter {
     glow.color.multiplyScalar(.38);
     identity.color.multiplyScalar(.38);
     const dark = material(0x091424, this.accent, { emissiveIntensity: .03, roughness: .28, metalness: .76, clearcoat: .48 });
+    const rubber = material(0x17212b, 0, { ...surfaceMaps("rubber"), roughness: .96, metalness: 0, clearcoat: 0 });
     const presentation = weaponPresentation(weapon);
     this.weaponGrip.set(.05, -.2, .11);
     this.weaponSupportGrip.set(-.14, -.1, .32);
@@ -632,7 +633,7 @@ export class Fighter {
     }
     if (weapon.type === "melee") {
       const reachScale = Math.min(1.5, weapon.reach / 3.5);
-      const grip = part(new THREE.CylinderGeometry(.07, .085, .34, 8), dark, .06, -.01, .03);
+      const grip = part(new THREE.CylinderGeometry(.07, .085, .34, 8), rubber, .06, -.01, .03);
       grip.rotation.x = Math.PI / 2;
       this.weaponGroup.add(grip);
       if (weapon.id === "hammer") {
@@ -693,7 +694,7 @@ export class Fighter {
       const rim = part(new THREE.TorusGeometry(.43, .035, 4, 24), identity, .05, .11, .72, false);
       rim.rotation.x = Math.PI / 2;
       const hub = part(new THREE.OctahedronGeometry(.13, 0), identity, .05, .11, .72, false);
-      const grip = part(new THREE.BoxGeometry(.18, .22, .45), dark, .05, -.08, .48);
+      const grip = part(new THREE.BoxGeometry(.18, .22, .45), rubber, .05, -.08, .48);
       this.weaponGroup.add(bracer, blade, rim, hub, grip);
       this.weaponSpinner = blade;
       this.weaponMuzzleDistance = 1.18;
@@ -702,7 +703,7 @@ export class Fighter {
     }
     const heavy = ["rocket", "plasma", "grenade"].includes(weapon.type);
     const receiver = part(new THREE.BoxGeometry(heavy ? .34 : .27, .3, heavy ? .66 : .5), dark, .05, .02, .26);
-    const grip = part(new THREE.BoxGeometry(.18, .38, .2), dark, .05, -.2, .11);
+    const grip = part(new THREE.BoxGeometry(.18, .38, .2), rubber, .05, -.2, .11);
     grip.rotation.x = -.18;
     const ownerBand = part(new THREE.BoxGeometry(heavy ? .4 : .32, .07, .14), identity, .05, .12, .22, false);
     this.weaponGroup.add(receiver, grip, ownerBand);
