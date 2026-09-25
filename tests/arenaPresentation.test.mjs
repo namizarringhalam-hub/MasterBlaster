@@ -51,6 +51,7 @@ for (const level of ["high", "medium", "low", "high"]) {
   assert.equal(detail.visible, false, "hidden details do not chatter at the boundary");
   assert.equal(world.lightShafts.count, level === "low" ? 0 : level === "medium" ? 2 : 4);
   assert.equal(world.waterLightStrength.value, level === "low" ? .35 : level === "medium" ? .7 : 1);
+  assert.equal(world.atmosphere.steps.value, level === "low" ? 0 : level === "medium" ? 6 : 12, "cloud ray march is bounded by quality");
 }
 assert.equal(world.ground.material.colorNode, world.waterLight);
 assert.equal(world.ground.material.clearcoatNode, world.wetMask, "puddles use an opaque dielectric coating on the existing surface");
@@ -62,7 +63,9 @@ assert.equal(world.ground.material.emissiveIntensity, 0, "caustics receive light
 assert.equal(world.lightShafts.castShadow, false);
 world.time = 12;
 world.updatePresentation(camera, true); assert.equal(world.atmosphereTime.value, 0);
+assert.equal(world.atmosphere.clock.value, 0, "reduced motion freezes clouds, shadows and surface ripples together");
 world.updatePresentation(camera, false); assert.equal(world.atmosphereTime.value, 12);
+assert.equal(world.atmosphere.clock.value, 12);
 assert.equal(world.lightShafts.material.depthWrite, false);
 assert.deepEqual(world.obstacles.map(item => [item.x, item.z, item.w, item.h, item.d, item.baseY]), colliders);
 assert.deepEqual(world.cameraOccluders, occluders);

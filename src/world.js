@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { abs, color, fog, fract, length, materialColor, materialOpacity, materialRoughness, max, min, mix, normalMap, normalViewGeometry, normalWorldGeometry, positionLocal, positionView, positionViewDirection, positionWorld, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
+import { Fn, If, Loop, abs, cameraPosition, color, float, fog, fract, length, materialColor, materialOpacity, materialRoughness, max, min, mix, mx_noise_float, normalMap, normalViewGeometry, normalWorldGeometry, positionLocal, positionView, positionViewDirection, positionWorld, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
 import { ARENA_PORTAL_COOLDOWN_SECONDS, ARENA_PORTAL_PAIRS, ARENA_SPAWN_POINTS, MAP_THEMES, seededRandom, seedFromText, structuralTowerBlueprints } from "./gameData.js";
 import { surfaceTextures, surfaceMaps, projectSurfaceUVs } from "./surfaceTextures.js";
 
@@ -318,6 +318,15 @@ function hazeNoise(p) {
 
 function skyBackground(theme) {
   if (!skyBackgrounds.has(theme.id)) {
+    const clock = uniform(0), steps = uniform(12, "int");
+    const wind = vec3(clock.mul(.7), 0, clock.mul(.3));
+    const densityAt = point => {
+      const q = point.add(wind).mul(.006);
+      const shape = mx_noise_float(q).mul(.62).add(mx_noise_float(q.mul(2.07)).mul(.28))
+        .add(mx_noise_float(q.mul(4.13)).mul(.1)).mul(.5).add(.5);
+      return smoothstep(.46, .65, shape).mul(smoothstep(140, 159, point.y))
+        .mul(smoothstep(196, 220, point.y).oneMinus());
+    };
     const up = normalWorldGeometry.y.max(0);
     const direction = normalWorldGeometry;
     const p = direction.xz.div(up.add(.28)).mul(3);
@@ -326,8 +335,36 @@ function skyBackground(theme) {
     const cyan = direction.dot(vec3(-.55, .28, -.78).normalize()).max(0).pow(9);
     const pink = direction.dot(vec3(.8, .14, .55).normalize()).max(0).pow(15);
     const cityGlow = color(0x125d85).mul(cyan.mul(.55)).add(color(0x642550).mul(pink.mul(.3)));
-    skyBackgrounds.set(theme.id, mix(color(0x02050c), color(0x081627), ceiling)
-      .add(cityGlow.mul(ceiling.mul(.7).add(.15))).add(color(0x0b2335).mul(up.mul(-5).exp().mul(.35))));
+    const distantSky = mix(color(0x02050c), color(0x081627), ceiling)
+      .add(cityGlow.mul(ceiling.mul(.7).add(.15))).add(color(0x0b2335).mul(up.mul(-5).exp().mul(.35)));
+    const sky = Fn(() => {
+      const transmittance = float(1).toVar(), scattered = vec3(0).toVar();
+      If(steps.greaterThan(0).and(direction.y.greaterThan(.06)), () => {
+        const start = float(140).sub(cameraPosition.y).max(0).div(up.max(.025));
+        const stride = float(220).sub(cameraPosition.y.max(140)).max(0).div(up.max(.025)).div(float(steps));
+        Loop({ start: 0, end: steps, type: "int", condition: "<" }, ({ i }) => {
+          const point = cameraPosition.add(direction.mul(start.add(float(i).add(.5).mul(stride)))).toVar();
+          const density = densityAt(point).toVar();
+          const extinction = density.mul(stride).mul(-.038).exp();
+          const lit = densityAt(point.add(vec3(-11, 20, 9))).mul(-2.5).exp();
+          const scattering = mix(color(0x173049), color(0x8dacc3), lit).mul(.18)
+            .add(cityGlow.mul(.14));
+          scattered.addAssign(scattering.mul(extinction.oneMinus()).mul(transmittance));
+          transmittance.mulAssign(extinction);
+        });
+      });
+      return mix(distantSky, distantSky.mul(transmittance).add(scattered), smoothstep(.06, .3, up));
+    })();
+    const shadow = Fn(() => {
+      const amount = float(1).toVar();
+      If(steps.greaterThan(0), () => {
+        const elevation = float(176).sub(positionWorld.y).max(0);
+        const point = positionWorld.add(vec3(elevation.mul(-.55), elevation, elevation.mul(.45)));
+        amount.assign(densityAt(point).mul(-.16).add(1));
+      });
+      return amount;
+    })();
+    skyBackgrounds.set(theme.id, { sky, shadow, clock, steps });
   }
   return skyBackgrounds.get(theme.id);
 }
@@ -343,7 +380,8 @@ export class ArenaWorld {
     this.previousFog = scene.fog;
     this.previousFogNode = scene.fogNode;
     scene.background = new THREE.Color(this.theme.haze).multiplyScalar(.32);
-    scene.backgroundNode = skyBackground(this.theme);
+    this.atmosphere = skyBackground(this.theme);
+    scene.backgroundNode = this.atmosphere.sky;
     scene.fog = new THREE.FogExp2(new THREE.Color(this.theme.haze).multiplyScalar(.32), .0044);
     this.size = 112;
     this.height = 78;
@@ -380,7 +418,7 @@ export class ArenaWorld {
     // Surface-local masks move with lifts and stay fixed as the camera moves.
     // Upward faces collect pools; vertical sides retain their dry material.
     this.wetMask = smoothstep(.53, .66, pools).mul(smoothstep(.92, .99, normalWorldGeometry.y));
-    this.waterLight = this.waterLight.mul(mix(1, .62, this.wetMask));
+    this.waterLight = this.waterLight.mul(mix(1, .62, this.wetMask)).mul(this.atmosphere.shadow);
     const dropCell = positionLocal.xz.mul(.6);
     const dropOffset = dropCell.fract().sub(.5);
     const dropRadius = dropOffset.length();
@@ -477,6 +515,7 @@ export class ArenaWorld {
     }
     this.motes?.geometry.setDrawRange(0, profile.atmosphereCount);
     this.waterLightStrength.value = profile.level === "low" ? .35 : profile.level === "medium" ? .7 : 1;
+    this.atmosphere.steps.value = profile.level === "low" ? 0 : profile.level === "medium" ? 6 : 12;
     if (this.lightShafts) this.lightShafts.count = profile.level === "low" ? 0 : profile.level === "medium" ? 2 : 4;
   }
 
@@ -490,6 +529,7 @@ export class ArenaWorld {
 
   updatePresentation(camera, reducedMotion = false) {
     this.atmosphereTime.value = reducedMotion ? 0 : this.time;
+    this.atmosphere.clock.value = this.atmosphereTime.value;
     const range = this.graphicsProfile?.detailDistance ?? 96;
     for (const mesh of this.decorativeDetails) {
       if (!mesh.parent) continue;

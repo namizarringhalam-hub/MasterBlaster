@@ -9,6 +9,7 @@
 <nav style="position:fixed;z-index:100;inset:auto 0 0;max-height:36vh;overflow:auto;background:#07111def;padding:8px;display:flex;gap:8px;flex-wrap:wrap;font:12px monospace">
 <label>Tier <select id="tier"><option>high</option><option>medium</option><option>low</option></select></label>
 <label><input type="checkbox" id="reflections" checked>Live reflections</label>
+<label><input type="checkbox" id="scene-reduced">Reduced scene motion</label>
 <label>Theme <select id="seed"><option>BLAST-01</option><option>SOLAR-01</option><option>ION-01</option></select></label>
 <label>View <select id="view"><option>arena</option><option>grazing</option><option>fighter</option><option>muzzle-whole</option><option>muzzle-side</option><option>muzzle-rear</option><option>muzzle-distant</option><option>muzzle-shallow-front</option><option>muzzle-shallow-rear</option><option>muzzle-shallow-distant</option><option>lower-body-front</option><option>lower-body-side</option><option>helmet-three-quarter</option><option>helmet-profile</option><option>thrusters</option><option>weapon</option><option>hand-front</option><option>hand-side</option><option>hand-opposite</option><option>hand-palm</option><option>hand-shoulder</option><option>hand-shoulder-opposite</option><option>hand-shoulder-oblique</option><option>player-camera</option><option>effects</option><option>rope-corner</option><option>underpass</option><option>collapse</option><option>cover-capacitor</option><option>cover-shield</option><option>cover-vent</option><option>cover-reactor</option><option>boost-top</option><option>boost-side</option><option>boost-raised</option></select></label>
 <label>Weapon <select id="weapon"></select></label>
@@ -213,6 +214,11 @@ const { gameReady } = await import("../src/main.js");
 const game = await gameReady, metrics = document.querySelector("#metrics");
 document.querySelector("#reflections").onchange = event => {
   if (game.renderPipeline.reflectionPass) game.renderPipeline.reflectionPass.intensity.value = event.target.checked ? .45 : 0;
+};
+document.querySelector("#scene-reduced").checked = game.settings.reducedMotion;
+document.querySelector("#scene-reduced").onchange = event => {
+  game.settings.reducedMotion = event.target.checked;
+  game.renderPipeline.setReducedMotion(event.target.checked);
 };
 // Fixed-view A/B for the city-lighting milestone; never included in production.
 if (new URLSearchParams(location.search).has("roomLighting")) {
@@ -2086,6 +2092,7 @@ game.frame = time => {
   const sorted = [...frames].sort((a,b) => a-b), percentile = p => +(sorted[Math.floor((sorted.length-1)*p)] || 0).toFixed(2);
   stats = { tier: game.settings.graphics, profile: game.renderPipeline.profile, directFallback: game.renderPipeline.direct, theme: game.world?.theme.id,
     reflections: game.settings.graphics === "high" && game.renderPipeline.reflectionPass ? { intensity: game.renderPipeline.reflectionPass.intensity.value, resolutionScale: game.renderPipeline.reflectionPass.resolutionScale } : null,
+    atmosphere: game.world?.atmosphere ? { steps: game.world.atmosphere.steps.value, clock: game.world.atmosphere.clock.value } : null,
     compatibilityMode: game.renderer.backend.compatibilityMode ?? null, samples: game.renderer.samples,
     settling: now < settleUntil, visibility: document.visibilityState, focused: document.hasFocus(),
     viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio }, renderCalls: game.renderer.info.calls,
