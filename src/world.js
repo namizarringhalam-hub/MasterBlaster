@@ -2315,8 +2315,9 @@ export class ArenaWorld {
 
   settleStructuralChanges(players = []) {
     let guard = 0;
-    while (this.structuralChanges.length && guard++ < 128) {
+    while ((this.structuralChanges.length || this.boostPads.some((pad) => pad.falling)) && guard++ < 128) {
       this.updateStructuralChanges(2, players);
+      this.updateFallingBoostPads(2);
       this.updateStructuralDebris(2);
     }
     this.drainStructuralEvents();
@@ -2732,17 +2733,36 @@ export class ArenaWorld {
       Math.abs(x - platform.x) <= platform.w / 2 &&
       Math.abs(z - platform.z) <= platform.d / 2
     ) || null;
-    this.boostPads.push({ position: new THREE.Vector3(x, y, z), radius: 2.5, strength, mesh, support, active: true });
+    this.boostPads.push({ position: new THREE.Vector3(x, y, z), radius: 2.5, strength, mesh, support, active: true, falling: false, fallSpeed: 0 });
     this.pulsers.push({ object: ring, base: 1, amplitude: .055, speed: 3.8, phase: x + z });
   }
 
   syncBoostPadsForPart(part) {
     for (const pad of this.boostPads) {
       if (pad.support !== part) continue;
-      pad.active = !part.removed && this.structuralParts.includes(part);
-      pad.position.y = part.top;
-      pad.mesh.position.y = part.top + .12;
-      pad.mesh.visible = pad.active;
+      if (part.removed || !this.structuralParts.includes(part)) {
+        pad.support = null;
+        pad.falling = !this.recoveringStructuralState;
+        pad.fallSpeed = 0;
+        if (this.recoveringStructuralState) pad.position.y = 0;
+      } else pad.position.y = part.top;
+      pad.mesh.position.y = pad.position.y + .12;
+      // Arena transforms are frozen, so moving the position also needs a matrix refresh.
+      pad.mesh.updateMatrix();
+    }
+  }
+
+  updateFallingBoostPads(dt) {
+    for (const pad of this.boostPads) {
+      if (!pad.falling) continue;
+      pad.position.y = Math.max(0, pad.position.y - pad.fallSpeed * dt - 11 * dt * dt);
+      pad.fallSpeed += 22 * dt;
+      if (pad.position.y === 0) {
+        pad.falling = false;
+        pad.fallSpeed = 0;
+      }
+      pad.mesh.position.y = pad.position.y + .12;
+      pad.mesh.updateMatrix();
     }
   }
 
@@ -2895,6 +2915,7 @@ export class ArenaWorld {
   update(dt, players) {
     this.time += dt;
     this.updateStructuralChanges(dt, players);
+    this.updateFallingBoostPads(dt);
     this.updateStructuralDebris(dt);
     for (const rotor of this.rotors) {
       rotor.object.rotation.x += dt * rotor.x;

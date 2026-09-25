@@ -769,6 +769,7 @@ assert.ok(seamRight && Math.abs(seamRider.position.y - seamLeft.top) < 1e-8, "a 
 seamRiderWorld.dispose();
 
 const padWorld = new ArenaWorld(new THREE.Scene(), "BOOST-SUPPORT-QA");
+assert.equal(padWorld.boostPads.filter((pad) => pad.support).length, 4, "all four elevated boost pads bind to a deck chunk");
 const towerPad = padWorld.boostPads.find((pad) => pad.support);
 assert.ok(towerPad?.support, "elevated tower boost pads bind to their exact supporting deck chunk");
 const padStartY = towerPad.position.y;
@@ -777,13 +778,38 @@ padWorld.destroy(padWorld.structuralCenter(padBase).clone(), 5.2, { eventId: "pa
 padWorld.drainStructuralEvents();
 padWorld.update(.53, []);
 padWorld.drainStructuralEvents();
-padWorld.update(.86, []);
+padWorld.update(.2, []);
+assert.ok(towerPad.position.y < padStartY && towerPad.position.y > padStartY - padBase.h, "the pad follows the deck during the fall");
+assert.equal(towerPad.mesh.getWorldPosition(new THREE.Vector3()).y, towerPad.position.y + .12, "the frozen render transform follows the falling deck, including its child effects");
+padWorld.update(.66, []);
 assert.equal(towerPad.position.y, padStartY - padBase.h, "an attached boost pad moves with its descending support chunk");
 assert.equal(towerPad.mesh.position.y, towerPad.position.y + .12, "the boost-pad mesh and gameplay trigger remain vertically aligned");
-padWorld.destroy(padWorld.structuralCenter(towerPad.support).clone(), 5.2, { eventId: "pad-support-hole", attackerId: "attacker", partId: towerPad.support.structuralId, structuralDamage: 20, structuralRadius: .35 });
+const padSupport = towerPad.support;
+const neighboringTile = padSupport.structure.platformChunks.find((part) => part !== padSupport);
+padWorld.destroy(padWorld.structuralCenter(neighboringTile).clone(), 5.2, { eventId: "pad-neighbor-hole", attackerId: "attacker", partId: neighboringTile.structuralId, structuralDamage: 20, structuralRadius: .35 });
 padWorld.settleStructuralChanges();
-assert.ok(!towerPad.active && !towerPad.mesh.visible && !padWorld.boostAt(towerPad.position), "destroying a pad's host chunk hides and deactivates the pad");
+assert.equal(towerPad.support, padSupport, "destroying a neighboring square leaves the pad attached to its own square");
+const detachedY = towerPad.position.y;
+padWorld.destroy(padWorld.structuralCenter(padSupport).clone(), 5.2, { eventId: "pad-support-hole", attackerId: "attacker", partId: padSupport.structuralId, structuralDamage: 20, structuralRadius: .35 });
+padWorld.update(.53, []);
+assert.equal(towerPad.support, null, "destroying the exact supporting square releases the pad");
+assert.ok(towerPad.falling && towerPad.position.y > 0 && towerPad.position.y < detachedY && towerPad.mesh.visible, "the released pad visibly falls rather than disappearing or snapping to the ground");
+assert.equal(towerPad.mesh.getWorldPosition(new THREE.Vector3()).y, towerPad.position.y + .12, "the rendered pad follows its free fall");
+padWorld.settleStructuralChanges();
+assert.equal(towerPad.position.y, 0, "the detached pad lands on the arena ground");
+assert.ok(!towerPad.falling && towerPad.active && towerPad.mesh.visible && padWorld.boostAt(towerPad.position) === towerPad, "the landed pad stays visible and usable");
+assert.equal(towerPad.mesh.getWorldPosition(new THREE.Vector3()).y, .12, "the rendered pad rests at the same floor height as its trigger");
+padWorld.update(1, []);
+assert.equal(towerPad.position.y, 0, "landed pads do not sink below the floor");
 padWorld.dispose();
+
+const restoredPadWorld = new ArenaWorld(new THREE.Scene(), "BOOST-SUPPORT-QA");
+restoredPadWorld.applyStructuralState({ [padBase.structuralId]: 0, [padSupport.structuralId]: 0 });
+const restoredPad = restoredPadWorld.boostPads.find((pad) => pad.position.x === towerPad.position.x && pad.position.z === towerPad.position.z);
+assert.equal(restoredPad.position.y, 0, "late joiners restore the detached pad on the ground without replaying its fall");
+assert.equal(restoredPad.mesh.getWorldPosition(new THREE.Vector3()).y, .12);
+assert.ok(restoredPad.active && restoredPad.mesh.visible && !restoredPad.falling);
+restoredPadWorld.dispose();
 
 const demolitionWorld = new ArenaWorld(new THREE.Scene(), "ALL-TOWERS-QA");
 let demolitionEvent = 0;
