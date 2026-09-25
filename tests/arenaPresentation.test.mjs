@@ -9,6 +9,22 @@ const world = new ArenaWorld(new THREE.Scene(), "FOUNDRY111");
 assert.ok(world.scene.fogNode, "height fog separates distant skyline from readable close combat");
 assert.equal(world.skylineLights.count, 80);
 assert.ok(world.group.getObjectByName("Cyan relay arcologies — layered bodies").material.emissiveNode, "distant buildings have window emission");
+// Check actual rotated instance bounds, including crowns and light strips, at
+// every angle: a circular skyline can clear wall centres but cross square corners.
+for (const skylineWorld of [world, ...["BLABLA", "BLAST-01", "SOLAR-01", "ION-01"].map(seed => new ArenaWorld(new THREE.Scene(), seed))]) {
+  const clearance = skylineWorld.size + 24;
+  const transform = new THREE.Matrix4();
+  for (const mesh of skylineWorld.group.children.filter(item => /layered bodies|authored crowns|Procedural horizon lights/.test(item.name))) {
+    mesh.geometry.computeBoundingBox();
+    for (let index = 0; index < mesh.count; index++) {
+      mesh.getMatrixAt(index, transform);
+      const bounds = mesh.geometry.boundingBox.clone().applyMatrix4(transform);
+      assert.ok(bounds.min.x > clearance || bounds.max.x < -clearance || bounds.min.z > clearance || bounds.max.z < -clearance,
+        `${skylineWorld.seed}: ${mesh.name} instance ${index} must clear the square arena and camera margin`);
+    }
+  }
+  if (skylineWorld !== world) skylineWorld.dispose();
+}
 const camera = new THREE.PerspectiveCamera();
 const colliders = world.obstacles.map(item => [item.x, item.z, item.w, item.h, item.d, item.baseY]);
 const occluders = [...world.cameraOccluders];

@@ -791,10 +791,9 @@ export class ArenaWorld {
         district,
         layer,
         angle,
-        // Keep decorative skyline geometry well beyond the third-person camera.
-        // Its deepest towers used to overlap the camera orbit at the arena edge,
-        // where their dark faces looked like large moving black rectangles.
-        radius: this.size + 44 + layer * 18 + random() * 10,
+        // Measure from the square wall along this ray, including at corners.
+        // The setback leaves room for rotated crowns and the third-person camera.
+        radius: (this.size + 44) / Math.max(Math.abs(Math.cos(angle)), Math.abs(Math.sin(angle))) + layer * 18 + random() * 10,
         width: 6 + random() * 10 + (district === 2 ? 5 : 0),
         depth: 6 + random() * 9,
         height: 58 + random() * (layer === 0 ? 92 : 65) + (index % 13 === 0 ? 42 : 0)
