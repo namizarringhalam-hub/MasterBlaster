@@ -6,7 +6,8 @@ import TEXT from "../src/playerText.js";
 
 const source = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
 const controller = source.slice(source.indexOf("class BlasterBattle"), source.indexOf("\nconst game = new BlasterBattle")).replaceAll("import.meta.url", '"test"');
-const Game = new Function("THREE", "TEXT", "ui", "clearTouchActions", "clampBotCount", `return ${controller}`)(THREE, TEXT, { querySelector: () => null }, () => {}, clampBotCount);
+const ui = { querySelector: () => null };
+const Game = new Function("THREE", "TEXT", "ui", "clearTouchActions", "clampBotCount", "escapeHtml", `return ${controller}`)(THREE, TEXT, ui, () => {}, clampBotCount, String);
 for (const mode of ["training", "quick", "private", "global"]) {
   const game = Object.create(Game.prototype);
   const local = ["training", "quick"].includes(mode);
@@ -45,3 +46,37 @@ for (const mode of ["training", "quick", "private", "global"]) {
   assert.equal(game.matchTime, 90 - .033, "resume spends only the current frame, never paused wall time");
 }
 console.log("Quick Play and Training launch without matchmaking, freeze while paused, and resume local time; multiplayer modes still connect.");
+
+// The controls modal returns to its paused parent; Escape must never resume it.
+const game = Object.create(Game.prototype);
+let markup, options, focused = false, prevented = false;
+Object.assign(game, { paused: true, showModal(html, config) { markup = html; options = config; } });
+game.showControls();
+assert.equal(options.kind, "controls");
+assert.equal(options.cancel, "close");
+assert.match(markup, /data-action="close-controls" autofocus/);
+assert.doesNotMatch(markup, /class="controls-touch" open/);
+game.coarsePointer = true;
+game.showControls();
+assert.match(markup, /class="controls-touch" open/);
+const handlers = {};
+const dialog = {
+  open: false, querySelector: () => null,
+  addEventListener(type, handler) { handlers[type] = handler; },
+  showModal() { this.open = true; }, close() { this.open = false; }, remove() {},
+};
+const previousDocument = globalThis.document;
+try {
+  globalThis.document = { activeElement: { focus() { focused = true; } } };
+  ui.insertAdjacentHTML = () => {};
+  ui.querySelector = () => dialog;
+  Game.prototype.showModal.call(game, markup, options);
+  handlers.keydown({ key: "Escape", preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(dialog.open, false);
+  assert.equal(focused, true, "focus returns to the Controls button");
+  assert.equal(game.paused, true, "closing Controls preserves the paused match");
+} finally {
+  globalThis.document = previousDocument;
+}
+console.log("Controls supports keyboard and touch help; Escape returns focus without resuming gameplay.");

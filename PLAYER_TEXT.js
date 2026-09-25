@@ -310,8 +310,51 @@ export const PLAYER_TEXT = {
     section: "SIMULATION PAUSED",
     title: "Take a breath.",
     resume: "RESUME",
+    controls: "CONTROLS",
     restart: "RESTART MATCH",
     mainMenu: "MAIN MENU"
+  },
+
+  controls: {
+    section: "PILOT FIELD GUIDE",
+    title: "Controls",
+    back: "← BACK",
+    intro: "Know your rig. Own the arena.",
+    desktopHint: "Click the arena to capture the mouse. The first click only captures aim.",
+    weaponHint: "Charged weapons: hold Fire to charge, release to shoot. Remote explosives: fire again after a charge sticks to detonate. Empty weapons reload automatically when firing.",
+    groups: [
+      { title: "Movement & view", rows: [
+        { keys: ["W", "A", "S", "D"], action: "Move" },
+        { keys: ["Mouse"], action: "Look / aim" },
+        { keys: ["Space"], action: "Jump" },
+        { keys: ["F"], action: "First / third person" }
+      ] },
+      { title: "Weapons", rows: [
+        { keys: ["Left click"], action: "Fire" },
+        { keys: ["R"], action: "Reload" },
+        { keys: ["1", "2", "3", "4", "5"], action: "Select weapon slot" },
+        { keys: ["Q"], action: "Next weapon" }
+      ] },
+      { title: "Grappling", rows: [
+        { keys: ["E", "/", "Right click"], action: "Attach / release hook" },
+        { keys: ["W"], action: "Hold to reel in faster" }
+      ] },
+      { title: "Match", rows: [
+        { keys: ["Tab"], action: "Hold for scoreboard" },
+        { keys: ["Esc"], action: "Pause / resume" }
+      ] }
+    ],
+    touchTitle: "Touch controls",
+    touchRows: [
+      { keys: ["Drag left side"], action: "Move · forward reels in faster" },
+      { keys: ["Drag right side"], action: "Look / aim" },
+      { keys: ["FIRE"], action: "Hold to fire" },
+      { keys: ["JUMP"], action: "Jump" },
+      { keys: ["HOOK"], action: "Attach / release hook" },
+      { keys: ["SWAP"], action: "Next weapon" },
+      { keys: ["Weapon slot"], action: "Tap to select weapon" },
+      { keys: ["Ⅱ"], action: "Pause" }
+    ]
   },
 
   results: {

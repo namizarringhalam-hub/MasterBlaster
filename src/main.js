@@ -349,6 +349,7 @@ class BlasterBattle {
     dialog.returnFocus = previous;
     const handleCancel = (event) => {
       event.preventDefault();
+      if (cancel === "close") this.closeModal(dialog);
       if (cancel === "resume" && this.paused) this.togglePause();
     };
     dialog.addEventListener("cancel", handleCancel);
@@ -938,6 +939,8 @@ class BlasterBattle {
       if (button.dataset.action === "reload-page") return location.reload();
       if (button.dataset.action === "start") return this.captureSetupAndStart();
       if (button.dataset.action === "pause") return this.togglePause();
+      if (button.dataset.action === "controls") return this.showControls();
+      if (button.dataset.action === "close-controls") return this.closeModal(button.closest("dialog"));
       if (button.dataset.action === "rematch") return this.queueRematch();
       if (button.dataset.action === "save-settings") return this.saveSettingsForm();
     };
@@ -1937,11 +1940,31 @@ class BlasterBattle {
         <section class="dialog pause-dialog" aria-labelledby="pause-title">
           <p>${TEXT.pause.section}</p><h1 id="pause-title">${TEXT.pause.title}</h1>
           <button class="primary" data-action="pause" autofocus>${TEXT.pause.resume}</button>
+          <button data-action="controls">${TEXT.pause.controls}</button>
           ${this.trainingControlsMarkup()}
           ${this.mode === "global" ? `<button data-global="leave">${TEXT.globalLobby.back}</button>` : `<button data-action="rematch">${TEXT.pause.restart}</button>`}
           <button data-screen="main">${TEXT.pause.mainMenu}</button>
         </section>`, { kind: "pause", cancel: "resume" });
     this.bindUi();
+  }
+
+  showControls() {
+    if (!this.paused || ui.querySelector('dialog[data-modal="controls"]')) return;
+    const rows = (entries) => `<dl class="controls-list">${entries.map(({ keys, action }) => `
+      <div><dt>${keys.map(key => key === "/" ? '<span aria-hidden="true">/</span>' : `<kbd>${escapeHtml(key)}</kbd>`).join("")}</dt><dd>${escapeHtml(action)}</dd></div>`).join("")}</dl>`;
+    this.showModal(`
+      <section class="dialog controls-dialog" aria-labelledby="controls-title">
+        <header><p>${TEXT.controls.section}</p><button class="back" data-action="close-controls" autofocus>${TEXT.controls.back}</button></header>
+        <h1 id="controls-title">${TEXT.controls.title}</h1>
+        <p class="dialog-lead">${TEXT.controls.intro}</p>
+        <div class="controls-grid">${TEXT.controls.groups.map(group => `
+          <section class="controls-group"><h2>${escapeHtml(group.title)}</h2>${rows(group.rows)}</section>`).join("")}</div>
+        <p class="controls-hint">${TEXT.controls.desktopHint}</p>
+        <details class="controls-touch" ${this.coarsePointer ? "open" : ""}>
+          <summary>${TEXT.controls.touchTitle}</summary>${rows(TEXT.controls.touchRows)}
+        </details>
+        <p class="controls-hint">${TEXT.controls.weaponHint}</p>
+      </section>`, { kind: "controls", cancel: "close" });
   }
 
   freshPerformanceSample() {
