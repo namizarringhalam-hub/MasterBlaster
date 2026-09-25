@@ -13,6 +13,15 @@ const [fire, smoke] = effects.explosions.layers;
 assert.equal(fire.mesh.material.blending, THREE.AdditiveBlending);
 assert.equal(smoke.mesh.material.blending, THREE.NormalBlending);
 assert.ok(fire.mesh.material.emissiveNode && !smoke.mesh.material.emissiveNode);
+const [,, shell, scorch] = effects.explosions.layers;
+assert.equal(shell.particles.filter(p => p.life > 0).length, 1);
+assert.equal(scorch.particles.filter(p => p.life > 0).length, 0, "airbursts cannot leave floating decals");
+assert.ok(fire.particles.some(p => p.mode === "flash" && p.maxLife <= .1));
+assert.ok(fire.particles.some(p => p.mode === "ember" && p.maxLife > .8));
+assert.ok(fire.particles.filter(p => p.life > 0).every(p => p.tint.getHex() === WEAPONS.rocket_launcher.color));
+effects.explosions.scorch(new THREE.Vector3(12, 0, -5), 2);
+assert.equal(scorch.particles[0].position.y, .025);
+assert.ok(!scorch.mesh.material.emissiveNode && !scorch.mesh.material.depthWrite);
 for (const layer of [fire, smoke]) {
   const live = layer.particles.filter(p => p.life > 0);
   assert.ok(live.length >= 10);
@@ -27,13 +36,20 @@ effects.update(.55); smoke.mesh.getMatrixAt(0, smokeMatrix);
 assert.ok(new THREE.Vector3().setFromMatrixScale(smokeMatrix).length() > earlyScale);
 assert.ok(smoke.alpha.getX(0) < earlyAlpha);
 assert.ok(smoke.mesh.instanceColor.array[0] < earlyColor[0], "smoke darkens as it disperses");
-effects.update(3);
-for (const layer of [fire, smoke]) {
+effects.update(5);
+for (const layer of effects.explosions.layers) {
   assert.equal(layer.mesh.count, 0); assert.ok(layer.alpha.array.every(v => v === 0));
 }
 for (let i = 0; i < 100; i++) effects.explosions.spawn(point, 2);
 effects.update(.016);
 assert.ok(fire.mesh.count <= 192 && smoke.mesh.count <= 96, "saturation reuses fixed storage");
+assert.ok(shell.mesh.count <= 32 && scorch.mesh.count <= 32);
+effects.update(5);
+effects.explosions.spawn(point, 2, .5, true, 0x22aaff);
+effects.update(.05);
+for (const layer of effects.explosions.layers) for (let i = 0; i < layer.particles.length; i++) {
+  if (layer.particles[i].life > 0) assert.equal(layer.phase.getX(i), 0, "reduced motion disables turbulent animation");
+}
 
 const rockets = Array.from({ length: 10 }, () => effects.createProjectile(owner, WEAPONS.rocket_launcher, .2));
 for (const mesh of rockets) { mesh.position.copy(point); scene.add(mesh); }
@@ -41,7 +57,7 @@ assert.equal(effects.projectileLights.length, 4);
 const tracked = rockets.at(-1), light = effects.projectileLights.find(l => l.userData.projectile === tracked);
 tracked.position.set(9, 8, 7); effects.updateProjectile({ mesh: tracked, velocity: new THREE.Vector3(1, 0, 0) }, .016);
 assert.deepEqual(light.position.toArray(), [9, 8, 7]);
-assert.ok(light.intensity > 0 && light.intensity < 2 && !light.castShadow);
+assert.ok(light.intensity > 0 && light.intensity <= 4.5 && !light.castShadow);
 effects.removeProjectile({ mesh: tracked }); assert.equal(light.intensity, 0); assert.equal(light.userData.projectile, null);
 effects.setGraphicsProfile(graphicsProfile("low")); effects.update(.016);
 assert.ok(effects.projectileLights.filter(l => l.intensity > 0).length <= graphicsProfile("low").combatLights);
@@ -51,8 +67,8 @@ for (const weapon of Object.values(WEAPONS)) if (weaponPresentation(weapon).ener
   assert.ok(emitting > 0, `${weapon.id} has custom emission`);
 }
 let disposals = 0;
-for (const layer of [fire, smoke]) for (const resource of [layer.mesh.geometry, layer.mesh.material]) resource.addEventListener("dispose", () => disposals++);
-effects.dispose(); assert.equal(disposals, 4); assert.ok(effects.projectileLights.every(l => !l.userData.projectile));
+for (const layer of effects.explosions.layers) for (const resource of [layer.mesh.geometry, layer.mesh.material]) resource.addEventListener("dispose", () => disposals++);
+effects.dispose(); assert.equal(disposals, 8); assert.ok(effects.projectileLights.every(l => !l.userData.projectile));
 
 const shard = fractureShardGeometry();
 assert.notEqual(shard.type, "BoxGeometry");

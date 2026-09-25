@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu";
 import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
-import { attribute, texture } from "three/tsl";
+import { attribute, color, materialEmissive, normalViewGeometry, positionViewDirection, texture } from "three/tsl";
 import { surfaceMaps, projectSurfaceUVs } from "./surfaceTextures.js";
 
 // Cross sections author the volume, not just the front outline: shoulders taper
@@ -82,6 +82,8 @@ export function createMechaRig(fighter) {
   const surface=attribute("surface","vec2");
   armor.roughnessNode=surface.x.mul(texture(armor.roughnessMap).g);
   armor.metalnessNode=surface.y.mul(texture(armor.metalnessMap).b);armor.clearcoatNode=surface.y.mul(.25);
+  // View-dependent team rim preserves silhouettes without lighting the whole arena.
+  armor.emissiveNode=materialEmissive.add(color(light).mul(normalViewGeometry.dot(positionViewDirection).abs().oneMinus().pow(3).mul(.22)));
   const glow=new THREE.MeshPhysicalMaterial({...surfaceMaps(),normalScale:new THREE.Vector2(.2,.2),color:paint,emissive:light,emissiveIntensity:.7,
     roughness:.8,metalness:0,toneMapped:false});
   fighter.armorMaterial=armor;fighter.accentMaterial=glow;

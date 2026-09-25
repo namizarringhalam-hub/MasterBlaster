@@ -140,7 +140,7 @@ function material(color, emissive = 0, opacity = 1, options = {}) {
     roughness: options.roughness ?? .62,
     metalness: options.metalness ?? .32,
     emissive,
-    emissiveIntensity: emissive ? options.emissiveIntensity ?? .55 : 0,
+    emissiveIntensity: emissive ? options.emissiveIntensity ?? .22 : 0,
     envMapIntensity: options.envMapIntensity ?? .92,
     transparent: opacity < 1,
     opacity,
@@ -309,14 +309,14 @@ function bakeCoverSlats(slats) {
 const skyBackgrounds = new Map();
 function skyBackground(theme) {
   if (!skyBackgrounds.has(theme.id)) {
-    const horizon = new THREE.Color(theme.haze).offsetHSL(0, .04, .045);
+    const horizon = new THREE.Color(theme.haze).multiplyScalar(.32);
     const up = normalWorldGeometry.y.max(0);
     const direction = normalWorldGeometry;
     const surface = direction.xz.div(up.max(.18));
     const ripples = sin(surface.x.mul(13).add(sin(surface.y.mul(9))))
       .mul(sin(surface.y.mul(15).sub(surface.x.mul(4)))).mul(.5).add(.5).pow(3);
-    const sun = direction.dot(vec3(.35, .85, -.4).normalize()).max(0).pow(18);
-    const water = color(0x277b91).mul(ripples.mul(.28).add(.72)).add(color(0xa8eced).mul(sun.mul(.7)));
+    const sun = direction.dot(vec3(.35, .85, -.4).normalize()).max(0).pow(52);
+    const water = color(0x071924).mul(ripples.mul(.28).add(.72)).add(color(0x80d7e7).mul(sun.mul(.42)));
     skyBackgrounds.set(theme.id, mix(color(horizon), water, smoothstep(0, .85, up)));
   }
   return skyBackgrounds.get(theme.id);
@@ -331,9 +331,9 @@ export class ArenaWorld {
     this.previousBackground = scene.background;
     this.previousBackgroundNode = scene.backgroundNode;
     this.previousFog = scene.fog;
-    scene.background = new THREE.Color(this.theme.haze).offsetHSL(0, .08, .035);
+    scene.background = new THREE.Color(this.theme.haze).multiplyScalar(.32);
     scene.backgroundNode = skyBackground(this.theme);
-    scene.fog = new THREE.FogExp2(this.theme.haze, .0044);
+    scene.fog = new THREE.FogExp2(new THREE.Color(this.theme.haze).multiplyScalar(.32), .0044);
     this.size = 112;
     this.height = 78;
     this.group = new THREE.Group();
@@ -953,18 +953,19 @@ export class ArenaWorld {
     // Four bounded, slanting shafts connect the overhead water glow to the arena.
     // Shared GPU animation follows arena time, including pause and Reduced Motion.
     const shaftMaterial = new THREE.MeshBasicNodeMaterial({
-      color: 0xb0ecf1, transparent: true, opacity: .065,
+      color: 0xb0ecf1, transparent: true, opacity: .038,
       blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
     });
     const taper = smoothstep(0, .22, uv().y).mul(smoothstep(.68, 1, uv().y).oneMinus());
     const drift = sin(positionWorld.y.mul(.27).sub(this.atmosphereTime.mul(.45))).mul(.12).add(.88);
     shaftMaterial.opacityNode = materialOpacity.mul(taper).mul(drift)
       .mul(normalViewGeometry.dot(positionViewDirection).abs().pow(2));
-    this.lightShafts = new THREE.InstancedMesh(new THREE.CylinderGeometry(4, 15, 150, 16, 1, true), shaftMaterial, 4);
+    this.lightShafts = new THREE.InstancedMesh(new THREE.CylinderGeometry(1.7, 6.5, 150, 16, 1, true), shaftMaterial, 4);
     this.lightShafts.name = "Underwater skylight shafts";
     const marker = new THREE.Object3D();
     [[-48, -40], [48, 40], [48, -40], [-48, 40]].forEach(([x, z], index) => {
       marker.position.set(x, 73, z);
+      marker.scale.setScalar([1, .72, .88, .6][index]);
       marker.rotation.set(-.16, 0, -.22); marker.updateMatrix();
       this.lightShafts.setMatrixAt(index, marker.matrix);
     });
@@ -2538,7 +2539,7 @@ export class ArenaWorld {
     const platforms = this.structures.flatMap((structure) => structure.platformChunks);
     const anchors = this.structures.map((structure) => structure.anchor);
     const segmentBatch = this.createStructuralBatch(structuralPanelGeometry(.25), segments[0].mesh.material, segments.length, "Instanced destructible pillar modules");
-    const seamMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, transparent: true, opacity: .58, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    const seamMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, transparent: true, opacity: .18, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
     const segmentSeamBatch = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), seamMaterial, segments.length);
     segmentSeamBatch.name = "Instanced pillar section seams";
     segmentSeamBatch.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -2558,7 +2559,7 @@ export class ArenaWorld {
       color: 0xffffff,
       vertexColors: true,
       transparent: true,
-      opacity: .38,
+      opacity: .5,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       toneMapped: false

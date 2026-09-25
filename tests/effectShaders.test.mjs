@@ -17,6 +17,8 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera();
   const effects = new CombatVisuals(scene), pipeline = new NeonRenderPipeline(renderer, scene, camera, { quality });
   const pass = !webgl && quality === "medium" ? pipeline.highLoadScenePass : pipeline.scenePass;
+  assert.equal(pass.getMRT().getBlendMode("bloom").blending, THREE.MaterialBlending,
+    "bloom must preserve additive alpha and smoke occlusion, not overwrite with transparent RGB");
   renderer.setRenderTarget(pass.renderTarget); renderer.setMRT(pass.getMRT());
   const plain = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial({ color: 0xffffff }));
   const lit = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ emissive: 0xff6600, emissiveIntensity: 3 }));
@@ -41,7 +43,7 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
     if (mesh.material.emissiveNode && !mesh.material.emissive) {
       assert.match(fragment, /EmissiveColor\s*=/);
       assert.match(fragment, /\.m\d\s*=\s*Output|\bm\d\s*=\s*Output/, "animated emission reaches the bloom attachment");
-    } else if (mesh === plain || mesh === effects.explosions.layers[1].mesh) {
+    } else if (mesh === plain || ["smoke", "scorch"].some(kind => mesh === effects.explosions.layers.find(layer => layer.kind === kind).mesh)) {
       assert.match(fragment, /vec4(?:<f32>)?\( 0\.0, 0\.0, 0\.0, Output\.w \)/, "diffuse white and smoke cannot emit bloom");
     } else assert.match(fragment, /vec4(?:<f32>)?\( EmissiveColor, Output\.w \)/, "PBR contributes only its emission, not reflected light");
   }

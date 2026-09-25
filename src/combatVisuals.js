@@ -525,7 +525,7 @@ export class CombatVisuals {
     if (!limit) return;
     const light = this.projectileLights[this.projectileLightCursor++ % limit];
     light.userData.projectile = mesh; light.color.set(weapon.color);
-    light.intensity = this.reducedMotion ? .65 : 1.4;
+    light.intensity = this.reducedMotion ? .65 : 4.5;
     light.position.copy(mesh.position);
   }
 
@@ -590,7 +590,7 @@ export class CombatVisuals {
     if (!this.reducedMotion) {
       this.position.copy(slot.position).addScaledVector(slot.direction, slot.length * .32);
       this.color.copy(slot.weaponColor).lerp(slot.ownerColor, .24);
-      const light = this.pulseLight(this.position, this.color, profile.tempo === "heavy" ? 5.8 : profile.energy ? 4.8 : 3.4, profile.tempo === "heavy" ? 14 : 10, .085);
+      const light = this.pulseLight(this.position, this.color, profile.tempo === "heavy" ? 14 : profile.energy ? 10 : 7, profile.tempo === "heavy" ? 14 : 10, .085);
       this.bindMuzzle(light, slot.muzzleOwner, slot.position);
     }
     if (slot.closeRapid) {
@@ -789,12 +789,12 @@ export class CombatVisuals {
     if (!this.reducedMotion) {
       this.position.copy(position).addScaledVector(ring.normal, .18);
       this.color.copy(ring.weaponColor).lerp(ring.ownerColor, .2);
-      this.pulseLight(this.position, this.color, Math.min(10, 3.4 + ring.size * 2.2), Math.min(22, 8 + ring.size * 4.2), explosive ? .18 : .11);
+      this.pulseLight(this.position, this.color, explosive ? Math.min(65, 18 + ring.size * 12) : Math.min(10, 3.4 + ring.size * 2.2), Math.min(26, 8 + ring.size * 4.2), explosive ? .16 : .11);
     }
 
     const blastLike = family === "blast" || family === "cluster"
       || (explosive && !["gravity", "implosion", "pulse", "disrupt"].includes(family));
-    if (blastLike || family === "flame") this.explosions.spawn(position, size, this.quality, this.reducedMotion);
+    if (blastLike || family === "flame") this.explosions.spawn(position, size, this.quality, this.reducedMotion, weapon.color);
     const count = this.reducedMotion ? 3
       : blastLike ? 14
         : family === "freeze" ? 10
@@ -910,7 +910,7 @@ export class CombatVisuals {
         light.intensity = 0; light.userData.projectile = null; continue;
       }
       projectile.getWorldPosition(light.position);
-      light.intensity = this.reducedMotion ? .65 : 1.4;
+      light.intensity = this.reducedMotion ? .65 : 4.5;
     }
     this.updateFireballs();
     this.updateFlashes(dt);
@@ -922,7 +922,7 @@ export class CombatVisuals {
       light.userData.life = Math.max(0, light.userData.life - dt);
       // Follow only the authored pulse; its existing damped fade stays in place.
       this.followMuzzle(light, light.userData.life > 0);
-      light.intensity = THREE.MathUtils.damp(light.intensity, light.userData.life > 0 ? light.intensity : 0, 22, dt);
+      light.intensity = THREE.MathUtils.damp(light.intensity, light.userData.life > 0 ? light.intensity : 0, 26, dt);
     }
   }
 

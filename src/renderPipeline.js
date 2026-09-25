@@ -11,8 +11,8 @@ const aoNormal = Fn(([], builder) => vec4(normalView, builder.material.depthWrit
 // smoke still occlude it through the same depth/alpha as the beauty attachment.
 const bloomEmission = Fn(([], builder) => builder.material.emissive
   ? vec4(emissive, output.a) : builder.material.emissiveNode ? output : vec4(0, 0, 0, output.a));
-// Low-intensity weapon inlays remain eligible now that reflections are excluded.
-const EMISSION_THRESHOLD = .08;
+// Quiet inlays retain sharp cores; strong combat emission earns the large halo.
+const EMISSION_THRESHOLD = .3;
 
 // Compatibility GPUs cannot blend MRT attachments independently. A NoBlending
 // overlay (Line2) marks its overwritten normal invalid; recover only those
@@ -67,22 +67,24 @@ export class NeonRenderPipeline {
     this.pipeline = new THREE.RenderPipeline(renderer);
     if (!nativeWebGPU) {
       this.scenePass = pass(scene, camera);
-      this.scenePass.setMRT(mrt({ output, bloom: bloomEmission() }));
+      this.scenePass.setMRT(mrt({ output, bloom: bloomEmission() })
+        .setBlendMode("bloom", new THREE.BlendMode(THREE.MaterialBlending)));
       const sceneColor = this.scenePass.getTextureNode("output");
-      this.bloomPass = bloom(this.scenePass.getTextureNode("bloom"), reducedMotion ? .16 : .28, .3, EMISSION_THRESHOLD);
+      this.bloomPass = bloom(this.scenePass.getTextureNode("bloom"), reducedMotion ? .16 : .36, .16, EMISSION_THRESHOLD);
       this.bloomPass.resolutionScale = .34;
       this.pipeline.outputNode = sceneColor.add(this.bloomPass);
       return;
     }
     const scenePass = this.scenePass = pass(scene, camera);
     scenePass.setMRT(mrt({ output, normal: aoNormal(), bloom: bloomEmission() })
+      .setBlendMode("bloom", new THREE.BlendMode(THREE.MaterialBlending))
       .setBlendMode("normal", new THREE.BlendMode(THREE.NormalBlending)));
 
     const sceneColor = scenePass.getTextureNode("output");
     const bloomPass = bloom(
       scenePass.getTextureNode("bloom"),
-      reducedMotion ? .22 : .44,
-      .36,
+      reducedMotion ? .22 : .52,
+      .18,
       EMISSION_THRESHOLD
     );
     bloomPass.resolutionScale = .5;
@@ -125,9 +127,10 @@ export class NeonRenderPipeline {
     if (!this.nativeWebGPU || this.highLoadPipeline) return;
     this.highLoadPipeline = new THREE.RenderPipeline(this.renderer);
     this.highLoadScenePass = pass(this.scene, this.camera);
-    this.highLoadScenePass.setMRT(mrt({ output, bloom: bloomEmission() }));
+    this.highLoadScenePass.setMRT(mrt({ output, bloom: bloomEmission() })
+      .setBlendMode("bloom", new THREE.BlendMode(THREE.MaterialBlending)));
     const sceneColor = this.highLoadScenePass.getTextureNode("output");
-    this.highLoadBloom = bloom(this.highLoadScenePass.getTextureNode("bloom"), this.reducedMotion ? .16 : .3, .3, EMISSION_THRESHOLD);
+    this.highLoadBloom = bloom(this.highLoadScenePass.getTextureNode("bloom"), this.reducedMotion ? .16 : .34, .16, EMISSION_THRESHOLD);
     this.highLoadBloom.resolutionScale = .34;
     this.highLoadPipeline.outputNode = sceneColor.add(this.highLoadBloom);
   }
@@ -135,11 +138,11 @@ export class NeonRenderPipeline {
   updateBloomQuality() {
     if (this.bloomPass) {
       this.bloomPass.strength.value = this.reducedMotion ? (this.nativeWebGPU ? .22 : .16)
-        : this.quality === "medium" ? (this.nativeWebGPU ? .3 : .2)
-          : this.nativeWebGPU ? .44 : .28;
+        : this.quality === "medium" ? (this.nativeWebGPU ? .34 : .26)
+          : this.nativeWebGPU ? .52 : .36;
       this.bloomPass.resolutionScale = this.quality === "medium" ? (this.nativeWebGPU ? .4 : .26) : this.nativeWebGPU ? .5 : .34;
     }
-    if (this.highLoadBloom) this.highLoadBloom.strength.value = this.reducedMotion ? .16 : this.quality === "medium" ? .24 : .3;
+    if (this.highLoadBloom) this.highLoadBloom.strength.value = this.reducedMotion ? .16 : this.quality === "medium" ? .28 : .34;
   }
 
   setQuality(quality = "high") {

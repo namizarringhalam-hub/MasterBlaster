@@ -322,14 +322,14 @@ class BlasterBattle {
 
   setupLights() {
     // Environment IBL supplies diffuse fill and reflections without a flat light.
-    const key = this.keyLight = new THREE.DirectionalLight(0xffeee0, 2.05);
+    const key = this.keyLight = new THREE.DirectionalLight(0xffeee0, 1.55);
     key.position.set(-22, 40, 18);
     key.castShadow = true;
     key.shadow.mapSize.set(this.graphics.shadowMapSize, this.graphics.shadowMapSize);
     key.shadow.bias = LIGHTING.shadowBias;
     key.shadow.normalBias = LIGHTING.shadowNormalBias;
     this.scene.add(key, key.target);
-    const rim = new THREE.DirectionalLight(0x91bfff, .48);
+    const rim = new THREE.DirectionalLight(0x91bfff, .62);
     rim.position.set(22, 15, -25);
     this.scene.add(rim);
   }
@@ -3028,6 +3028,11 @@ class BlasterBattle {
     if (shot.weapon.terrainRadius > 0 || shot.weapon.structureDamage > 0) this.damageTerrain(position, shot.weapon, shot.owner, shot.networkShotId);
     if (shot.weapon.hazard) this.spawnHazard(position, shot.owner, shot.weapon, shot.velocity, shot.networkShotId);
     this.combatVisuals?.impact(position, shot.weapon, shot.owner, { size: Math.min(3.6, Math.max(1.35, shot.weapon.radius * .42)), explosive: true });
+    // Ground-only scorch marks cannot float when destructible platforms collapse.
+    if (position.y >= 0 && position.y < Math.min(4, shot.weapon.radius)
+      && this.world.surfaceHeightAt(position, position.y + .05) === 0) {
+      this.combatVisuals?.explosions.scorch(new THREE.Vector3(position.x, 0, position.z), Math.min(3.6, shot.weapon.radius * .55));
+    }
     const impactWeapon = WEAPONS[shot.weapon.sourceWeaponId] || shot.weapon;
     this.sound.playImpact(impactWeapon, this.audioSpatial(position, false, 1, shot.owner.id), 0, "explosive");
   }

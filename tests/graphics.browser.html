@@ -16,6 +16,8 @@
 <label>Aim height <select id="aim-height"><option value="0">Level</option><option value="1.7320508075688772">Up 60°</option><option value="-1.7320508075688772">Down 60°</option></select></label>
 <label>Boost pad <select id="boost-pad"><option value="0">1</option><option value="1">2</option><option value="2" selected>3</option><option value="3">4</option><option value="4">5</option><option value="5">6</option><option value="6">7</option><option value="7">8</option></select></label>
 <button id="burst">Fire / impact</button><button id="destroy">Collapse tower</button><button id="grapple">Toggle grapple</button>
+<label>Explosion age <select id="explosion-age"><option value="0.04">Flash · 40ms</option><option value="0.18">Shell · 180ms</option><option value="0.5">Smoke · 500ms</option><option value="1">Embers · 1s</option></select></label>
+<label><input type="checkbox" id="explosion-reduced">Reduced explosion motion</label><button id="explosion-review">Inspect explosion stage</button>
 <button id="hold-ropes">Hold bot grapples</button>
 <button id="human-grapple">Run human grapple</button>
 <button id="destroy-cover">Destroy viewed cover</button><label><input type="checkbox" id="cover-edge">Cover at frustum edge</label>
@@ -333,6 +335,7 @@ select("seed").innerHTML = MAP_THEMES.map((theme, i) => {
   return `<option value="${seed}">${theme.name}</option>`;
 }).join("");
 let stress = false, sampleAt = performance.now(), previous = sampleAt, frames = [], stats = {};
+let explosionReview = false;
 const traceFrames = new URLSearchParams(location.search).has("traceFrames");
 let cpu = {}, previousCpu = {}, slowFrames = [], pipelineCreations = 0, decoyPipelines = [];
 let activeTraceBot = null, activeTraceProjectiles = false;
@@ -770,6 +773,7 @@ function setView() {
   game.updateCamera();
 }
 async function reset() {
+  explosionReview = false;
   resetPhase = "starting";
   captureCanvas = false; canvasCapture = null;
   select("canvas-capture").hidden = true;
@@ -1915,11 +1919,24 @@ select("decoy-cycle").onclick = () => runDecoyReview();
 select("decoy-tiers").onclick = () => runDecoyReview(true);
 select("decoy-overlap").onclick = () => runDecoyReview(false, true);
 select("burst").onclick = () => {
+  explosionReview = false;
   resetSamples(0);
   const hero = game.players[0], weapon = hero.weapon;
   game.sound.resume(); hero.aim.set(0, 0, -1); hero.attackTimer = 0; hero.ammo[weapon.id] = weapon.ammo;
   game.tryFire(hero, true); game.combatVisuals.impact(new THREE.Vector3(0, 16, 11), weapon, hero, { explosive: Boolean(weapon.radius), size: 2 });
   captureCanvas = true; // Save the first rendered effect frame, not an expired burst.
+};
+select("explosion-review").onclick = () => {
+  if (stress || !game.paused || resetPhase !== "ready") return;
+  const effects = game.combatVisuals, weapon = game.players[0].weapon;
+  effects.update(10);
+  effects.setReducedMotion(select("explosion-reduced").checked);
+  effects.impact(new THREE.Vector3(0, 16, 11), weapon, game.players[0], { explosive: true, size: 2 });
+  const age = Number(select("explosion-age").value);
+  for (let t = 0; t < age; t += 1 / 120) effects.update(Math.min(1 / 120, age - t));
+  effects.setReducedMotion(game.settings.reducedMotion);
+  explosionReview = true;
+  captureCanvas = true;
 };
 select("destroy").onclick = () => game.world.queueStructuralFailure(game.world.structures[16].segments[0], game.players[0].id);
 select("grapple").onclick = () => {
@@ -1991,7 +2008,7 @@ game.frame = time => {
   }
   cpu = {};
   const programsBefore = game.renderer.info.memory.programs;
-  if (!stress && !cameraReview.shell && game.world) {
+  if (!stress && !cameraReview.shell && !explosionReview && game.world) {
     game.world.update(Math.min(interval / 1000, .033), []);
     game.combatVisuals.update(Math.min(interval / 1000, .033));
     game.processStructuralEvents();
