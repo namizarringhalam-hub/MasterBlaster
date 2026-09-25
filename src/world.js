@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { abs, color, fract, length, materialColor, materialOpacity, max, min, mix, normalViewGeometry, normalWorldGeometry, positionViewDirection, positionWorld, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
+import { abs, color, fog, fract, length, materialColor, materialOpacity, max, min, mix, normalViewGeometry, normalWorldGeometry, positionView, positionViewDirection, positionWorld, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
 import { ARENA_PORTAL_COOLDOWN_SECONDS, ARENA_PORTAL_PAIRS, ARENA_SPAWN_POINTS, MAP_THEMES, seededRandom, seedFromText, structuralTowerBlueprints } from "./gameData.js";
 import { surfaceTextures, surfaceMaps, projectSurfaceUVs } from "./surfaceTextures.js";
 
@@ -307,17 +307,26 @@ function bakeCoverSlats(slats) {
 // Three owns and reuses the scene's background mesh. Retain just the three
 // theme expressions instead of rebuilding a background shader on every rematch.
 const skyBackgrounds = new Map();
+function hazeNoise(p) {
+  const cell = p.floor(), f = p.fract();
+  const blend = f.mul(f).mul(vec2(3).sub(f.mul(2)));
+  const hash = offset => sin(cell.add(offset).dot(vec2(127.1, 311.7))).mul(43758.5453).fract();
+  return mix(mix(hash(vec2(0, 0)), hash(vec2(1, 0)), blend.x),
+    mix(hash(vec2(0, 1)), hash(vec2(1, 1)), blend.x), blend.y);
+}
+
 function skyBackground(theme) {
   if (!skyBackgrounds.has(theme.id)) {
-    const horizon = new THREE.Color(theme.haze).multiplyScalar(.32);
     const up = normalWorldGeometry.y.max(0);
     const direction = normalWorldGeometry;
-    const surface = direction.xz.div(up.max(.18));
-    const ripples = sin(surface.x.mul(13).add(sin(surface.y.mul(9))))
-      .mul(sin(surface.y.mul(15).sub(surface.x.mul(4)))).mul(.5).add(.5).pow(3);
-    const sun = direction.dot(vec3(.35, .85, -.4).normalize()).max(0).pow(52);
-    const water = color(0x071924).mul(ripples.mul(.28).add(.72)).add(color(0x80d7e7).mul(sun.mul(.42)));
-    skyBackgrounds.set(theme.id, mix(color(horizon), water, smoothstep(0, .85, up)));
+    const p = direction.xz.div(up.add(.28)).mul(3);
+    const cloud = hazeNoise(p).mul(.6).add(hazeNoise(p.mul(2.1)).mul(.28)).add(hazeNoise(p.mul(4.3)).mul(.12));
+    const ceiling = smoothstep(.22, .8, cloud);
+    const cyan = direction.dot(vec3(-.55, .28, -.78).normalize()).max(0).pow(9);
+    const pink = direction.dot(vec3(.8, .14, .55).normalize()).max(0).pow(15);
+    const cityGlow = color(0x125d85).mul(cyan.mul(.55)).add(color(0x642550).mul(pink.mul(.3)));
+    skyBackgrounds.set(theme.id, mix(color(0x02050c), color(0x081627), ceiling)
+      .add(cityGlow.mul(ceiling.mul(.7).add(.15))).add(color(0x0b2335).mul(up.mul(-5).exp().mul(.35))));
   }
   return skyBackgrounds.get(theme.id);
 }
@@ -331,6 +340,7 @@ export class ArenaWorld {
     this.previousBackground = scene.background;
     this.previousBackgroundNode = scene.backgroundNode;
     this.previousFog = scene.fog;
+    this.previousFogNode = scene.fogNode;
     scene.background = new THREE.Color(this.theme.haze).multiplyScalar(.32);
     scene.backgroundNode = skyBackground(this.theme);
     scene.fog = new THREE.FogExp2(new THREE.Color(this.theme.haze).multiplyScalar(.32), .0044);
@@ -348,6 +358,12 @@ export class ArenaWorld {
     this.decorativeDetails = [];
     this.detailCenter = new THREE.Vector3();
     this.atmosphereTime = uniform(0);
+    // Height-weighted aerial perspective: nearby combat stays crisp, distant low
+    // architecture disappears gradually into humid air. No volume ray march.
+    const hazeHeight = positionWorld.y.max(0).mul(-.035).exp();
+    const hazeDistance = positionView.length().sub(12).max(0);
+    const hazeFactor = hazeDistance.mul(hazeHeight.mul(.003).add(.0015)).negate().exp().oneMinus().min(.78);
+    scene.fogNode = fog(mix(color(0x08131f), color(0x102b3b), hazeHeight), hazeFactor);
     this.waterLightStrength = uniform(1);
     // ponytail: a few analytic wave contours reuse the surface pass and its shadows;
     // no caustic texture, extra lights or fullscreen underwater post-process.
@@ -765,7 +781,7 @@ export class ArenaWorld {
 
   addDistantSkyline() {
     const random = seededRandom(seedFromText(`${this.seed}-skyline`));
-    const count = 52;
+    const count = 80;
     const specs = [];
     for (let index = 0; index < count; index++) {
       const angle = index / count * TAU + (random() - .5) * .065;
@@ -781,7 +797,7 @@ export class ArenaWorld {
         radius: this.size + 44 + layer * 18 + random() * 10,
         width: 6 + random() * 10 + (district === 2 ? 5 : 0),
         depth: 6 + random() * 9,
-        height: 25 + random() * (layer === 0 ? 58 : 42) + district * 3
+        height: 58 + random() * (layer === 0 ? 92 : 65) + (index % 13 === 0 ? 42 : 0)
       });
     }
 
@@ -816,13 +832,20 @@ export class ArenaWorld {
       }
     ];
     const marker = new THREE.Object3D();
+    const windowUV = vec2(positionWorld.x.add(positionWorld.z), positionWorld.y).mul(vec2(1.35, 1.6));
+    const cell = windowUV.floor(), f = windowUV.fract();
+    const occupied = sin(cell.dot(vec2(127.1, 311.7))).mul(43758.5453).fract();
+    const windows = smoothstep(.12, .22, f.x).mul(smoothstep(.65, .75, f.x).oneMinus())
+      .mul(smoothstep(.12, .22, f.y)).mul(smoothstep(.7, .8, f.y).oneMinus())
+      .mul(smoothstep(.48, .56, occupied)).mul(normalWorldGeometry.y.abs().oneMinus());
     families.forEach((family, district) => {
       const entries = specs.filter((spec) => spec.district === district);
       const base = new THREE.InstancedMesh(
         family.base,
-        new THREE.MeshStandardMaterial({ ...surfaceMaps(), color: 0xffffff, vertexColors: true, roughness: .82, metalness: .28, emissive: 0x02070c, emissiveIntensity: .14 }),
+        new THREE.MeshStandardNodeMaterial({ ...surfaceMaps(), color: 0xffffff, vertexColors: true, roughness: .86, metalness: .2 }),
         entries.length
       );
+      base.material.emissiveNode = mix(color(0x9ac8db), color(this.districtColors[district]), smoothstep(.78, .94, occupied)).mul(windows.mul(.9));
       const crowns = new THREE.InstancedMesh(
         family.crown,
         new THREE.MeshStandardMaterial({ ...surfaceMaps(), color: 0xffffff, vertexColors: true, roughness: .66, metalness: .42, emissive: 0x02070c, emissiveIntensity: .22 }),
@@ -830,7 +853,7 @@ export class ArenaWorld {
       );
       entries.forEach((spec, index) => {
         const { angle, radius, height, layer, width } = spec;
-        const value = [.42, .24, .14][layer];
+        const value = [.12, .085, .05][layer];
         const tint = new THREE.Color(this.districtColors[district]).multiplyScalar(value).addScalar(.012 + (2 - layer) * .006);
         const tangentX = -Math.sin(angle);
         const tangentZ = Math.cos(angle);
@@ -902,23 +925,6 @@ export class ArenaWorld {
   }
 
   addAtmosphere() {
-    const horizonMark = new THREE.Group();
-    const horizonColor = this.districtColors[1];
-    horizonMark.position.set(-58, 68, -this.size - 8);
-    horizonMark.lookAt(0, 34, 0);
-    const horizonDisc = new THREE.Mesh(
-      new THREE.CircleGeometry(7.5, 48),
-      new THREE.MeshBasicMaterial({ color: horizonColor, transparent: true, opacity: .18, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })
-    );
-    const horizonRing = new THREE.Mesh(
-      new THREE.TorusGeometry(11, .22, 7, 64),
-      new THREE.MeshBasicMaterial({ color: horizonColor, transparent: true, opacity: .17, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })
-    );
-    const horizonHalo = this.glowSprite(horizonColor, 34, .18);
-    horizonMark.add(horizonDisc, horizonRing, horizonHalo);
-    this.group.add(horizonMark);
-    this.rotors.push({ object: horizonRing, x: 0, y: 0, z: .035 });
-
     const random = seededRandom(seedFromText(`${this.seed}-motes`));
     const count = 220;
     const positions = new Float32Array(count * 3);
@@ -950,24 +956,24 @@ export class ArenaWorld {
     this.group.add(motes);
     this.motes = motes;
 
-    // Four bounded, slanting shafts connect the overhead water glow to the arena.
-    // Shared GPU animation follows arena time, including pause and Reduced Motion.
+    // Soft city-lit mist banks outside the playable volume, without hard beam edges.
     const shaftMaterial = new THREE.MeshBasicNodeMaterial({
-      color: 0xb0ecf1, transparent: true, opacity: .038,
+      color: 0xffffff, vertexColors: true, transparent: true, opacity: .16,
       blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
     });
-    const taper = smoothstep(0, .22, uv().y).mul(smoothstep(.68, 1, uv().y).oneMinus());
-    const drift = sin(positionWorld.y.mul(.27).sub(this.atmosphereTime.mul(.45))).mul(.12).add(.88);
-    shaftMaterial.opacityNode = materialOpacity.mul(taper).mul(drift)
-      .mul(normalViewGeometry.dot(positionViewDirection).abs().pow(2));
-    this.lightShafts = new THREE.InstancedMesh(new THREE.CylinderGeometry(1.7, 6.5, 150, 16, 1, true), shaftMaterial, 4);
-    this.lightShafts.name = "Underwater skylight shafts";
+    const mist = hazeNoise(uv().mul(vec2(5, 3)).add(vec2(this.atmosphereTime.mul(.008), 0)));
+    shaftMaterial.opacityNode = materialOpacity.mul(uv().sub(.5).mul(vec2(1, 1.3)).length().smoothstep(.1, .5).oneMinus().pow(2))
+      .mul(mist.mul(.7).add(.3));
+    shaftMaterial.fog = false;
+    this.lightShafts = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), shaftMaterial, 4);
+    this.lightShafts.name = "City-lit horizon mist";
     const marker = new THREE.Object3D();
-    [[-48, -40], [48, 40], [48, -40], [-48, 40]].forEach(([x, z], index) => {
-      marker.position.set(x, 73, z);
-      marker.scale.setScalar([1, .72, .88, .6][index]);
-      marker.rotation.set(-.16, 0, -.22); marker.updateMatrix();
+    [[-125, -125], [125, 125], [125, -125], [-125, 125]].forEach(([x, z], index) => {
+      marker.position.set(x, 65 + index * 7, z);
+      marker.lookAt(0, marker.position.y, 0);
+      marker.scale.set(125, 70, 1); marker.updateMatrix();
       this.lightShafts.setMatrixAt(index, marker.matrix);
+      this.lightShafts.setColorAt(index, new THREE.Color(index % 2 ? 0x954181 : 0x2887b4));
     });
     this.lightShafts.computeBoundingSphere();
     this.group.add(this.lightShafts);
@@ -3381,6 +3387,7 @@ export class ArenaWorld {
     this.scene.background = this.previousBackground;
     this.scene.backgroundNode = this.previousBackgroundNode;
     this.scene.fog = this.previousFog;
+    this.scene.fogNode = this.previousFogNode;
     this.scene.remove(this.group);
     const resources = new Set(this.textures);
     for (const root of [this.group, ...this.detachedDestructibleMeshes]) root.traverse((child) => {

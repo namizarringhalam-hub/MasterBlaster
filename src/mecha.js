@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu";
 import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
-import { attribute, color, materialEmissive, normalViewGeometry, positionViewDirection, texture } from "three/tsl";
+import { attribute, color, materialColor, materialEmissive, materialOpacity, normalViewGeometry, positionViewDirection, texture, uv } from "three/tsl";
 import { surfaceMaps, projectSurfaceUVs } from "./surfaceTextures.js";
 
 // Cross sections author the volume, not just the front outline: shoulders taper
@@ -307,6 +307,25 @@ export function createMechaRig(fighter) {
   }
   fighter.thrusterLights.position.set(0, 1.356, -.402);
   fighter.thrusterLights.scale.set(.62, 1, .82);
+
+  // Two rear-facing strips and soft halos share one draw per layer. Depth testing
+  // keeps the glow behind the armor when viewed from the front or through cover.
+  fighter.backGlow = 0;
+  for (const halo of [false, true]) {
+    const glowMaterial = new THREE.MeshBasicNodeMaterial({
+      color: new THREE.Color(light).multiplyScalar(halo ? 1.8 : 2.8), transparent: true,
+      opacity: halo ? 0 : .12, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false
+    });
+    glowMaterial.emissiveNode = materialColor.rgb.mul(.4);
+    if (halo) glowMaterial.opacityNode = materialOpacity.mul(uv().sub(.5).mul(2).length().smoothstep(0, 1).oneMinus().pow(2));
+    const pieces = [-1, 1].map(side => new THREE.PlaneGeometry(halo ? .65 : .045, halo ? .85 : .28)
+      .rotateY(Math.PI).translate(side * .25, 1.96, halo ? -.49 : -.47));
+    const mesh = new THREE.Mesh(mergeGeometries(pieces), glowMaterial);
+    pieces.forEach(piece => piece.dispose());
+    mesh.name = halo ? "Movement neon back halos" : "Movement neon back vents";
+    fighter[halo ? "backHaloMaterial" : "backVentMaterial"] = glowMaterial;
+    rig.add(mesh);
+  }
 
   const inverse=new THREE.Matrix4(),target=new THREE.Vector3(),orientation=new THREE.Quaternion();
   fighter.strideVelocity=new THREE.Vector2();

@@ -4,6 +4,7 @@ import { color } from "three/tsl";
 import { CombatVisuals } from "../src/combatVisuals.js";
 import { NeonRenderPipeline } from "../src/renderPipeline.js";
 import { ArenaWorld } from "../src/world.js";
+import { Fighter } from "../src/player.js";
 
 // Exercise Three's actual shader generators without a browser/device. The only
 // stand-ins are conservative hardware limits; this is not a GPU pixel test.
@@ -27,7 +28,10 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
   const world = new ArenaWorld(scene);
   const sky = new THREE.Mesh(new THREE.SphereGeometry(), new THREE.MeshBasicNodeMaterial());
   sky.material.colorNode = scene.backgroundNode;
-  for (const mesh of [world.ground, world.platforms[0].mesh, world.lightShafts, sky]) {
+  const fighter = new Fighter(scene, { id: "shader-night", color: 0x227799, accent: 0x55ddff }, ["blaster"], new THREE.Vector3());
+  for (const mesh of [world.ground, world.platforms[0].mesh, world.lightShafts, sky,
+    world.group.getObjectByName("Cyan relay arcologies — layered bodies"),
+    fighter.group.getObjectByName("Movement neon back halos"), fighter.group.getObjectByName("Movement neon back vents")]) {
     const builder = new (webgl ? THREE.GLSLNodeBuilder : THREE.WGSLNodeBuilder)(mesh, renderer);
     builder.scene = scene; builder.camera = camera; builder.build();
     assert.ok(builder.fragmentShader.length > 100);
@@ -50,5 +54,6 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
   pipeline.dispose(); effects.dispose(); plain.geometry.dispose(); plain.material.dispose(); lit.geometry.dispose(); lit.material.dispose();
   reactor.geometry.dispose(); reactor.material.dispose();
   world.dispose(); sky.geometry.dispose(); sky.material.dispose();
+  fighter.dispose();
 }
 console.log("WGSL/GLSL high/medium shaders generate with selective emission, smoke alpha and instanced attributes.");

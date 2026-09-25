@@ -881,6 +881,8 @@ export class Fighter {
 
   updateDeath(dt) {
     if (this.alive || this.deathTimer <= 0) return;
+    this.backHaloMaterial.opacity = 0;
+    this.backVentMaterial.opacity = 0;
     this.deathTimer = Math.max(0, this.deathTimer - dt);
     const progress = 1 - this.deathTimer / 1.4;
     const side = Number(String(this.id).match(/\d+/)?.[0] || 1) % 2 ? 1 : -1;
@@ -928,6 +930,9 @@ export class Fighter {
     this.strideVelocity.set(0, 0);
     this.armorMaterial.emissiveIntensity = .025;
     this.accentMaterial.emissiveIntensity = .7;
+    this.backGlow = 0;
+    this.backHaloMaterial.opacity = 0;
+    this.backVentMaterial.opacity = .12;
 
     this.identityRing.material.opacity = .46;
     this.identityBeacon.material.opacity = .94;
@@ -1181,6 +1186,10 @@ export class Fighter {
     this.thrusterScale = THREE.MathUtils.damp(this.thrusterScale, thrust, 11, dt);
     this.thrusterLights.scale.y = this.thrusterScale;
     if (this.thrusterMaterial) this.thrusterMaterial.opacity = .32 + clamp(thrust / 2.4, 0, 1) * .48;
+    const travelSpeed = Math.hypot(horizontalSpeed, this.grounded ? 0 : this.velocity.y);
+    this.backGlow = THREE.MathUtils.damp(this.backGlow, clamp((travelSpeed - .6) / 8, 0, 1), 8, dt);
+    this.backHaloMaterial.opacity = this.backGlow * .48;
+    this.backVentMaterial.opacity = .12 + this.backGlow * .88;
     const hit = this.hitTimer > 0;
     const hitFlash = hit ? .55 + hitWave * .95 : 0;
     this.armorMaterial.emissiveIntensity = .025 + hitFlash * 1.45;
