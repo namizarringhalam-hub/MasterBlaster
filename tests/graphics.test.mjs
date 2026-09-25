@@ -1268,8 +1268,16 @@ for (const nativeWebGPU of [true, false]) for (const quality of ["low", "medium"
   assert.equal(Boolean(pipeline.pipeline), quality !== "low" && (!nativeWebGPU || quality === "high"));
   assert.equal(Boolean(pipeline.highLoadPipeline), nativeWebGPU && quality === "medium");
   assert.equal(Boolean(pipeline.aoPass), nativeWebGPU && quality === "high");
+  assert.equal(Boolean(pipeline.reflectionPass), nativeWebGPU && quality === "high", "SSR is allocated only for native high quality");
   pipeline.setQuality("high");
   if (nativeWebGPU) {
+    assert.equal(pipeline.scenePass.getMRT().getBlendMode("surface").blending, THREE.NormalBlending);
+    const makeSurface = pipeline.scenePass.getMRT().get("surface").node.shaderNode.jsFunc;
+    for (const depthWrite of [true, false]) {
+      assert.equal(makeSurface([], { material: { depthWrite, metalness: .5 } }).node.nodes.at(-1).value, Number(depthWrite));
+    }
+    assert.equal(pipeline.reflectionPass.resolutionScale, .5);
+    assert.equal(pipeline.reflectionPass.historyTexture, null, "reflections cannot retain destroyed or moving objects from an earlier frame");
     assert.equal(pipeline.scenePass.getMRT().getBlendMode("normal").blending, THREE.NormalBlending,
       "AO normals must preserve the opaque normal behind non-depth-writing decoration");
     assert.equal(pipeline.scenePass.getMRT().getBlendMode("output").blending, THREE.MaterialBlending,
@@ -1293,6 +1301,7 @@ for (const nativeWebGPU of [true, false]) for (const quality of ["low", "medium"
   pipeline.dispose(); pipeline.dispose();
   assert.equal(pipeline.pipeline, null);
   assert.equal(pipeline.highLoadPipeline, null);
+  assert.equal(pipeline.reflectionPass, null);
 }
 
 const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");

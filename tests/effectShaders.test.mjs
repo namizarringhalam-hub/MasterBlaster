@@ -51,6 +51,23 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
       assert.match(fragment, /vec4(?:<f32>)?\( 0\.0, 0\.0, 0\.0, Output\.w \)/, "diffuse white and smoke cannot emit bloom");
     } else assert.match(fragment, /vec4(?:<f32>)?\( EmissiveColor, Output\.w \)/, "PBR contributes only its emission, not reflected light");
   }
+  if (pipeline.reflectionPass) {
+    renderer.setRenderTarget(null); renderer.setMRT(null);
+    const postMaterial = new THREE.NodeMaterial();
+    postMaterial.fragmentNode = pipeline.pipeline.outputNode;
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(), postMaterial);
+    const buildPost = material => {
+      quad.material = material;
+      const builder = new THREE.WGSLNodeBuilder(quad, renderer);
+      builder.scene = scene; builder.camera = camera; builder.build();
+      assert.doesNotMatch(builder.fragmentShader, /undefined|NaN/);
+      return builder.fragmentShader;
+    };
+    buildPost(postMaterial);
+    assert.match(buildPost(pipeline.reflectionPass._ssrMaterial), /textureSample(?:Level)?\(/, "reflection ray tracing samples the current scene");
+    buildPost(pipeline.reflectionPass._blurMaterial);
+    quad.geometry.dispose(); postMaterial.dispose();
+  }
   pipeline.dispose(); effects.dispose(); plain.geometry.dispose(); plain.material.dispose(); lit.geometry.dispose(); lit.material.dispose();
   reactor.geometry.dispose(); reactor.material.dispose();
   world.dispose(); sky.geometry.dispose(); sky.material.dispose();

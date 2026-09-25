@@ -1,12 +1,18 @@
 import * as THREE from "three/webgpu";
-import { Fn, If, emissive, getNormalFromDepth, mrt, normalView, output, pass, uniform, vec3, vec4 } from "three/tsl";
+import { Fn, If, emissive, getNormalFromDepth, metalness, mrt, normalView, output, pass, roughness, screenUV, uniform, vec3, vec4 } from "three/tsl";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
+import { ssr } from "three/addons/tsl/display/SSRNode.js";
 import TEXT from "./playerText.js";
 
 // AO depth and normals must describe the same surface. Light overlays keep
 // their scene color, but cannot replace the normal of the solid beneath them.
 const aoNormal = Fn(([], builder) => vec4(normalView, builder.material.depthWrite ? 1 : 0));
+// Pack the finished material response alongside the beauty pass. Transparent
+// light/smoke overlays preserve the solid surface's reflection eligibility.
+const reflectionSurface = Fn(([], builder) => builder.material.metalness !== undefined
+  ? vec4(metalness.mul(roughness.oneMinus().pow(2)), roughness, 0, builder.material.depthWrite ? 1 : 0)
+  : vec4(0, 1, 0, builder.material.depthWrite ? 1 : 0));
 // Only authored emission enters bloom. Bright diffuse surfaces and normal-blend
 // smoke still occlude it through the same depth/alpha as the beauty attachment.
 const bloomEmission = Fn(([], builder) => builder.material.emissive
@@ -52,6 +58,7 @@ export class NeonRenderPipeline {
     this.highLoadScenePass = null;
     this.scenePass = null;
     this.aoPass = null;
+    this.reflectionPass = null;
     this.pipeline = null;
     this.bloomPass = null;
     const nativeWebGPU = renderer.backend.isWebGPUBackend === true;
@@ -76,9 +83,10 @@ export class NeonRenderPipeline {
       return;
     }
     const scenePass = this.scenePass = pass(scene, camera);
-    scenePass.setMRT(mrt({ output, normal: aoNormal(), bloom: bloomEmission() })
+    scenePass.setMRT(mrt({ output, normal: aoNormal(), bloom: bloomEmission(), surface: reflectionSurface() })
       .setBlendMode("bloom", new THREE.BlendMode(THREE.MaterialBlending))
-      .setBlendMode("normal", new THREE.BlendMode(THREE.NormalBlending)));
+      .setBlendMode("normal", new THREE.BlendMode(THREE.NormalBlending))
+      .setBlendMode("surface", new THREE.BlendMode(THREE.NormalBlending)));
 
     const sceneColor = scenePass.getTextureNode("output");
     const bloomPass = bloom(
@@ -104,8 +112,21 @@ export class NeonRenderPipeline {
     aoPass.samples.value = 16;
     const grounding = aoPass.getTextureNode().r.mul(.34).add(.66);
     const finalColor = sceneColor.mul(vec4(vec3(grounding), 1));
-
-    this.pipeline.outputNode = finalColor.add(bloomPass);
+    const surface = scenePass.getTextureNode("surface");
+    const reflections = this.reflectionPass = ssr(sceneColor, depth, normal, {
+      camera, metalnessNode: surface.r.mul(surface.a.step(.5)), roughnessNode: surface.g,
+      binaryRefine: true
+    });
+    reflections.resolutionScale = .5;
+    reflections.maxDistance.value = 28;
+    reflections.thickness.value = .22;
+    reflections.quality.value = .5;
+    reflections.intensity.value = .45;
+    reflections.maxLuminance.value = 3;
+    // No temporal history: moving fighters and destroyed cover update in the
+    // current frame. Existing IBL remains the fallback outside the screen.
+    const edge = screenUV.min(screenUV.oneMinus()).mul(12).clamp(0, 1);
+    this.pipeline.outputNode = finalColor.add(vec4(reflections.rgb.mul(edge.x.mul(edge.y)), 0)).add(bloomPass);
   }
 
   render() {
@@ -209,7 +230,7 @@ export class NeonRenderPipeline {
   }
 
   disposePipelineResources() {
-    for (const resource of [this.pipeline, this.highLoadPipeline, this.scenePass, this.highLoadScenePass, this.bloomPass, this.highLoadBloom, this.aoPass]) resource?.dispose?.();
+    for (const resource of [this.pipeline, this.highLoadPipeline, this.scenePass, this.highLoadScenePass, this.bloomPass, this.highLoadBloom, this.aoPass, this.reflectionPass]) resource?.dispose?.();
     this.pipeline = null;
     this.highLoadPipeline = null;
     this.scenePass = null;
@@ -217,5 +238,6 @@ export class NeonRenderPipeline {
     this.bloomPass = null;
     this.highLoadBloom = null;
     this.aoPass = null;
+    this.reflectionPass = null;
   }
 }
