@@ -14,3 +14,12 @@ Request: apply the Apnea graphics lessons to Master Blaster (2026-09-25).
 - Browser timing stays around 1000ms/frame (cause not isolated); do not claim a measured FPS improvement. Same-view native counters show 4.3% fewer draws and 56.0% less reported texture memory, not a GPU timing guarantee.
 - Code review: collision/camera occluders and combat geometry untouched; existing conservative spheres preserved; bounded hysteresis, shared GPU clock, low-tier shaft removal and arena disposal covered by regression checks. No new dependencies.
 - Implementation and validation complete. Release target: normal commit to origin/main; commit identity is recorded in Git history.
+
+## Underwater skylight follow-up (2026-09-25)
+
+- Request: light from the sky into the battlefield, evoking Apnea's underwater atmosphere.
+- Implemented in `src/world.js`: blue-green overhead water glow with soft surface contours; four long slanting cyan shafts (two medium, zero low); slow world-space caustic contours on the floor and structural decks. Caustics modulate existing surface color and keep PBR lighting/shadows; no extra textures, lights or render passes. Arena clock preserves pause and reduced-motion behavior. Low/medium tiers reduce caustic contrast.
+- Validated: full `npm test` exit 0 (27 Node checks and 19 Worker tests); production build/hosting check exit 0; explicit WGSL/GLSL shader regression passes with floor, deck, shaft and sky graphs. Tests cover quality transitions, caustic material assignment, non-emissive floor, unchanged collision and disposal.
+- Browser: inspected native WebGPU high arena and low grazing lossless captures, plus forced WebGL high arena. Zero renderer errors or fallback. Same-view counts remain 601 native / 600 WebGL draws; reported texture memory unchanged from the previous version. Longer shafts increase pixel coverage and shader work; these counters are not an FPS guarantee.
+- A WebGL control timeout resolved after closing the completed native preview. No product renderer errors were reported.
+- Medium WebGL moving-combat check: 16-fighter stress running, arena unpaused, active impact rings/sparks, zero errors or fallback. Implementation and validation complete; release target is a normal commit/push to origin/main.

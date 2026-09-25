@@ -3,6 +3,7 @@ import * as THREE from "three/webgpu";
 import { color } from "three/tsl";
 import { CombatVisuals } from "../src/combatVisuals.js";
 import { NeonRenderPipeline } from "../src/renderPipeline.js";
+import { ArenaWorld } from "../src/world.js";
 
 // Exercise Three's actual shader generators without a browser/device. The only
 // stand-ins are conservative hardware limits; this is not a GPU pixel test.
@@ -11,6 +12,7 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
     canvas: { width: 64, height: 64, style: {}, addEventListener() {}, removeEventListener() {} } });
   renderer.backend.capabilities ??= {};
   renderer.backend.capabilities.getUniformBufferLimit = () => 16384;
+  renderer.hasFeature = () => false;
   if (webgl) renderer.backend.extensions = { has: () => false };
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera();
   const effects = new CombatVisuals(scene), pipeline = new NeonRenderPipeline(renderer, scene, camera, { quality });
@@ -20,6 +22,15 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
   const lit = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial({ emissive: 0xff6600, emissiveIntensity: 3 }));
   const reactor = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardNodeMaterial());
   reactor.material.emissiveNode = color(0x33aaff).mul(.08);
+  const world = new ArenaWorld(scene);
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(), new THREE.MeshBasicNodeMaterial());
+  sky.material.colorNode = scene.backgroundNode;
+  for (const mesh of [world.ground, world.platforms[0].mesh, world.lightShafts, sky]) {
+    const builder = new (webgl ? THREE.GLSLNodeBuilder : THREE.WGSLNodeBuilder)(mesh, renderer);
+    builder.scene = scene; builder.camera = camera; builder.build();
+    assert.ok(builder.fragmentShader.length > 100);
+    assert.doesNotMatch(builder.fragmentShader, /undefined|NaN/);
+  }
   for (const mesh of [effects.flashOuter, effects.tracerInner, ...effects.explosions.layers.map(l => l.mesh), plain, lit, reactor]) {
     const builder = new (webgl ? THREE.GLSLNodeBuilder : THREE.WGSLNodeBuilder)(mesh, renderer);
     builder.scene = scene; builder.camera = camera; builder.build();
@@ -36,5 +47,6 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
   }
   pipeline.dispose(); effects.dispose(); plain.geometry.dispose(); plain.material.dispose(); lit.geometry.dispose(); lit.material.dispose();
   reactor.geometry.dispose(); reactor.material.dispose();
+  world.dispose(); sky.geometry.dispose(); sky.material.dispose();
 }
 console.log("WGSL/GLSL high/medium shaders generate with selective emission, smoke alpha and instanced attributes.");

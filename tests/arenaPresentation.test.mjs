@@ -30,7 +30,12 @@ for (const level of ["high", "medium", "low", "high"]) {
   world.updatePresentation(camera);
   assert.equal(detail.visible, false, "hidden details do not chatter at the boundary");
   assert.equal(world.lightShafts.count, level === "low" ? 0 : level === "medium" ? 2 : 4);
+  assert.equal(world.waterLightStrength.value, level === "low" ? .35 : level === "medium" ? .7 : 1);
 }
+assert.equal(world.ground.material.colorNode, world.waterLight);
+assert.ok(world.platforms.every(item => item.mesh.material.colorNode === world.waterLight), "raised decks share world-space caustics");
+assert.equal(world.ground.material.emissiveIntensity, 0, "caustics receive lighting and shadows instead of emitting bloom");
+assert.equal(world.lightShafts.castShadow, false);
 world.time = 12;
 world.updatePresentation(camera, true); assert.equal(world.atmosphereTime.value, 0);
 world.updatePresentation(camera, false); assert.equal(world.atmosphereTime.value, 12);

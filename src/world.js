@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { abs, color, fract, length, materialOpacity, max, min, mix, normalViewGeometry, normalWorldGeometry, positionViewDirection, positionWorld, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
+import { abs, color, fract, length, materialColor, materialOpacity, max, min, mix, normalViewGeometry, normalWorldGeometry, positionViewDirection, positionWorld, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
 import { ARENA_PORTAL_COOLDOWN_SECONDS, ARENA_PORTAL_PAIRS, ARENA_SPAWN_POINTS, MAP_THEMES, seededRandom, seedFromText, structuralTowerBlueprints } from "./gameData.js";
 import { surfaceTextures, surfaceMaps, projectSurfaceUVs } from "./surfaceTextures.js";
 
@@ -134,7 +134,7 @@ function platformSilhouetteGeometry(width, height, depth) {
 }
 
 function material(color, emissive = 0, opacity = 1, options = {}) {
-  const Material = options.emissiveNode ? THREE.MeshStandardNodeMaterial : THREE.MeshStandardMaterial;
+  const Material = options.emissiveNode || options.colorNode ? THREE.MeshStandardNodeMaterial : THREE.MeshStandardMaterial;
   const surface = new Material({
     color,
     roughness: options.roughness ?? .62,
@@ -154,11 +154,12 @@ function material(color, emissive = 0, opacity = 1, options = {}) {
     aoMap: options.aoMap ?? options.roughnessMap ?? surfaceMaps().aoMap
   });
   if (options.emissiveNode) surface.emissiveNode = options.emissiveNode;
+  if (options.colorNode) surface.colorNode = options.colorNode;
   return surface;
 }
 
-function box(w, h, d, color, x, y, z, emissive = 0) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material(color, emissive));
+function box(w, h, d, color, x, y, z, emissive = 0, options = {}) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material(color, emissive, 1, options));
   mesh.position.set(x, y, z);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -309,8 +310,14 @@ const skyBackgrounds = new Map();
 function skyBackground(theme) {
   if (!skyBackgrounds.has(theme.id)) {
     const horizon = new THREE.Color(theme.haze).offsetHSL(0, .04, .045);
-    const zenith = new THREE.Color(theme.haze).multiplyScalar(.18);
-    skyBackgrounds.set(theme.id, mix(color(horizon), color(zenith), normalWorldGeometry.y.max(0).pow(.65)));
+    const up = normalWorldGeometry.y.max(0);
+    const direction = normalWorldGeometry;
+    const surface = direction.xz.div(up.max(.18));
+    const ripples = sin(surface.x.mul(13).add(sin(surface.y.mul(9))))
+      .mul(sin(surface.y.mul(15).sub(surface.x.mul(4)))).mul(.5).add(.5).pow(3);
+    const sun = direction.dot(vec3(.35, .85, -.4).normalize()).max(0).pow(18);
+    const water = color(0x277b91).mul(ripples.mul(.28).add(.72)).add(color(0xa8eced).mul(sun.mul(.7)));
+    skyBackgrounds.set(theme.id, mix(color(horizon), water, smoothstep(0, .85, up)));
   }
   return skyBackgrounds.get(theme.id);
 }
@@ -341,6 +348,16 @@ export class ArenaWorld {
     this.decorativeDetails = [];
     this.detailCenter = new THREE.Vector3();
     this.atmosphereTime = uniform(0);
+    this.waterLightStrength = uniform(1);
+    // ponytail: a few analytic wave contours reuse the surface pass and its shadows;
+    // no caustic texture, extra lights or fullscreen underwater post-process.
+    const p = positionWorld.xz.add(positionWorld.y.mul(vec2(.22, -.16))).mul(.42);
+    const drift = this.atmosphereTime.mul(.18);
+    const waves = sin(p.x.add(sin(p.y.mul(1.27).add(drift))))
+      .add(sin(p.y.sub(sin(p.x.mul(.83).sub(drift.mul(.73))))));
+    const caustics = smoothstep(.035, .24, waves.abs()).oneMinus()
+      .mul(normalWorldGeometry.y.max(0).pow(3)).mul(this.waterLightStrength);
+    this.waterLight = materialColor.mul(vec3(1).add(vec3(.55, 1.05, 1.15).mul(caustics)));
     this.cameraRaycaster = new THREE.Raycaster();
     this.boostPads = [];
     this.movers = [];
@@ -422,6 +439,7 @@ export class ArenaWorld {
       texture.needsUpdate = true;
     }
     this.motes?.geometry.setDrawRange(0, profile.atmosphereCount);
+    this.waterLightStrength.value = profile.level === "low" ? .35 : profile.level === "medium" ? .7 : 1;
     if (this.lightShafts) this.lightShafts.count = profile.level === "low" ? 0 : profile.level === "medium" ? 2 : 4;
   }
 
@@ -450,7 +468,7 @@ export class ArenaWorld {
   build() {
     const random = seededRandom(seedFromText(this.seed));
     const structuralBlueprints = structuralTowerBlueprints(this.seed, random);
-    this.ground = box(this.size * 2, .5, this.size * 2, this.theme.ground, 0, -.28, 0);
+    this.ground = box(this.size * 2, .5, this.size * 2, this.theme.ground, 0, -.28, 0, 0, { colorNode: this.waterLight });
     this.ground.name = "Arena floor";
     this.ground.material.map = this.groundTexture;
     this.ground.material.normalMap = this.groundNormal;
@@ -932,23 +950,23 @@ export class ArenaWorld {
     this.group.add(motes);
     this.motes = motes;
 
-    // Four bounded mesh shafts soften the perimeter without a fullscreen volume pass.
+    // Four bounded, slanting shafts connect the overhead water glow to the arena.
     // Shared GPU animation follows arena time, including pause and Reduced Motion.
     const shaftMaterial = new THREE.MeshBasicNodeMaterial({
-      color: 0xffffff, vertexColors: true, transparent: true, opacity: .028,
+      color: 0xb0ecf1, transparent: true, opacity: .065,
       blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
     });
     const taper = smoothstep(0, .22, uv().y).mul(smoothstep(.68, 1, uv().y).oneMinus());
     const drift = sin(positionWorld.y.mul(.27).sub(this.atmosphereTime.mul(.45))).mul(.12).add(.88);
     shaftMaterial.opacityNode = materialOpacity.mul(taper).mul(drift)
       .mul(normalViewGeometry.dot(positionViewDirection).abs().pow(2));
-    this.lightShafts = new THREE.InstancedMesh(new THREE.CylinderGeometry(1.2, 6, 24, 12, 1, true), shaftMaterial, 4);
-    this.lightShafts.name = "Perimeter atmospheric light shafts";
+    this.lightShafts = new THREE.InstancedMesh(new THREE.CylinderGeometry(4, 15, 150, 16, 1, true), shaftMaterial, 4);
+    this.lightShafts.name = "Underwater skylight shafts";
     const marker = new THREE.Object3D();
-    [[-92, -92], [92, 92], [92, -92], [-92, 92]].forEach(([x, z], index) => {
-      marker.position.set(x, 18, z); marker.updateMatrix();
+    [[-48, -40], [48, 40], [48, -40], [-48, 40]].forEach(([x, z], index) => {
+      marker.position.set(x, 73, z);
+      marker.rotation.set(-.16, 0, -.22); marker.updateMatrix();
       this.lightShafts.setMatrixAt(index, marker.matrix);
-      this.lightShafts.setColorAt(index, new THREE.Color(this.districtColorAt(x, z)).lerp(new THREE.Color(0xffffff), .35));
     });
     this.lightShafts.computeBoundingSphere();
     this.group.add(this.lightShafts);
@@ -1590,7 +1608,8 @@ export class ArenaWorld {
   }
 
   addBox(x, z, w, d, h, color, destructible = false, anchor = false, baseY = 0) {
-    const mesh = box(w, h, d, color, x, baseY + h / 2, z);
+    const mesh = box(w, h, d, color, x, baseY + h / 2, z, 0,
+      destructible ? {} : { colorNode: this.waterLight });
     mesh.material.map = this.panelTexture;
     mesh.material.normalMap = this.panelNormal;
     mesh.material.normalScale.set(.42, .42);
