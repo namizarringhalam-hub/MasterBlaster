@@ -221,7 +221,7 @@ globalThis.localStorage = {
 };
 const legacySettings = loadSettings();
 assert.equal(legacySettings.graphics, "high", "existing players migrate to High graphics without changing the current default appearance");
-assert.deepEqual(graphicsProfile("high", false, 3), { level: "high", pixelRatio: 1.65, combatQuality: 1, shadowMapSize: 4096, anisotropy: 16, atmosphereCount: 220, combatLights: 4 }, "High preserves resolution/effect density while improving shadows and texture filtering");
+assert.deepEqual(graphicsProfile("high", false, 3), { level: "high", pixelRatio: 1.65, combatQuality: 1, shadowMapSize: 2048, detailDistance: 96, anisotropy: 16, atmosphereCount: 220, combatLights: 4 }, "High preserves combat detail and resolution with bounded decorative and shadow costs");
 assert.ok(graphicsProfile("medium", false, 3).pixelRatio < 1.65 && graphicsProfile("medium", false, 3).combatQuality < 1, "Medium reduces resolution and effect density");
 assert.ok(graphicsProfile("low", false, 3).pixelRatio < graphicsProfile("medium", false, 3).pixelRatio && graphicsProfile("low", false, 3).combatQuality < graphicsProfile("medium", false, 3).combatQuality, "Low applies the lightest render profile");
 assert.deepEqual(legacySettings.loadout, savedSet, "legacy loadout-only settings migrate without changing weapon order");

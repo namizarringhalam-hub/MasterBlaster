@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 // stops the suite with its name; it cannot silently consume the host's memory.
 const checks = [
   "testRunner.test", "threeLifecycle.test", "playerText.test", "setupEditor.test", "lighting.test", "smoke", "grappleTargets.test", "cornerPillars.test", "botBrain.test", "trainingControls.test", "graphics.test",
-  "pause.test", "effectUpgrades.test", "pbrMaterials.test", "gpuTextureTrace.test", "performance.test", "assetCache.test", "audioLifecycle.test", "audioAssets.test", "audioQuality.test", "musicScore.test",
+  "pause.test", "effectUpgrades.test", "pbrMaterials.test", "arenaPresentation.test", "gpuTextureTrace.test", "performance.test", "assetCache.test", "audioLifecycle.test", "audioAssets.test", "audioQuality.test", "musicScore.test",
   "weaponStress", "multiplayerProtocol.test", "combatAuthority.test", "multiplayerClient.test", "globalMultiplayer.test"
 ].map(name => [`tests/${name}.mjs`]);
 checks.push(["node_modules/vitest/vitest.mjs", "run"]);

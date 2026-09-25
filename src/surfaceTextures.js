@@ -3,7 +3,7 @@ import { seedFromText } from "./gameData.js";
 
 // Matched albedo/normal/ORM channels: recessed seams, bevel highlights and
 // fine brushed grain. Geometry, collision and structural IDs remain untouched.
-export function surfaceTextures(seed, repeat, machined = false) {
+export function surfaceTextures(seed, repeat, machined = false, finish = "metal") {
   const size = 256, tile = machined ? 128 : 64, fastenerInset = machined ? 20 : 6, seedValue = seedFromText(seed);
   const buffers = Array.from({ length: 3 }, () => new Uint8Array(size * size * 4));
   const hash = (x, y) => ((Math.imul(x + seedValue, 374761393) ^ Math.imul(y, 668265263)) >>> 0) % 251 / 251;
@@ -35,6 +35,19 @@ export function surfaceTextures(seed, repeat, machined = false) {
     roughnessData[at + 1] = roughness;
     roughnessData[at + 2] = h < .4 ? 145 + h * 180 : 244 + grain;
     roughnessData[at + 3] = 255;
+    if (finish === "concrete") {
+      // Baked aggregate and shallow expansion joints: no extra texture fetches.
+      const aggregate = hash(x, y), patch = hash(Math.floor(x / 16), Math.floor(y / 16));
+      const joint = Math.min(x % tile, y % tile) < 1;
+      const value = joint ? 124 : 173 + patch * 12 + aggregate * 18;
+      diffuse[at] = value; diffuse[at + 1] = value; diffuse[at + 2] = value - 3;
+      normals[at] = 127 + (hash(x + 1, y) - aggregate) * 12;
+      normals[at + 1] = 127 + (hash(x, y + 1) - aggregate) * 12;
+      normals[at + 2] = 255;
+      roughnessData[at] = joint ? 208 : 250;
+      roughnessData[at + 1] = 230 + aggregate * 24;
+      roughnessData[at + 2] = 0;
+    }
   }
   return buffers.map((data, index) => {
     const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);

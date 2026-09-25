@@ -322,14 +322,14 @@ class BlasterBattle {
 
   setupLights() {
     // Environment IBL supplies diffuse fill and reflections without a flat light.
-    const key = this.keyLight = new THREE.DirectionalLight(0xffffff, 1.78);
+    const key = this.keyLight = new THREE.DirectionalLight(0xffeee0, 2.05);
     key.position.set(-22, 40, 18);
     key.castShadow = true;
     key.shadow.mapSize.set(this.graphics.shadowMapSize, this.graphics.shadowMapSize);
     key.shadow.bias = LIGHTING.shadowBias;
     key.shadow.normalBias = LIGHTING.shadowNormalBias;
     this.scene.add(key, key.target);
-    const rim = new THREE.DirectionalLight(0xff315f, .88);
+    const rim = new THREE.DirectionalLight(0x91bfff, .48);
     rim.position.set(22, 15, -25);
     this.scene.add(rim);
   }
@@ -3699,6 +3699,7 @@ class BlasterBattle {
   renderScene() {
     if (this.pendingResize) return false;
     if (this.state !== "play" || this.paused) this.updateCamera();
+    this.world?.updatePresentation(this.camera, this.settings.reducedMotion);
     this.renderPipeline.render();
     return true;
   }

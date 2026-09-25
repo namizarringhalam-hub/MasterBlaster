@@ -183,7 +183,8 @@ export function graphicsProfile(level = "high", coarsePointer = false, deviceSca
     : resolved === "medium" ? .75 : 1;
   return {
     level: resolved, pixelRatio: Math.min(Math.max(.5, Number(deviceScale) || 1), pixelCap), combatQuality,
-    shadowMapSize: resolved === "high" ? 4096 : 2048,
+    shadowMapSize: resolved === "high" ? 2048 : resolved === "medium" ? 1024 : 512,
+    detailDistance: resolved === "high" ? 96 : resolved === "medium" ? 72 : 48,
     anisotropy: resolved === "high" ? 16 : resolved === "medium" ? 8 : 4,
     atmosphereCount: resolved === "high" ? 220 : resolved === "medium" ? 150 : 80,
     combatLights: resolved === "high" ? 4 : resolved === "medium" ? 2 : 1

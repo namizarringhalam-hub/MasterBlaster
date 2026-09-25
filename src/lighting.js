@@ -7,7 +7,7 @@ export const LIGHTING = {
   // An empty URL uses the generated HDR room, with no network dependency.
   hdrUrl: "",
   exposure: 1.0,
-  environmentIntensity: .82,
+  environmentIntensity: .7,
   shadowBias: -.0005,
   shadowNormalBias: .02,
   shadowPadding: 2

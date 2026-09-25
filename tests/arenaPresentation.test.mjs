@@ -1,0 +1,48 @@
+import assert from "node:assert/strict";
+import * as THREE from "three/webgpu";
+import { ArenaWorld } from "../src/world.js";
+import { graphicsProfile } from "../src/gameData.js";
+import { surfaceTextures } from "../src/surfaceTextures.js";
+
+const world = new ArenaWorld(new THREE.Scene(), "FOUNDRY111");
+const camera = new THREE.PerspectiveCamera();
+const colliders = world.obstacles.map(item => [item.x, item.z, item.w, item.h, item.d, item.baseY]);
+const occluders = [...world.cameraOccluders];
+assert.ok(world.decorativeDetails.length >= 30);
+assert.ok(world.decorativeDetails.every(mesh => !occluders.includes(mesh) && !mesh.castShadow));
+const detail = world.decorativeDetails.find(mesh => !mesh.isInstancedMesh);
+detail.updateWorldMatrix(true, false);
+const center = detail.geometry.boundingSphere.center.clone().applyMatrix4(detail.matrixWorld);
+const radius = detail.geometry.boundingSphere.radius * detail.matrixWorld.getMaxScaleOnAxis();
+for (const level of ["high", "medium", "low", "high"]) {
+  const profile = graphicsProfile(level);
+  world.setGraphicsProfile(profile);
+  camera.position.copy(center);
+  world.updatePresentation(camera);
+  assert.equal(detail.visible, true, "close detail is restored after quality or camera changes");
+  camera.position.x += profile.detailDistance + radius + 4;
+  world.updatePresentation(camera);
+  assert.equal(detail.visible, true, "hysteresis keeps detail stable near the boundary");
+  camera.position.x += 8;
+  world.updatePresentation(camera);
+  assert.equal(detail.visible, false, "distant decoration is excluded from draw submission");
+  camera.position.x -= 8;
+  world.updatePresentation(camera);
+  assert.equal(detail.visible, false, "hidden details do not chatter at the boundary");
+  assert.equal(world.lightShafts.count, level === "low" ? 0 : level === "medium" ? 2 : 4);
+}
+world.time = 12;
+world.updatePresentation(camera, true); assert.equal(world.atmosphereTime.value, 0);
+world.updatePresentation(camera, false); assert.equal(world.atmosphereTime.value, 12);
+assert.equal(world.lightShafts.material.depthWrite, false);
+assert.deepEqual(world.obstacles.map(item => [item.x, item.z, item.w, item.h, item.d, item.baseY]), colliders);
+assert.deepEqual(world.cameraOccluders, occluders);
+assert.ok(world.platforms.every(item => item.mesh.visible), "distance quality cannot remove playable decks");
+const maps = surfaceTextures("CONCRETE-QA", 28, false, "concrete");
+assert.ok(maps[2].image.data.every((value, index) => index % 4 !== 2 || value === 0), "concrete is dielectric");
+assert.ok(new Set(maps[0].image.data).size > 16, "aggregate is baked into the shared surface atlas");
+maps.forEach(map => map.dispose());
+let disposed = 0;
+world.lightShafts.material.addEventListener("dispose", () => disposed++);
+world.dispose(); assert.equal(disposed, 1);
+console.log("Arena detail hysteresis, tier transitions, immutable collision, material channels and atmosphere lifecycle passed.");

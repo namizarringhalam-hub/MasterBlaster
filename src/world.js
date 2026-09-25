@@ -1,6 +1,6 @@
 import * as THREE from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { abs, color, fract, length, materialOpacity, max, min, mix, normalViewGeometry, normalWorldGeometry, positionViewDirection, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
+import { abs, color, fract, length, materialOpacity, max, min, mix, normalViewGeometry, normalWorldGeometry, positionViewDirection, positionWorld, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
 import { ARENA_PORTAL_COOLDOWN_SECONDS, ARENA_PORTAL_PAIRS, ARENA_SPAWN_POINTS, MAP_THEMES, seededRandom, seedFromText, structuralTowerBlueprints } from "./gameData.js";
 import { surfaceTextures, surfaceMaps, projectSurfaceUVs } from "./surfaceTextures.js";
 
@@ -18,6 +18,10 @@ const DISTRICT_PALETTES = {
   ion: [0x4dffc2, 0xff58dc, 0x6b9cff, 0xffcc58]
 };
 
+function colorNodeForReactor(value, clock) {
+  const sweep = sin(positionWorld.y.mul(.34).sub(clock.mul(.6))).mul(.5).add(.5).pow(8);
+  return color(value).mul(sweep.mul(.07).add(.025));
+}
 
 function radialGlowTexture() {
   const size = 64;
@@ -130,7 +134,8 @@ function platformSilhouetteGeometry(width, height, depth) {
 }
 
 function material(color, emissive = 0, opacity = 1, options = {}) {
-  return new THREE.MeshStandardMaterial({
+  const Material = options.emissiveNode ? THREE.MeshStandardNodeMaterial : THREE.MeshStandardMaterial;
+  const surface = new Material({
     color,
     roughness: options.roughness ?? .62,
     metalness: options.metalness ?? .32,
@@ -148,6 +153,8 @@ function material(color, emissive = 0, opacity = 1, options = {}) {
     metalnessMap: options.metalnessMap ?? options.roughnessMap ?? surfaceMaps().metalnessMap,
     aoMap: options.aoMap ?? options.roughnessMap ?? surfaceMaps().aoMap
   });
+  if (options.emissiveNode) surface.emissiveNode = options.emissiveNode;
+  return surface;
 }
 
 function box(w, h, d, color, x, y, z, emissive = 0) {
@@ -331,6 +338,9 @@ export class ArenaWorld {
     this.anchors = [];
     this.platforms = [];
     this.cameraOccluders = [];
+    this.decorativeDetails = [];
+    this.detailCenter = new THREE.Vector3();
+    this.atmosphereTime = uniform(0);
     this.cameraRaycaster = new THREE.Raycaster();
     this.boostPads = [];
     this.movers = [];
@@ -362,7 +372,7 @@ export class ArenaWorld {
     this.sweeperLocal = new THREE.Vector3();
     this.sweeperPush = new THREE.Vector3();
     const [panel, panelNormal, panelRoughness] = surfaceTextures(`${seed}-structure`, 4);
-    const [ground, groundNormal, groundRoughness] = surfaceTextures(`${seed}-ground`, 28);
+    const [ground, groundNormal, groundRoughness] = surfaceTextures(`${seed}-ground`, 28, false, "concrete");
     this.textures = [panel, ground, radialGlowTexture(), panelNormal, panelRoughness, groundNormal, groundRoughness];
     [this.panelTexture, this.groundTexture, this.glowTexture, this.panelNormal, this.panelRoughness, this.groundNormal, this.groundRoughness] = this.textures;
     this.coverTextures = surfaceTextures(`${seed}-cover`, 4, true);
@@ -412,6 +422,29 @@ export class ArenaWorld {
       texture.needsUpdate = true;
     }
     this.motes?.geometry.setDrawRange(0, profile.atmosphereCount);
+    if (this.lightShafts) this.lightShafts.count = profile.level === "low" ? 0 : profile.level === "medium" ? 2 : 4;
+  }
+
+  trackDetail(mesh) {
+    // ponytail: cull small decorative batches as a unit; gameplay surfaces stay intact.
+    if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+    if (mesh.isInstancedMesh && !mesh.boundingSphere) mesh.computeBoundingSphere();
+    mesh.castShadow = false;
+    this.decorativeDetails.push(mesh);
+  }
+
+  updatePresentation(camera, reducedMotion = false) {
+    this.atmosphereTime.value = reducedMotion ? 0 : this.time;
+    const range = this.graphicsProfile?.detailDistance ?? 96;
+    for (const mesh of this.decorativeDetails) {
+      if (!mesh.parent) continue;
+      mesh.updateWorldMatrix(true, false);
+      const sphere = mesh.isInstancedMesh ? mesh.boundingSphere : mesh.geometry.boundingSphere;
+      this.detailCenter.copy(sphere.center).applyMatrix4(mesh.matrixWorld);
+      // Bound-aware distance and hysteresis prevent popping at a batch's near edge.
+      const distance = range + sphere.radius * mesh.matrixWorld.getMaxScaleOnAxis() + (mesh.visible ? 8 : 0);
+      mesh.visible = this.detailCenter.distanceToSquared(camera.position) < distance * distance;
+    }
   }
 
   build() {
@@ -421,12 +454,12 @@ export class ArenaWorld {
     this.ground.name = "Arena floor";
     this.ground.material.map = this.groundTexture;
     this.ground.material.normalMap = this.groundNormal;
-    this.ground.material.normalScale.set(.36, .36);
+    this.ground.material.normalScale.set(.24, .24);
     this.ground.material.roughnessMap = this.groundRoughness;
     this.ground.material.metalnessMap = this.groundRoughness;
     this.ground.material.aoMap = this.groundRoughness;
     this.ground.material.roughness = .9;
-    this.ground.material.metalness = .14;
+    this.ground.material.metalness = 0;
     this.group.add(this.ground);
     this.addGroundTreatment();
     this.addDistrictLights();
@@ -620,7 +653,7 @@ export class ArenaWorld {
 
     // Four restrained pools give each route quadrant its own readable lighting hierarchy.
     positions.forEach(([x, z], index) => {
-      const light = new THREE.PointLight(this.districtColors[index], 19, 64, 2);
+      const light = new THREE.PointLight(this.districtColors[index], 14, 64, 2);
       light.name = `District ${index + 1} route light`;
       light.position.set(x, 23, z);
       light.castShadow = false;
@@ -898,6 +931,27 @@ export class ArenaWorld {
     motes.name = "Atmospheric energy motes";
     this.group.add(motes);
     this.motes = motes;
+
+    // Four bounded mesh shafts soften the perimeter without a fullscreen volume pass.
+    // Shared GPU animation follows arena time, including pause and Reduced Motion.
+    const shaftMaterial = new THREE.MeshBasicNodeMaterial({
+      color: 0xffffff, vertexColors: true, transparent: true, opacity: .028,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+    });
+    const taper = smoothstep(0, .22, uv().y).mul(smoothstep(.68, 1, uv().y).oneMinus());
+    const drift = sin(positionWorld.y.mul(.27).sub(this.atmosphereTime.mul(.45))).mul(.12).add(.88);
+    shaftMaterial.opacityNode = materialOpacity.mul(taper).mul(drift)
+      .mul(normalViewGeometry.dot(positionViewDirection).abs().pow(2));
+    this.lightShafts = new THREE.InstancedMesh(new THREE.CylinderGeometry(1.2, 6, 24, 12, 1, true), shaftMaterial, 4);
+    this.lightShafts.name = "Perimeter atmospheric light shafts";
+    const marker = new THREE.Object3D();
+    [[-92, -92], [92, 92], [92, -92], [-92, 92]].forEach(([x, z], index) => {
+      marker.position.set(x, 18, z); marker.updateMatrix();
+      this.lightShafts.setMatrixAt(index, marker.matrix);
+      this.lightShafts.setColorAt(index, new THREE.Color(this.districtColorAt(x, z)).lerp(new THREE.Color(0xffffff), .35));
+    });
+    this.lightShafts.computeBoundingSphere();
+    this.group.add(this.lightShafts);
   }
 
   glowSprite(color, size, opacity = .3) {
@@ -1059,7 +1113,8 @@ export class ArenaWorld {
         1,
         {
           roughness: .72, metalness: .34, emissiveIntensity: .035, map: this.panelTexture,
-          normalMap: this.panelNormal, roughnessMap: this.panelRoughness
+          normalMap: this.panelNormal, roughnessMap: this.panelRoughness,
+          emissiveNode: colorNodeForReactor(color, this.atmosphereTime)
         }
       );
       const facade = new THREE.Mesh(new THREE.CylinderGeometry(3.72, 3.55, top - bottom, 8), facadeMaterial);
@@ -1112,6 +1167,7 @@ export class ArenaWorld {
     );
     base.position.y = 15.45;
     structure.add(base, bands, fins);
+    this.trackDetail(fins);
     this.cameraOccluders.push(base);
     this.group.add(structure);
   }
@@ -1235,6 +1291,7 @@ export class ArenaWorld {
     frame.instanceMatrix.needsUpdate = true;
     frame.computeBoundingSphere();
     platform.mesh.add(channels, lanes, serviceNodes, frame);
+    for (const mesh of [channels, serviceNodes, frame]) this.trackDetail(mesh);
   }
 
   addDeckInterruptions(platform, district, color) {
@@ -1271,6 +1328,7 @@ export class ArenaWorld {
     panels.instanceMatrix.needsUpdate = true;
     panels.computeBoundingSphere();
     platform.mesh.add(panels);
+    this.trackDetail(panels);
   }
 
   addPlatformUnderstructure(platform, color) {
@@ -1447,7 +1505,7 @@ export class ArenaWorld {
     const crossOffset = Math.min(platform.w, platform.d) * .26;
     const cables = new THREE.InstancedMesh(
       new THREE.CylinderGeometry(.075, .075, 1, 6),
-      material(0x061019, color, 1, { roughness: .44, metalness: .62, emissiveIntensity: .28 }),
+      material(0x101419, 0, 1, { roughness: .94, metalness: 0 }),
       3
     );
     const marker = new THREE.Object3D();
@@ -1478,6 +1536,8 @@ export class ArenaWorld {
     brackets.instanceMatrix.needsUpdate = true;
     brackets.computeBoundingSphere();
     platform.mesh.add(cables, brackets);
+    this.trackDetail(cables);
+    this.trackDetail(brackets);
   }
 
   decorateBreakable(mesh, x, z, inset = false) {
@@ -1526,6 +1586,7 @@ export class ArenaWorld {
     if (inset) slats = bakeCoverSlats(slats);
     mesh.name = ["Cyan capacitor cover", "Rose shield cover", "Amber vent machinery", "Violet reactor cover"][district];
     mesh.add(slats);
+    this.trackDetail(slats);
   }
 
   addBox(x, z, w, d, h, color, destructible = false, anchor = false, baseY = 0) {

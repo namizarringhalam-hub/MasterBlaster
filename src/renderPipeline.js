@@ -9,8 +9,8 @@ import TEXT from "./playerText.js";
 const aoNormal = Fn(([], builder) => vec4(normalView, builder.material.depthWrite ? 1 : 0));
 // Only authored emission enters bloom. Bright diffuse surfaces and normal-blend
 // smoke still occlude it through the same depth/alpha as the beauty attachment.
-const bloomEmission = Fn(([], builder) => builder.material.emissiveNode
-  ? output : builder.material.emissive ? vec4(emissive, output.a) : vec4(0, 0, 0, output.a));
+const bloomEmission = Fn(([], builder) => builder.material.emissive
+  ? vec4(emissive, output.a) : builder.material.emissiveNode ? output : vec4(0, 0, 0, output.a));
 // Low-intensity weapon inlays remain eligible now that reflections are excluded.
 const EMISSION_THRESHOLD = .08;
 
