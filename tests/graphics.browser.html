@@ -209,6 +209,17 @@ addEventListener("error", e => recordError(e.message));
 addEventListener("unhandledrejection", e => recordError(String(e.reason)));
 const { gameReady } = await import("../src/main.js");
 const game = await gameReady, metrics = document.querySelector("#metrics");
+// Fixed-view A/B for the city-lighting milestone; never included in production.
+if (new URLSearchParams(location.search).has("roomLighting")) {
+  const { RoomEnvironment } = await import("three/addons/environments/RoomEnvironment.js");
+  const room = new RoomEnvironment(), generator = new THREE.PMREMGenerator(game.renderer);
+  try {
+    const previous = game.environmentTarget;
+    game.environmentTarget = generator.fromScene(room, .04);
+    game.scene.environment = game.environmentTarget.texture;
+    previous.dispose();
+  } finally { room.dispose(); generator.dispose(); }
+}
 function installObserverMatrixSync(renderer, stats) {
   const nodes = renderer._nodes, original = nodes.getForRender, patched = new WeakSet();
   nodes.getForRender = function (...args) {

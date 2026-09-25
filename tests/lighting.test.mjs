@@ -3,8 +3,34 @@ import { mock } from "node:test";
 import { readFile } from "node:fs/promises";
 import * as THREE from "three/webgpu";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
-import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { LIGHTING, fitArenaShadow, setupEnvironment } from "../src/lighting.js";
+import { CityEnvironment, LIGHTING, fitArenaShadow, setupEnvironment } from "../src/lighting.js";
+
+const city = new CityEnvironment();
+const resources = new Set();
+let releases = 0;
+city.traverse(object => {
+  if (!object.isMesh) return;
+  resources.add(object.geometry); resources.add(object.material);
+  assert.equal(object.material.toneMapped, false, "capture retains linear HDR radiance");
+  if (object.geometry.type === "PlaneGeometry") {
+    assert.ok(object.position.length() + Math.hypot(object.scale.x, object.scale.y) / 2 < 60,
+      "all light cards remain inside the sky shell rather than being occluded by it");
+  }
+  if (object.name.includes("reflected sign")) {
+    assert.ok(Math.max(...object.material.color.toArray()) > 1, "signs retain HDR highlights");
+    const facing = new THREE.Vector3(0, 0, 1).applyQuaternion(object.quaternion);
+    assert.ok(facing.dot(object.position.clone().normalize().negate()) > .999, "signs face the capture origin");
+  }
+});
+assert.equal(city.children.filter(object => object.name.includes("ground bounce")).length, 4);
+assert.equal(city.children.filter(object => object.isLight).length, 0, "bounce introduces no dynamic lights");
+const skyColors = city.children[0].geometry.attributes.color;
+assert.ok([...skyColors.array].every(value => Number.isFinite(value) && value >= 0));
+assert.ok(skyColors.getZ(0) > skyColors.getX(0), "upper sky supplies cool fill");
+assert.ok(skyColors.getX(skyColors.count - 1) > skyColors.getZ(skyColors.count - 1), "lower hemisphere supplies warm ground return");
+for (const resource of resources) resource.addEventListener("dispose", () => releases++);
+city.dispose();
+assert.equal(releases, resources.size, "shared capture geometry and all materials released exactly once");
 
 const sun = new THREE.DirectionalLight();
 sun.position.set(-22, 40, 18);
@@ -38,11 +64,11 @@ const load = mock.method(HDRLoader.prototype, "loadAsync", async url => {
   assert.equal(url, "/assets/textures/equirectangular.hdr");
   return texture;
 });
-const roomDispose = mock.method(RoomEnvironment.prototype, "dispose");
+const cityDispose = mock.method(CityEnvironment.prototype, "dispose");
 const generated = new THREE.RenderTarget(16, 16);
 generated.texture.mapping = THREE.CubeUVReflectionMapping;
-const generate = mock.method(THREE.PMREMGenerator.prototype, "fromScene", room => {
-  assert.equal(room.name, "RoomEnvironment");
+const generate = mock.method(THREE.PMREMGenerator.prototype, "fromScene", city => {
+  assert.equal(city.name, "CityEnvironment");
   return generated;
 });
 const generatorDispose = mock.method(THREE.PMREMGenerator.prototype, "dispose", () => {});
@@ -68,11 +94,11 @@ try {
   assert.equal(await setupEnvironment({}, scene, { hdrUrl: "/bad.hdr", environmentIntensity: .6 }), generated);
   assert.equal(scene.environmentIntensity, .6);
   assert.equal(warning.mock.callCount(), 1);
-  assert.equal(roomDispose.mock.callCount(), 2);
+  assert.equal(cityDispose.mock.callCount(), 2);
   assert.equal(generatorDispose.mock.callCount(), 2);
   generate.mock.mockImplementation(() => { throw new Error("GPU failure"); });
   await assert.rejects(setupEnvironment({}, scene), /GPU failure/);
-  assert.equal(roomDispose.mock.callCount(), 3, "temporary room is released even on GPU failure");
+  assert.equal(cityDispose.mock.callCount(), 3, "temporary city is released even on GPU failure");
   assert.equal(generatorDispose.mock.callCount(), 3);
   assert.equal(LIGHTING.exposure, 1);
   const source = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
