@@ -46,6 +46,10 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
   }
   for (const mesh of [effects.flashOuter, effects.tracerInner, ...effects.explosions.layers.map(l => l.mesh), plain, lit, reactor]) {
     const builder = new (webgl ? THREE.GLSLNodeBuilder : THREE.WGSLNodeBuilder)(mesh, renderer);
+    if (pipeline.particleDepth) {
+      builder.context.particleDepth = pipeline.particleDepth.node;
+      builder.context.particleFadeStrength = pipeline.particleDepth.strength;
+    }
     builder.scene = scene; builder.camera = camera; builder.build();
     const fragment = builder.fragmentShader;
     assert.ok(fragment.length > 100 && builder.vertexShader.length > 100);
@@ -54,7 +58,7 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
     if (mesh.material.emissiveNode && !mesh.material.emissive) {
       assert.match(fragment, /EmissiveColor\s*=/);
       assert.match(fragment, /\.m\d\s*=\s*Output|\bm\d\s*=\s*Output/, "animated emission reaches the bloom attachment");
-    } else if (mesh === plain || ["smoke", "scorch"].some(kind => mesh === effects.explosions.layers.find(layer => layer.kind === kind).mesh)) {
+    } else if (mesh === plain || mesh === effects.explosions.layers.find(layer => layer.kind === "scorch").mesh) {
       assert.match(fragment, /vec4(?:<f32>)?\( 0\.0, 0\.0, 0\.0, Output\.w \)/, "diffuse white and smoke cannot emit bloom");
     } else assert.match(fragment, /vec4(?:<f32>)?\( EmissiveColor, Output\.w \)/, "PBR contributes only its emission, not reflected light");
   }

@@ -17,6 +17,7 @@ import "./mecha.test.mjs";
 import { graphicsProfile, swapStolenWeapon, WEAPONS } from "../src/gameData.js";
 import { CombatVisuals } from "../src/combatVisuals.js";
 import { NeonRenderPipeline, recoverInvalidAONormals } from "../src/renderPipeline.js";
+import { SoftParticleDepth } from "../src/softParticles.js";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { surfaceTextures, surfaceMaps, projectSurfaceUVs } from "../src/surfaceTextures.js";
@@ -1225,6 +1226,42 @@ const rendererStub = nativeWebGPU => ({
   getRenderObjectFunction: () => null, getPixelRatio: () => 1, getMRT: () => null,
   getClearColor: target => target.set(0), getClearAlpha: () => 1, getScissorTest: () => false
 });
+{
+  const scene = new THREE.Scene(), effects = new CombatVisuals(scene), camera = new THREE.PerspectiveCamera();
+  const depth = new SoftParticleDepth(), renderer = rendererStub(true);
+  const background = scene.backgroundNode = uniform(1);
+  let renders = 0, activeTarget = null;
+  Object.assign(renderer, {
+    transparent: true, opaque: false, autoClear: false,
+    getDrawingBufferSize: target => target.set(801, 601),
+    setRenderTarget: target => { activeTarget = target; }, setMRT() {}, setRenderObjectFunction() {},
+    setPixelRatio() {}, setClearColor() {}, setScissorTest() {},
+    render() {
+      renders++;
+      assert.equal(activeTarget, depth.target);
+      assert.equal(renderer.transparent, false);
+      assert.equal(renderer.opaque, true);
+      assert.equal(scene.overrideMaterial, depth.material);
+      throw new Error("simulated depth failure");
+    }
+  });
+  depth.render(renderer, scene, camera);
+  assert.equal(renders, 0, "idle scenes skip the soft-particle depth pass");
+  effects.explosions.spawn(new THREE.Vector3(), 2); effects.explosions.update(.1);
+  assert.throws(() => depth.render(renderer, scene, camera), /simulated depth failure/);
+  assert.deepEqual([depth.target.width, depth.target.height], [401, 301]);
+  assert.equal(depth.target.samples, 0, "separate single-sample depth avoids MSAA read/write conflicts");
+  assert.equal(activeTarget, null);
+  assert.equal(scene.backgroundNode, background);
+  assert.equal(scene.overrideMaterial, null);
+  assert.equal(renderer.transparent, true); assert.equal(renderer.opaque, false); assert.equal(renderer.autoClear, false);
+  const smoke = effects.explosions.layers.find(layer => layer.smoke).mesh;
+  assert.ok(smoke.material.isMeshStandardNodeMaterial && smoke.receiveShadow);
+  assert.equal(smoke.material.emissive.getHex(), 0, "lit smoke does not emit bloom");
+  effects.update(10); depth.render(renderer, scene, camera);
+  assert.equal(renders, 1, "expired particles stop the depth pass");
+  depth.dispose(); effects.dispose();
+}
 {
   const scene = new THREE.Scene(), key = new THREE.DirectionalLight();
   key.position.set(-22, 40, 18); key.castShadow = true; scene.add(key);

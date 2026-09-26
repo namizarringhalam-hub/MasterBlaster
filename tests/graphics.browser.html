@@ -21,6 +21,7 @@
 <button id="burst">Fire / impact</button><button id="destroy">Collapse tower</button><button id="grapple">Toggle grapple</button>
 <label>Explosion age <select id="explosion-age"><option value="0.04">Flash · 40ms</option><option value="0.18">Shell · 180ms</option><option value="0.5">Smoke · 500ms</option><option value="1">Embers · 1s</option></select></label>
 <label><input type="checkbox" id="explosion-reduced">Reduced explosion motion</label><button id="explosion-review">Inspect explosion stage</button>
+<label><input type="checkbox" id="explosion-floor">Explosion at floor</label><label><input type="checkbox" id="soft-particles" checked>Soft particles</label>
 <button id="hold-ropes">Hold bot grapples</button>
 <button id="human-grapple">Run human grapple</button>
 <button id="destroy-cover">Destroy viewed cover</button><label><input type="checkbox" id="cover-edge">Cover at frustum edge</label>
@@ -1958,12 +1959,17 @@ select("explosion-review").onclick = () => {
   const effects = game.combatVisuals, weapon = game.players[0].weapon;
   effects.update(10);
   effects.setReducedMotion(select("explosion-reduced").checked);
-  effects.impact(new THREE.Vector3(0, 16, 11), weapon, game.players[0], { explosive: true, size: 2 });
+  const floor = select("explosion-floor").checked;
+  if (floor) { game.camera.position.set(7, 4, 17); game.camera.lookAt(0, .5, 11); }
+  effects.impact(new THREE.Vector3(0, floor ? .15 : 16, 11), weapon, game.players[0], { explosive: true, size: 2 });
   const age = Number(select("explosion-age").value);
   for (let t = 0; t < age; t += 1 / 120) effects.update(Math.min(1 / 120, age - t));
   effects.setReducedMotion(game.settings.reducedMotion);
   explosionReview = true;
   captureCanvas = true;
+};
+select("soft-particles").onchange = event => {
+  if (game.renderPipeline.particleDepth) game.renderPipeline.particleDepth.strength.value = event.target.checked ? 1 : 0;
 };
 select("destroy").onclick = () => game.world.queueStructuralFailure(game.world.structures[16].segments[0], game.players[0].id);
 select("grapple").onclick = () => {
@@ -2098,6 +2104,8 @@ game.frame = time => {
     reflections: game.settings.graphics === "high" && game.renderPipeline.reflectionPass ? { intensity: game.renderPipeline.reflectionPass.intensity.value, resolutionScale: game.renderPipeline.reflectionPass.resolutionScale } : null,
     atmosphere: game.world?.atmosphere ? { steps: game.world.atmosphere.steps.value, clock: game.world.atmosphere.clock.value } : null,
     localFog: game.renderPipeline.localFog ? { ready: game.renderPipeline.localFog.ready.value, strength: game.renderPipeline.localFog.strength.value } : null,
+    softParticles: game.renderPipeline.particleDepth ? { frames: game.renderPipeline.particleDepth.frames, strength: game.renderPipeline.particleDepth.strength.value,
+      size: [game.renderPipeline.particleDepth.target.width, game.renderPipeline.particleDepth.target.height] } : null,
     compatibilityMode: game.renderer.backend.compatibilityMode ?? null, samples: game.renderer.samples,
     settling: now < settleUntil, visibility: document.visibilityState, focused: document.hasFocus(),
     viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio }, renderCalls: game.renderer.info.calls,

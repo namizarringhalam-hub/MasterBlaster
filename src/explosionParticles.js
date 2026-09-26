@@ -2,10 +2,11 @@ import * as THREE from "three/webgpu";
 import { attribute, diffuseColor, materialOpacity, normalViewGeometry, positionGeometry, positionViewDirection, sin, uv } from "three/tsl";
 import { seededRandom } from "./gameData.js";
 import { emissiveEffectMaterial } from "./effectMaterials.js";
+import { softParticleFade } from "./softParticles.js";
 
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 const HOT = new THREE.Color(0xfff5e0), FIRE = new THREE.Color(0xff4811);
-const SMOKE = new THREE.Color(0x343e4c), SOOT = new THREE.Color(0x101721);
+const SMOKE = new THREE.Color(0x737d88), SOOT = new THREE.Color(0x28323b);
 const UP = new THREE.Vector3(0, 1, 0);
 // Particle age freezes with the game and can be frozen independently for reduced motion.
 const phase = attribute("particlePhase", "float");
@@ -14,6 +15,10 @@ const turbulence = sin(positionGeometry.x.mul(17).add(phase.mul(2)))
   .mul(sin(positionGeometry.z.mul(19).add(phase))).mul(.35).add(.65);
 const opacity = attribute("particleAlpha", "float").mul(materialOpacity)
   .mul(normalViewGeometry.dot(positionViewDirection).abs().smoothstep(.05, .65)).mul(turbulence);
+const smokeOpacity = attribute("particleAlpha", "float").mul(materialOpacity)
+  .mul(normalViewGeometry.dot(positionViewDirection).abs().smoothstep(.05, .65))
+  .mul(sin(positionGeometry.x.mul(4).add(phase)).mul(sin(positionGeometry.y.mul(5).sub(phase)))
+    .mul(sin(positionGeometry.z.mul(4))).mul(.3).add(.7));
 
 /** Four bounded batches: energy, smoke, hollow shells and ground scorch marks. */
 export class ExplosionParticles {
@@ -25,18 +30,21 @@ export class ExplosionParticles {
     this.layers = ["fire", "smoke", "shell", "scorch"].map(kind => {
       const smoke = kind === "smoke", shell = kind === "shell", scorch = kind === "scorch";
       const capacity = smoke ? 96 : shell || scorch ? 32 : 192;
-      const geometry = scorch ? new THREE.PlaneGeometry(2, 2) : new THREE.IcosahedronGeometry(1, shell ? 2 : 1);
+      const geometry = scorch ? new THREE.PlaneGeometry(2, 2) : new THREE.IcosahedronGeometry(1, shell || smoke ? 2 : 1);
       const alpha = new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(THREE.DynamicDrawUsage);
       const phase = new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(THREE.DynamicDrawUsage);
       geometry.setAttribute("particleAlpha", alpha);
       geometry.setAttribute("particlePhase", phase);
-      const options = { color: 0xffffff, transparent: true, opacity: scorch ? .48 : smoke ? .3 : shell ? .3 : .65,
+      const options = { color: 0xffffff, transparent: true, opacity: scorch ? .48 : smoke ? .55 : shell ? .3 : .65,
         depthWrite: false, blending: smoke || scorch ? THREE.NormalBlending : THREE.AdditiveBlending };
-      const material = smoke || scorch ? new THREE.MeshBasicNodeMaterial(options) : emissiveEffectMaterial(options);
+      const material = smoke ? new THREE.MeshStandardNodeMaterial({ ...options, roughness: 1, metalness: 0 })
+        : scorch ? new THREE.MeshBasicNodeMaterial(options) : emissiveEffectMaterial(options);
       if (!smoke && !scorch) material.emissiveNode = diffuseColor.rgb;
       material.opacityNode = scorch ? attribute("particleAlpha", "float").mul(materialOpacity).mul(uv().sub(.5).length().smoothstep(.1, .5).oneMinus())
-        : shell ? attribute("particleAlpha", "float").mul(materialOpacity).mul(normalViewGeometry.dot(positionViewDirection).abs().oneMinus().pow(3)) : opacity;
+        : shell ? attribute("particleAlpha", "float").mul(materialOpacity).mul(normalViewGeometry.dot(positionViewDirection).abs().oneMinus().pow(3)) : smoke ? smokeOpacity : opacity;
+      if (!scorch) material.opacityNode = material.opacityNode.mul(softParticleFade());
       const mesh = new THREE.InstancedMesh(geometry, material, capacity);
+      mesh.receiveShadow = smoke;
       mesh.name = `Explosion ${kind}`;
       mesh.count = 0; mesh.frustumCulled = false;
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);

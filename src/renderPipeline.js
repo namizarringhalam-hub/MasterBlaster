@@ -1,10 +1,11 @@
 import * as THREE from "three/webgpu";
-import { Fn, If, clearcoat, clearcoatNormalView, clearcoatRoughness, emissive, getNormalFromDepth, metalness, mix, mrt, normalView, output, pass, roughness, screenUV, uniform, vec3, vec4 } from "three/tsl";
+import { Fn, If, clearcoat, clearcoatNormalView, clearcoatRoughness, context, emissive, getNormalFromDepth, metalness, mix, mrt, normalView, output, pass, roughness, screenUV, uniform, vec3, vec4 } from "three/tsl";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { ssr } from "three/addons/tsl/display/SSRNode.js";
 import TEXT from "./playerText.js";
 import { localFog } from "./localFog.js";
+import { SoftParticleDepth } from "./softParticles.js";
 
 // AO depth and normals must describe the same surface. Light overlays keep
 // their scene color, but cannot replace the normal of the solid beneath them.
@@ -67,6 +68,7 @@ export class NeonRenderPipeline {
     this.aoPass = null;
     this.reflectionPass = null;
     this.localFog = null;
+    this.particleDepth = null;
     this.pipeline = null;
     this.bloomPass = null;
     const nativeWebGPU = renderer.backend.isWebGPUBackend === true;
@@ -91,6 +93,8 @@ export class NeonRenderPipeline {
       return;
     }
     const scenePass = this.scenePass = pass(scene, camera);
+    this.particleDepth = new SoftParticleDepth();
+    scenePass.contextNode = context({ particleDepth: this.particleDepth.node, particleFadeStrength: this.particleDepth.strength });
     scenePass.setMRT(mrt({ output, normal: aoNormal(), bloom: bloomEmission(), surface: reflectionSurface() })
       .setBlendMode("bloom", new THREE.BlendMode(THREE.MaterialBlending))
       .setBlendMode("normal", new THREE.BlendMode(THREE.NormalBlending))
@@ -147,6 +151,7 @@ export class NeonRenderPipeline {
   render() {
     if (this.direct || this.quality === "low") return this.renderer.render(this.scene, this.camera);
     try {
+      if (this.quality === "high") this.particleDepth?.render(this.renderer, this.scene, this.camera);
       if (this.quality === "high" && this.localFog) {
         // Shadows initialize lazily. Refresh the binding after quality changes
         // too: their map can be replaced while this post graph remains cached.
@@ -256,6 +261,8 @@ export class NeonRenderPipeline {
   }
 
   disposePipelineResources() {
+    this.particleDepth?.dispose();
+    this.particleDepth = null;
     this.localFog?.placeholder.dispose();
     this.localFog = null;
     for (const resource of [this.pipeline, this.highLoadPipeline, this.scenePass, this.highLoadScenePass, this.bloomPass, this.highLoadBloom, this.aoPass, this.reflectionPass]) resource?.dispose?.();

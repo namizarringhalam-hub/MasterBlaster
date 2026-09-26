@@ -1,0 +1,46 @@
+<!doctype html><meta charset="utf-8"><title>Particle lighting and depth review</title>
+<style>body{margin:0;background:#09131d;color:white;font:14px system-ui}nav{padding:12px;display:flex;gap:16px}canvas{display:block}pre{white-space:pre-wrap}</style>
+<nav><label>Tier <select id="tier"><option>high</option><option>medium</option><option>low</option></select></label>
+<label>Age <select id="age"><option value=".18">Fire</option><option value=".5" selected>Smoke</option><option value="1">Late smoke</option></select></label>
+<label><input id="soft" type="checkbox" checked>Soft particles</label><label><input id="light" type="checkbox" checked>Warm light</label>
+<button id="reset">Reset explosion</button><button id="clear">Clear particles</button></nav>
+<canvas id="canvas"></canvas><pre id="metrics">Initializing…</pre>
+<script type="module">
+import * as THREE from 'three/webgpu';
+import { CombatVisuals } from '../src/combatVisuals.js';
+import { NeonRenderPipeline } from '../src/renderPipeline.js';
+const metrics = document.querySelector('#metrics'), errors = [];
+addEventListener('error', e => errors.push(e.message));
+addEventListener('unhandledrejection', e => errors.push(String(e.reason)));
+const renderer = new THREE.WebGPURenderer({canvas:document.querySelector('#canvas'),antialias:true,
+  forceWebGL:new URLSearchParams(location.search).get('renderer') === 'webgl'});
+await renderer.init(); renderer.setSize(960,540); renderer.setPixelRatio(1);
+renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.VSMShadowMap;
+const scene = new THREE.Scene(); scene.background=new THREE.Color(0x09131d);
+const camera = new THREE.PerspectiveCamera(45,960/540,.1,100);
+camera.position.set(6,3.3,7); camera.lookAt(0,.5,0);
+scene.add(new THREE.HemisphereLight(0x6688bb,0x18202a,1.4));
+const key = new THREE.DirectionalLight(0xbbddff,2); key.position.set(-4,8,3); key.castShadow=true;
+key.shadow.mapSize.set(1024,1024); key.shadow.camera.left=-12; key.shadow.camera.right=12;
+key.shadow.camera.top=12; key.shadow.camera.bottom=-12; scene.add(key);
+const warm = new THREE.PointLight(0xff6611,35,8,2); warm.position.set(-1,1,1); scene.add(warm);
+for (const [size,position,color] of [[[20,.2,20],[0,-.1,0],0x536473],[[4,3,.4],[0,1.5,-1],0x344758]]) {
+  const mesh=new THREE.Mesh(new THREE.BoxGeometry(...size),new THREE.MeshStandardNodeMaterial({color,roughness:.7}));
+  mesh.position.set(...position); mesh.castShadow=mesh.receiveShadow=true; scene.add(mesh);
+}
+const effects = new CombatVisuals(scene), pipeline = new NeonRenderPipeline(renderer,scene,camera);
+function reset() { effects.update(10); effects.explosions.spawn(new THREE.Vector3(0,.25,0),3);
+  const age=Number(document.querySelector('#age').value);
+  for(let t=0;t<age;t+=1/120)effects.update(Math.min(1/120,age-t)); }
+document.querySelector('#reset').onclick=reset; document.querySelector('#age').onchange=reset;
+document.querySelector('#clear').onclick=()=>effects.update(10);
+document.querySelector('#tier').onchange=e=>pipeline.setQuality(e.target.value);
+document.querySelector('#soft').onchange=e=>{if(pipeline.particleDepth)pipeline.particleDepth.strength.value=e.target.checked?1:0;};
+document.querySelector('#light').onchange=e=>{warm.intensity=e.target.checked?35:0;};
+reset(); let frames=0;
+renderer.setAnimationLoop(()=>{pipeline.render();frames++;
+  if(frames%30===0)metrics.textContent=JSON.stringify({frames,quality:pipeline.quality,profile:pipeline.profile,direct:pipeline.direct,
+    depthFrames:pipeline.particleDepth?.frames,depthSize:pipeline.particleDepth?[pipeline.particleDepth.target.width,pipeline.particleDepth.target.height]:null,
+    textures:renderer.info.memory.textures,errors},null,2);
+});
+</script>
