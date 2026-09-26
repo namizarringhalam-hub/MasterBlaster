@@ -182,10 +182,15 @@ export const PLAYER_TEXT = {
     section: "LOCAL PREFERENCES",
     title: "Settings",
     graphicsPanel: {
-      title: "Graphics", live: "Changes apply immediately and are saved automatically. Your choices are kept when you switch quality levels.",
-      back: "← BACK", reset: "RESTORE EFFECT DEFAULTS",
+      title: "Graphics", live: "Presets apply defaults. Individual adjustments show Custom and save automatically. Changes apply live, except MSAA, which needs a reload. Changes may pause rendering while shaders compile.",
+      back: "← BACK", reset: "RESTORE PRESET DEFAULTS", custom: "Custom", detail: "Resolution & detail",
+      off: "Off", reload: "APPLY MSAA & RELOAD", reloadNote: "MSAA change pending. Reloading ends the current match.",
+      options: { renderScale: "Render resolution", msaaSamples: "MSAA samples (reload required)", shadowMapSize: "Shadow map size",
+        aoSamples: "Ambient occlusion samples", ssrScale: "Reflection resolution & ray quality", bloomScale: "Bloom resolution",
+        combatQuality: "Combat effect density", combatLights: "Combat lights", detailDistance: "Detail distance",
+        atmosphereCount: "Atmospheric particle count", anisotropy: "Texture filtering" },
       groups: { rendering: "Lighting & rendering", world: "World & atmosphere", motion: "Motion & animation" },
-      reasons: { webgpu: "Requires WebGPU", high: "Requires High quality", medium: "Requires Medium or High quality", reduced: "Disabled by Reduce motion", fallback: "Unavailable in graphics recovery mode" },
+      reasons: { webgpu: "Requires WebGPU", shadows: "Enable a shadow map first", reduced: "Disabled by Reduce motion", fallback: "Unavailable in graphics recovery mode" },
       effects: {
         antialiasing: "Antialiasing · FXAA edge smoothing", bloom: "Bloom & glow", reflections: "Screen-space reflections",
         ambientOcclusion: "Ambient occlusion", contactShadows: "Contact shadows", localFog: "Volumetric fog & light shafts",
@@ -194,14 +199,14 @@ export const PLAYER_TEXT = {
         wetSurfaces: "Wet surfaces & puddles", waterCaustics: "Surface light ripples", clouds: "Volumetric clouds & cloud shadows",
         horizonMist: "Horizon mist", atmosphericMotes: "Atmospheric particles", distanceHaze: "Distance haze", impactMarks: "Impact & scorch marks"
       },
-      aaNote: "FXAA smooths the finished image. The renderer's built-in multisampling remains enabled.",
+      aaNote: "FXAA smooths the finished image. MSAA smooths geometry and uses more GPU memory. Resolution percentages apply to each image dimension.",
       motionStrength: "Motion blur intensity"
     },
     labels: {
       graphics: "Graphics quality",
       blood: "Blood and impact effects",
       cameraShake: "Camera shake",
-      motionBlur: "Cinematic motion blur (High graphics)",
+      motionBlur: "Cinematic motion blur",
       masterVolume: "Master volume",
       musicVolume: "Music volume",
       effectsVolume: "Effects volume",
@@ -210,15 +215,16 @@ export const PLAYER_TEXT = {
       reducedMotion: "Reduce motion and flashes"
     },
     options: {
-      graphics: { low: "Low · Performance", medium: "Medium · Balanced", high: "High · Fidelity" },
+      graphics: { low: "Low · Performance", medium: "Medium · Balanced", high: "High · Fidelity", ultra: "Ultra · Maximum quality" },
       blood: { off: "off", reduced: "reduced", full: "full" },
       dynamicRange: { wide: "wide", standard: "standard", night: "night" }
     },
     graphicsDescriptions: {
-      low: "Full arena, models and combat cues. 1× resolution cap, 1K shadows, 4× texture filtering. Fewer decorative particles and lights; no bloom or ambient occlusion.",
-      medium: "Full arena, models and combat cues. 1.3× resolution cap, 2K shadows, 8× texture filtering and HDR bloom. Balanced decorative particles and lights.",
-      high: "Full arena, models and combat cues. 1.65× resolution cap, 4K shadows, up to 16× texture filtering, HDR bloom and WebGPU ambient occlusion. Full decorative effects.",
-      note: "Resolution and filtering respect your device limits. WebGL keeps the chosen tier with bloom on Medium/High; ambient occlusion requires WebGPU. Sound and gameplay are identical at every tier."
+      low: "50% resolution, no shadows or post effects, reduced cosmetic motion and particles. Full arena and immediate combat cues.",
+      medium: "65% resolution, 1K shadows, FXAA and reduced-resolution bloom. Balanced particles and lights.",
+      high: "75% resolution, 2K shadows, FXAA and full WebGPU effects, including reflections and ambient occlusion.",
+      ultra: "Native resolution, 4× MSAA plus FXAA, 4K shadows and 32-sample ambient occlusion. Maximum quality with a substantial performance cost.",
+      note: "Resolution uses device pixel ratio capped at 1.65 before scaling. WebGL supports bloom and FXAA; advanced effects require WebGPU. Performance depends on your hardware and the scene."
     },
     save: "SAVE SETTINGS"
   },
@@ -310,9 +316,9 @@ export const PLAYER_TEXT = {
     mediumBloom: "MEDIUM BLOOM",
     bloom: "BLOOM",
     sixteenPlayerBloom: "16P BLOOM",
-    ultra: "ULTRA",
+    fullEffects: "FULL EFFECTS",
     directSafety: "DIRECT SAFETY",
-    quality: { low: "LOW", medium: "MEDIUM", high: "HIGH" }
+    quality: { low: "LOW", medium: "MEDIUM", high: "HIGH", ultra: "ULTRA" }
   },
 
   trainingControls: {

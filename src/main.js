@@ -1,6 +1,7 @@
 import * as THREE from "three/webgpu";
 import { materialOpacity } from "three/tsl";
 import { GRAPHICS_EFFECTS, normalizeGraphicsEffects, graphicsEffectUnavailable } from "./graphicsEffects.js";
+import { GRAPHICS_PRESETS, GRAPHICS_OPTIONS, applyGraphicsPreset, isCustomGraphics } from "./graphicsPresets.js";
 import { LIGHTING, fitArenaShadow, setupEnvironment } from "./lighting.js";
 import { Line2 } from "three/addons/lines/webgpu/Line2.js";
 import { SoundBoard } from "./audio.js";
@@ -150,13 +151,13 @@ class BlasterBattle {
     this.capabilities = capabilities();
     this.settings = loadSettings();
     this.coarsePointer = matchMedia("(pointer: coarse)").matches;
-    this.graphics = graphicsProfile(this.settings.graphics, this.coarsePointer, devicePixelRatio);
+    this.graphics = graphicsProfile(this.settings.graphics, this.coarsePointer, devicePixelRatio, this.settings.graphicsOptions);
     this.forceWebGL = sessionStorage.getItem("blaster-force-webgl") === "1"
       || new URLSearchParams(location.search).get("renderer") === "webgl";
     this.renderer = new THREE.WebGPURenderer({
       canvas,
-      antialias: true,
-      samples: 4,
+      antialias: this.graphics.msaaSamples > 0,
+      samples: this.graphics.msaaSamples,
       alpha: false,
       forceWebGL: this.forceWebGL,
       powerPreference: "high-performance"
@@ -325,8 +326,8 @@ class BlasterBattle {
     // Environment IBL supplies diffuse fill and reflections without a flat light.
     const key = this.keyLight = new THREE.DirectionalLight(0xffeee0, 1.55);
     key.position.set(-22, 40, 18);
-    key.castShadow = true;
-    key.shadow.mapSize.set(this.graphics.shadowMapSize, this.graphics.shadowMapSize);
+    key.castShadow = this.graphics.shadowMapSize > 0;
+    key.shadow.mapSize.set(this.graphics.shadowMapSize || 512, this.graphics.shadowMapSize || 512);
     key.shadow.bias = LIGHTING.shadowBias;
     key.shadow.normalBias = LIGHTING.shadowNormalBias;
     this.scene.add(key, key.target);
@@ -385,6 +386,14 @@ class BlasterBattle {
   }
 
   commitResize() {
+    if (this.pendingGraphics) {
+      this.pendingGraphics = false;
+      this.world?.setGraphicsProfile(this.graphics, this.renderer.getMaxAnisotropy());
+      this.combatVisuals?.setGraphicsProfile(this.graphics);
+      this.keyLight.castShadow = this.graphics.shadowMapSize > 0;
+      const shadowSize = this.graphics.shadowMapSize || 512;
+      if (this.keyLight.shadow.mapSize.x !== shadowSize) this.keyLight.shadow.mapSize.set(shadowSize, shadowSize);
+    }
     if (this.pendingGraphicsEffects) {
       this.pendingGraphicsEffects = false;
       if (this.pendingPipelineEffects) {
@@ -392,17 +401,7 @@ class BlasterBattle {
         this.rebuildRenderPipeline();
       }
       this.applyGraphicsEffects();
-    }
-    if (this.pendingGraphics) {
-      this.pendingGraphics = false;
-      this.renderPipeline?.setQuality(this.graphics.level);
-      this.world?.setGraphicsProfile(this.graphics, this.renderer.getMaxAnisotropy());
-      this.combatVisuals?.setGraphicsProfile(this.graphics);
-      if (this.keyLight.shadow.mapSize.x !== this.graphics.shadowMapSize) {
-        this.keyLight.shadow.mapSize.set(this.graphics.shadowMapSize, this.graphics.shadowMapSize);
-        // ShadowNode resizes its owned target at the next shadow render. Keep
-        // the public map identity intact for materials and volumetric lighting.
-      }
+      this.refreshGraphicsControls();
     }
     const size = this.pendingResize;
     if (!size) return;
@@ -415,9 +414,10 @@ class BlasterBattle {
   }
 
   applyGraphicsSettings() {
-    this.graphics = graphicsProfile(this.settings.graphics, this.coarsePointer, devicePixelRatio);
+    this.graphics = graphicsProfile(this.settings.graphics, this.coarsePointer, devicePixelRatio, this.settings.graphicsOptions);
     this.settings.graphics = this.graphics.level;
     this.pendingGraphics = true;
+    this.pendingGraphicsEffects = this.pendingPipelineEffects = true;
     this.resize();
   }
 
@@ -428,6 +428,7 @@ class BlasterBattle {
       reducedMotion: this.settings.reducedMotion,
       motionBlur: this.settings.motionBlur,
       effects: this.settings.graphicsEffects,
+      options: this.settings.graphicsOptions,
       coarsePointer: this.coarsePointer,
       quality: this.graphics.level
     });
@@ -452,8 +453,15 @@ class BlasterBattle {
     return `<section class="graphics-controls" aria-label="${text.title}">
       <p class="dialog-lead">${text.live}</p>
       <label>${TEXT.settings.labels.graphics}<select data-setting="graphics">
-        ${["low", "medium", "high"].map(value => `<option value="${value}" ${this.settings.graphics === value ? "selected" : ""}>${TEXT.settings.options.graphics[value]}</option>`).join("")}
+        ${Object.keys(GRAPHICS_PRESETS).map(value => `<option value="${value}" ${this.settings.graphics === value ? "selected" : ""}>${TEXT.settings.options.graphics[value]}</option>`).join("")}
+        <option value="custom" disabled hidden>${text.custom}</option>
       </select></label>
+      <details><summary>${text.detail}</summary>
+        ${Object.entries(GRAPHICS_OPTIONS).map(([key, values]) => `<label>${text.options[key]}<select data-graphics-option="${key}">
+          ${values.map(value => `<option value="${value}" ${this.settings.graphicsOptions[key] === value ? 'selected' : ''}>${value === 0 ? text.off : ['renderScale', 'ssrScale', 'bloomScale', 'combatQuality'].includes(key) ? value * 100 + '%' : value}</option>`).join('')}
+        </select></label>`).join('')}
+      </details>
+      <p data-msaa-reload hidden>${text.reloadNote} <button type="button" data-action="reload-page">${text.reload}</button></p>
       <label class="toggle"><input type="checkbox" data-setting="reducedMotion" ${this.settings.reducedMotion ? "checked" : ""}>${TEXT.settings.labels.reducedMotion}</label>
       ${Object.entries(text.groups).map(([group, label]) => `<details ${group === 'rendering' ? 'open' : ''}><summary>${label}</summary>
         ${Object.entries(GRAPHICS_EFFECTS).filter(([, effect]) => effect.group === group).map(([key]) => `<label class="graphics-effect">
@@ -467,7 +475,16 @@ class BlasterBattle {
 
   refreshGraphicsControls() {
     const context = { quality: this.settings.graphics, nativeWebGPU: this.renderPipeline?.nativeWebGPU !== false,
-      reducedMotion: this.settings.reducedMotion, direct: this.renderPipeline?.direct === true };
+      reducedMotion: this.settings.reducedMotion, direct: this.renderPipeline?.direct === true, shadows: this.settings.graphicsOptions.shadowMapSize > 0 };
+    const select = ui.querySelector('[data-setting="graphics"]');
+    if (select) {
+      const custom = isCustomGraphics(this.settings);
+      select.querySelector('[value="custom"]').hidden = !custom;
+      select.value = custom ? 'custom' : this.settings.graphics;
+    }
+    for (const input of ui.querySelectorAll('[data-graphics-option]')) input.value = this.settings.graphicsOptions[input.dataset.graphicsOption];
+    const reload = ui.querySelector('[data-msaa-reload]');
+    if (reload) reload.hidden = this.renderer.samples === this.settings.graphicsOptions.msaaSamples;
     for (const input of ui.querySelectorAll('[data-graphics-effect]')) {
       const key = input.dataset.graphicsEffect, reason = graphicsEffectUnavailable(key, context);
       input.disabled = Boolean(reason);
@@ -487,10 +504,18 @@ class BlasterBattle {
     if (key && GRAPHICS_EFFECTS[key]) {
       this.settings.graphicsEffects[key] = input.checked;
       this.pendingPipelineEffects ||= Boolean(GRAPHICS_EFFECTS[key].post);
+    } else if (GRAPHICS_OPTIONS[input.dataset.graphicsOption]) {
+      const option = input.dataset.graphicsOption, value = Number(input.value);
+      if (!GRAPHICS_OPTIONS[option].includes(value)) return false;
+      this.settings.graphicsOptions[option] = value;
+      if (option !== 'msaaSamples') this.applyGraphicsSettings();
     } else if (["graphics", "reducedMotion", "motionBlur"].includes(input.dataset.setting)) {
       const setting = input.dataset.setting;
       this.settings[setting] = setting === "reducedMotion" ? input.checked : setting === "motionBlur" ? Number(input.value) : input.value;
-      if (setting === "graphics") this.applyGraphicsSettings();
+      if (setting === "graphics") {
+        applyGraphicsPreset(this.settings, input.value);
+        this.applyGraphicsSettings();
+      }
       input.closest('label')?.querySelector('output')?.replaceChildren(`${input.value}%`);
     } else return false;
     this.pendingGraphicsEffects = true;
@@ -1022,9 +1047,8 @@ class BlasterBattle {
       if (button.dataset.action === "controls") return this.showControls();
       if (button.dataset.action === "graphics-settings") return this.showGraphicsSettings();
       if (button.dataset.action === "reset-graphics-effects") {
-        this.settings.graphicsEffects = normalizeGraphicsEffects();
-        this.settings.motionBlur = 35;
-        this.pendingGraphicsEffects = this.pendingPipelineEffects = true;
+        applyGraphicsPreset(this.settings, this.settings.graphics);
+        this.applyGraphicsSettings();
         saveSettings(this.settings); this.refreshGraphicsControls(); return;
       }
       if (button.dataset.action === "close-controls") return this.closeModal(button.closest("dialog"));
@@ -1273,7 +1297,6 @@ class BlasterBattle {
   }
 
   captureSettingsPreferences() {
-    this.settings.graphics = ui.querySelector('[data-setting="graphics"]').value;
     this.settings.blood = ui.querySelector('[data-setting="blood"]').value;
     this.settings.shake = Number(ui.querySelector('[data-setting="shake"]').value);
     this.settings.volume = Number(ui.querySelector('[data-setting="volume"]').value);
@@ -3697,7 +3720,7 @@ class BlasterBattle {
     setText(this.hud.activeWeaponAmmo, activeReloading ? TEXT.hud.reloading : !weaponUsesAmmo(activeWeapon) ? TEXT.hud.readyNoReload : `${player.ammo[activeWeapon.id]}/${activeWeapon.ammo}`);
     this.hud.scoreboard.classList.toggle("visible", this.input.down("Tab"));
     const motion = this.settings.reducedMotion ? 0 : clamp((player.velocity.length() - 14) / 30, 0, 1);
-    const grappleBlur = player.grapple && this.graphics.level !== "low" ? motion * (this.graphics.level === "high" ? 3.2 : 1.7) : 0;
+    const grappleBlur = player.grapple && this.graphics.level !== "low" ? motion * (["high", "ultra"].includes(this.graphics.level) ? 3.2 : 1.7) : 0;
     setStyle(this.hud.motionVignette, "--motion", motion.toFixed(3));
     setStyle(this.hud.motionVignette, "--environment-blur", `${grappleBlur.toFixed(2)}px`);
     this.hud.motionVignette.classList.toggle("grappling", Boolean(player.grapple));

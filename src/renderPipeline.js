@@ -10,7 +10,8 @@ import { SoftParticleDepth } from "./softParticles.js";
 import { HeatDistortion } from "./heatDistortion.js";
 import { contactShadows } from "./contactShadows.js";
 import { CinematicMotionBlur } from "./cinematicMotionBlur.js";
-import { normalizeGraphicsEffects } from "./graphicsEffects.js";
+import { GRAPHICS_EFFECTS, normalizeGraphicsEffects } from "./graphicsEffects.js";
+import { graphicsLevel, normalizeGraphicsOptions, presetEffects } from "./graphicsPresets.js";
 
 // AO depth and normals must describe the same surface. Light overlays keep
 // their scene color, but cannot replace the normal of the solid beneath them.
@@ -48,7 +49,7 @@ export function recoverInvalidAONormals(normal, depth, inverseProjection) {
 }
 
 export class NeonRenderPipeline {
-  constructor(renderer, scene, camera, { reducedMotion = false, motionBlur = 0, effects, coarsePointer = false, quality = "high" } = {}) {
+  constructor(renderer, scene, camera, { reducedMotion = false, motionBlur = 0, effects, options, coarsePointer = false, quality = "high" } = {}) {
     this.renderer = renderer;
     this.rendererState = THREE.RendererUtils.saveRendererState(renderer);
     this.rendererXrEnabled = renderer.xr?.enabled ?? false;
@@ -63,10 +64,13 @@ export class NeonRenderPipeline {
     this.scene = scene;
     this.camera = camera;
     this.reducedMotion = Boolean(reducedMotion);
-    this.effects = normalizeGraphicsEffects(effects);
+    this.explicitEffects = effects != null;
+    this.explicitOptions = options != null;
+    this.effects = effects ? normalizeGraphicsEffects(effects) : presetEffects(quality);
+    this.options = normalizeGraphicsOptions(options, quality);
     this.motionBlurStrength = Math.max(0, Math.min(100, Number(motionBlur) || 0));
     this.motionBlur = null;
-    this.quality = ["low", "medium", "high"].includes(quality) ? quality : "high";
+    this.quality = graphicsLevel(quality);
     this.coarsePointer = coarsePointer;
     this.highLoadMode = false;
     this.highLoadPipeline = null;
@@ -90,7 +94,7 @@ export class NeonRenderPipeline {
   }
 
   ensureQualityPipeline() {
-    if (this.pipeline || this.direct || this.quality === "low") return;
+    if (this.pipeline || this.direct || this.renderQuality === "low") return;
     const { renderer, scene, camera, reducedMotion, nativeWebGPU } = this;
     this.pipeline = new THREE.RenderPipeline(renderer);
     if (!nativeWebGPU) {
@@ -100,7 +104,7 @@ export class NeonRenderPipeline {
       const sceneColor = this.scenePass.getTextureNode("output");
       if (this.effects.bloom) {
         this.bloomPass = bloom(this.scenePass.getTextureNode("bloom"), reducedMotion ? .16 : .36, .16, EMISSION_THRESHOLD);
-        this.bloomPass.resolutionScale = .34;
+        this.bloomPass.setResolutionScale(this.options.bloomScale);
       }
       this.finishOutput(this.pipeline, this.bloomPass ? sceneColor.add(this.bloomPass) : sceneColor);
       return;
@@ -120,11 +124,11 @@ export class NeonRenderPipeline {
     const sceneColor = scenePass.getTextureNode("output");
     const bloomPass = this.effects.bloom ? bloom(
       scenePass.getTextureNode("bloom"),
-      reducedMotion ? .22 : .52,
-      .18,
+      reducedMotion ? .22 : (this.quality === "low" || this.quality === "medium" ? .28 : .52),
+      this.quality === "low" || this.quality === "medium" ? .16 : .18,
       EMISSION_THRESHOLD
     ) : null;
-    if (bloomPass) bloomPass.resolutionScale = .5;
+    if (bloomPass) bloomPass.setResolutionScale(this.options.bloomScale);
     this.bloomPass = bloomPass;
 
     const normal = scenePass.getTextureNode("normal");
@@ -142,7 +146,7 @@ export class NeonRenderPipeline {
       aoPass.thickness.value = 2.2;
       aoPass.distanceExponent.value = 1.35;
       aoPass.distanceFallOff.value = .7;
-      aoPass.samples.value = 16;
+      aoPass.samples.value = this.options.aoSamples;
       grounding = aoPass.getTextureNode().sample(sceneUV).r.mul(.34).add(.66);
     }
     const finalColor = sceneColor.sample(sceneUV).mul(vec4(vec3(grounding), 1));
@@ -153,10 +157,10 @@ export class NeonRenderPipeline {
         camera, metalnessNode: surface.r.mul(surface.a.step(.5)), roughnessNode: surface.g,
         binaryRefine: true
       });
-      reflections.resolutionScale = .5;
+      reflections.resolutionScale = this.options.ssrScale;
       reflections.maxDistance.value = 28;
       reflections.thickness.value = .22;
-      reflections.quality.value = .5;
+      reflections.quality.value = this.options.ssrScale;
       reflections.intensity.value = .45;
       reflections.maxLuminance.value = 3;
       // No temporal history: moving fighters and destroyed cover update in the
@@ -201,13 +205,13 @@ export class NeonRenderPipeline {
   }
 
   render() {
-    if (this.direct || this.quality === "low") return this.renderer.render(this.scene, this.camera);
+    if (this.direct || this.renderQuality === "low") return this.renderer.render(this.scene, this.camera);
     try {
-      const motionEnabled = this.quality === "high" && Boolean(this.motionBlur) && !this.reducedMotion && this.motionBlurStrength > 0;
+      const motionEnabled = this.renderQuality === "high" && Boolean(this.motionBlur) && !this.reducedMotion && this.motionBlurStrength > 0;
       if (this.motionBlur && this.motionBlurStrength > 0) this.motionBlur.update(this.renderer, this.motionBlurStrength, motionEnabled);
-      if (this.quality === "high") this.heatDistortion?.update(this.scene, this.camera, this.reducedMotion);
-      if (this.quality === "high" && (motionEnabled || this.effects?.softParticles !== false)) this.particleDepth?.render(this.renderer, this.scene, this.camera, motionEnabled);
-      if (this.quality === "high" && this.localFog) {
+      if (this.renderQuality === "high") this.heatDistortion?.update(this.scene, this.camera, this.reducedMotion);
+      if (this.renderQuality === "high" && (motionEnabled || this.effects?.softParticles !== false)) this.particleDepth?.render(this.renderer, this.scene, this.camera, motionEnabled);
+      if (this.renderQuality === "high" && this.localFog) {
         // Shadows initialize lazily. Refresh the binding after quality changes
         // too: their map can be replaced while this post graph remains cached.
         if (!this.localFog.light.shadow.map) this.renderer.render(this.scene, this.camera);
@@ -218,7 +222,7 @@ export class NeonRenderPipeline {
         this.localFog.shadow.value = shadowMap.depthTexture;
         this.localFog.ready.value = 1;
       }
-      (this.nativeWebGPU && this.quality === "medium" ? this.highLoadPipeline : this.pipeline).render();
+      (this.nativeWebGPU && this.renderQuality === "medium" ? this.highLoadPipeline : this.pipeline).render();
     } catch (error) {
       this.degradeToDirect(error);
       this.renderer.render(this.scene, this.camera);
@@ -244,8 +248,9 @@ export class NeonRenderPipeline {
       .setBlendMode("bloom", new THREE.BlendMode(THREE.MaterialBlending)));
     const sceneColor = this.highLoadScenePass.getTextureNode("output");
     if (this.effects.bloom) {
-      this.highLoadBloom = bloom(this.highLoadScenePass.getTextureNode("bloom"), this.reducedMotion ? .16 : .34, .16, EMISSION_THRESHOLD);
-      this.highLoadBloom.resolutionScale = .34;
+      const full = this.quality === "high" || this.quality === "ultra";
+      this.highLoadBloom = bloom(this.highLoadScenePass.getTextureNode("bloom"), this.reducedMotion ? (full ? .22 : .16) : (full ? .52 : .28), full ? .18 : .16, EMISSION_THRESHOLD);
+      this.highLoadBloom.setResolutionScale(this.options.bloomScale);
     }
     this.finishOutput(this.highLoadPipeline, this.highLoadBloom ? sceneColor.add(this.highLoadBloom) : sceneColor);
   }
@@ -253,27 +258,38 @@ export class NeonRenderPipeline {
   updateBloomQuality() {
     if (this.bloomPass) {
       this.bloomPass.strength.value = this.reducedMotion ? (this.nativeWebGPU ? .22 : .16)
-        : this.quality === "medium" ? (this.nativeWebGPU ? .34 : .26)
+        : this.quality === "low" || this.quality === "medium" ? (this.nativeWebGPU ? .28 : .26)
           : this.nativeWebGPU ? .52 : .36;
-      this.bloomPass.resolutionScale = this.quality === "medium" ? (this.nativeWebGPU ? .4 : .26) : this.nativeWebGPU ? .5 : .34;
+      this.bloomPass.setResolutionScale(this.options.bloomScale);
     }
-    if (this.highLoadBloom) this.highLoadBloom.strength.value = this.reducedMotion ? .16 : this.quality === "medium" ? .28 : .34;
+    if (this.highLoadBloom) {
+      const full = this.quality === "high" || this.quality === "ultra";
+      this.highLoadBloom.strength.value = this.reducedMotion ? (full ? .22 : .16) : (full ? .52 : .28);
+      this.highLoadBloom.setResolutionScale(this.options.bloomScale);
+    }
   }
 
   setQuality(quality = "high") {
     if (quality !== this.quality) this.motionBlur?.reset();
-    this.quality = ["low", "medium", "high"].includes(quality) ? quality : "high";
+    this.quality = graphicsLevel(quality);
+    if (!this.explicitEffects) {
+      this.effects = presetEffects(this.quality);
+    }
+    if (!this.explicitOptions) this.options = normalizeGraphicsOptions(null, this.quality);
+    this.renderQuality = this.nativeWebGPU && Object.entries(GRAPHICS_EFFECTS).some(([key, effect]) => effect.high && this.effects[key])
+      ? "high" : this.effects.bloom || this.effects.antialiasing ? "medium" : "low";
+    if (this.aoPass) this.aoPass.samples.value = this.options.aoSamples;
     if (this.direct) {
       this.profile = `${this.nativeWebGPU ? TEXT.performanceProfiles.webgpu : TEXT.performanceProfiles.webgl} ${TEXT.performanceProfiles.mobileDirect} · ${TEXT.performanceProfiles.quality[this.quality]}`;
       return this.quality;
     }
-    if (this.nativeWebGPU && this.quality === "medium") this.ensurePerformancePipeline();
-    else if (this.quality !== "low") this.ensureQualityPipeline();
+    if (this.nativeWebGPU && this.renderQuality === "medium") this.ensurePerformancePipeline();
+    else if (this.renderQuality !== "low") this.ensureQualityPipeline();
     this.updateBloomQuality();
     const backend = this.nativeWebGPU ? TEXT.performanceProfiles.webgpu : TEXT.performanceProfiles.webgl;
-    this.profile = this.quality === "low" ? `${backend} ${TEXT.performanceProfiles.lowDirect}`
-      : !this.nativeWebGPU ? `${backend} ${this.quality === "medium" ? TEXT.performanceProfiles.mediumBloom : TEXT.performanceProfiles.bloom}`
-        : `${backend} ${this.quality === "medium" ? TEXT.performanceProfiles.mediumBloom : TEXT.performanceProfiles.ultra}`;
+    this.profile = this.renderQuality === "low" ? `${backend} ${TEXT.performanceProfiles.lowDirect}`
+      : !this.nativeWebGPU ? `${backend} ${this.renderQuality === "medium" ? TEXT.performanceProfiles.mediumBloom : TEXT.performanceProfiles.bloom}`
+        : `${backend} ${this.renderQuality === "medium" ? TEXT.performanceProfiles.mediumBloom : TEXT.performanceProfiles.fullEffects}`;
     return this.quality;
   }
 
@@ -282,15 +298,15 @@ export class NeonRenderPipeline {
     if (!this.nativeWebGPU) {
       this.highLoadMode = false;
       this.updateBloomQuality();
-      this.profile = `${TEXT.performanceProfiles.webgl} ${this.quality === "low" ? TEXT.performanceProfiles.lowDirect : this.quality === "medium" ? TEXT.performanceProfiles.mediumBloom : TEXT.performanceProfiles.bloom}`;
+      this.profile = `${TEXT.performanceProfiles.webgl} ${this.renderQuality === "low" ? TEXT.performanceProfiles.lowDirect : this.renderQuality === "medium" ? TEXT.performanceProfiles.mediumBloom : TEXT.performanceProfiles.bloom}`;
       return;
     }
     this.highLoadMode = Boolean(enabled);
-    if (this.quality === "medium") this.ensurePerformancePipeline();
+    if (this.renderQuality === "medium") this.ensurePerformancePipeline();
     this.updateBloomQuality();
-    this.profile = `${TEXT.performanceProfiles.webgpu} ${this.quality === "low" ? TEXT.performanceProfiles.lowDirect
-      : this.quality === "medium" ? TEXT.performanceProfiles.mediumBloom
-        : TEXT.performanceProfiles.ultra}`;
+    this.profile = `${TEXT.performanceProfiles.webgpu} ${this.renderQuality === "low" ? TEXT.performanceProfiles.lowDirect
+      : this.renderQuality === "medium" ? TEXT.performanceProfiles.mediumBloom
+        : TEXT.performanceProfiles.fullEffects}`;
   }
 
   degradeToDirect(reason) {

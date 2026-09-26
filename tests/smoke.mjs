@@ -144,9 +144,9 @@ assert.match(mainSource, /resumeAudioAfterReload\(\)[\s\S]*?startAmbience\(this\
 assert.match(renderPipelineSource, /disposePipelineResources\(\)[\s\S]*?scenePass[\s\S]*?highLoadScenePass[\s\S]*?bloomPass[\s\S]*?highLoadBloom[\s\S]*?aoPass/, "rematches release scene, bloom, and ambient-occlusion render targets");
 assert.match(mainSource, /sessionStorage\.setItem\("blaster-force-webgl", "1"\)[\s\S]*?location\.reload\(\)/, "WebGPU device loss restarts through the WebGL2 recovery path");
 assert.match(mainSource, /renderPipeline\.setReducedMotion\(this\.settings\.reducedMotion\)/, "reduced-motion changes immediately retune the active pipeline");
-assert.match(mainSource, /data-setting="graphics"[\s\S]*?"low", "medium", "high"/, "settings expose low, medium, and high graphics quality");
-assert.match(mainSource, /renderPipeline\?\.setQuality\(this\.graphics\.level\)/, "graphics changes immediately retune the active render pipeline");
-assert.match(renderPipelineSource, /this\.reducedMotion = Boolean\(reducedMotion\)[\s\S]*?highLoadBloom = bloom\(this\.highLoadScenePass\.getTextureNode\("bloom"\), this\.reducedMotion \? \.16 : \.3/, "a newly-created sixteen-player bloom profile inherits Reduced Motion");
+assert.match(mainSource, /data-setting="graphics"[\s\S]*?Object.keys\(GRAPHICS_PRESETS\)/, "settings expose all benchmark presets");
+assert.match(mainSource, /this\.pendingGraphicsEffects = this\.pendingPipelineEffects = true/, "graphics changes immediately retune the active render pipeline");
+assert.match(renderPipelineSource, /this\.reducedMotion = Boolean\(reducedMotion\)[\s\S]*?highLoadBloom = bloom\(this\.highLoadScenePass\.getTextureNode\("bloom"\), this\.reducedMotion \?/, "a newly-created bloom profile inherits Reduced Motion");
 assert.match(mainSource, /damageVignetteTimer = setTimeout\([\s\S]*?classList\.remove\("visible"\)[\s\S]*?reducedMotion \? 120 : 520/, "the damage vignette clears explicitly even when CSS animations are disabled");
 assert.equal(damageIndicatorAngle(0, new THREE.Vector3(0, 0, 1)), 0, "incoming fire from ahead points to the top of the HUD");
 assert.equal(damageIndicatorAngle(0, new THREE.Vector3(1, 0, 0)), 90, "incoming fire from the right points right");
@@ -220,8 +220,8 @@ globalThis.localStorage = {
   setItem: (_key, value) => { settingsStorage = value; }
 };
 const legacySettings = loadSettings();
-assert.equal(legacySettings.graphics, "high", "existing players migrate to High graphics without changing the current default appearance");
-assert.deepEqual(graphicsProfile("high", false, 3), { level: "high", pixelRatio: 1.65, combatQuality: 1, shadowMapSize: 2048, detailDistance: 96, anisotropy: 16, atmosphereCount: 220, combatLights: 4 }, "High preserves combat detail and resolution with bounded decorative and shadow costs");
+assert.equal(legacySettings.graphics, "high", "existing players default to the revised High preset");
+assert.equal(graphicsProfile("high", false, 3).pixelRatio, 1.65 * .75, "High scales the capped device resolution to 75 percent");
 assert.ok(graphicsProfile("medium", false, 3).pixelRatio < 1.65 && graphicsProfile("medium", false, 3).combatQuality < 1, "Medium reduces resolution and effect density");
 assert.ok(graphicsProfile("low", false, 3).pixelRatio < graphicsProfile("medium", false, 3).pixelRatio && graphicsProfile("low", false, 3).combatQuality < graphicsProfile("medium", false, 3).combatQuality, "Low applies the lightest render profile");
 assert.deepEqual(legacySettings.loadout, savedSet, "legacy loadout-only settings migrate without changing weapon order");

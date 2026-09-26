@@ -40,9 +40,10 @@ for (let burst = 0; burst < 45; burst++) {
 }
 assert.ok(visuals.cursors.tracer - synchronizedTracerStart >= fighters.length * 45, "synchronized sixteen-player Arc Lightning and minigun bursts stay active without dropping their presentation events");
 
-for (const quality of [.5, .75, 1]) {
+for (const quality of [.25, .5, .75, 1]) {
   const blastScene = new THREE.Scene();
   const blastVisuals = new CombatVisuals(blastScene, { quality });
+  blastVisuals.setGraphicsProfile({ combatQuality: quality, combatLights: 4 });
   for (let index = 0; index < fighters.length; index++) {
     const center = new THREE.Vector3((index % 4) * 8, 2, Math.floor(index / 4) * 8);
     blastVisuals.impact(center, WEAPONS.mortar, fighters[index], { size: 3.6, explosive: true });
@@ -106,7 +107,7 @@ assert.ok(["flameA", "flameB", "flameC"].every((name) => visuals.fireballLayers[
 const mainSource = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
 assert.match(mainSource, /this\.hazards\.length >= 24/, "persistent hazards also have a global match cap");
 assert.match(mainSource, /setHighLoadMode\(fighterCount >= 13\)/, "maximum-size matches expose high-load telemetry before heavy fighter materials are created");
-assert.match(await readFile(new URL("../src/renderPipeline.js", import.meta.url), "utf8"), /this\.quality === "medium" \? this\.highLoadPipeline : this\.pipeline/, "fighter count cannot silently replace the selected High renderer");
+assert.match(await readFile(new URL("../src/renderPipeline.js", import.meta.url), "utf8"), /this\.renderQuality === "medium" \? this\.highLoadPipeline : this\.pipeline/, "fighter count cannot silently replace the requested render path");
 assert.match(mainSource, /new THREE\.InstancedMesh[\s\S]*?kind: "flame"[\s\S]*?vortexRibbonGeometry[\s\S]*?kind: "ribbon"/, "napalm stays instanced while tornadoes use one authored helical ribbon draw");
 assert.match(mainSource, /shot\.bounces < \(shot\.weapon\.bounces \|\| 0\)[\s\S]*?bounceProjectile\(shot, previous\)/, "infinite Fireball ricochets stay on the swept world-collision path");
 

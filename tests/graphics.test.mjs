@@ -1455,13 +1455,14 @@ Object.assign(resizeState, {
 });
 const retainedShadow = resizeState.keyLight.shadow.map;
 commitResize.call(resizeState);
-assert.deepEqual(qualityEvents, ["low", "low", "low"]);
+assert.deepEqual(qualityEvents, ["low", "low"]);
+assert.equal(resizeState.keyLight.castShadow, false, "Low disables the shadow caster");
 assert.equal(resizeState.keyLight.shadow.map, retainedShadow, "ShadowNode owns resizing; public depth bindings retain the same target");
 assert.equal(resizeState.keyLight.shadow.mapSize.x, 512);
 commitResize.call(resizeState);
-assert.equal(qualityEvents.length, 3, "graphics resources change only once at the frame boundary");
+assert.equal(qualityEvents.length, 2, "graphics resources change only once at the frame boundary");
 
-for (const [level, shadowMapSize, anisotropy] of [["low", 512, 4], ["medium", 1024, 8], ["high", 2048, 16]]) {
+for (const [level, shadowMapSize, anisotropy] of [["low", 0, 4], ["medium", 1024, 8], ["high", 2048, 16], ["ultra", 4096, 16]]) {
   const profile = graphicsProfile(level, false, 3);
   assert.equal(profile.shadowMapSize, shadowMapSize);
   assert.equal(profile.anisotropy, anisotropy);
@@ -1487,7 +1488,7 @@ for (const [level, shadowMapSize, anisotropy] of [["low", 512, 4], ["medium", 10
 const scene = new THREE.Scene();
 const createOnlineSource = main.slice(main.indexOf("  createOnlineFighter(data, position) {"), main.indexOf("  async startMatch("));
 const createOnlineFighter = new Function("Fighter", `return ({${createOnlineSource}}).createOnlineFighter`)(Fighter);
-const restoredWeapon = createOnlineFighter.call({ scene, controlsNetworkPlayer: () => true }, {
+const restoredWeapon = createOnlineFighter.call({ scene, settings: { graphicsEffects: {} }, controlsNetworkPlayer: () => true }, {
   id: "cache-online", name: "QA", color: 0x129dba, accent: 0x6ff6ff,
   loadout: ["blaster", "rocket_launcher"], slotIndex: 1, health: 37, ammo: { rocket_launcher: 1 }
 }, new THREE.Vector3());

@@ -1,4 +1,4 @@
-// Preferences survive tier changes; availability only determines what runs now.
+// Presets supply defaults; capability and accessibility determine availability.
 export const GRAPHICS_EFFECTS = {
   antialiasing: { group: 'rendering', post: true },
   bloom: { group: 'rendering', post: true },
@@ -25,12 +25,11 @@ export function normalizeGraphicsEffects(saved) {
   return Object.fromEntries(Object.keys(GRAPHICS_EFFECTS).map(key => [key, typeof saved?.[key] === 'boolean' ? saved[key] : true]));
 }
 
-export function graphicsEffectUnavailable(key, { quality = 'high', nativeWebGPU = true, reducedMotion = false, direct = false } = {}) {
+export function graphicsEffectUnavailable(key, { nativeWebGPU = true, reducedMotion = false, direct = false, shadows = true } = {}) {
   const effect = GRAPHICS_EFFECTS[key];
   if (effect.high && !nativeWebGPU) return 'webgpu';
   if (effect.post && direct) return 'fallback';
-  if (effect.high && quality !== 'high') return 'high';
-  if ((effect.post || effect.atmosphere) && quality === 'low') return 'medium';
+  if (!shadows && ['localFog', 'contactShadows'].includes(key)) return 'shadows';
   if (effect.motion && reducedMotion) return 'reduced';
   return '';
 }

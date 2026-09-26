@@ -487,8 +487,8 @@ assert.match(mainSource, /previousPosition\.copy\(shot\.mesh\.position\)/, "proj
 assert.match(playerSource, /this\.desiredMove\.copy\(move\)/, "fighters reuse movement vectors instead of allocating per frame");
 assert.match(worldSource, /nearbyObstacles\([\s\S]*?obstacleGrid/, "arena collisions use the spatial broad phase");
 assert.match(mainSource, /!child\.geometry\?\.userData\?\.sharedProjectile/, "shared projectile GPU buffers survive individual shot cleanup");
-assert.match(pipelineSource, /aoPass\.samples\.value = 16/, "high graphics retains sixteen-sample ambient occlusion");
-assert.match(pipelineSource, /bloomPass\.resolutionScale = \.5/, "high graphics retains half-resolution HDR bloom");
+assert.match(pipelineSource, /aoPass\.samples\.value = this\.options\.aoSamples/, "ambient occlusion uses the validated sample setting");
+assert.match(pipelineSource, /bloomPass\.setResolutionScale\(this\.options\.bloomScale\)/, "bloom uses the actual resolution API");
 assert.ok([visuals.flashOuter, visuals.flashInner, visuals.tracerOuter, visuals.tracerInner, visuals.ringOuter, visuals.ringInner, visuals.sparkLayer]
   .every((layer) => layer.isInstancedMesh && layer.matrixAutoUpdate === false), "pooled GPU effect layers keep one static object transform and one instanced draw per family");
 

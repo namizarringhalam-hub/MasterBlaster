@@ -517,8 +517,8 @@ export class ArenaWorld {
     }
     this.motes?.geometry.setDrawRange(0, this.graphicsEffects?.atmosphericMotes === false ? 0 : profile.atmosphereCount);
     this.waterLightStrength.value = this.graphicsEffects?.waterCaustics === false ? 0 : profile.level === "low" ? .35 : profile.level === "medium" ? .7 : 1;
-    this.atmosphere.steps.value = this.graphicsEffects?.clouds === false || profile.level === "low" ? 0 : profile.level === "medium" ? 6 : 12;
-    if (this.lightShafts) this.lightShafts.count = this.graphicsEffects?.horizonMist === false || profile.level === "low" ? 0 : profile.level === "medium" ? 2 : 4;
+    this.atmosphere.steps.value = (this.graphicsEffects?.clouds ?? profile.level !== "low") ? (profile.level === "low" || profile.level === "medium" ? 6 : 12) : 0;
+    if (this.lightShafts) this.lightShafts.count = (this.graphicsEffects?.horizonMist ?? profile.level !== "low") ? (profile.level === "low" || profile.level === "medium" ? 2 : 4) : 0;
   }
 
   setGraphicsEffects(effects) {

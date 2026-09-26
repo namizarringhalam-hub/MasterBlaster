@@ -3,7 +3,7 @@
 <div id="app"><canvas id="game-canvas"></canvas><div id="ui-root"></div></div>
 <div id="match-loading" hidden><span data-match-seed></span><span data-match-kind></span></div>
 <aside style="position:fixed;z-index:999;bottom:0;left:0;background:#09131de8;color:white;padding:8px;font:12px monospace;max-width:95vw">
-<label>Tier <select id="tier"><option>high</option><option>medium</option><option>low</option></select></label>
+<label>Tier <select id="tier"><option>high</option><option>medium</option><option>low</option><option>ultra</option></select></label>
 <label><input id="reduced" type="checkbox">Reduced motion</label>
 <button id="burst">Explosion</button><button id="run">Run simulation</button>
 <button id="reset">Reset scene</button><button id="stress">16 fighters</button><button id="ten">Ten resets</button>
@@ -11,12 +11,12 @@
 <pre id="metrics" style="white-space:pre-wrap;max-height:130px;overflow:auto">Importing engine…</pre></aside>
 <script type="module">
 import * as THREE from 'three/webgpu';
-import { NeonRenderPipeline } from '../src/renderPipeline.js';
+import { applyGraphicsPreset, GRAPHICS_PRESETS } from '../src/graphicsPresets.js';
+import { loadSettings, saveSettings } from '../src/gameData.js';
 const initialTier=new URLSearchParams(location.search).get('tier');
-const setQuality=NeonRenderPipeline.prototype.setQuality;
-if(['high','medium','low'].includes(initialTier)) {
+if(Object.hasOwn(GRAPHICS_PRESETS,initialTier)) {
   document.querySelector('#tier').value=initialTier;
-  NeonRenderPipeline.prototype.setQuality=function(){return setQuality.call(this,initialTier);};
+  const settings=loadSettings();applyGraphicsPreset(settings,initialTier);saveSettings(settings);
 }
 const metrics=document.querySelector('#metrics'),errors=[],resets=[];
 let phase='Importing engine',frames=0,windowStart=0,windowFrames=0,fps=0,cpuMs=0;
@@ -30,7 +30,7 @@ THREE.PMREMGenerator.prototype.fromScene=function(...args){metrics.textContent=p
 performance.mark('blaster-shell-visible');
 const {gameReady}=await import('../src/main.js');
 const game=await gameReady;
-NeonRenderPipeline.prototype.setQuality=setQuality;
+document.querySelector('#tier').value=game.settings.graphics;
 game.renderer.onError=report;
 const originalFrame=game.frame.bind(game);
 game.frame=time=>{const start=performance.now();originalFrame(time);cpuMs=performance.now()-start;frames++;windowFrames++;
@@ -39,15 +39,19 @@ game.frame=time=>{const start=performance.now();originalFrame(time);cpuMs=perfor
   if(frames%30===0)metrics.textContent=JSON.stringify({phase,frames,fps:Math.round(fps),cpuMs:Math.round(cpuMs*10)/10,
     profile:game.renderPipeline.profile,direct:game.renderPipeline.direct,players:game.players.length,
     textures:game.renderer.info.memory.textures,geometries:game.renderer.info.memory.geometries,
+    settings:game.settings.graphicsOptions,effects:game.settings.graphicsEffects,
+    actual:{samples:game.renderer.samples,width:game.renderer.domElement.width,height:game.renderer.domElement.height,
+      path:game.renderPipeline.renderQuality,shadow:game.keyLight.castShadow?game.keyLight.shadow.mapSize.x:0,
+      ao:game.renderPipeline.aoPass?.samples.value,bloom:(game.renderPipeline.bloomPass||game.renderPipeline.highLoadBloom)?.getResolutionScale()},
     blur:game.renderPipeline.motionBlur?.amount.value,errors,resets},null,2);
 };
 async function reset(count=2){metrics.textContent=phase='Building match';game.mode='training';game.seed='BLAST-01';
   game.settings.botCount=count-1;game.settings.matchSettings.training.botsStandStill=count<16;
   game.settings.matchSettings.training.botsDontAttack=count<16;game.timeLimitMinutes=30;game.targetScore=10000;
-  game.settings.graphics=document.querySelector('#tier').value;game.applyGraphicsSettings();game.freshSessionReady=true;
+  game.applyGraphicsSettings();game.freshSessionReady=true;
   await game.startMatch();game.paused=true;game.awaitingAudioGesture=false;game.matchStartDelay=0;phase='Rendering match';
 }
-document.querySelector('#tier').onchange=e=>{game.settings.graphics=e.target.value;game.applyGraphicsSettings();};
+document.querySelector('#tier').onchange=e=>{applyGraphicsPreset(game.settings,e.target.value);game.applyGraphicsSettings();};
 document.querySelector('#reduced').onchange=e=>{game.settings.reducedMotion=e.target.checked;game.renderPipeline.setReducedMotion(e.target.checked);};
 document.querySelector('#burst').onclick=()=>game.combatVisuals.explosions.spawn(game.players[0].position.clone().add(new THREE.Vector3(1,.5,1)),3);
 document.querySelector('#run').onclick=()=>{game.paused=!game.paused;phase=game.paused?'Paused scene':'Running simulation';};

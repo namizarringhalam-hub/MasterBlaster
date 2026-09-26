@@ -1,5 +1,6 @@
 import TEXT, { formatText } from "./playerText.js";
 import { normalizeGraphicsEffects } from "./graphicsEffects.js";
+import { GRAPHICS_VERSION, graphicsLevel, normalizeGraphicsOptions, presetEffects } from "./graphicsPresets.js";
 import { clampMatchMinutes } from "./multiplayerProtocol.js";
 
 const SAVE_KEY = "master-blaster-settings";
@@ -175,21 +176,10 @@ export function excessOwnedProjectiles(projectiles, owner, weaponId, limit) {
 }
 
 export const DEFAULT_LOADOUT = LOADOUT_SLOTS.map((slot) => slot.defaultWeapon);
-const GRAPHICS_LEVELS = new Set(["low", "medium", "high"]);
-
-export function graphicsProfile(level = "high", coarsePointer = false, deviceScale = 1) {
-  const resolved = GRAPHICS_LEVELS.has(level) ? level : "high";
-  const pixelCap = resolved === "low" ? 1 : resolved === "medium" ? 1.3 : 1.65;
-  const combatQuality = resolved === "low" ? .5
-    : resolved === "medium" ? .75 : 1;
-  return {
-    level: resolved, pixelRatio: Math.min(Math.max(.5, Number(deviceScale) || 1), pixelCap), combatQuality,
-    shadowMapSize: resolved === "high" ? 2048 : resolved === "medium" ? 1024 : 512,
-    detailDistance: resolved === "high" ? 96 : resolved === "medium" ? 72 : 48,
-    anisotropy: resolved === "high" ? 16 : resolved === "medium" ? 8 : 4,
-    atmosphereCount: resolved === "high" ? 220 : resolved === "medium" ? 150 : 80,
-    combatLights: resolved === "high" ? 4 : resolved === "medium" ? 2 : 1
-  };
+export function graphicsProfile(level = "high", coarsePointer = false, deviceScale = 1, options) {
+  const resolved = graphicsLevel(level), profile = normalizeGraphicsOptions(options, resolved);
+  return { level: resolved, ...profile,
+    pixelRatio: Math.min(Math.max(.5, Number(deviceScale) || 1), 1.65) * profile.renderScale };
 }
 
 function validLoadout(value) {
@@ -343,6 +333,8 @@ function defaults() {
     displayName: TEXT.defaults.displayName,
     blood: "reduced",
     graphics: "high",
+    graphicsVersion: GRAPHICS_VERSION,
+    graphicsOptions: normalizeGraphicsOptions(null, "high"),
     shake: 60,
     reducedMotion: false,
     motionBlur: 35,
@@ -381,7 +373,7 @@ export function loadSettings() {
     const defaultLoadoutPreset = Number.isInteger(saved.defaultLoadoutPreset) && loadoutPresets[saved.defaultLoadoutPreset]
       ? saved.defaultLoadoutPreset
       : null;
-    const graphics = GRAPHICS_LEVELS.has(saved.graphics) ? saved.graphics : "high";
+    const graphics = graphicsLevel(saved.graphics);
     const matchSettings = Object.fromEntries(Object.entries(MATCH_SETTINGS_DEFAULTS).map(([mode, fallback]) => {
       const remembered = saved.matchSettings?.[mode] || {};
       const difficulty = remembered.botDifficulty === "hard" ? "veteran" : remembered.botDifficulty;
@@ -396,8 +388,13 @@ export function loadSettings() {
         ...(mode === "training" ? { botsStandStill: remembered.botsStandStill === true, botsDontAttack: remembered.botsDontAttack === true } : {})
       }];
     }));
-    const motionBlur = Number.isFinite(saved.motionBlur) ? Math.max(0, Math.min(100, saved.motionBlur)) : 35;
-    return { ...defaults(), ...saved, graphics, motionBlur, graphicsEffects: normalizeGraphicsEffects(saved.graphicsEffects), loadout, loadoutPresets, defaultLoadoutPreset, matchSettingsVersion: MATCH_SETTINGS_VERSION, matchSettings };
+    const effects = presetEffects(graphics);
+    // Migrate old tier preferences without enabling formerly unavailable effects.
+    for (const key of Object.keys(effects)) if (typeof saved.graphicsEffects?.[key] === 'boolean'
+      && (saved.graphicsVersion === GRAPHICS_VERSION || saved.graphicsEffects[key] === false)) effects[key] = saved.graphicsEffects[key];
+    const graphicsOptions = normalizeGraphicsOptions(saved.graphicsVersion === GRAPHICS_VERSION ? saved.graphicsOptions : null, graphics);
+    const motionBlur = Number.isFinite(saved.motionBlur) ? Math.max(0, Math.min(100, saved.motionBlur)) : (effects.motionBlur ? 35 : 0);
+    return { ...defaults(), ...saved, graphics, graphicsVersion: GRAPHICS_VERSION, graphicsOptions, motionBlur, graphicsEffects: effects, loadout, loadoutPresets, defaultLoadoutPreset, matchSettingsVersion: MATCH_SETTINGS_VERSION, matchSettings };
   } catch {
     return defaults();
   }
