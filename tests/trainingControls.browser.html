@@ -42,9 +42,9 @@ document.querySelector("#run").onclick = async event => {
   game.targetScore = 10000;
   game.settings.matchSettings.training.botsStandStill = false;
   game.settings.matchSettings.training.botsDontAttack = false;
-  game.freshSessionReady = true;
+
   game.sound.resume();
-  await game.startMatch();
+  await game.startMatch(null, true);
   await sleep(6000);
   for (const [still, passive] of [[false, false], [false, true], [true, false], [true, true]]) {
     game.setTrainingBotOption("botsStandStill", still);

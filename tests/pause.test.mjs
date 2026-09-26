@@ -14,14 +14,14 @@ for (const mode of ["training", "quick", "private", "global"]) {
   let connections = 0;
   const arenaReached = new Error("local arena construction reached");
   Object.assign(game, {
-    mode, freshSessionReady: true, timeLimitMinutes: 3, settings: { botCount: 3 }, sound: {},
+    mode, timeLimitMinutes: 3, settings: { botCount: 3 }, sound: {},
     clearMatch() { this.multiplayer = null; }, setMatchLoading() {},
     connectOnlineMatch: async () => { connections++; return { phase: "lobby" }; },
     renderPrivateLobby: () => "online lobby",
     renderPipeline: { setHighLoadMode() { throw arenaReached; } }
   });
-  if (local) await assert.rejects(game.startMatch(), error => error === arenaReached);
-  else assert.equal(await game.startMatch(), "online lobby");
+  if (local) await assert.rejects(game.startMatch(null, true), error => error === arenaReached);
+  else assert.equal(await game.startMatch(null, true), "online lobby");
   assert.equal(connections, local ? 0 : 1, `${mode}: only multiplayer modes contact the server`);
   game.multiplayer = {};
   assert.equal(game.isOnlineMatch(), !local);

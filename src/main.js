@@ -237,7 +237,7 @@ class BlasterBattle {
     this.combatMusicPulse = 0;
     this.menuEnergyTimer = 0;
     this.menuLaunchTimer = 0;
-    this.freshSessionReady = false;
+    this.matchStartQueued = false;
     this.hideMatchLoadingAfterFrame = false;
     this.targetHealthTimer = 0;
     this.damageDirectionTimer = 0;
@@ -535,6 +535,9 @@ class BlasterBattle {
   clearMatch(preserveNetwork = false) {
     this.renderPipeline?.motionBlur?.reset();
     this.hideMatchLoadingAfterFrame = false;
+    this.matchStartQueued = false;
+    this.matchFramePending = false;
+    this.matchFrameReady = false;
     clearTimeout(this.menuEnergyTimer);
     this.menuEnergyTimer = 0;
     this.input.releasePointer();
@@ -1326,12 +1329,12 @@ class BlasterBattle {
   }
 
   queueMatchStart(sameSeed = false) {
-    sessionStorage.setItem(MATCH_SESSION_KEY, JSON.stringify({
-      seed: this.seed, mode: this.mode, botDifficulty: this.botDifficulty,
-      botCount: this.settings.botCount, timeLimitMinutes: this.timeLimitMinutes, sameSeed, queuedAt: Date.now()
-    }));
+    if (this.matchStartQueued) return;
+    const launch = this.matchStartQueued = {};
     this.setMatchLoading(true, this.seed, sameSeed);
-    requestAnimationFrame(() => requestAnimationFrame(() => location.reload()));
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (this.matchStartQueued === launch) this.startMatch(null, true);
+    }));
   }
 
   setMatchLoading(visible, seed = this.seed, sameSeed = false) {
@@ -1362,7 +1365,6 @@ class BlasterBattle {
       this.botDifficulty = ["rookie", "normal", "veteran"].includes(saved.botDifficulty) ? saved.botDifficulty : "normal";
       this.settings.botCount = clampBotCount(saved.botCount, this.mode === "private" ? 0 : 1);
       this.timeLimitMinutes = clampMatchMinutes(saved.timeLimitMinutes);
-      this.freshSessionReady = true;
       this.startMatch();
       return true;
     } catch {
@@ -1375,6 +1377,10 @@ class BlasterBattle {
     if (!this.sound.resume()) return false;
     this.sound.setVolume(this.settings.volume);
     this.sound.setMix({ music: this.settings.musicVolume, effects: this.settings.effectsVolume, ambience: this.settings.ambienceVolume });
+    if (this.hideMatchLoadingAfterFrame) {
+      this.awaitingAudioGesture = false;
+      return true;
+    }
     if (this.state !== "play") {
       this.sound.startMusic("menu", this.seed);
       return true;
@@ -1559,11 +1565,12 @@ class BlasterBattle {
     return fighter;
   }
 
-  async startMatch(welcomeOverride = null) {
-    if (!welcomeOverride && !this.freshSessionReady) return this.queueMatchStart(false);
+  async startMatch(welcomeOverride = null, loadingPainted = false) {
+    if (!welcomeOverride && !loadingPainted) return this.queueMatchStart(false);
     this.globalMultiplayer?.clearCountdown();
-    if (!welcomeOverride) this.freshSessionReady = false;
     this.clearMatch(Boolean(welcomeOverride));
+    this.state = "loading";
+    if (welcomeOverride) this.setMatchLoading(true, this.seed, false);
     let welcome = welcomeOverride;
     if (["private", "global"].includes(this.mode) && !welcome) {
       this.setMatchLoading(true, this.seed, false);
@@ -1652,6 +1659,10 @@ class BlasterBattle {
     performance.mark?.("blaster-arena-build-complete");
     // The selected pipeline compiles during its first normal render. A detached
     // compileAsync walk can outlive teardown and recreate already-disposed data.
+    this.hideMatchLoadingAfterFrame = true;
+  }
+
+  startMatchCountdown() {
     this.sound.startAmbience(this.world.theme.id);
     this.sound.setMusicIntensity(.42);
     const countdown = this.mode === "global" ? null : this.sound.startCountdown(this.seed, .42);
@@ -1664,8 +1675,22 @@ class BlasterBattle {
       this.sound.setMusicScene("combat");
       this.sound.startMusic("combat", this.seed);
     } else this.sound.play("countdown");
-    this.sound.setPaused(false);
-    this.hideMatchLoadingAfterFrame = true;
+    this.sound.setPaused(this.paused);
+  }
+
+  waitForMatchFrame() {
+    const world = this.world;
+    this.matchFramePending = true;
+    // Retain the loader while the GPU executes its first compiled frame. Never
+    // let an old arena's completion unlock a replacement match or the menu.
+    const submitted = this.renderer.backend.device?.queue.onSubmittedWorkDone();
+    Promise.resolve(submitted).then(() => {
+      if (this.world !== world || !this.hideMatchLoadingAfterFrame) return;
+      this.matchFramePending = false;
+      this.matchFrameReady = true;
+    }, () => {
+      if (this.world === world && this.hideMatchLoadingAfterFrame) this.showRendererFailure(TEXT.errors.graphicsReset);
+    });
   }
 
   applyNetworkScores(scores) {
@@ -2151,21 +2176,25 @@ class BlasterBattle {
     this.timer.update(time);
     const rawDt = Math.min(.25, this.timer.getDelta());
     const dt = Math.min(.033, rawDt);
-    if (this.state === "play" && this.input.tapped("Escape")) this.togglePause();
-    if (this.state === "play" && !this.paused) this.update(dt, rawDt);
-    const rendered = this.renderScene();
+    if (this.state === "play" && !this.hideMatchLoadingAfterFrame && this.input.tapped("Escape")) this.togglePause();
+    if (this.state === "play" && !this.paused && !this.hideMatchLoadingAfterFrame) this.update(dt, rawDt);
+    const rendered = this.matchFramePending ? false : this.renderScene();
     if (this.hideMatchLoadingAfterFrame && rendered) {
-      this.hideMatchLoadingAfterFrame = false;
-      performance.mark?.("blaster-arena-first-frame");
-      performance.measure?.("blaster-arena-first-render", "blaster-arena-build-complete", "blaster-arena-first-frame");
-      this.setMatchLoading(false);
+      if (this.matchFrameReady) {
+        this.hideMatchLoadingAfterFrame = false;
+        performance.mark?.("blaster-arena-first-frame");
+        performance.measure?.("blaster-arena-first-render", "blaster-arena-build-complete", "blaster-arena-first-frame");
+        this.startMatchCountdown();
+        this.updateHud();
+        this.setMatchLoading(false);
+      } else this.waitForMatchFrame();
     }
-    if (this.state === "play" && !this.paused) this.updatePerformanceSample(rawDt);
+    if (this.state === "play" && !this.paused && !this.hideMatchLoadingAfterFrame) this.updatePerformanceSample(rawDt);
     this.input.endFrame();
   }
 
   update(dt, realDt = dt) {
-    if (this.paused) return;
+    if (this.paused || this.hideMatchLoadingAfterFrame) return;
     if (this.awaitingAudioGesture) {
       this.updateAudio(dt);
       this.updateHud();

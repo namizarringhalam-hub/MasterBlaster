@@ -48,8 +48,8 @@ game.frame=time=>{const start=performance.now();originalFrame(time);cpuMs=perfor
 async function reset(count=2){metrics.textContent=phase='Building match';game.mode='training';game.seed='BLAST-01';
   game.settings.botCount=count-1;game.settings.matchSettings.training.botsStandStill=count<16;
   game.settings.matchSettings.training.botsDontAttack=count<16;game.timeLimitMinutes=30;game.targetScore=10000;
-  game.applyGraphicsSettings();game.freshSessionReady=true;
-  await game.startMatch();game.paused=true;game.awaitingAudioGesture=false;game.matchStartDelay=0;phase='Rendering match';
+  game.applyGraphicsSettings();
+  await game.startMatch(null, true);game.paused=true;game.awaitingAudioGesture=false;game.matchStartDelay=0;phase='Rendering match';
 }
 document.querySelector('#tier').onchange=e=>{applyGraphicsPreset(game.settings,e.target.value);game.applyGraphicsSettings();};
 document.querySelector('#reduced').onchange=e=>{game.settings.reducedMotion=e.target.checked;game.renderPipeline.setReducedMotion(e.target.checked);};

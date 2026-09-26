@@ -1,0 +1,56 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Match startup checks</title><link rel="stylesheet" href="/src/styles.css">
+<div id="app"><canvas id="game-canvas"></canvas><div id="ui-root"></div></div>
+<div id="match-loading" hidden><span data-match-seed></span><span data-match-kind></span></div>
+<aside style="position:fixed;z-index:999;bottom:0;background:#09131d;color:white;padding:8px;font:12px monospace">
+<button id="run" disabled>Test startup and ten replays</button><pre id="metrics">Loading engine</pre></aside>
+<script type="module">
+performance.mark('blaster-shell-visible');
+const metrics = document.querySelector('#metrics'), button = document.querySelector('#run'), errors = [], samples = [];
+addEventListener('error', e => errors.push(e.message));
+addEventListener('unhandledrejection', e => errors.push(String(e.reason)));
+const { gameReady } = await import('../src/main.js');
+const game = await gameReady;
+let phase = 'Ready', loadingTicks = 0, earlyCountdowns = 0, started = 0;
+const originalFrame = game.frame.bind(game), originalCountdown = game.startMatchCountdown.bind(game);
+game.frame = time => { if (game.hideMatchLoadingAfterFrame) loadingTicks++; originalFrame(time); };
+game.startMatchCountdown = () => { if (!game.matchFrameReady) earlyCountdowns++; originalCountdown(); };
+const report = () => metrics.textContent = JSON.stringify({phase, backend:game.renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL', loadingTicks, earlyCountdowns, errors, samples}, null, 2);
+const wait = predicate => new Promise((resolve, reject) => {
+  let frame;
+  const timeout = setTimeout(() => { cancelAnimationFrame(frame); reject(Error('Startup check timed out')); }, 45000);
+  const poll = () => { if (predicate()) { clearTimeout(timeout); resolve(); } else frame = requestAnimationFrame(poll); };
+  poll();
+});
+button.disabled = false; report();
+button.onclick = async () => {
+  button.disabled = true;
+  const renderer = game.renderer, sound = game.sound, pipeline = game.renderPipeline;
+  try {
+    game.mode = 'training'; game.seed = 'STARTUP-CHECK'; game.settings.botCount = 1;
+    game.settings.matchSettings.training.botsStandStill = true;
+    game.settings.matchSettings.training.botsDontAttack = true;
+    game.timeLimitMinutes = 30; game.sound.resume();
+    for (let cycle = 0; cycle <= 10; cycle++) {
+      if (cycle) game.finishMatch();
+      phase = `Loading ${cycle}`; started = performance.now(); report();
+      if (cycle) game.queueRematch(); else game.startMatch();
+      await wait(() => game.state === 'play' && !game.hideMatchLoadingAfterFrame && !game.matchStartQueued);
+      const readyMs = Math.round(performance.now() - started);
+      if (game.renderer !== renderer || game.sound !== sound || game.renderPipeline !== pipeline) throw Error('Engine resources replaced');
+      if (game.matchTime !== 1800 || game.players.some(p => p.health !== 100) || game.scores.some(Boolean)) throw Error('Match was not reset or spent time loading');
+      if (earlyCountdowns) throw Error('Countdown started before GPU readiness');
+      const sample = {cycle, readyMs, countdown:game.matchStartDelay, matchTime:game.matchTime};
+      phase = `Countdown ${cycle}`;
+      await wait(() => !game.matchStartDelay && !game.audioCountdown);
+      // Include real simulation frames so subsequent replays also clean active resources.
+      const settle = performance.now();
+      await wait(() => performance.now() - settle > 250);
+      Object.assign(sample, { textures:renderer.info.memory.textures, geometries:renderer.info.memory.geometries });
+      samples.push(sample); report();
+    }
+    game.finishMatch(); phase = 'PASS';
+  } catch (error) { errors.push(String(error)); phase = 'FAIL'; }
+  report();
+};
+</script>

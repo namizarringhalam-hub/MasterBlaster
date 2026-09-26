@@ -479,7 +479,7 @@ const pipelineSource = fs.readFileSync(new URL("../src/renderPipeline.js", impor
 assert.match(mainSource, /selectNearestAudio\([\s\S]*?this\.projectiles, listener\.position, 6/, "projectile audio uses a bounded nearest-six selector");
 assert.match(mainSource, /new Worker\(new URL\("\.\/botPlanner\.worker\.js"[\s\S]*?updateBotPlanner\(dt\)/, "batched bot target planning runs off the render thread when workers are available");
 assert.doesNotMatch(mainSource, /renderer\.compileAsync/, "no unowned async compilation may recreate disposed match resources");
-assert.match(mainSource, /const rendered = this\.renderScene\(\);[\s\S]*?hideMatchLoadingAfterFrame && rendered/, "the loading screen stays until the selected pipeline submits its first frame");
+assert.match(mainSource, /const rendered = this\.matchFramePending \? false : this\.renderScene\(\);[\s\S]*?hideMatchLoadingAfterFrame && rendered/, "the loading screen stays until the selected pipeline submits its first frame");
 assert.match(mainSource, /dataset\.drawCalls[\s\S]*?dataset\.geometries[\s\S]*?dataset\.longTasks[\s\S]*?dataset\.budget/, "live frame telemetry exposes draw, memory, long-task, and performance-budget health");
 const projectileUpdateStart = mainSource.indexOf("\n  updateProjectiles(dt) {");
 assert.doesNotMatch(mainSource.slice(projectileUpdateStart, mainSource.indexOf("\n  bounceProjectile(", projectileUpdateStart)), /\.filter\(|\.sort\(/, "projectile simulation avoids full-list allocation and sorting every frame");

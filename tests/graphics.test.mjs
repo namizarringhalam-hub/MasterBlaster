@@ -1420,10 +1420,10 @@ const frameMethod = new Function("performance", `return ({${frameSource}}).frame
   mark: name => firstFrameEvents.push(name), measure: name => firstFrameEvents.push(name)
 });
 const firstFrameState = {
-  state: "play", paused: true, hideMatchLoadingAfterFrame: true,
+  state: "play", paused: true, hideMatchLoadingAfterFrame: true, matchFrameReady: true,
   commitResize() {}, timer: { update() {}, getDelta: () => 1 / 60 },
   input: { tapped: () => false, endFrame() {} }, renderScene: () => false,
-  setMatchLoading: value => firstFrameEvents.push(value)
+  setMatchLoading: value => firstFrameEvents.push(value), startMatchCountdown() {}, updateHud() {}
 };
 frameMethod.call(firstFrameState, 100);
 assert.equal(firstFrameState.hideMatchLoadingAfterFrame, true, "a skipped frame cannot dismiss the loader");

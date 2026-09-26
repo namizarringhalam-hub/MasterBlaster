@@ -815,8 +815,8 @@ async function reset() {
   game.settings.graphics = select("tier").value;
   game.settings.matchSettings.training.botsStandStill = true;
   game.settings.matchSettings.training.botsDontAttack = true;
-  game.applyGraphicsSettings(); game.freshSessionReady = true;
-  await game.startMatch(); game.paused = true; game.awaitingAudioGesture = false;
+  game.applyGraphicsSettings();
+  await game.startMatch(null, true); game.paused = true; game.awaitingAudioGesture = false;
   resetPhase = "started";
   replaceReviewCostume();
   game.scene.traverse(child => {
