@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import * as THREE from "three/webgpu";
 import { Fighter } from "../src/player.js";
 import { advanceSpring } from "../src/motionSpring.js";
+import { WEAPONS } from "../src/gameData.js";
 
 const colors = [[0x129dba, 0x6ff6ff], [0xc82849, 0xff6b82], [0x6bad22, 0xb9ff55],
   [0x7847ca, 0xc793ff], [0xd77a16, 0xffc14f], [0xb92d86, 0xff75cf]];
@@ -118,6 +119,28 @@ for (const fps of [30, 60, 144]) {
   f.dispose();
 }
 assert.ok(Math.max(...steadyHeights) - Math.min(...steadyHeights) < .002, "pelvis height agrees across 30, 60 and 144 fps");
+{
+  const f = new Fighter(new THREE.Scene(),{id:'weapon-motion',color:0x129dba,accent:0x6ff6ff},['minigun','blaster'],new THREE.Vector3());
+  const magazine = f.weaponMagazine;
+  assert.ok(magazine?.parent, "animated magazine remains outside rigid batching");
+  f.ammo.minigun=0; f.reload();
+  f.reloadTimer=WEAPONS.minigun.reload*.5;
+  f.update(1/120,still,look,{},world);
+  assert.ok(magazine.position.y < f.weaponMagazineHome.y-.25);
+  f.switchSlot(1); f.switchSlot(0);
+  assert.equal(f.weaponMagazine,magazine,"cached models reuse magazine geometry");
+  assert.deepEqual(magazine.position.toArray(),f.weaponMagazineHome.toArray(),"switching restores magazine rest pose");
+  f.reloadTimer=0; f.recoil(4); f.attackTimer=.2;
+  let peak=0;
+  for(let i=0;i<120;i++){f.update(1/60,still,look,{},world);peak=Math.max(peak,f.weaponKick.value);assert.deepEqual(f.weaponGroup.scale.toArray(),[1,1,1]);}
+  assert.ok(peak>.04 && peak<.23,"weapon kick has a bounded physical return");
+  assert.ok(Math.abs(f.weaponKick.value)<1e-6 && f.weaponSpinSpeed<.2,"recoil and barrels settle after firing");
+  const rotation=f.weaponSpinner.rotation.z;
+  f.recoil(4); f.attackTimer=.2; f.update(1/60,still,look,{reducedMotion:true},world);
+  assert.equal(f.weaponKick.value,0); assert.equal(f.weaponSpinner.rotation.z,rotation);
+  f.respawn(new THREE.Vector3()); assert.deepEqual(f.weaponKick,{value:0,velocity:0});
+  f.dispose();
+}
 console.log("Mecha colors, geometry budgets, head tracking, knee animation, jumping, hit feedback and disposal passed.");
 {
   const results = [30, 60, 144].map(fps => {
