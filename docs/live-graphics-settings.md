@@ -14,5 +14,6 @@ Changed files: PLAYER_TEXT.js; src/{graphicsEffects,gameData,main,player,renderP
 
 WebGL browser validation: native-only settings correctly show Requires WebGPU. Disabling bloom and FXAA reduced textures from 42 to 29 while retaining 224 geometries, with zero rendering errors and no direct fallback. Shader compilation can briefly stall rendering after post-effect switches. Late online arrivals inherit saved animation preferences (additional regression and multiplayer-client tests passed). Final production build passed with boot asset index-C_sGZ71K.js.
 
-Checkpoint: implementation and validation complete; ready to commit/push main and verify that production serves index-C_sGZ71K.js. No permission blocker.
+Completed: feature commit cde7569 pushed to origin/main. Production https://masterblaster.se/ verified serving index-C_sGZ71K.js on 2026-09-26. All request changes published; no remaining implementation steps or blockers.
+
 
