@@ -56,6 +56,7 @@ export class ExplosionParticles {
         position: new THREE.Vector3(), velocity: new THREE.Vector3(), tint: new THREE.Color()
       })) };
     });
+    this.group.userData.explosionHeat = this.layers[2].particles;
   }
 
   spawn(position, size = 1, quality = 1, reducedMotion = false, tint = FIRE) {

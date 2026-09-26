@@ -6,6 +6,7 @@ import { ssr } from "three/addons/tsl/display/SSRNode.js";
 import TEXT from "./playerText.js";
 import { localFog } from "./localFog.js";
 import { SoftParticleDepth } from "./softParticles.js";
+import { HeatDistortion } from "./heatDistortion.js";
 
 // AO depth and normals must describe the same surface. Light overlays keep
 // their scene color, but cannot replace the normal of the solid beneath them.
@@ -69,6 +70,7 @@ export class NeonRenderPipeline {
     this.reflectionPass = null;
     this.localFog = null;
     this.particleDepth = null;
+    this.heatDistortion = null;
     this.pipeline = null;
     this.bloomPass = null;
     const nativeWebGPU = renderer.backend.isWebGPUBackend === true;
@@ -112,6 +114,8 @@ export class NeonRenderPipeline {
 
     const normal = scenePass.getTextureNode("normal");
     const depth = scenePass.getTextureNode("depth");
+    this.heatDistortion = new HeatDistortion(depth, camera);
+    const sceneUV = this.heatDistortion.node(screenUV);
     const aoNormals = renderer.backend.compatibilityMode === true
       ? recoverInvalidAONormals(normal, depth, uniform(camera.projectionMatrixInverse)) : normal;
     const aoPass = ao(depth, aoNormals, camera);
@@ -122,8 +126,8 @@ export class NeonRenderPipeline {
     aoPass.distanceExponent.value = 1.35;
     aoPass.distanceFallOff.value = .7;
     aoPass.samples.value = 16;
-    const grounding = aoPass.getTextureNode().r.mul(.34).add(.66);
-    const finalColor = sceneColor.mul(vec4(vec3(grounding), 1));
+    const grounding = aoPass.getTextureNode().sample(sceneUV).r.mul(.34).add(.66);
+    const finalColor = sceneColor.sample(sceneUV).mul(vec4(vec3(grounding), 1));
     const surface = scenePass.getTextureNode("surface");
     const reflections = this.reflectionPass = ssr(sceneColor, depth, normal, {
       camera, metalnessNode: surface.r.mul(surface.a.step(.5)), roughnessNode: surface.g,
@@ -138,19 +142,20 @@ export class NeonRenderPipeline {
     // No temporal history: moving fighters and destroyed cover update in the
     // current frame. Existing IBL remains the fallback outside the screen.
     const edge = screenUV.min(screenUV.oneMinus()).mul(12).clamp(0, 1);
-    let litScene = finalColor.add(vec4(reflections.rgb.mul(edge.x.mul(edge.y)), 0));
+    let litScene = finalColor.add(vec4(reflections.getTextureNode().sample(sceneUV).rgb.mul(edge.x.mul(edge.y)), 0));
     const key = scene.children.find(light => light.isDirectionalLight && light.castShadow);
     if (key) {
       this.localFog = localFog(depth, camera, key);
-      const air = this.localFog.node(screenUV);
+      const air = this.localFog.node(sceneUV);
       litScene = vec4(litScene.rgb.mul(air.a).add(air.rgb), litScene.a);
     }
-    this.pipeline.outputNode = litScene.add(bloomPass);
+    this.pipeline.outputNode = litScene.add(bloomPass.getTextureNode().sample(sceneUV));
   }
 
   render() {
     if (this.direct || this.quality === "low") return this.renderer.render(this.scene, this.camera);
     try {
+      if (this.quality === "high") this.heatDistortion?.update(this.scene, this.camera, this.reducedMotion);
       if (this.quality === "high") this.particleDepth?.render(this.renderer, this.scene, this.camera);
       if (this.quality === "high" && this.localFog) {
         // Shadows initialize lazily. Refresh the binding after quality changes
@@ -261,6 +266,7 @@ export class NeonRenderPipeline {
   }
 
   disposePipelineResources() {
+    this.heatDistortion = null;
     this.particleDepth?.dispose();
     this.particleDepth = null;
     this.localFog?.placeholder.dispose();

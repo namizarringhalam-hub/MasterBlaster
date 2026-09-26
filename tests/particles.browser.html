@@ -3,6 +3,7 @@
 <nav><label>Tier <select id="tier"><option>high</option><option>medium</option><option>low</option></select></label>
 <label>Age <select id="age"><option value=".18">Fire</option><option value=".5" selected>Smoke</option><option value="1">Late smoke</option></select></label>
 <label><input id="soft" type="checkbox" checked>Soft particles</label><label><input id="light" type="checkbox" checked>Warm light</label>
+<label><input id="heat" type="checkbox" checked>Heat shimmer</label><label><input id="reduced" type="checkbox">Reduced motion</label>
 <button id="reset">Reset explosion</button><button id="clear">Clear particles</button></nav>
 <canvas id="canvas"></canvas><pre id="metrics">Initializing…</pre>
 <script type="module">
@@ -37,10 +38,13 @@ document.querySelector('#clear').onclick=()=>effects.update(10);
 document.querySelector('#tier').onchange=e=>pipeline.setQuality(e.target.value);
 document.querySelector('#soft').onchange=e=>{if(pipeline.particleDepth)pipeline.particleDepth.strength.value=e.target.checked?1:0;};
 document.querySelector('#light').onchange=e=>{warm.intensity=e.target.checked?35:0;};
+document.querySelector('#heat').onchange=e=>{if(pipeline.heatDistortion)pipeline.heatDistortion.strength.value=e.target.checked?1:0;};
+document.querySelector('#reduced').onchange=e=>pipeline.setReducedMotion(e.target.checked);
 reset(); let frames=0;
 renderer.setAnimationLoop(()=>{pipeline.render();frames++;
   if(frames%30===0)metrics.textContent=JSON.stringify({frames,quality:pipeline.quality,profile:pipeline.profile,direct:pipeline.direct,
     depthFrames:pipeline.particleDepth?.frames,depthSize:pipeline.particleDepth?[pipeline.particleDepth.target.width,pipeline.particleDepth.target.height]:null,
+    heatSources:pipeline.heatDistortion?.parameters.filter(p=>p.w>0).length,
     textures:renderer.info.memory.textures,errors},null,2);
 });
 </script>

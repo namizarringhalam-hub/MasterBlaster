@@ -18,6 +18,7 @@ import { graphicsProfile, swapStolenWeapon, WEAPONS } from "../src/gameData.js";
 import { CombatVisuals } from "../src/combatVisuals.js";
 import { NeonRenderPipeline, recoverInvalidAONormals } from "../src/renderPipeline.js";
 import { SoftParticleDepth } from "../src/softParticles.js";
+import { HeatDistortion } from "../src/heatDistortion.js";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { surfaceTextures, surfaceMaps, projectSurfaceUVs } from "../src/surfaceTextures.js";
@@ -1226,6 +1227,21 @@ const rendererStub = nativeWebGPU => ({
   getRenderObjectFunction: () => null, getPixelRatio: () => 1, getMRT: () => null,
   getClearColor: target => target.set(0), getClearAlpha: () => 1, getScissorTest: () => false
 });
+{
+  const scene = new THREE.Scene(), effects = new CombatVisuals(scene), camera = new THREE.PerspectiveCamera(60, 2, .1, 100);
+  const heat = new HeatDistortion(null, camera);
+  for (let i = 0; i < 15; i++) effects.explosions.spawn(new THREE.Vector3(0, 0, -5), 1);
+  effects.update(.1); heat.update(scene, camera);
+  assert.equal(heat.parameters.filter(p => p.w > 0).length, 8, "overlapping explosions stay within the shader budget");
+  assert.ok(heat.sources.every(p => Math.abs(p.x - .5) < 1e-6 && p.z * 2 === p.w), "source projection respects aspect ratio");
+  camera.position.x = 1; heat.update(scene, camera);
+  assert.ok(heat.sources[0].x < .5, "projection uses the current camera transform, without a one-frame lag");
+  heat.update(scene, camera, true); assert.ok(heat.parameters.every(p => p.w === 0));
+  effects.update(10); heat.update(scene, camera); assert.ok(heat.parameters.every(p => p.w === 0), "expired sources clear without temporal ghosts");
+  effects.explosions.spawn(new THREE.Vector3(0, 0, 5), 1); heat.update(scene, camera);
+  assert.ok(heat.parameters.every(p => p.w === 0), "sources behind the camera cannot distort the image");
+  effects.dispose(); heat.update(scene, camera); assert.ok(heat.parameters.every(p => p.w === 0));
+}
 {
   const scene = new THREE.Scene(), effects = new CombatVisuals(scene), camera = new THREE.PerspectiveCamera();
   const depth = new SoftParticleDepth(), renderer = rendererStub(true);
