@@ -17,8 +17,8 @@ Session starting account balance: 1738.055228 credits. Account readings include 
 11. Mecha weight/secondary motion — published 54a212b, live index-D3BUbeKj.js verified: analytic damped acceleration/braking springs add bounded body pitch/roll and helmet counter-motion; feet retain existing grounded solver. Local/bot/network update paths pass reduced motion; respawn clears state. 30/60/144 fps spring agreement, physics/logical-muzzle parity, reduced motion and mecha regression pass. Native isolated visual review passes. Graphics regression initially failed because its extracted-class harness lacked the new helper import; fixed harness, complete graphics regression rerun passed. Build index-D3BUbeKj.js passes.
 12. Weapon animation — published e71a0d3, live index-CB6Q40e4.js verified: damped rigid recoil, spinning barrels with coast-down, moving existing reload magazines, reduced-motion and respawn resets. All 47 weapon/model regressions, spring/reload tests, full graphics regression and production build index-CB6Q40e4.js passed. Native high midpoint reload reviewed, no rendering errors. Publishing separately.
 13. Environmental animation — published e5e3994, live index-mk_h9ED3.js verified: individual bounded wind eddies in the existing mote batch, drifting horizon mist and reduced-motion-aware decorative machinery/lighting. No new geometry or collision changes. Arena presentation/lifecycle and WGSL/GLSL checks pass; native actual-arena high/medium and frozen clock reviewed with no errors. Production build index-mk_h9ED3.js passes.
-14. Contact shadows — validated: native-high eight-sample short directional depth rays, bounded thickness/strength and screen-edge fade supplement existing VSM/AO. Reuses depth/normal attachments, no new target/history. Graphics regression, WGSL/GLSL and build index-CTxsCF-W.js passed; native on/off and high/medium/high checks have no errors.
-15. Temporal stability/antialiasing — pending.
+14. Contact shadows — published 9b5c8e1, live index-CTxsCF-W.js verified: native-high eight-sample short directional depth rays, bounded thickness/strength and screen-edge fade supplement existing VSM/AO. Reuses depth/normal attachments, no new target/history. Graphics regression, WGSL/GLSL and build index-CTxsCF-W.js passed; native on/off and high/medium/high checks have no errors.
+15. Temporal stability/antialiasing — validated: existing MSAA plus post-tone-map FXAA for high/medium native and WebGL, one RGBA8 target per cached graph, explicit target/material cleanup. Current-frame edge smoothing avoids temporal trails; no TAA history introduced. Graphics regressions, actual post shaders and build index-DdXEr5lU.js pass. Native high/medium reviewed; WebGL2 BLOOM rendered 1620 frames with zero errors/fallbacks. Full-game boot reported zero errors before a later browser timeout; final sustained integration still required.
 16. Cinematic motion blur — pending.
 17. Combined integration/performance/validation — pending.
 
@@ -61,4 +61,8 @@ Item 13 account reading: 623.993769 credits (24.68 observed since item 12). Next
 
 
 Item 14 account reading: 603.114419 credits (20.88 observed since item 13). Next: publish contact shadows, then antialiasing/stability.
+
+
+Item 15 account reading: 566.423319 credits (36.69 observed since item 14). Next: publish AA, then cinematic motion blur and final integration.
+
 

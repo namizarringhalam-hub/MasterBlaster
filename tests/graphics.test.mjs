@@ -1379,7 +1379,15 @@ for (const nativeWebGPU of [true, false]) for (const quality of ["low", "medium"
   for (let i = 0; i < 5; i++) for (const level of ["low", "high", "medium"]) pipeline.setQuality(level);
   assert.ok(pipeline.pipeline === full, "tier toggles reuse the full graph without recompiling it");
   assert.ok(pipeline.highLoadPipeline === balanced, "tier toggles reuse the balanced graph");
+  let outputDisposals = 0;
+  for (const target of pipeline.outputTargets) {
+    assert.equal(target.renderTarget.depthBuffer, false, "edge smoothing does not allocate unused depth");
+    target.renderTarget.addEventListener("dispose", () => outputDisposals++);
+    target._quadMesh.material.addEventListener("dispose", () => outputDisposals++);
+  }
+  const expectedOutputDisposals = pipeline.outputTargets.length * 2;
   pipeline.dispose(); pipeline.dispose();
+  assert.equal(outputDisposals, expectedOutputDisposals, "cached AA targets and materials dispose exactly once");
   assert.equal(pipeline.pipeline, null);
   assert.equal(pipeline.highLoadPipeline, null);
   assert.equal(pipeline.reflectionPass, null);

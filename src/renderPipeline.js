@@ -1,8 +1,9 @@
 import * as THREE from "three/webgpu";
-import { Fn, If, clearcoat, clearcoatNormalView, clearcoatRoughness, context, emissive, getNormalFromDepth, metalness, mix, mrt, normalView, output, pass, roughness, screenUV, uniform, vec3, vec4 } from "three/tsl";
+import { Fn, If, clearcoat, clearcoatNormalView, clearcoatRoughness, context, emissive, getNormalFromDepth, metalness, mix, mrt, normalView, output, pass, renderOutput, roughness, rtt, screenUV, uniform, vec3, vec4 } from "three/tsl";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { ssr } from "three/addons/tsl/display/SSRNode.js";
+import { fxaa } from "three/addons/tsl/display/FXAANode.js";
 import TEXT from "./playerText.js";
 import { localFog } from "./localFog.js";
 import { SoftParticleDepth } from "./softParticles.js";
@@ -75,6 +76,7 @@ export class NeonRenderPipeline {
     this.contactShadows = null;
     this.pipeline = null;
     this.bloomPass = null;
+    this.outputTargets = [];
     const nativeWebGPU = renderer.backend.isWebGPUBackend === true;
     this.nativeWebGPU = nativeWebGPU;
     this.direct = false;
@@ -93,7 +95,7 @@ export class NeonRenderPipeline {
       const sceneColor = this.scenePass.getTextureNode("output");
       this.bloomPass = bloom(this.scenePass.getTextureNode("bloom"), reducedMotion ? .16 : .36, .16, EMISSION_THRESHOLD);
       this.bloomPass.resolutionScale = .34;
-      this.pipeline.outputNode = sceneColor.add(this.bloomPass);
+      this.finishOutput(this.pipeline, sceneColor.add(this.bloomPass));
       return;
     }
     const scenePass = this.scenePass = pass(scene, camera);
@@ -153,7 +155,17 @@ export class NeonRenderPipeline {
       const air = this.localFog.node(sceneUV);
       litScene = vec4(litScene.rgb.mul(air.a).add(air.rgb), litScene.a);
     }
-    this.pipeline.outputNode = litScene.add(bloomPass.getTextureNode().sample(sceneUV));
+    this.finishOutput(this.pipeline, litScene.add(bloomPass.getTextureNode().sample(sceneUV)));
+  }
+
+  finishOutput(pipeline, node) {
+    // FXAA smooths shader/reflection edges left by MSAA. Tone map exactly once,
+    // before edge detection, and keep DOM HUD text outside this pass.
+    const resolved = rtt(renderOutput(node, this.renderer.toneMapping, this.renderer.outputColorSpace),
+      null, null, { type: THREE.UnsignedByteType, depthBuffer: false });
+    this.outputTargets.push(resolved);
+    pipeline.outputColorTransform = false;
+    pipeline.outputNode = fxaa(resolved);
   }
 
   render() {
@@ -193,7 +205,7 @@ export class NeonRenderPipeline {
     const sceneColor = this.highLoadScenePass.getTextureNode("output");
     this.highLoadBloom = bloom(this.highLoadScenePass.getTextureNode("bloom"), this.reducedMotion ? .16 : .34, .16, EMISSION_THRESHOLD);
     this.highLoadBloom.resolutionScale = .34;
-    this.highLoadPipeline.outputNode = sceneColor.add(this.highLoadBloom);
+    this.finishOutput(this.highLoadPipeline, sceneColor.add(this.highLoadBloom));
   }
 
   updateBloomQuality() {
@@ -270,6 +282,12 @@ export class NeonRenderPipeline {
   }
 
   disposePipelineResources() {
+    // r185 RTTNode has no resource-disposal override.
+    for (const target of this.outputTargets) {
+      target.renderTarget.dispose();
+      target._quadMesh.material.dispose();
+    }
+    this.outputTargets.length = 0;
     this.contactShadows = null;
     this.heatDistortion = null;
     this.particleDepth?.dispose();

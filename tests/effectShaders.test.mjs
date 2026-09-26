@@ -78,6 +78,10 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
       return builder.fragmentShader;
     };
     buildPost(postMaterial);
+    for (const target of pipeline.outputTargets) {
+      postMaterial.fragmentNode = target.node;
+      buildPost(postMaterial);
+    }
     assert.match(buildPost(pipeline.reflectionPass._ssrMaterial), /textureSample(?:Level)?\(/, "reflection ray tracing samples the current scene");
     buildPost(pipeline.reflectionPass._blurMaterial);
     quad.geometry.dispose(); postMaterial.dispose();
