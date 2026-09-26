@@ -10,6 +10,9 @@
 <button id="fire-mecha">Fire mecha weapon</button><button id="reload-mecha">Reload mecha weapon</button><button id="swap-mecha">Swap mecha weapon</button>
 <button id="hold-reload">Hold reload midpoint</button>
 <label><input id="contact" type="checkbox" checked>Contact shadows</label>
+<label>Motion blur <input id="motion-blur" type="range" min="0" max="100" value="35"></label>
+<button id="orbit">Orbit camera</button><button id="cut">Cut camera</button>
+<button id="moving-object">Move object only</button><button id="vectors">Measure motion vectors</button>
 <canvas id="canvas"></canvas><pre id="metrics">Initializing…</pre>
 <script type="module">
 import * as THREE from 'three/webgpu';
@@ -23,6 +26,7 @@ addEventListener('unhandledrejection', e => errors.push(String(e.reason)));
 const renderer = new THREE.WebGPURenderer({canvas:document.querySelector('#canvas'),antialias:true,
   forceWebGL:new URLSearchParams(location.search).get('renderer') === 'webgl'});
 await renderer.init(); renderer.setSize(960,540); renderer.setPixelRatio(1);
+renderer.onError=info=>errors.push(String(info.message??info));
 renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.VSMShadowMap;
 const scene = new THREE.Scene(); scene.background=new THREE.Color(0x09131d);
 const camera = new THREE.PerspectiveCamera(45,960/540,.1,100);
@@ -38,13 +42,24 @@ for (const [size,position,color] of [[[20,.2,20],[0,-.1,0],0x536473],[[4,3,.4],[
   mesh.position.set(...position); mesh.castShadow=mesh.receiveShadow=true; scene.add(mesh);
   if(size[0]===4)wall={x:0,z:-1,w:4,d:.4,baseY:0,top:3,mesh};
 }
-const effects = new CombatVisuals(scene), pipeline = new NeonRenderPipeline(renderer,scene,camera);
+const effects = new CombatVisuals(scene), pipeline = new NeonRenderPipeline(renderer,scene,camera,{motionBlur:35});
 const fighter = new Fighter(scene,{id:'inertia-review',color:0x129dba,accent:0x6ff6ff},['blaster','minigun'],new THREE.Vector3());
 fighter.group.visible=false;
 const move = new THREE.Vector3(), look = new THREE.Vector3(0,0,1), cameraOffset = new THREE.Vector3(4,2.6,5);
 const world = {resolve(position){const grounded=position.y<=0;if(grounded)position.y=0;return{grounded};},boostAt:()=>null};
-let holdPose=false;
-document.querySelector('#run-mecha').onclick=()=>{effects.update(10);fighter.group.visible=true;move.set(0,0,1);};
+let holdPose=false, orbit=false, angle=0, objectMotion=false, vectorReport=null;
+const movingBox=new THREE.Mesh(new THREE.BoxGeometry(1,2,1),new THREE.MeshStandardNodeMaterial({color:0x33ccee}));
+movingBox.position.y=1;movingBox.visible=false;scene.add(movingBox);
+document.querySelector('#moving-object').onclick=()=>{effects.update(10);orbit=false;fighter.group.visible=false;movingBox.visible=objectMotion=true;
+  camera.position.set(6,3.3,7);camera.lookAt(0,1,0);};
+document.querySelector('#vectors').onclick=async()=>{const target=pipeline.particleDepth?.target;if(!target)return;
+  const pixels=await renderer.readRenderTargetPixelsAsync(target,0,0,target.width,target.height);
+  let peak=0,nonzero=0;for(let i=0;i<pixels.length;i+=4){const v=Math.hypot(THREE.DataUtils.fromHalfFloat(pixels[i]),THREE.DataUtils.fromHalfFloat(pixels[i+1]));
+    peak=Math.max(peak,v);if(v>.00001)nonzero++;}vectorReport={peak,nonzero,objectOnly:objectMotion};};
+document.querySelector('#orbit').onclick=()=>{effects.update(10);fighter.group.visible=true;orbit=!orbit;};
+document.querySelector('#cut').onclick=()=>{angle+=Math.PI;};
+document.querySelector('#motion-blur').oninput=e=>pipeline.setMotionBlur(Number(e.target.value));
+document.querySelector('#run-mecha').onclick=()=>{holdPose=false;effects.update(10);fighter.group.visible=true;move.set(0,0,1);};
 document.querySelector('#brake-mecha').onclick=()=>move.set(0,0,0);
 document.querySelector('#fire-mecha').onclick=()=>{fighter.group.visible=true;fighter.recoil(4);fighter.attackTimer=.2;};
 document.querySelector('#reload-mecha').onclick=()=>{fighter.group.visible=true;fighter.ammo[fighter.weapon.id]=0;fighter.reload();};
@@ -68,7 +83,9 @@ document.querySelector('#reduced').onchange=e=>pipeline.setReducedMotion(e.targe
 document.querySelector('#contact').onchange=e=>{if(pipeline.contactShadows)pipeline.contactShadows.strength.value=e.target.checked?.24:0;};
 reset(); let frames=0;
 renderer.setAnimationLoop(()=>{
+  if(objectMotion)movingBox.position.x=Math.sin(frames*.035)*2;
   if(fighter.group.visible){if(!holdPose)fighter.update(1/60,move,look,{reducedMotion:document.querySelector('#reduced').checked},world);
+    if(orbit){angle+=.025;cameraOffset.set(Math.cos(angle)*6,2.6,Math.sin(angle)*6);}
     camera.position.copy(fighter.position).add(cameraOffset);camera.lookAt(fighter.position.x,1.2,fighter.position.z);}
   pipeline.render();frames++;
   if(frames%30===0)metrics.textContent=JSON.stringify({frames,quality:pipeline.quality,profile:pipeline.profile,direct:pipeline.direct,
@@ -76,6 +93,6 @@ renderer.setAnimationLoop(()=>{
     heatSources:pipeline.heatDistortion?.parameters.filter(p=>p.w>0).length,
     inertia:fighter.group.visible?{pitch:fighter.bodyPitchSpring.value,roll:fighter.bodyRollSpring.value}:null,
     weapon:fighter.group.visible?{id:fighter.weapon.id,kick:fighter.weaponKick.value,spin:fighter.weaponSpinSpeed,magazineY:fighter.weaponMagazine?.position.y}:null,
-    textures:renderer.info.memory.textures,errors},null,2);
+    blurAmount:pipeline.motionBlur?.amount.value,vectorReport,textures:renderer.info.memory.textures,errors},null,2);
 });
 </script>

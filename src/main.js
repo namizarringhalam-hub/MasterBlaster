@@ -417,12 +417,14 @@ class BlasterBattle {
     this.renderer.setRenderTarget(null);
     this.renderPipeline = new NeonRenderPipeline(this.renderer, this.scene, this.camera, {
       reducedMotion: this.settings.reducedMotion,
+      motionBlur: this.settings.motionBlur,
       coarsePointer: this.coarsePointer,
       quality: this.graphics.level
     });
   }
 
   clearMatch(preserveNetwork = false) {
+    this.renderPipeline?.motionBlur?.reset();
     this.hideMatchLoadingAfterFrame = false;
     clearTimeout(this.menuEnergyTimer);
     this.menuEnergyTimer = 0;
@@ -807,6 +809,9 @@ class BlasterBattle {
               <select data-setting="dynamicRange">
                 ${["wide", "standard", "night"].map((value) => `<option value="${value}" ${this.settings.dynamicRange === value ? "selected" : ""}>${TEXT.settings.options.dynamicRange[value]}</option>`).join("")}
               </select>
+            </label>
+            <label>${TEXT.settings.labels.motionBlur} <output>${this.settings.motionBlur}%</output>
+              <input type="range" min="0" max="100" value="${this.settings.motionBlur}" data-setting="motionBlur">
             </label>
             <label class="toggle"><input type="checkbox" data-setting="reducedMotion" ${this.settings.reducedMotion ? "checked" : ""}> ${TEXT.settings.labels.reducedMotion}</label>
           </div>
@@ -1194,6 +1199,7 @@ class BlasterBattle {
     this.settings.ambienceVolume = Number(ui.querySelector('[data-setting="ambienceVolume"]').value);
     this.settings.dynamicRange = ui.querySelector('[data-setting="dynamicRange"]').value;
     this.settings.reducedMotion = ui.querySelector('[data-setting="reducedMotion"]').checked;
+    this.settings.motionBlur = Number(ui.querySelector('[data-setting="motionBlur"]').value);
     saveSettings(this.settings);
   }
 
@@ -1204,6 +1210,7 @@ class BlasterBattle {
     this.sound.setDynamicRange(this.settings.dynamicRange);
     document.documentElement.classList.toggle("reduce-motion", this.settings.reducedMotion);
     this.renderPipeline.setReducedMotion(this.settings.reducedMotion);
+    this.renderPipeline.setMotionBlur(this.settings.motionBlur);
     this.applyGraphicsSettings();
     this.renderMain();
   }

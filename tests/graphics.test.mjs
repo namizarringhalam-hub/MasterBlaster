@@ -14,6 +14,7 @@ import { ArenaWorld, structuralPanelGeometry, structuralRouteGeometry } from "..
 import { Fighter } from "../src/player.js";
 import { createMechaRig } from "../src/mecha.js";
 import "./mecha.test.mjs";
+import "./motionBlur.test.mjs";
 import { graphicsProfile, swapStolenWeapon, WEAPONS } from "../src/gameData.js";
 import { CombatVisuals } from "../src/combatVisuals.js";
 import { NeonRenderPipeline, recoverInvalidAONormals } from "../src/renderPipeline.js";

@@ -185,6 +185,7 @@ export const PLAYER_TEXT = {
       graphics: "Graphics quality",
       blood: "Blood and impact effects",
       cameraShake: "Camera shake",
+      motionBlur: "Cinematic motion blur (High graphics)",
       masterVolume: "Master volume",
       musicVolume: "Music volume",
       effectsVolume: "Effects volume",

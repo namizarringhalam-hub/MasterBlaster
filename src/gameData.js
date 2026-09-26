@@ -344,6 +344,7 @@ function defaults() {
     graphics: "high",
     shake: 60,
     reducedMotion: false,
+    motionBlur: 35,
     volume: 70,
     musicVolume: 70,
     effectsVolume: 85,
@@ -393,7 +394,8 @@ export function loadSettings() {
         ...(mode === "training" ? { botsStandStill: remembered.botsStandStill === true, botsDontAttack: remembered.botsDontAttack === true } : {})
       }];
     }));
-    return { ...defaults(), ...saved, graphics, loadout, loadoutPresets, defaultLoadoutPreset, matchSettingsVersion: MATCH_SETTINGS_VERSION, matchSettings };
+    const motionBlur = Number.isFinite(saved.motionBlur) ? Math.max(0, Math.min(100, saved.motionBlur)) : 35;
+    return { ...defaults(), ...saved, graphics, motionBlur, loadout, loadoutPresets, defaultLoadoutPreset, matchSettingsVersion: MATCH_SETTINGS_VERSION, matchSettings };
   } catch {
     return defaults();
   }

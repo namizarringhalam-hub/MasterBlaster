@@ -64,6 +64,13 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
   }
   if (pipeline.reflectionPass) {
     renderer.setRenderTarget(null); renderer.setMRT(null);
+    const originalPlainMaterial = plain.material;
+    plain.material = pipeline.particleDepth.material;
+    const velocityBuilder = new THREE.WGSLNodeBuilder(plain, renderer);
+    velocityBuilder.scene = scene; velocityBuilder.camera = camera; velocityBuilder.build();
+    assert.doesNotMatch(velocityBuilder.vertexShader, /undefined|NaN/);
+    assert.ok(velocityBuilder.fragmentShader.length > 100);
+    plain.material = originalPlainMaterial;
     const postMaterial = new THREE.NodeMaterial();
     postMaterial.fragmentNode = pipeline.pipeline.outputNode;
     const quad = new THREE.Mesh(new THREE.PlaneGeometry(), postMaterial);

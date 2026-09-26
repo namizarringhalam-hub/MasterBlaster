@@ -9,6 +9,7 @@ import { localFog } from "./localFog.js";
 import { SoftParticleDepth } from "./softParticles.js";
 import { HeatDistortion } from "./heatDistortion.js";
 import { contactShadows } from "./contactShadows.js";
+import { CinematicMotionBlur } from "./cinematicMotionBlur.js";
 
 // AO depth and normals must describe the same surface. Light overlays keep
 // their scene color, but cannot replace the normal of the solid beneath them.
@@ -46,7 +47,7 @@ export function recoverInvalidAONormals(normal, depth, inverseProjection) {
 }
 
 export class NeonRenderPipeline {
-  constructor(renderer, scene, camera, { reducedMotion = false, coarsePointer = false, quality = "high" } = {}) {
+  constructor(renderer, scene, camera, { reducedMotion = false, motionBlur = 0, coarsePointer = false, quality = "high" } = {}) {
     this.renderer = renderer;
     this.rendererState = THREE.RendererUtils.saveRendererState(renderer);
     this.rendererXrEnabled = renderer.xr?.enabled ?? false;
@@ -61,6 +62,8 @@ export class NeonRenderPipeline {
     this.scene = scene;
     this.camera = camera;
     this.reducedMotion = Boolean(reducedMotion);
+    this.motionBlurStrength = Math.max(0, Math.min(100, Number(motionBlur) || 0));
+    this.motionBlur = null;
     this.quality = ["low", "medium", "high"].includes(quality) ? quality : "high";
     this.coarsePointer = coarsePointer;
     this.highLoadMode = false;
@@ -100,6 +103,7 @@ export class NeonRenderPipeline {
     }
     const scenePass = this.scenePass = pass(scene, camera);
     this.particleDepth = new SoftParticleDepth();
+    this.motionBlur = new CinematicMotionBlur(this.particleDepth, camera);
     scenePass.contextNode = context({ particleDepth: this.particleDepth.node, particleFadeStrength: this.particleDepth.strength });
     scenePass.setMRT(mrt({ output, normal: aoNormal(), bloom: bloomEmission(), surface: reflectionSurface() })
       .setBlendMode("bloom", new THREE.BlendMode(THREE.MaterialBlending))
@@ -165,14 +169,20 @@ export class NeonRenderPipeline {
       null, null, { type: THREE.UnsignedByteType, depthBuffer: false });
     this.outputTargets.push(resolved);
     pipeline.outputColorTransform = false;
-    pipeline.outputNode = fxaa(resolved);
+    if (pipeline === this.pipeline && this.motionBlur) {
+      const blurred = rtt(this.motionBlur.node(resolved), null, null, { type: THREE.UnsignedByteType, depthBuffer: false });
+      this.outputTargets.push(blurred);
+      pipeline.outputNode = fxaa(blurred);
+    } else pipeline.outputNode = fxaa(resolved);
   }
 
   render() {
     if (this.direct || this.quality === "low") return this.renderer.render(this.scene, this.camera);
     try {
+      const motionEnabled = this.quality === "high" && !this.reducedMotion && this.motionBlurStrength > 0;
+      if (this.motionBlur && this.motionBlurStrength > 0) this.motionBlur.update(this.renderer, this.motionBlurStrength, motionEnabled);
       if (this.quality === "high") this.heatDistortion?.update(this.scene, this.camera, this.reducedMotion);
-      if (this.quality === "high") this.particleDepth?.render(this.renderer, this.scene, this.camera);
+      if (this.quality === "high") this.particleDepth?.render(this.renderer, this.scene, this.camera, motionEnabled);
       if (this.quality === "high" && this.localFog) {
         // Shadows initialize lazily. Refresh the binding after quality changes
         // too: their map can be replaced while this post graph remains cached.
@@ -193,7 +203,13 @@ export class NeonRenderPipeline {
 
   setReducedMotion(reducedMotion) {
     this.reducedMotion = Boolean(reducedMotion);
+    this.motionBlur?.reset();
     this.updateBloomQuality();
+  }
+
+  setMotionBlur(value) {
+    this.motionBlurStrength = Math.max(0, Math.min(100, Number(value) || 0));
+    this.motionBlur?.reset();
   }
 
   ensurePerformancePipeline() {
@@ -219,6 +235,7 @@ export class NeonRenderPipeline {
   }
 
   setQuality(quality = "high") {
+    if (quality !== this.quality) this.motionBlur?.reset();
     this.quality = ["low", "medium", "high"].includes(quality) ? quality : "high";
     if (this.direct) {
       this.profile = `${this.nativeWebGPU ? TEXT.performanceProfiles.webgpu : TEXT.performanceProfiles.webgl} ${TEXT.performanceProfiles.mobileDirect} · ${TEXT.performanceProfiles.quality[this.quality]}`;
@@ -282,12 +299,13 @@ export class NeonRenderPipeline {
   }
 
   disposePipelineResources() {
+    this.motionBlur = null;
     // r185 RTTNode has no resource-disposal override.
-    for (const target of this.outputTargets) {
+    for (const target of this.outputTargets || []) {
       target.renderTarget.dispose();
       target._quadMesh.material.dispose();
     }
-    this.outputTargets.length = 0;
+    this.outputTargets = [];
     this.contactShadows = null;
     this.heatDistortion = null;
     this.particleDepth?.dispose();
