@@ -391,8 +391,8 @@ class BlasterBattle {
       this.combatVisuals?.setGraphicsProfile(this.graphics);
       if (this.keyLight.shadow.mapSize.x !== this.graphics.shadowMapSize) {
         this.keyLight.shadow.mapSize.set(this.graphics.shadowMapSize, this.graphics.shadowMapSize);
-        this.keyLight.shadow.map?.dispose();
-        this.keyLight.shadow.map = null;
+        // ShadowNode resizes its owned target at the next shadow render. Keep
+        // the public map identity intact for materials and volumetric lighting.
       }
     }
     const size = this.pendingResize;

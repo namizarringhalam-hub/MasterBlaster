@@ -1225,6 +1225,33 @@ const rendererStub = nativeWebGPU => ({
   getRenderObjectFunction: () => null, getPixelRatio: () => 1, getMRT: () => null,
   getClearColor: target => target.set(0), getClearAlpha: () => 1, getScissorTest: () => false
 });
+{
+  const scene = new THREE.Scene(), key = new THREE.DirectionalLight();
+  key.position.set(-22, 40, 18); key.castShadow = true; scene.add(key);
+  const first = new THREE.DepthTexture(4, 4), replacement = new THREE.DepthTexture(8, 8);
+  let prewarmed = 0, placeholderDisposed = 0, postFrames = 0;
+  const renderer = rendererStub(true);
+  renderer.render = () => { prewarmed++; key.shadow.map = { depthTexture: first }; };
+  const pipeline = new NeonRenderPipeline(renderer, scene, new THREE.PerspectiveCamera());
+  pipeline.pipeline.render = () => { postFrames++; };
+  pipeline.localFog.placeholder.addEventListener("dispose", () => placeholderDisposed++);
+  const warmShadow = renderer.render;
+  renderer.render = () => {};
+  pipeline.render();
+  assert.equal(postFrames, 0, "an empty menu must not compile a multisampled placeholder into the shadow binding");
+  renderer.render = warmShadow;
+  pipeline.render();
+  assert.equal(prewarmed, 1, "light shafts warm the real shadow map before sampling it");
+  assert.equal(pipeline.localFog.shadow.value, first);
+  key.shadow.map = { depthTexture: replacement };
+  pipeline.render();
+  assert.equal(prewarmed, 1);
+  assert.equal(pipeline.localFog.shadow.value, replacement, "quality changes cannot leave shafts reading a destroyed shadow map");
+  pipeline.dispose(); pipeline.dispose();
+  assert.equal(placeholderDisposed, 1);
+  assert.equal(pipeline.localFog, null);
+  first.dispose(); replacement.dispose();
+}
 // Inspect the real TSL graph, including the lazy branch's real depth sampler.
 for (const alpha of [0, 1]) {
   const previousStack = getCurrentStack(), shaderStack = stack();
@@ -1362,11 +1389,13 @@ Object.assign(resizeState, {
   combatVisuals: { setGraphicsProfile: profile => qualityEvents.push(profile.level) },
   keyLight: { shadow: { mapSize: new THREE.Vector2(4096, 4096), map: { dispose: () => qualityEvents.push("dispose-shadow") } } }
 });
+const retainedShadow = resizeState.keyLight.shadow.map;
 commitResize.call(resizeState);
-assert.deepEqual(qualityEvents, ["low", "low", "low", "dispose-shadow"]);
-assert.equal(resizeState.keyLight.shadow.map, null);
+assert.deepEqual(qualityEvents, ["low", "low", "low"]);
+assert.equal(resizeState.keyLight.shadow.map, retainedShadow, "ShadowNode owns resizing; public depth bindings retain the same target");
+assert.equal(resizeState.keyLight.shadow.mapSize.x, 512);
 commitResize.call(resizeState);
-assert.equal(qualityEvents.length, 4, "graphics resources change only once at the frame boundary");
+assert.equal(qualityEvents.length, 3, "graphics resources change only once at the frame boundary");
 
 for (const [level, shadowMapSize, anisotropy] of [["low", 512, 4], ["medium", 1024, 8], ["high", 2048, 16]]) {
   const profile = graphicsProfile(level, false, 3);

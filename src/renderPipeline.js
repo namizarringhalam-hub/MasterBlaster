@@ -4,6 +4,7 @@ import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { ssr } from "three/addons/tsl/display/SSRNode.js";
 import TEXT from "./playerText.js";
+import { localFog } from "./localFog.js";
 
 // AO depth and normals must describe the same surface. Light overlays keep
 // their scene color, but cannot replace the normal of the solid beneath them.
@@ -65,6 +66,7 @@ export class NeonRenderPipeline {
     this.scenePass = null;
     this.aoPass = null;
     this.reflectionPass = null;
+    this.localFog = null;
     this.pipeline = null;
     this.bloomPass = null;
     const nativeWebGPU = renderer.backend.isWebGPUBackend === true;
@@ -132,12 +134,30 @@ export class NeonRenderPipeline {
     // No temporal history: moving fighters and destroyed cover update in the
     // current frame. Existing IBL remains the fallback outside the screen.
     const edge = screenUV.min(screenUV.oneMinus()).mul(12).clamp(0, 1);
-    this.pipeline.outputNode = finalColor.add(vec4(reflections.rgb.mul(edge.x.mul(edge.y)), 0)).add(bloomPass);
+    let litScene = finalColor.add(vec4(reflections.rgb.mul(edge.x.mul(edge.y)), 0));
+    const key = scene.children.find(light => light.isDirectionalLight && light.castShadow);
+    if (key) {
+      this.localFog = localFog(depth, camera, key);
+      const air = this.localFog.node(screenUV);
+      litScene = vec4(litScene.rgb.mul(air.a).add(air.rgb), litScene.a);
+    }
+    this.pipeline.outputNode = litScene.add(bloomPass);
   }
 
   render() {
     if (this.direct || this.quality === "low") return this.renderer.render(this.scene, this.camera);
     try {
+      if (this.quality === "high" && this.localFog) {
+        // Shadows initialize lazily. Refresh the binding after quality changes
+        // too: their map can be replaced while this post graph remains cached.
+        if (!this.localFog.light.shadow.map) this.renderer.render(this.scene, this.camera);
+        const shadowMap = this.localFog.light.shadow.map;
+        // Empty menu scenes have no shadow receivers yet. Do not compile the
+        // post graph against a placeholder with a different MSAA layout.
+        if (!shadowMap) return;
+        this.localFog.shadow.value = shadowMap.depthTexture;
+        this.localFog.ready.value = 1;
+      }
       (this.nativeWebGPU && this.quality === "medium" ? this.highLoadPipeline : this.pipeline).render();
     } catch (error) {
       this.degradeToDirect(error);
@@ -236,6 +256,8 @@ export class NeonRenderPipeline {
   }
 
   disposePipelineResources() {
+    this.localFog?.placeholder.dispose();
+    this.localFog = null;
     for (const resource of [this.pipeline, this.highLoadPipeline, this.scenePass, this.highLoadScenePass, this.bloomPass, this.highLoadBloom, this.aoPass, this.reflectionPass]) resource?.dispose?.();
     this.pipeline = null;
     this.highLoadPipeline = null;

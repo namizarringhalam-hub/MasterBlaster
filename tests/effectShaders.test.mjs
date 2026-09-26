@@ -12,10 +12,17 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
   const renderer = new THREE.WebGPURenderer({ forceWebGL: webgl,
     canvas: { width: 64, height: 64, style: {}, addEventListener() {}, removeEventListener() {} } });
   renderer.backend.capabilities ??= {};
+  renderer.backend.renderer = renderer;
   renderer.backend.capabilities.getUniformBufferLimit = () => 16384;
   renderer.hasFeature = () => false;
+  renderer.hasCompatibility = () => false;
   if (webgl) renderer.backend.extensions = { has: () => false };
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera();
+  const key = new THREE.DirectionalLight(0xffffff, 1);
+  key.position.set(-22, 40, 18); key.castShadow = true;
+  key.shadow.map = new THREE.RenderTarget(4, 4, { depthTexture: new THREE.DepthTexture(4, 4) });
+  key.shadow.map.depthTexture.compareFunction = null; // Actual VSM depth input.
+  scene.add(key);
   const effects = new CombatVisuals(scene), pipeline = new NeonRenderPipeline(renderer, scene, camera, { quality });
   const pass = !webgl && quality === "medium" ? pipeline.highLoadScenePass : pipeline.scenePass;
   assert.equal(pass.getMRT().getBlendMode("bloom").blending, THREE.MaterialBlending,
@@ -61,6 +68,9 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
       const builder = new THREE.WGSLNodeBuilder(quad, renderer);
       builder.scene = scene; builder.camera = camera; builder.build();
       assert.doesNotMatch(builder.fragmentShader, /undefined|NaN/);
+      for (const [sampler] of builder.fragmentShader.matchAll(/\bnodeUniform\d+_sampler\b/g)) {
+        assert.ok(builder.fragmentShader.includes(`var ${sampler} :`), `${sampler} must be declared; VSM depth has no comparison sampler`);
+      }
       return builder.fragmentShader;
     };
     buildPost(postMaterial);
@@ -72,5 +82,6 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
   reactor.geometry.dispose(); reactor.material.dispose();
   world.dispose(); sky.geometry.dispose(); sky.material.dispose();
   fighter.dispose();
+  key.shadow.map.dispose();
 }
 console.log("WGSL/GLSL high/medium shaders generate with selective emission, smoke alpha and instanced attributes.");
