@@ -79,8 +79,9 @@ assert.ok(gzipSync(entryBytes).length < 12 * 1024, "the interactive boot module 
 const jsGzipSizes = await Promise.all(jsAssets.map(async (name) => gzipSync(await readFile(join("dist/client/assets", name))).length));
 assert.ok(Math.max(...jsGzipSizes) < 380 * 1024, "the deferred engine stays below a 380 KiB compressed budget");
 const cssGzipSizes = await Promise.all(cssAssets.map(async (name) => gzipSync(await readFile(join("dist/client/assets", name))).length));
-assert.ok(Math.max(...cssGzipSizes) < 13 * 1024, "each stylesheet stays below a 13 KiB compressed CSS budget");
-assert.ok(cssGzipSizes.reduce((sum, bytes) => sum + bytes, 0) < 14 * 1024, "the shared menus and deferred global multiplayer styles stay below 14 KiB combined");
+// Allow 0.5 KiB for the live graphics drawer and accessible effect controls.
+assert.ok(Math.max(...cssGzipSizes) < 13.5 * 1024, "each stylesheet stays below a 13.5 KiB compressed CSS budget");
+assert.ok(cssGzipSizes.reduce((sum, bytes) => sum + bytes, 0) < 14.5 * 1024, "menus, live graphics and deferred multiplayer styles stay below 14.5 KiB combined");
 const assetResponse = await worker.fetch(new Request(`https://example.test${entryPath}`), { ASSETS: clientAssets });
 assert.match(assetResponse.headers.get("cache-control"), /max-age=31536000, immutable/, "hashed engine assets remain local across fresh-renderer match reloads");
 assert.ok(jsAssets.some((name) => name.startsWith("three-")), "the rendering library has its own reusable versioned chunk");

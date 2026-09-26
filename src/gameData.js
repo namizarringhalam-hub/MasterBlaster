@@ -1,4 +1,5 @@
 import TEXT, { formatText } from "./playerText.js";
+import { normalizeGraphicsEffects } from "./graphicsEffects.js";
 import { clampMatchMinutes } from "./multiplayerProtocol.js";
 
 const SAVE_KEY = "master-blaster-settings";
@@ -345,6 +346,7 @@ function defaults() {
     shake: 60,
     reducedMotion: false,
     motionBlur: 35,
+    graphicsEffects: normalizeGraphicsEffects(),
     volume: 70,
     musicVolume: 70,
     effectsVolume: 85,
@@ -395,7 +397,7 @@ export function loadSettings() {
       }];
     }));
     const motionBlur = Number.isFinite(saved.motionBlur) ? Math.max(0, Math.min(100, saved.motionBlur)) : 35;
-    return { ...defaults(), ...saved, graphics, motionBlur, loadout, loadoutPresets, defaultLoadoutPreset, matchSettingsVersion: MATCH_SETTINGS_VERSION, matchSettings };
+    return { ...defaults(), ...saved, graphics, motionBlur, graphicsEffects: normalizeGraphicsEffects(saved.graphicsEffects), loadout, loadoutPresets, defaultLoadoutPreset, matchSettingsVersion: MATCH_SETTINGS_VERSION, matchSettings };
   } catch {
     return defaults();
   }

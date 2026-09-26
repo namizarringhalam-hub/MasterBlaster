@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu";
-import { Fn, If, clearcoat, clearcoatNormalView, clearcoatRoughness, context, emissive, getNormalFromDepth, metalness, mix, mrt, normalView, output, pass, renderOutput, roughness, rtt, screenUV, uniform, vec3, vec4 } from "three/tsl";
+import { Fn, If, clearcoat, clearcoatNormalView, clearcoatRoughness, context, emissive, float, getNormalFromDepth, metalness, mix, mrt, normalView, output, pass, renderOutput, roughness, rtt, screenUV, uniform, vec3, vec4 } from "three/tsl";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { ssr } from "three/addons/tsl/display/SSRNode.js";
@@ -10,6 +10,7 @@ import { SoftParticleDepth } from "./softParticles.js";
 import { HeatDistortion } from "./heatDistortion.js";
 import { contactShadows } from "./contactShadows.js";
 import { CinematicMotionBlur } from "./cinematicMotionBlur.js";
+import { normalizeGraphicsEffects } from "./graphicsEffects.js";
 
 // AO depth and normals must describe the same surface. Light overlays keep
 // their scene color, but cannot replace the normal of the solid beneath them.
@@ -47,7 +48,7 @@ export function recoverInvalidAONormals(normal, depth, inverseProjection) {
 }
 
 export class NeonRenderPipeline {
-  constructor(renderer, scene, camera, { reducedMotion = false, motionBlur = 0, coarsePointer = false, quality = "high" } = {}) {
+  constructor(renderer, scene, camera, { reducedMotion = false, motionBlur = 0, effects, coarsePointer = false, quality = "high" } = {}) {
     this.renderer = renderer;
     this.rendererState = THREE.RendererUtils.saveRendererState(renderer);
     this.rendererXrEnabled = renderer.xr?.enabled ?? false;
@@ -62,6 +63,7 @@ export class NeonRenderPipeline {
     this.scene = scene;
     this.camera = camera;
     this.reducedMotion = Boolean(reducedMotion);
+    this.effects = normalizeGraphicsEffects(effects);
     this.motionBlurStrength = Math.max(0, Math.min(100, Number(motionBlur) || 0));
     this.motionBlur = null;
     this.quality = ["low", "medium", "high"].includes(quality) ? quality : "high";
@@ -96,73 +98,92 @@ export class NeonRenderPipeline {
       this.scenePass.setMRT(mrt({ output, bloom: bloomEmission() })
         .setBlendMode("bloom", new THREE.BlendMode(THREE.MaterialBlending)));
       const sceneColor = this.scenePass.getTextureNode("output");
-      this.bloomPass = bloom(this.scenePass.getTextureNode("bloom"), reducedMotion ? .16 : .36, .16, EMISSION_THRESHOLD);
-      this.bloomPass.resolutionScale = .34;
-      this.finishOutput(this.pipeline, sceneColor.add(this.bloomPass));
+      if (this.effects.bloom) {
+        this.bloomPass = bloom(this.scenePass.getTextureNode("bloom"), reducedMotion ? .16 : .36, .16, EMISSION_THRESHOLD);
+        this.bloomPass.resolutionScale = .34;
+      }
+      this.finishOutput(this.pipeline, this.bloomPass ? sceneColor.add(this.bloomPass) : sceneColor);
       return;
     }
     const scenePass = this.scenePass = pass(scene, camera);
-    this.particleDepth = new SoftParticleDepth();
-    this.motionBlur = new CinematicMotionBlur(this.particleDepth, camera);
-    scenePass.contextNode = context({ particleDepth: this.particleDepth.node, particleFadeStrength: this.particleDepth.strength });
+    if (this.effects.softParticles || this.effects.motionBlur) {
+      this.particleDepth = new SoftParticleDepth();
+      this.particleDepth.strength.value = this.effects.softParticles ? 1 : 0;
+      if (this.effects.motionBlur) this.motionBlur = new CinematicMotionBlur(this.particleDepth, camera);
+      scenePass.contextNode = context({ particleDepth: this.particleDepth.node, particleFadeStrength: this.particleDepth.strength });
+    }
     scenePass.setMRT(mrt({ output, normal: aoNormal(), bloom: bloomEmission(), surface: reflectionSurface() })
       .setBlendMode("bloom", new THREE.BlendMode(THREE.MaterialBlending))
       .setBlendMode("normal", new THREE.BlendMode(THREE.NormalBlending))
       .setBlendMode("surface", new THREE.BlendMode(THREE.NormalBlending)));
 
     const sceneColor = scenePass.getTextureNode("output");
-    const bloomPass = bloom(
+    const bloomPass = this.effects.bloom ? bloom(
       scenePass.getTextureNode("bloom"),
       reducedMotion ? .22 : .52,
       .18,
       EMISSION_THRESHOLD
-    );
-    bloomPass.resolutionScale = .5;
+    ) : null;
+    if (bloomPass) bloomPass.resolutionScale = .5;
     this.bloomPass = bloomPass;
 
     const normal = scenePass.getTextureNode("normal");
     const depth = scenePass.getTextureNode("depth");
-    this.heatDistortion = new HeatDistortion(depth, camera);
-    const sceneUV = this.heatDistortion.node(screenUV);
+    if (this.effects.heatDistortion) this.heatDistortion = new HeatDistortion(depth, camera);
+    const sceneUV = this.heatDistortion ? this.heatDistortion.node(screenUV) : screenUV;
     const aoNormals = renderer.backend.compatibilityMode === true
       ? recoverInvalidAONormals(normal, depth, uniform(camera.projectionMatrixInverse)) : normal;
-    const aoPass = ao(depth, aoNormals, camera);
-    this.aoPass = aoPass;
-    aoPass.resolutionScale = .5;
-    aoPass.radius.value = 1.6;
-    aoPass.thickness.value = 2.2;
-    aoPass.distanceExponent.value = 1.35;
-    aoPass.distanceFallOff.value = .7;
-    aoPass.samples.value = 16;
-    const grounding = aoPass.getTextureNode().sample(sceneUV).r.mul(.34).add(.66);
+    let grounding = float(1);
+    if (this.effects.ambientOcclusion) {
+      const aoPass = ao(depth, aoNormals, camera);
+      this.aoPass = aoPass;
+      aoPass.resolutionScale = .5;
+      aoPass.radius.value = 1.6;
+      aoPass.thickness.value = 2.2;
+      aoPass.distanceExponent.value = 1.35;
+      aoPass.distanceFallOff.value = .7;
+      aoPass.samples.value = 16;
+      grounding = aoPass.getTextureNode().sample(sceneUV).r.mul(.34).add(.66);
+    }
     const finalColor = sceneColor.sample(sceneUV).mul(vec4(vec3(grounding), 1));
-    const surface = scenePass.getTextureNode("surface");
-    const reflections = this.reflectionPass = ssr(sceneColor, depth, normal, {
-      camera, metalnessNode: surface.r.mul(surface.a.step(.5)), roughnessNode: surface.g,
-      binaryRefine: true
-    });
-    reflections.resolutionScale = .5;
-    reflections.maxDistance.value = 28;
-    reflections.thickness.value = .22;
-    reflections.quality.value = .5;
-    reflections.intensity.value = .45;
-    reflections.maxLuminance.value = 3;
-    // No temporal history: moving fighters and destroyed cover update in the
-    // current frame. Existing IBL remains the fallback outside the screen.
-    const edge = screenUV.min(screenUV.oneMinus()).mul(12).clamp(0, 1);
-    let litScene = finalColor.add(vec4(reflections.getTextureNode().sample(sceneUV).rgb.mul(edge.x.mul(edge.y)), 0));
+    let litScene = finalColor;
+    if (this.effects.reflections) {
+      const surface = scenePass.getTextureNode("surface");
+      const reflections = this.reflectionPass = ssr(sceneColor, depth, normal, {
+        camera, metalnessNode: surface.r.mul(surface.a.step(.5)), roughnessNode: surface.g,
+        binaryRefine: true
+      });
+      reflections.resolutionScale = .5;
+      reflections.maxDistance.value = 28;
+      reflections.thickness.value = .22;
+      reflections.quality.value = .5;
+      reflections.intensity.value = .45;
+      reflections.maxLuminance.value = 3;
+      // No temporal history: moving fighters and destroyed cover update in the
+      // current frame. Existing IBL remains the fallback outside the screen.
+      const edge = screenUV.min(screenUV.oneMinus()).mul(12).clamp(0, 1);
+      litScene = finalColor.add(vec4(reflections.getTextureNode().sample(sceneUV).rgb.mul(edge.x.mul(edge.y)), 0));
+    }
     const key = scene.children.find(light => light.isDirectionalLight && light.castShadow);
     if (key) {
-      this.contactShadows = contactShadows(depth, normal, camera, key);
-      litScene = vec4(litScene.rgb.mul(this.contactShadows.node(sceneUV)), litScene.a);
-      this.localFog = localFog(depth, camera, key);
-      const air = this.localFog.node(sceneUV);
-      litScene = vec4(litScene.rgb.mul(air.a).add(air.rgb), litScene.a);
+      if (this.effects.contactShadows) {
+        this.contactShadows = contactShadows(depth, normal, camera, key);
+        litScene = vec4(litScene.rgb.mul(this.contactShadows.node(sceneUV)), litScene.a);
+      }
+      if (this.effects.localFog) {
+        this.localFog = localFog(depth, camera, key);
+        const air = this.localFog.node(sceneUV);
+        litScene = vec4(litScene.rgb.mul(air.a).add(air.rgb), litScene.a);
+      }
     }
-    this.finishOutput(this.pipeline, litScene.add(bloomPass.getTextureNode().sample(sceneUV)));
+    this.finishOutput(this.pipeline, bloomPass ? litScene.add(bloomPass.getTextureNode().sample(sceneUV)) : litScene);
   }
 
   finishOutput(pipeline, node) {
+    if (!this.effects.antialiasing && !(pipeline === this.pipeline && this.motionBlur)) {
+      pipeline.outputNode = node;
+      return;
+    }
     // FXAA smooths shader/reflection edges left by MSAA. Tone map exactly once,
     // before edge detection, and keep DOM HUD text outside this pass.
     const resolved = rtt(renderOutput(node, this.renderer.toneMapping, this.renderer.outputColorSpace),
@@ -170,19 +191,22 @@ export class NeonRenderPipeline {
     this.outputTargets.push(resolved);
     pipeline.outputColorTransform = false;
     if (pipeline === this.pipeline && this.motionBlur) {
-      const blurred = rtt(this.motionBlur.node(resolved), null, null, { type: THREE.UnsignedByteType, depthBuffer: false });
-      this.outputTargets.push(blurred);
-      pipeline.outputNode = fxaa(blurred);
-    } else pipeline.outputNode = fxaa(resolved);
+      const motion = this.motionBlur.node(resolved);
+      if (this.effects.antialiasing) {
+        const blurred = rtt(motion, null, null, { type: THREE.UnsignedByteType, depthBuffer: false });
+        this.outputTargets.push(blurred);
+        pipeline.outputNode = fxaa(blurred);
+      } else pipeline.outputNode = motion;
+    } else pipeline.outputNode = this.effects.antialiasing ? fxaa(resolved) : resolved;
   }
 
   render() {
     if (this.direct || this.quality === "low") return this.renderer.render(this.scene, this.camera);
     try {
-      const motionEnabled = this.quality === "high" && !this.reducedMotion && this.motionBlurStrength > 0;
+      const motionEnabled = this.quality === "high" && Boolean(this.motionBlur) && !this.reducedMotion && this.motionBlurStrength > 0;
       if (this.motionBlur && this.motionBlurStrength > 0) this.motionBlur.update(this.renderer, this.motionBlurStrength, motionEnabled);
       if (this.quality === "high") this.heatDistortion?.update(this.scene, this.camera, this.reducedMotion);
-      if (this.quality === "high") this.particleDepth?.render(this.renderer, this.scene, this.camera, motionEnabled);
+      if (this.quality === "high" && (motionEnabled || this.effects?.softParticles !== false)) this.particleDepth?.render(this.renderer, this.scene, this.camera, motionEnabled);
       if (this.quality === "high" && this.localFog) {
         // Shadows initialize lazily. Refresh the binding after quality changes
         // too: their map can be replaced while this post graph remains cached.
@@ -219,9 +243,11 @@ export class NeonRenderPipeline {
     this.highLoadScenePass.setMRT(mrt({ output, bloom: bloomEmission() })
       .setBlendMode("bloom", new THREE.BlendMode(THREE.MaterialBlending)));
     const sceneColor = this.highLoadScenePass.getTextureNode("output");
-    this.highLoadBloom = bloom(this.highLoadScenePass.getTextureNode("bloom"), this.reducedMotion ? .16 : .34, .16, EMISSION_THRESHOLD);
-    this.highLoadBloom.resolutionScale = .34;
-    this.finishOutput(this.highLoadPipeline, sceneColor.add(this.highLoadBloom));
+    if (this.effects.bloom) {
+      this.highLoadBloom = bloom(this.highLoadScenePass.getTextureNode("bloom"), this.reducedMotion ? .16 : .34, .16, EMISSION_THRESHOLD);
+      this.highLoadBloom.resolutionScale = .34;
+    }
+    this.finishOutput(this.highLoadPipeline, this.highLoadBloom ? sceneColor.add(this.highLoadBloom) : sceneColor);
   }
 
   updateBloomQuality() {
@@ -312,6 +338,8 @@ export class NeonRenderPipeline {
     this.particleDepth = null;
     this.localFog?.placeholder.dispose();
     this.localFog = null;
+    // Three r185 GTAO.dispose omits its per-instance noise texture.
+    this.aoPass?._noiseNode?.value.dispose();
     for (const resource of [this.pipeline, this.highLoadPipeline, this.scenePass, this.highLoadScenePass, this.bloomPass, this.highLoadBloom, this.aoPass, this.reflectionPass]) resource?.dispose?.();
     this.pipeline = null;
     this.highLoadPipeline = null;

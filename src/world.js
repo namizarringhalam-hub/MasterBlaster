@@ -397,12 +397,14 @@ export class ArenaWorld {
     this.decorativeDetails = [];
     this.detailCenter = new THREE.Vector3();
     this.atmosphereTime = uniform(0);
+    this.hazeStrength = uniform(1);
+    this.wetStrength = uniform(1);
     // Height-weighted aerial perspective: nearby combat stays crisp, distant low
     // architecture disappears gradually into humid air. No volume ray march.
     const hazeHeight = positionWorld.y.max(0).mul(-.035).exp();
     const hazeDistance = positionView.length().sub(12).max(0);
     const hazeFactor = hazeDistance.mul(hazeHeight.mul(.003).add(.0015)).negate().exp().oneMinus().min(.78);
-    scene.fogNode = fog(mix(color(0x08131f), color(0x102b3b), hazeHeight), hazeFactor);
+    scene.fogNode = fog(mix(color(0x08131f), color(0x102b3b), hazeHeight), hazeFactor.mul(this.hazeStrength));
     this.waterLightStrength = uniform(1);
     // ponytail: a few analytic wave contours reuse the surface pass and its shadows;
     // no caustic texture, extra lights or fullscreen underwater post-process.
@@ -417,7 +419,7 @@ export class ArenaWorld {
     const pools = hazeNoise(wetPosition).mul(.75).add(hazeNoise(wetPosition.mul(3.1)).mul(.25));
     // Surface-local masks move with lifts and stay fixed as the camera moves.
     // Upward faces collect pools; vertical sides retain their dry material.
-    this.wetMask = smoothstep(.53, .66, pools).mul(smoothstep(.92, .99, normalWorldGeometry.y));
+    this.wetMask = smoothstep(.53, .66, pools).mul(smoothstep(.92, .99, normalWorldGeometry.y)).mul(this.wetStrength);
     this.waterLight = this.waterLight.mul(mix(1, .62, this.wetMask)).mul(this.atmosphere.shadow);
     const dropCell = positionLocal.xz.mul(.6);
     const dropOffset = dropCell.fract().sub(.5);
@@ -513,10 +515,17 @@ export class ArenaWorld {
       texture.anisotropy = value;
       texture.needsUpdate = true;
     }
-    this.motes?.geometry.setDrawRange(0, profile.atmosphereCount);
-    this.waterLightStrength.value = profile.level === "low" ? .35 : profile.level === "medium" ? .7 : 1;
-    this.atmosphere.steps.value = profile.level === "low" ? 0 : profile.level === "medium" ? 6 : 12;
-    if (this.lightShafts) this.lightShafts.count = profile.level === "low" ? 0 : profile.level === "medium" ? 2 : 4;
+    this.motes?.geometry.setDrawRange(0, this.graphicsEffects?.atmosphericMotes === false ? 0 : profile.atmosphereCount);
+    this.waterLightStrength.value = this.graphicsEffects?.waterCaustics === false ? 0 : profile.level === "low" ? .35 : profile.level === "medium" ? .7 : 1;
+    this.atmosphere.steps.value = this.graphicsEffects?.clouds === false || profile.level === "low" ? 0 : profile.level === "medium" ? 6 : 12;
+    if (this.lightShafts) this.lightShafts.count = this.graphicsEffects?.horizonMist === false || profile.level === "low" ? 0 : profile.level === "medium" ? 2 : 4;
+  }
+
+  setGraphicsEffects(effects) {
+    this.graphicsEffects = effects;
+    this.wetStrength.value = effects.wetSurfaces ? 1 : 0;
+    this.hazeStrength.value = effects.distanceHaze ? 1 : 0;
+    if (this.graphicsProfile) this.setGraphicsProfile(this.graphicsProfile, this.textures[0]?.anisotropy ?? 16);
   }
 
   trackDetail(mesh) {
@@ -528,6 +537,7 @@ export class ArenaWorld {
   }
 
   updatePresentation(camera, reducedMotion = false) {
+    reducedMotion ||= this.graphicsEffects?.environmentMotion === false;
     this.reducedMotion = reducedMotion;
     this.atmosphereTime.value = reducedMotion ? 0 : this.time;
     this.atmosphere.clock.value = this.atmosphereTime.value;

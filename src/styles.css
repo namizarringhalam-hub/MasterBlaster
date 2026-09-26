@@ -524,8 +524,22 @@ input, select {
 .settings-grid { grid-template-columns: 1fr; }
 .settings-grid label { padding: 16px; background: rgba(23, 47, 68, .45); }
 .settings-grid output { float: right; color: #4fe9ff; }
-.settings-grid .toggle { display: flex; gap: 12px; align-items: center; }
-.settings-grid .toggle input { width: auto; margin: 0; }
+.settings-grid .toggle, .graphics-controls .toggle { display: flex; gap: 12px; align-items: center; }
+.settings-grid .toggle input, .graphics-controls .toggle input { width: auto; margin: 0; }
+.graphics-controls { display: grid; gap: 12px; text-align: left; }
+.graphics-controls details { border: 1px solid #274159; padding: 10px; }
+.graphics-controls summary { cursor: pointer; color: #9bd9e8; font-weight: 700; padding: 5px; }
+.graphics-controls .graphics-effect { display: flex; align-items: center; gap: 12px; padding: 10px; margin: 4px 0; }
+.graphics-effect input { width: 18px; height: 18px; flex: 0 0 18px; margin: 0; }
+.graphics-effect small { display: block; color: #96adbf; font-size: 11px; }
+.graphics-effect:has(input:disabled) { opacity: .6; }
+.graphics-controls > small { color: #96adbf; line-height: 1.5; }
+.graphics-controls output { float: right; color: #4fe9ff; }
+dialog.overlay[data-modal="graphics"] { position: fixed; inset: 12px 12px 12px auto; width: min(440px, calc(100vw - 24px)); height: calc(100dvh - 24px); padding: 0; margin: 0; display: block; background: transparent; backdrop-filter: none; }
+dialog[data-modal="graphics"]::backdrop { background: transparent; }
+.graphics-dialog { width: 100%; padding: 20px; background: rgba(5, 15, 25, .94); }
+.graphics-dialog h1 { font-size: 32px; margin: 0; }
+dialog[data-modal="pause"]:has(~ dialog[data-modal="graphics"]) { visibility: hidden; backdrop-filter: none; background: transparent; }
 .credits-dialog { max-width: 680px; }
 .credits-dialog p { color: #aebfcb; line-height: 1.7; }
 

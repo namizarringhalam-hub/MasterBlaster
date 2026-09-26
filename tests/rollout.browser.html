@@ -7,6 +7,7 @@
 <label><input id="reduced" type="checkbox">Reduced motion</label>
 <button id="burst">Explosion</button><button id="run">Run simulation</button>
 <button id="reset">Reset scene</button><button id="stress">16 fighters</button><button id="ten">Ten resets</button>
+<button id="graphics-settings">Graphics settings</button>
 <pre id="metrics" style="white-space:pre-wrap;max-height:130px;overflow:auto">Importing engine…</pre></aside>
 <script type="module">
 import * as THREE from 'three/webgpu';
@@ -50,6 +51,10 @@ document.querySelector('#tier').onchange=e=>{game.settings.graphics=e.target.val
 document.querySelector('#reduced').onchange=e=>{game.settings.reducedMotion=e.target.checked;game.renderPipeline.setReducedMotion(e.target.checked);};
 document.querySelector('#burst').onclick=()=>game.combatVisuals.explosions.spawn(game.players[0].position.clone().add(new THREE.Vector3(1,.5,1)),3);
 document.querySelector('#run').onclick=()=>{game.paused=!game.paused;phase=game.paused?'Paused scene':'Running simulation';};
+document.querySelector('#graphics-settings').onclick=()=>{
+  if(game.paused&&!document.querySelector('dialog[data-modal="pause"]'))game.paused=false;
+  if(!game.paused)game.togglePause();game.showGraphicsSettings();
+};
 document.querySelector('#reset').onclick=()=>reset();document.querySelector('#stress').onclick=()=>reset(16);
 document.querySelector('#ten').onclick=async()=>{resets.length=0;for(let i=0;i<10;i++){await reset();
   for(let frame=0;frame<4;frame++)await new Promise(requestAnimationFrame);

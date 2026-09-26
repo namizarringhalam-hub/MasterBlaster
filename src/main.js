@@ -1,5 +1,6 @@
 import * as THREE from "three/webgpu";
 import { materialOpacity } from "three/tsl";
+import { GRAPHICS_EFFECTS, normalizeGraphicsEffects, graphicsEffectUnavailable } from "./graphicsEffects.js";
 import { LIGHTING, fitArenaShadow, setupEnvironment } from "./lighting.js";
 import { Line2 } from "three/addons/lines/webgpu/Line2.js";
 import { SoundBoard } from "./audio.js";
@@ -384,6 +385,14 @@ class BlasterBattle {
   }
 
   commitResize() {
+    if (this.pendingGraphicsEffects) {
+      this.pendingGraphicsEffects = false;
+      if (this.pendingPipelineEffects) {
+        this.pendingPipelineEffects = false;
+        this.rebuildRenderPipeline();
+      }
+      this.applyGraphicsEffects();
+    }
     if (this.pendingGraphics) {
       this.pendingGraphics = false;
       this.renderPipeline?.setQuality(this.graphics.level);
@@ -418,9 +427,84 @@ class BlasterBattle {
     this.renderPipeline = new NeonRenderPipeline(this.renderer, this.scene, this.camera, {
       reducedMotion: this.settings.reducedMotion,
       motionBlur: this.settings.motionBlur,
+      effects: this.settings.graphicsEffects,
       coarsePointer: this.coarsePointer,
       quality: this.graphics.level
     });
+  }
+
+  applyGraphicsEffects() {
+    const effects = this.settings.graphicsEffects = normalizeGraphicsEffects(this.settings.graphicsEffects);
+    this.world?.setGraphicsEffects(effects);
+    if (this.combatVisuals) {
+      this.combatVisuals.explosions.layers[3].mesh.visible = effects.impactMarks;
+      this.combatVisuals.setReducedMotion(this.settings.reducedMotion);
+    }
+    for (const player of this.players || []) player.graphicsEffects = effects;
+    this.renderPipeline?.setReducedMotion(this.settings.reducedMotion);
+    this.renderPipeline?.setMotionBlur(this.settings.motionBlur);
+    document.documentElement.classList.toggle("reduce-motion", this.settings.reducedMotion);
+  }
+
+  graphicsControlsMarkup() {
+    const text = TEXT.settings.graphicsPanel;
+    const effects = normalizeGraphicsEffects(this.settings.graphicsEffects);
+    return `<section class="graphics-controls" aria-label="${text.title}">
+      <p class="dialog-lead">${text.live}</p>
+      <label>${TEXT.settings.labels.graphics}<select data-setting="graphics">
+        ${["low", "medium", "high"].map(value => `<option value="${value}" ${this.settings.graphics === value ? "selected" : ""}>${TEXT.settings.options.graphics[value]}</option>`).join("")}
+      </select></label>
+      <label class="toggle"><input type="checkbox" data-setting="reducedMotion" ${this.settings.reducedMotion ? "checked" : ""}>${TEXT.settings.labels.reducedMotion}</label>
+      ${Object.entries(text.groups).map(([group, label]) => `<details ${group === 'rendering' ? 'open' : ''}><summary>${label}</summary>
+        ${Object.entries(GRAPHICS_EFFECTS).filter(([, effect]) => effect.group === group).map(([key]) => `<label class="graphics-effect">
+          <input type="checkbox" data-graphics-effect="${key}" ${effects[key] ? "checked" : ""} aria-label="${text.effects[key]}" aria-describedby="effect-note-${key}">
+          <span>${text.effects[key]}<small id="effect-note-${key}" data-effect-note="${key}"></small></span>
+        </label>`).join("")}</details>`).join("")}
+      <label>${text.motionStrength}<output>${this.settings.motionBlur}%</output><input type="range" aria-label="${text.motionStrength}" min="0" max="100" value="${this.settings.motionBlur}" data-setting="motionBlur"></label>
+      <small>${text.aaNote}</small><button type="button" data-action="reset-graphics-effects">${text.reset}</button>
+    </section>`;
+  }
+
+  refreshGraphicsControls() {
+    const context = { quality: this.settings.graphics, nativeWebGPU: this.renderPipeline?.nativeWebGPU !== false,
+      reducedMotion: this.settings.reducedMotion, direct: this.renderPipeline?.direct === true };
+    for (const input of ui.querySelectorAll('[data-graphics-effect]')) {
+      const key = input.dataset.graphicsEffect, reason = graphicsEffectUnavailable(key, context);
+      input.disabled = Boolean(reason);
+      input.checked = this.settings.graphicsEffects[key];
+      input.closest('label').querySelector('[data-effect-note]').textContent = TEXT.settings.graphicsPanel.reasons[reason] || '';
+    }
+    const slider = ui.querySelector('[data-setting="motionBlur"]');
+    if (slider) {
+      slider.disabled = Boolean(graphicsEffectUnavailable('motionBlur', context)) || !this.settings.graphicsEffects.motionBlur;
+      slider.value = this.settings.motionBlur;
+      slider.closest('label').querySelector('output').textContent = `${this.settings.motionBlur}%`;
+    }
+  }
+
+  changeGraphicsPreference(input) {
+    const key = input.dataset.graphicsEffect;
+    if (key && GRAPHICS_EFFECTS[key]) {
+      this.settings.graphicsEffects[key] = input.checked;
+      this.pendingPipelineEffects ||= Boolean(GRAPHICS_EFFECTS[key].post);
+    } else if (["graphics", "reducedMotion", "motionBlur"].includes(input.dataset.setting)) {
+      const setting = input.dataset.setting;
+      this.settings[setting] = setting === "reducedMotion" ? input.checked : setting === "motionBlur" ? Number(input.value) : input.value;
+      if (setting === "graphics") this.applyGraphicsSettings();
+      input.closest('label')?.querySelector('output')?.replaceChildren(`${input.value}%`);
+    } else return false;
+    this.pendingGraphicsEffects = true;
+    saveSettings(this.settings);
+    this.refreshGraphicsControls();
+    return true;
+  }
+
+  showGraphicsSettings() {
+    if (!this.paused || ui.querySelector('dialog[data-modal="graphics"]')) return;
+    this.showModal(`<section class="dialog graphics-dialog" aria-labelledby="graphics-title">
+      <header><h1 id="graphics-title">${TEXT.settings.graphicsPanel.title}</h1><button class="back" data-action="close-controls" autofocus>${TEXT.settings.graphicsPanel.back}</button></header>
+      ${this.graphicsControlsMarkup()}</section>`, { kind: "graphics", cancel: "close" });
+    this.refreshGraphicsControls();
   }
 
   clearMatch(preserveNetwork = false) {
@@ -778,13 +862,7 @@ class BlasterBattle {
           <header><button class="back" data-screen="main">${TEXT.setup.back}</button><p>${TEXT.settings.section}</p></header>
           <h1>${TEXT.settings.title}</h1>
           <div class="settings-grid">
-            <label>${TEXT.settings.labels.graphics}
-              <select data-setting="graphics" aria-describedby="graphics-description graphics-note">
-                ${["low", "medium", "high"].map((value) => `<option value="${value}" ${this.settings.graphics === value ? "selected" : ""}>${TEXT.settings.options.graphics[value]}</option>`).join("")}
-              </select>
-              <p id="graphics-description" class="dialog-lead">${TEXT.settings.graphicsDescriptions[this.settings.graphics]}</p>
-              <small id="graphics-note">${TEXT.settings.graphicsDescriptions.note}</small>
-            </label>
+            ${this.graphicsControlsMarkup()}
             <label>${TEXT.settings.labels.blood}
               <select data-setting="blood">
                 ${["off", "reduced", "full"].map((value) => `<option value="${value}" ${this.settings.blood === value ? "selected" : ""}>${TEXT.settings.options.blood[value]}</option>`).join("")}
@@ -810,15 +888,12 @@ class BlasterBattle {
                 ${["wide", "standard", "night"].map((value) => `<option value="${value}" ${this.settings.dynamicRange === value ? "selected" : ""}>${TEXT.settings.options.dynamicRange[value]}</option>`).join("")}
               </select>
             </label>
-            <label>${TEXT.settings.labels.motionBlur} <output>${this.settings.motionBlur}%</output>
-              <input type="range" min="0" max="100" value="${this.settings.motionBlur}" data-setting="motionBlur">
-            </label>
-            <label class="toggle"><input type="checkbox" data-setting="reducedMotion" ${this.settings.reducedMotion ? "checked" : ""}> ${TEXT.settings.labels.reducedMotion}</label>
           </div>
           <button class="primary" data-action="save-settings">${TEXT.settings.save}</button>
         </section>
       </main>`;
     this.bindUi();
+    this.refreshGraphicsControls();
     for (const range of ui.querySelectorAll('input[type="range"]')) {
       range.oninput = () => { range.previousElementSibling.textContent = `${range.value}%`; };
     }
@@ -945,6 +1020,13 @@ class BlasterBattle {
       if (button.dataset.action === "start") return this.captureSetupAndStart();
       if (button.dataset.action === "pause") return this.togglePause();
       if (button.dataset.action === "controls") return this.showControls();
+      if (button.dataset.action === "graphics-settings") return this.showGraphicsSettings();
+      if (button.dataset.action === "reset-graphics-effects") {
+        this.settings.graphicsEffects = normalizeGraphicsEffects();
+        this.settings.motionBlur = 35;
+        this.pendingGraphicsEffects = this.pendingPipelineEffects = true;
+        saveSettings(this.settings); this.refreshGraphicsControls(); return;
+      }
       if (button.dataset.action === "close-controls") return this.closeModal(button.closest("dialog"));
       if (button.dataset.action === "rematch") return this.queueRematch();
       if (button.dataset.action === "save-settings") return this.saveSettingsForm();
@@ -953,6 +1035,7 @@ class BlasterBattle {
       if (event.key === "Escape" && Number.isInteger(this.activeLoadoutSlot) && ui.querySelector("[data-weapon-picker]")) { event.preventDefault(); this.closeWeaponPicker(); }
     };
     ui.onchange = (event) => {
+      if (this.changeGraphicsPreference(event.target)) return;
       if (event.target.hasAttribute("data-preset-select")) { if (event.target.value !== "") this.loadPreset(Number(event.target.value)); return; }
       if (event.target.dataset.presetName) { this.renamePreset(Number(event.target.dataset.presetName), event.target.value); return; }
       if (this.globalMultiplayer?.handleChange(event)) return;
@@ -967,6 +1050,7 @@ class BlasterBattle {
       if (event.target.closest?.(".settings-grid")) this.captureSettingsPreferences();
     };
     ui.oninput = (event) => {
+      if (event.target.dataset.setting === "motionBlur") { this.changeGraphicsPreference(event.target); return; }
       if (event.target.hasAttribute("data-weapon-search")) return this.filterWeaponPicker();
       if (event.target.id === "display-name") {
         this.settings.displayName = event.target.value.trim().slice(0, 18) || TEXT.defaults.displayName;
@@ -1190,7 +1274,6 @@ class BlasterBattle {
 
   captureSettingsPreferences() {
     this.settings.graphics = ui.querySelector('[data-setting="graphics"]').value;
-    ui.querySelector("#graphics-description").textContent = TEXT.settings.graphicsDescriptions[this.settings.graphics];
     this.settings.blood = ui.querySelector('[data-setting="blood"]').value;
     this.settings.shake = Number(ui.querySelector('[data-setting="shake"]').value);
     this.settings.volume = Number(ui.querySelector('[data-setting="volume"]').value);
@@ -1434,6 +1517,7 @@ class BlasterBattle {
       color: data.color,
       accent: data.accent
     }, data.loadout, position, Boolean(data.bot));
+    fighter.graphicsEffects = this.settings.graphicsEffects;
     const alive = data.alive !== false;
     fighter.health = alive ? data.health ?? 100 : 100;
     fighter.slotIndex = data.slotIndex || 0;
@@ -1532,6 +1616,7 @@ class BlasterBattle {
       this.scores = this.players.map(() => 0);
     }
     for (const player of this.players) this.applyTrainingBotControls(player);
+    this.applyGraphicsEffects();
     this.players[0].aim.set(-this.players[0].position.x, -3.5, -this.players[0].position.z).normalize();
     this.respawnTimers = onlineRoster
       ? onlineRoster.map((player) => player.respawnAt ? serverRemainingSeconds(player.respawnAt, welcome.serverTime) : 0)
@@ -1948,6 +2033,7 @@ class BlasterBattle {
           <p>${TEXT.pause.section}</p><h1 id="pause-title">${TEXT.pause.title}</h1>
           <button class="primary" data-action="pause" autofocus>${TEXT.pause.resume}</button>
           <button data-action="controls">${TEXT.pause.controls}</button>
+          <button data-action="graphics-settings">${TEXT.settings.graphicsPanel.title}</button>
           ${this.trainingControlsMarkup()}
           ${this.mode === "global" ? `<button data-global="leave">${TEXT.globalLobby.back}</button>` : `<button data-action="rematch">${TEXT.pause.restart}</button>`}
           <button data-screen="main">${TEXT.pause.mainMenu}</button>

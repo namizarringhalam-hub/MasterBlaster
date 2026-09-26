@@ -181,6 +181,22 @@ export const PLAYER_TEXT = {
   settings: {
     section: "LOCAL PREFERENCES",
     title: "Settings",
+    graphicsPanel: {
+      title: "Graphics", live: "Changes apply immediately and are saved automatically. Your choices are kept when you switch quality levels.",
+      back: "← BACK", reset: "RESTORE EFFECT DEFAULTS",
+      groups: { rendering: "Lighting & rendering", world: "World & atmosphere", motion: "Motion & animation" },
+      reasons: { webgpu: "Requires WebGPU", high: "Requires High quality", medium: "Requires Medium or High quality", reduced: "Disabled by Reduce motion", fallback: "Unavailable in graphics recovery mode" },
+      effects: {
+        antialiasing: "Antialiasing · FXAA edge smoothing", bloom: "Bloom & glow", reflections: "Screen-space reflections",
+        ambientOcclusion: "Ambient occlusion", contactShadows: "Contact shadows", localFog: "Volumetric fog & light shafts",
+        softParticles: "Soft particle intersections", heatDistortion: "Explosion heat shimmer", motionBlur: "Cinematic motion blur",
+        environmentMotion: "Wind & decorative motion", mechaMotion: "Mecha inertia & helmet motion", weaponMotion: "Weapon recoil & reload animation",
+        wetSurfaces: "Wet surfaces & puddles", waterCaustics: "Surface light ripples", clouds: "Volumetric clouds & cloud shadows",
+        horizonMist: "Horizon mist", atmosphericMotes: "Atmospheric particles", distanceHaze: "Distance haze", impactMarks: "Impact & scorch marks"
+      },
+      aaNote: "FXAA smooths the finished image. The renderer's built-in multisampling remains enabled.",
+      motionStrength: "Motion blur intensity"
+    },
     labels: {
       graphics: "Graphics quality",
       blood: "Blood and impact effects",

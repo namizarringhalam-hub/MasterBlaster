@@ -1057,7 +1057,7 @@ export class Fighter {
     const ax = (this.velocity.x - this.previousVisualVelocity.x) / Math.max(dt, .0001);
     const az = (this.velocity.z - this.previousVisualVelocity.z) / Math.max(dt, .0001);
     this.previousVisualVelocity.copy(this.velocity);
-    if (actions.reducedMotion) {
+    if (actions.reducedMotion || this.graphicsEffects?.mechaMotion === false) {
       this.bodyPitchSpring.value = this.bodyPitchSpring.velocity = 0;
       this.bodyRollSpring.value = this.bodyRollSpring.velocity = 0;
     } else {
@@ -1181,10 +1181,11 @@ export class Fighter {
 
     const overheadPitch = meleeMotion === "overhead" ? -attackSwing * 1.05 : 0;
     const thrustMotion = ["thrust", "stab", "punch"].includes(meleeMotion) ? attackSwing : 0;
-    if (actions.reducedMotion) this.weaponKick.value = this.weaponKick.velocity = 0;
-    const kick = actions.reducedMotion ? this.recoilVisual * .05 : clamp(advanceSpring(this.weaponKick, 0, dt, 24, .74), -.02, .22);
+    const weaponReducedMotion = actions.reducedMotion || this.graphicsEffects?.weaponMotion === false;
+    if (weaponReducedMotion) this.weaponKick.value = this.weaponKick.velocity = 0;
+    const kick = weaponReducedMotion ? this.recoilVisual * .05 : clamp(advanceSpring(this.weaponKick, 0, dt, 24, .74), -.02, .22);
     const reloadProgress = reloadingPose ? 1 - clamp(this.reloadTimer / this.weapon.reload, 0, 1) : 0;
-    const reloadMotion = reloadingPose && !actions.reducedMotion ? Math.sin(reloadProgress * Math.PI) : 0;
+    const reloadMotion = reloadingPose && !weaponReducedMotion ? Math.sin(reloadProgress * Math.PI) : 0;
     this.weaponGroup.rotation.x = THREE.MathUtils.damp(this.weaponGroup.rotation.x, -aimPitch + kick * 1.8 + overheadPitch - reloadMotion * .12, 22, dt);
     this.weaponGroup.rotation.y = THREE.MathUtils.damp(this.weaponGroup.rotation.y, melee && !thrustMotion ? attackSwing * (meleeMotion === "saw" ? .12 : .72) : 0, 19, dt);
     this.weaponGroup.rotation.z = THREE.MathUtils.damp(this.weaponGroup.rotation.z, melee ? -.18 - attackSwing * (meleeMotion === "overhead" ? .26 : meleeMotion === "saw" ? .1 : .85) : reloadingPose ? -.25 * reloadMotion : grappled ? Math.sin(time * .42) * .035 : 0, 16, dt);
@@ -1206,7 +1207,7 @@ export class Fighter {
     } else this.supportGripProgress = 0;
     if (this.weaponGlowMaterial) this.weaponGlowMaterial.emissiveIntensity = .25 + this.recoilVisual * .9 + this.chargeLevel * (2.4 + Math.sin(time * 2.4) * .55);
     this.weaponSpinSpeed = THREE.MathUtils.damp(this.weaponSpinSpeed, this.attackTimer > 0 ? 32 : 0, this.attackTimer > 0 ? 9 : 3, dt);
-    if (this.weaponSpinner && !actions.reducedMotion) this.weaponSpinner.rotation.z += dt * this.weaponSpinSpeed;
+    if (this.weaponSpinner && !weaponReducedMotion) this.weaponSpinner.rotation.z += dt * this.weaponSpinSpeed;
     if (this.weaponMagazine) {
       this.weaponMagazine.position.copy(this.weaponMagazineHome); this.weaponMagazine.rotation.copy(this.weaponMagazineRotation);
       this.weaponMagazine.position.y -= reloadMotion * .32;
