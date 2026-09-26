@@ -19,6 +19,7 @@ import { CombatVisuals } from "../src/combatVisuals.js";
 import { NeonRenderPipeline, recoverInvalidAONormals } from "../src/renderPipeline.js";
 import { SoftParticleDepth } from "../src/softParticles.js";
 import { HeatDistortion } from "../src/heatDistortion.js";
+import { advanceSpring } from "../src/motionSpring.js";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { surfaceTextures, surfaceMaps, projectSurfaceUVs } from "../src/surfaceTextures.js";
@@ -220,8 +221,8 @@ for (const reducedMotion of [false, true]) {
 {
   let clock = 1000, landingFrame = -1, checked = false;
   const plain = playerMergeSource.replace(/^import .*;\r?\n/gm, "").replaceAll("export ", "");
-  const Type = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation", "createMechaRig", "surfaceMaps", "projectSurfaceUVs", "performance",
-    `${plain}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation, createMechaRig, surfaceMaps, projectSurfaceUVs, { now: () => clock });
+  const Type = new Function("THREE", "mergeGeometries", "RoundedBoxGeometry", "weaponUsesAmmo", "WEAPONS", "weaponPresentation", "createMechaRig", "surfaceMaps", "projectSurfaceUVs", "advanceSpring", "performance",
+    `${plain}; return Fighter;`)(THREE, mergeGeometries, RoundedBoxGeometry, weaponUsesAmmo, WEAPONS, weaponPresentation, createMechaRig, surfaceMaps, projectSurfaceUVs, advanceSpring, { now: () => clock });
   const p = new Type(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3(0, 15, 8));
   const still = new THREE.Vector3(), aim = new THREE.Vector3(0, 0, -1);
   const world = { resolve(position) { const grounded = position.y <= 15; if (grounded) position.y = 15; return { grounded }; }, boostAt: () => null };

@@ -1,4 +1,5 @@
 import * as THREE from "three/webgpu";
+import { advanceSpring } from "./motionSpring.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { weaponUsesAmmo, WEAPONS } from "./gameData.js";
@@ -388,6 +389,9 @@ export class Fighter {
     this.landTimer = 0;
     this.landStrength = 0;
     this.recoilVisual = 0;
+    this.bodyPitchSpring = { value: 0, velocity: 0 };
+    this.bodyRollSpring = { value: 0, velocity: 0 };
+    this.previousVisualVelocity = new THREE.Vector3();
     this.deathTimer = 0;
     this.gaitPhase = 0;
     this.grounded = true;
@@ -949,6 +953,9 @@ export class Fighter {
     this.landTimer = 0;
     this.landStrength = 0;
     this.recoilVisual = 0;
+    this.bodyPitchSpring.value = this.bodyPitchSpring.velocity = 0;
+    this.bodyRollSpring.value = this.bodyRollSpring.velocity = 0;
+    this.previousVisualVelocity.set(0, 0, 0);
     this.hitStagger = 1;
     this.grapple = null;
     this.ledgeContact = null;
@@ -1027,6 +1034,18 @@ export class Fighter {
     }
 
     const angle = Math.atan2(this.aim.x, this.aim.z);
+    // Visual inertia follows acceleration/braking without changing collisions,
+    // aiming or feet: the existing grounded leg solver runs after the lean.
+    const ax = (this.velocity.x - this.previousVisualVelocity.x) / Math.max(dt, .0001);
+    const az = (this.velocity.z - this.previousVisualVelocity.z) / Math.max(dt, .0001);
+    this.previousVisualVelocity.copy(this.velocity);
+    if (actions.reducedMotion) {
+      this.bodyPitchSpring.value = this.bodyPitchSpring.velocity = 0;
+      this.bodyRollSpring.value = this.bodyRollSpring.velocity = 0;
+    } else {
+      advanceSpring(this.bodyPitchSpring, clamp(-(ax * this.aim.x + az * this.aim.z) * .0015, -.07, .07), dt);
+      advanceSpring(this.bodyRollSpring, clamp(-(ax * this.aim.z - az * this.aim.x) * .00125, -.06, .06), dt);
+    }
     this.group.rotation.y = THREE.MathUtils.damp(this.group.rotation.y, angle, 15, dt);
     const time = performance.now() * .009;
     const horizontalSpeed = Math.hypot(this.velocity.x, this.velocity.z);
@@ -1170,18 +1189,19 @@ export class Fighter {
     this.rig.position.y = THREE.MathUtils.damp(this.rig.position.y, bob, 18, dt);
     this.rig.scale.set(1.07, 1.04, 1.07);
     const strafe = this.velocity.x * this.aim.z - this.velocity.z * this.aim.x;
-    const bodyRoll = clamp(-strafe * .032, -.2, .2) + grappleSide * .36 + this.hitStagger * hitWave * .4;
+    const bodyRoll = clamp(-strafe * .032, -.2, .2) + grappleSide * .36 + this.hitStagger * hitWave * .4 + this.bodyRollSpring.value;
     this.rig.rotation.z = THREE.MathUtils.damp(this.rig.rotation.z, bodyRoll, 12, dt);
     const bodyPitch = grappled
       ? clamp(-.38 - this.velocity.y * .02, -.62, .12)
       : !this.grounded ? clamp(-this.velocity.y * .015, -.18, .2)
         : moving ? -.1 * locomotion + landing * .12 : landing * .12;
-    this.rig.rotation.x = THREE.MathUtils.damp(this.rig.rotation.x, bodyPitch + hitWave * .2, 11, dt);
+    this.rig.rotation.x = THREE.MathUtils.damp(this.rig.rotation.x, bodyPitch + hitWave * .2 + this.bodyPitchSpring.value, 11, dt);
     this.rig.rotation.y = THREE.MathUtils.damp(this.rig.rotation.y, melee ? -attackSwing * .34 : clamp(-strafe * .009, -.09, .09) - this.recoilVisual * .12, 12, dt);
     const legBrace = landing * .22 + (this.grounded && !moving ? .025 : 0) + (grappled ? Math.abs(grappleSide) * .08 : 0);
     this.leftLeg.rotation.z = THREE.MathUtils.damp(this.leftLeg.rotation.z, legBrace, 14, dt);
     this.rightLeg.rotation.z = THREE.MathUtils.damp(this.rightLeg.rotation.z, -legBrace, 14, dt);
-    this.helmet.rotation.x = THREE.MathUtils.damp(this.helmet.rotation.x, -aimPitch * .18 + landing * .07, 12, dt);
+    this.helmet.rotation.x = THREE.MathUtils.damp(this.helmet.rotation.x, -aimPitch * .18 + landing * .07 - this.bodyPitchSpring.value * .45, 12, dt);
+    this.helmet.rotation.z = THREE.MathUtils.damp(this.helmet.rotation.z, -this.bodyRollSpring.value * .6, 10, dt);
     if (this.grounded) this.poseGroundedLegs(dt, this.gaitPhase, this.locomotionVisual);
     const thrust = landing > .05 ? 1.7 + landing * .7 : grappled ? 1.8 : this.grounded ? .65 : 1.2 + clamp(horizontalSpeed / 32, 0, .65);
     this.thrusterScale = THREE.MathUtils.damp(this.thrusterScale, thrust, 11, dt);

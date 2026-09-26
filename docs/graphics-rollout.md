@@ -13,8 +13,8 @@ Session starting account balance: 1738.055228 credits. Account readings include 
 7. Local fog/light shafts — published 0506e60, live index-B3ccu7Er.js verified. Shadow-occluded 16-step local air integration, bounded 64m; native high only. Full tests/build, visual on/off and tier transitions passed. Shadow ownership/MSAA initialization fixes included.
 8. Lit smoke/explosion refinement — published bcdcef6, live index-C9qjxaKj.js verified: lit/shadowed smoke with smoother broad turbulence/geometry; high-native depth-soft fire/smoke/shells. Independent half-resolution opaque depth runs only while explosion particles are active, with renderer state restored on failure. Full 27 Node + 19 Worker tests passed; final shaders/effect lifecycle/build index-C9qjxaKj.js passed. Native isolated real-pipeline on/off visual comparison and high/medium/high checks passed. Full-game preview stalled at initialization without logged errors; isolated fixture added to distinguish shader validation from full-scene startup. Native idle frames stopped the extra depth pass; WebGL2 BLOOM rendered 1080+ frames with no errors/fallback and no depth target. Ready to publish.
 9. Heat distortion — published f9c026f, live index-CC1tKLz7.js verified: native-high post distortion from eight bounded current explosion sources, depth occlusion, current camera projection/aspect, no history/extra textures or draws, composed color/AO/reflections/fog/bloom move together. Reduced motion disables sources. Graphics regressions, WGSL/GLSL and build index-CC1tKLz7.js pass. Native real-pipeline fixture passed active source, expiry and reduced-motion checks without errors; 27 textures unchanged.
-10. Impact marks/material response — validated: reuse the 32-slot scorch batch for six-second surface marks, true face normals, host translation, corner limits, removal/expiry cleanup; warm metal sparks and slower neutral masonry debris for non-energy impacts. Swept contacts carry presentation-only surface identity; hitscan reuses its existing grapple target result. Full 27 Node + 19 Worker suite and build index-B_kEQYQv.js passed. Native wall mark, movement and destruction visually verified, no errors.
-11. Mecha weight/secondary motion — pending.
+10. Impact marks/material response — published ba93eab, live index-B_kEQYQv.js verified: reuse the 32-slot scorch batch for six-second surface marks, true face normals, host translation, corner limits, removal/expiry cleanup; warm metal sparks and slower neutral masonry debris for non-energy impacts. Swept contacts carry presentation-only surface identity; hitscan reuses its existing grapple target result. Full 27 Node + 19 Worker suite and build index-B_kEQYQv.js passed. Native wall mark, movement and destruction visually verified, no errors.
+11. Mecha weight/secondary motion — implemented: analytic damped acceleration/braking springs add bounded body pitch/roll and helmet counter-motion; feet retain existing grounded solver. Local/bot/network update paths pass reduced motion; respawn clears state. 30/60/144 fps spring agreement, physics/logical-muzzle parity, reduced motion and mecha regression pass. Native isolated visual review passes. Graphics regression initially failed because its extracted-class harness lacked the new helper import; fixed harness, complete graphics regression rerun passed. Build index-D3BUbeKj.js passes.
 12. Weapon animation — pending.
 13. Environmental animation — pending.
 14. Contact shadows — pending.
@@ -47,3 +47,9 @@ Item 8 account reading: 895.964819 credits (167.76 observed since item 7, includ
 
 
 Item 9 account reading: 845.684869 credits (50.28 observed since item 8). Item 10 ready to publish; next item 11 mecha inertia/secondary motion.
+
+
+Item 10 account reading: 781.275969 credits (64.41 observed since item 9). Next: finish item 11 regression/publish, then weapon animation.
+
+
+Item 11 account reading: 718.234219 credits (63.04 observed since item 10). Mecha spring, graphics regression, native visual/reduced-motion checks and build passed; publishing separately.

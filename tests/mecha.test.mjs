@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import * as THREE from "three/webgpu";
 import { Fighter } from "../src/player.js";
+import { advanceSpring } from "../src/motionSpring.js";
 
 const colors = [[0x129dba, 0x6ff6ff], [0xc82849, 0xff6b82], [0x6bad22, 0xb9ff55],
   [0x7847ca, 0xc793ff], [0xd77a16, 0xffc14f], [0xb92d86, 0xff75cf]];
@@ -118,3 +119,27 @@ for (const fps of [30, 60, 144]) {
 }
 assert.ok(Math.max(...steadyHeights) - Math.min(...steadyHeights) < .002, "pelvis height agrees across 30, 60 and 144 fps");
 console.log("Mecha colors, geometry budgets, head tracking, knee animation, jumping, hit feedback and disposal passed.");
+{
+  const results = [30, 60, 144].map(fps => {
+    const state = { value: 0, velocity: -1 };
+    for (let i = 0; i < fps * 2; i++) advanceSpring(state, .1, 1 / fps);
+    return state;
+  });
+  assert.ok(results.every(state => Math.abs(state.value - results[0].value) < 1e-12 && Math.abs(state.velocity - results[0].velocity) < 1e-12));
+  const paused = { value: .2, velocity: 3 }; advanceSpring(paused, 0, 0);
+  assert.deepEqual(paused, { value: .2, velocity: 3 }, "paused springs do not advance");
+  const pair = [false, true].map(() => new Fighter(new THREE.Scene(), {id:'inertia',color:0x129dba,accent:0x6ff6ff},['blaster'],new THREE.Vector3()));
+  let peak = 0;
+  for(let frame=0;frame<90;frame++) {
+    const direction=frame<45?move:still;
+    pair.forEach((f,index)=>f.update(1/60,direction,look,{reducedMotion:Boolean(index)},world));
+    peak=Math.max(peak,Math.abs(pair[0].bodyPitchSpring.value));
+    assert.deepEqual(pair[0].position.toArray(),pair[1].position.toArray(),"secondary motion never changes physics");
+    assert.deepEqual(pair[0].muzzlePoint().toArray(),pair[1].muzzlePoint().toArray(),"logical muzzle and aim remain unchanged");
+    assert.equal(pair[1].bodyPitchSpring.value,0);
+  }
+  assert.ok(peak>.005 && peak<.09,"acceleration creates bounded visible inertia");
+  pair[0].respawn(new THREE.Vector3());
+  assert.deepEqual(pair[0].bodyPitchSpring,{value:0,velocity:0});
+  pair.forEach(f=>f.dispose());
+}

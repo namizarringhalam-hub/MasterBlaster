@@ -2146,7 +2146,7 @@ class BlasterBattle {
     const aim = reticleAim(player, this.camera.position, this.camera.getWorldDirection(this.aimDirection), this.world, this.aimTargets);
     const jump = this.input.tapped("Space") || this.touch.jumpTap;
     if (jump && player.grounded) this.sound.play("jump", null, { local: true });
-    player.update(dt, move, aim, { jump }, this.world);
+    player.update(dt, move, aim, { jump, reducedMotion: this.settings.reducedMotion }, this.world);
     this.touch.jumpTap = false;
     if (this.input.tapped("KeyE") || this.input.tapped("MouseRight") || this.touch.grappleTap) this.toggleGrapple(player);
     this.touch.grappleTap = false;
@@ -2183,7 +2183,7 @@ class BlasterBattle {
     player.networkMove.copy(player.networkVelocity).setY(0);
     if (player.networkMove.lengthSq() > .01) player.networkMove.normalize();
     if (Number.isInteger(target.slotIndex) && target.slotIndex !== player.slotIndex) player.switchSlot(target.slotIndex);
-    player.update(dt, player.networkMove, player.networkAim, {}, this.world);
+    player.update(dt, player.networkMove, player.networkAim, { reducedMotion: this.settings.reducedMotion }, this.world);
     const blend = 1 - Math.exp(-14 * dt);
     reconcileRemotePosition(player, player.networkPosition, blend, this.world);
     player.velocity.lerp(player.networkVelocity, blend);
@@ -2272,7 +2272,7 @@ class BlasterBattle {
       if (this.world.surfaceHeightAt(probe, bot.position.y + 2) < bot.position.y - 1.5) move.multiplyScalar(-.75);
     }
     if (bot.trainingStandStill) { this.lockTrainingBot(bot); move.set(0, 0, 0); }
-    bot.update(dt, move, forward, { jump: !bot.trainingStandStill && Math.random() < dt * .45 }, this.world);
+    bot.update(dt, move, forward, { jump: !bot.trainingStandStill && Math.random() < dt * .45, reducedMotion: this.settings.reducedMotion }, this.world);
     if (bot.trainingStandStill) this.lockTrainingBot(bot);
     else {
       if (!bot.grapple && distance > 22 && Math.random() < dt * .35) this.toggleGrapple(bot);
