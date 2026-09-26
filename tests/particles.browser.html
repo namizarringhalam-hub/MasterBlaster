@@ -9,6 +9,7 @@
 <button id="run-mecha">Run mecha</button><button id="brake-mecha">Brake mecha</button>
 <button id="fire-mecha">Fire mecha weapon</button><button id="reload-mecha">Reload mecha weapon</button><button id="swap-mecha">Swap mecha weapon</button>
 <button id="hold-reload">Hold reload midpoint</button>
+<label><input id="contact" type="checkbox" checked>Contact shadows</label>
 <canvas id="canvas"></canvas><pre id="metrics">Initializing…</pre>
 <script type="module">
 import * as THREE from 'three/webgpu';
@@ -64,6 +65,7 @@ document.querySelector('#soft').onchange=e=>{if(pipeline.particleDepth)pipeline.
 document.querySelector('#light').onchange=e=>{warm.intensity=e.target.checked?35:0;};
 document.querySelector('#heat').onchange=e=>{if(pipeline.heatDistortion)pipeline.heatDistortion.strength.value=e.target.checked?1:0;};
 document.querySelector('#reduced').onchange=e=>pipeline.setReducedMotion(e.target.checked);
+document.querySelector('#contact').onchange=e=>{if(pipeline.contactShadows)pipeline.contactShadows.strength.value=e.target.checked?.24:0;};
 reset(); let frames=0;
 renderer.setAnimationLoop(()=>{
   if(fighter.group.visible){if(!holdPose)fighter.update(1/60,move,look,{reducedMotion:document.querySelector('#reduced').checked},world);

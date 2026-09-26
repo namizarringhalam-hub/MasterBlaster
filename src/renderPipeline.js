@@ -7,6 +7,7 @@ import TEXT from "./playerText.js";
 import { localFog } from "./localFog.js";
 import { SoftParticleDepth } from "./softParticles.js";
 import { HeatDistortion } from "./heatDistortion.js";
+import { contactShadows } from "./contactShadows.js";
 
 // AO depth and normals must describe the same surface. Light overlays keep
 // their scene color, but cannot replace the normal of the solid beneath them.
@@ -71,6 +72,7 @@ export class NeonRenderPipeline {
     this.localFog = null;
     this.particleDepth = null;
     this.heatDistortion = null;
+    this.contactShadows = null;
     this.pipeline = null;
     this.bloomPass = null;
     const nativeWebGPU = renderer.backend.isWebGPUBackend === true;
@@ -145,6 +147,8 @@ export class NeonRenderPipeline {
     let litScene = finalColor.add(vec4(reflections.getTextureNode().sample(sceneUV).rgb.mul(edge.x.mul(edge.y)), 0));
     const key = scene.children.find(light => light.isDirectionalLight && light.castShadow);
     if (key) {
+      this.contactShadows = contactShadows(depth, normal, camera, key);
+      litScene = vec4(litScene.rgb.mul(this.contactShadows.node(sceneUV)), litScene.a);
       this.localFog = localFog(depth, camera, key);
       const air = this.localFog.node(sceneUV);
       litScene = vec4(litScene.rgb.mul(air.a).add(air.rgb), litScene.a);
@@ -266,6 +270,7 @@ export class NeonRenderPipeline {
   }
 
   disposePipelineResources() {
+    this.contactShadows = null;
     this.heatDistortion = null;
     this.particleDepth?.dispose();
     this.particleDepth = null;
