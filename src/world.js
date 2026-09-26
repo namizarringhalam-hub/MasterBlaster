@@ -528,8 +528,10 @@ export class ArenaWorld {
   }
 
   updatePresentation(camera, reducedMotion = false) {
+    this.reducedMotion = reducedMotion;
     this.atmosphereTime.value = reducedMotion ? 0 : this.time;
     this.atmosphere.clock.value = this.atmosphereTime.value;
+    if (this.skylineLights) this.skylineLights.material.opacity = .15 + Math.sin(this.atmosphereTime.value * .42) * .015;
     const range = this.graphicsProfile?.detailDistance ?? 96;
     for (const mesh of this.decorativeDetails) {
       if (!mesh.parent) continue;
@@ -1009,7 +1011,7 @@ export class ArenaWorld {
     moteGeometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
     const motes = new THREE.Points(
       moteGeometry,
-      new THREE.PointsMaterial({
+      new THREE.PointsNodeMaterial({
         size: .22,
         sizeAttenuation: true,
         vertexColors: true,
@@ -1020,6 +1022,15 @@ export class ArenaWorld {
         toneMapped: false
       })
     );
+    // Each mote follows a bounded wind eddy around its authored position.
+    const wind = this.atmosphereTime.mul(.35);
+    motes.material.positionNode = positionLocal.add(vec3(
+      sin(wind.add(positionLocal.z.mul(.13))).mul(1.4),
+      sin(wind.mul(.7).add(positionLocal.x.mul(.23))).mul(.6),
+      sin(wind.mul(.8).add(positionLocal.x.mul(.11))).mul(.9)
+    ));
+    moteGeometry.computeBoundingSphere();
+    moteGeometry.boundingSphere.radius += 1.8;
     motes.name = "Atmospheric energy motes";
     this.group.add(motes);
     this.motes = motes;
@@ -1033,6 +1044,9 @@ export class ArenaWorld {
     shaftMaterial.opacityNode = materialOpacity.mul(uv().sub(.5).mul(vec2(1, 1.3)).length().smoothstep(.1, .5).oneMinus().pow(2))
       .mul(mist.mul(.7).add(.3));
     shaftMaterial.fog = false;
+    shaftMaterial.positionNode = positionLocal.add(vec3(
+      sin(this.atmosphereTime.mul(.09).add(positionLocal.y.mul(5))).mul(.035), 0, 0
+    ));
     this.lightShafts = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), shaftMaterial, 4);
     this.lightShafts.name = "City-lit horizon mist";
     const marker = new THREE.Object3D();
@@ -1044,6 +1058,7 @@ export class ArenaWorld {
       this.lightShafts.setColorAt(index, new THREE.Color(index % 2 ? 0x954181 : 0x2887b4));
     });
     this.lightShafts.computeBoundingSphere();
+    this.lightShafts.boundingSphere.radius += 5;
     this.group.add(this.lightShafts);
   }
 
@@ -2992,16 +3007,15 @@ export class ArenaWorld {
     this.updateFallingBoostPads(dt);
     this.updateStructuralDebris(dt);
     for (const rotor of this.rotors) {
-      rotor.object.rotation.x += dt * rotor.x;
-      rotor.object.rotation.y += dt * rotor.y;
-      rotor.object.rotation.z += dt * rotor.z;
+      const motionDt = this.reducedMotion ? 0 : dt;
+      rotor.object.rotation.x += motionDt * rotor.x;
+      rotor.object.rotation.y += motionDt * rotor.y;
+      rotor.object.rotation.z += motionDt * rotor.z;
     }
     for (const pulser of this.pulsers) {
-      const scale = pulser.base * (1 + Math.sin(this.time * pulser.speed + pulser.phase) * pulser.amplitude);
+      const scale = pulser.base * (1 + Math.sin((this.reducedMotion ? 0 : this.time) * pulser.speed + pulser.phase) * pulser.amplitude);
       pulser.object.scale.setScalar(scale);
     }
-    if (this.motes) this.motes.rotation.y += dt * .006;
-    if (this.skylineLights) this.skylineLights.material.opacity = .15 + Math.sin(this.time * .42) * .015;
     for (let index = this.temporaryWalls.length - 1; index >= 0; index--) {
       const wall = this.temporaryWalls[index];
       wall.life -= dt;

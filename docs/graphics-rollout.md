@@ -15,8 +15,8 @@ Session starting account balance: 1738.055228 credits. Account readings include 
 9. Heat distortion — published f9c026f, live index-CC1tKLz7.js verified: native-high post distortion from eight bounded current explosion sources, depth occlusion, current camera projection/aspect, no history/extra textures or draws, composed color/AO/reflections/fog/bloom move together. Reduced motion disables sources. Graphics regressions, WGSL/GLSL and build index-CC1tKLz7.js pass. Native real-pipeline fixture passed active source, expiry and reduced-motion checks without errors; 27 textures unchanged.
 10. Impact marks/material response — published ba93eab, live index-B_kEQYQv.js verified: reuse the 32-slot scorch batch for six-second surface marks, true face normals, host translation, corner limits, removal/expiry cleanup; warm metal sparks and slower neutral masonry debris for non-energy impacts. Swept contacts carry presentation-only surface identity; hitscan reuses its existing grapple target result. Full 27 Node + 19 Worker suite and build index-B_kEQYQv.js passed. Native wall mark, movement and destruction visually verified, no errors.
 11. Mecha weight/secondary motion — published 54a212b, live index-D3BUbeKj.js verified: analytic damped acceleration/braking springs add bounded body pitch/roll and helmet counter-motion; feet retain existing grounded solver. Local/bot/network update paths pass reduced motion; respawn clears state. 30/60/144 fps spring agreement, physics/logical-muzzle parity, reduced motion and mecha regression pass. Native isolated visual review passes. Graphics regression initially failed because its extracted-class harness lacked the new helper import; fixed harness, complete graphics regression rerun passed. Build index-D3BUbeKj.js passes.
-12. Weapon animation — validated: damped rigid recoil, spinning barrels with coast-down, moving existing reload magazines, reduced-motion and respawn resets. All 47 weapon/model regressions, spring/reload tests, full graphics regression and production build index-CB6Q40e4.js passed. Native high midpoint reload reviewed, no rendering errors. Publishing separately.
-13. Environmental animation — pending.
+12. Weapon animation — published e71a0d3, live index-CB6Q40e4.js verified: damped rigid recoil, spinning barrels with coast-down, moving existing reload magazines, reduced-motion and respawn resets. All 47 weapon/model regressions, spring/reload tests, full graphics regression and production build index-CB6Q40e4.js passed. Native high midpoint reload reviewed, no rendering errors. Publishing separately.
+13. Environmental animation — validated: individual bounded wind eddies in the existing mote batch, drifting horizon mist and reduced-motion-aware decorative machinery/lighting. No new geometry or collision changes. Arena presentation/lifecycle and WGSL/GLSL checks pass; native actual-arena high/medium and frozen clock reviewed with no errors. Production build index-mk_h9ED3.js passes.
 14. Contact shadows — pending.
 15. Temporal stability/antialiasing — pending.
 16. Cinematic motion blur — pending.
@@ -55,4 +55,7 @@ Item 10 account reading: 781.275969 credits (64.41 observed since item 9). Next:
 Item 11 account reading: 718.234219 credits (63.04 observed since item 10). Mecha spring, graphics regression, native visual/reduced-motion checks and build passed; publishing separately.
 
 Item 12 account reading: 648.675969 credits (69.56 observed since item 11). Next: publish weapon animation, then environmental animation.
+
+
+Item 13 account reading: 623.993769 credits (24.68 observed since item 12). Next: publish environmental motion, then contact shadows.
 

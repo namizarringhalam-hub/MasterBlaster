@@ -36,7 +36,7 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
   const sky = new THREE.Mesh(new THREE.SphereGeometry(), new THREE.MeshBasicNodeMaterial());
   sky.material.colorNode = scene.backgroundNode;
   const fighter = new Fighter(scene, { id: "shader-night", color: 0x227799, accent: 0x55ddff }, ["blaster"], new THREE.Vector3());
-  for (const mesh of [world.ground, world.platforms[0].mesh, world.lightShafts, sky,
+  for (const mesh of [world.ground, world.platforms[0].mesh, world.lightShafts, world.motes, sky,
     world.group.getObjectByName("Cyan relay arcologies — layered bodies"),
     fighter.group.getObjectByName("Movement neon back halos"), fighter.group.getObjectByName("Movement neon back vents")]) {
     const builder = new (webgl ? THREE.GLSLNodeBuilder : THREE.WGSLNodeBuilder)(mesh, renderer);

@@ -1,0 +1,31 @@
+<!doctype html><meta charset="utf-8"><title>Environment motion review</title>
+<style>body{margin:0;background:#09131d;color:white;font:14px system-ui}canvas{display:block}pre{white-space:pre-wrap}</style>
+<label><input id="reduced" type="checkbox">Reduced motion</label>
+<label>Tier <select id="tier"><option>high</option><option>medium</option><option>low</option></select></label>
+<canvas></canvas><pre id="metrics">Initializing renderer…</pre>
+<script type="module">
+import * as THREE from 'three/webgpu';
+import { ArenaWorld } from '../src/world.js';
+import { graphicsProfile } from '../src/gameData.js';
+const metrics=document.querySelector('#metrics'),errors=[];
+addEventListener('error',e=>errors.push(e.message));addEventListener('unhandledrejection',e=>errors.push(String(e.reason)));
+const renderer=new THREE.WebGPURenderer({canvas:document.querySelector('canvas'),antialias:true,
+  forceWebGL:new URLSearchParams(location.search).get('renderer')==='webgl'});
+await renderer.init();renderer.setSize(960,540);renderer.setPixelRatio(1);
+metrics.textContent='Building arena…';
+const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(55,960/540,.1,800);
+camera.position.set(32,24,42);camera.lookAt(0,8,0);
+scene.add(new THREE.HemisphereLight(0x9abbd9,0x29444a,2));
+const key=new THREE.DirectionalLight(0xffdcb3,3);key.position.set(-22,40,18);scene.add(key);
+const world=new ArenaWorld(scene);
+world.setGraphicsProfile(graphicsProfile('high'));
+document.querySelector('#tier').onchange=e=>world.setGraphicsProfile(graphicsProfile(e.target.value));
+let frames=0;metrics.textContent='Rendering arena…';
+renderer.setAnimationLoop(()=>{
+  world.updatePresentation(camera,document.querySelector('#reduced').checked);
+  world.update(1/60,[]);renderer.render(scene,camera);frames++;
+  if(frames%30===0)metrics.textContent=JSON.stringify({frames,clock:world.atmosphereTime.value,
+    motes:world.motes.geometry.drawRange.count,mist:world.lightShafts.count,textures:renderer.info.memory.textures,errors},null,2);
+});
+</script>
+
