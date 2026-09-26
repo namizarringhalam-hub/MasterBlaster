@@ -8,6 +8,7 @@ const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 const HOT = new THREE.Color(0xfff5e0), FIRE = new THREE.Color(0xff4811);
 const SMOKE = new THREE.Color(0x737d88), SOOT = new THREE.Color(0x28323b);
 const UP = new THREE.Vector3(0, 1, 0);
+const FRONT = new THREE.Vector3(0, 0, 1);
 // Particle age freezes with the game and can be frozen independently for reduced motion.
 const phase = attribute("particlePhase", "float");
 const turbulence = sin(positionGeometry.x.mul(17).add(phase.mul(2)))
@@ -95,6 +96,31 @@ export class ExplosionParticles {
     p.rotation.set(-Math.PI / 2, 0, this.random() * Math.PI * 2);
     p.velocity.set(0, 0, 0); p.spin.set(0, 0, 0); p.tint.set(0x080d16);
     p.mode = "scorch"; p.reducedMotion = true;
+    p.surface = null;
+  }
+
+  surfaceMark(position, normal, size, surface = null) {
+    if (!normal?.lengthSq() || surface?.removed || surface?.active === false) return;
+    if (surface) {
+      if (![surface.x, surface.z, surface.baseY, surface.top, surface.w, surface.d].every(Number.isFinite)) return;
+      // The collider faces are axis aligned. Keep the entire decal on its face.
+      const gaps = [];
+      if (Math.abs(normal.x) < .5) gaps.push(surface.w / 2 - Math.abs(position.x - surface.x));
+      if (Math.abs(normal.y) < .5) gaps.push(position.y - surface.baseY, surface.top - position.y);
+      if (Math.abs(normal.z) < .5) gaps.push(surface.d / 2 - Math.abs(position.z - surface.z));
+      size = Math.min(size, ...gaps);
+    }
+    if (size < .025) return;
+    this.scorch(position, size);
+    const layer = this.layers[3], p = layer.particles[(layer.cursor - 1) % layer.particles.length];
+    p.life = p.maxLife = 6;
+    p.position.copy(position).addScaledVector(normal, .018);
+    this.dummy.quaternion.setFromUnitVectors(FRONT, normal.clone().normalize());
+    this.dummy.rotateZ(this.random() * Math.PI * 2);
+    p.rotation.copy(this.dummy.rotation);
+    p.surface = surface;
+    p.surfaceOffset ||= new THREE.Vector3();
+    if (surface) p.surfaceOffset.copy(p.position).sub(new THREE.Vector3(surface.x, surface.baseY, surface.z));
   }
 
   update(dt) {
@@ -104,7 +130,11 @@ export class ExplosionParticles {
         const p = layer.particles[i];
         if (p.life <= 0) continue;
         dirty = true; p.life = Math.max(0, p.life - dt);
-        if (p.life === 0) { layer.mesh.setMatrixAt(i, HIDDEN); layer.alpha.setX(i, 0); continue; }
+        if (p.surface) {
+          if (p.surface.removed || p.surface.active === false) p.life = 0;
+          else p.position.copy(p.surfaceOffset).add(this.dummy.position.set(p.surface.x, p.surface.baseY, p.surface.z));
+        }
+        if (p.life === 0) { p.surface = null; layer.mesh.setMatrixAt(i, HIDDEN); layer.alpha.setX(i, 0); continue; }
         const age = 1 - p.life / p.maxLife;
         layer.phase.setX(i, p.reducedMotion ? 0 : p.maxLife - p.life);
         p.velocity.multiplyScalar(Math.exp(-dt * (layer.smoke ? 1.4 : 2)));

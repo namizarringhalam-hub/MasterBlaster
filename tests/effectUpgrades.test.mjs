@@ -70,6 +70,34 @@ let disposals = 0;
 for (const layer of effects.explosions.layers) for (const resource of [layer.mesh.geometry, layer.mesh.material]) resource.addEventListener("dispose", () => disposals++);
 effects.dispose(); assert.equal(disposals, 8); assert.ok(effects.projectileLights.every(l => !l.userData.projectile));
 
+{
+  const marks = new CombatVisuals(new THREE.Scene());
+  const surface = { x: 0, z: 0, baseY: 0, top: 4, w: 4, d: 4, mesh: { material: { metalness: .7 } } };
+  const weapon = Object.values(WEAPONS).find(w => !weaponPresentation(w).energy && !w.radius);
+  marks.impact(new THREE.Vector3(0, 2, 2), weapon, owner, { size: 1, normal: new THREE.Vector3(0, 0, 1), surface });
+  assert.ok(marks.sparks.filter(p => p.life > 0).every(p => p.color.getHex() === 0xffba63), "metal produces hot sparks");
+  marks.update(.1);
+  const layer = marks.explosions.layers[3], matrix = new THREE.Matrix4();
+  assert.equal(layer.mesh.count, 1); layer.mesh.getMatrixAt(0, matrix);
+  assert.ok(new THREE.Vector3(0, 0, 1).transformDirection(matrix).z > .999, "wall mark faces out of its host face");
+  const start = new THREE.Vector3().setFromMatrixPosition(matrix);
+  surface.x += 3; surface.baseY += 2; surface.top += 2; marks.update(.1); layer.mesh.getMatrixAt(0, matrix);
+  assert.ok(new THREE.Vector3().setFromMatrixPosition(matrix).distanceTo(start.add(new THREE.Vector3(3, 2, 0))) < 1e-5, "moving hosts carry marks");
+  surface.removed = true; marks.update(.1);
+  assert.equal(layer.mesh.count, 0); assert.equal(layer.particles[0].surface, null, "destroyed hosts remove marks and release their references");
+  surface.removed = false; surface.mesh.material.metalness = 0;
+  marks.update(10);
+  marks.impact(new THREE.Vector3(3, 4, 2), weapon, owner, { size: 1, normal: new THREE.Vector3(0, 0, 1), surface });
+  assert.ok(marks.sparks.filter(p => p.life > 0).every(p => p.color.getHex() === 0x89959e), "masonry produces neutral debris");
+  const cursor = layer.cursor;
+  marks.explosions.surfaceMark(new THREE.Vector3(5, 4, 2), new THREE.Vector3(0, 0, 1), .4, surface);
+  assert.equal(layer.cursor, cursor, "face-edge contacts cannot leave hanging marks");
+  for (let i = 0; i < 100; i++) marks.explosions.surfaceMark(new THREE.Vector3(3, 4, 2), new THREE.Vector3(0, 0, 1), .4, surface);
+  marks.update(.1); assert.equal(layer.mesh.count, 32, "impact marks reuse the existing bounded scorch batch");
+  marks.update(7); assert.equal(layer.mesh.count, 0); assert.ok(layer.particles.every(p => !p.surface));
+  marks.dispose();
+}
+
 const shard = fractureShardGeometry();
 assert.notEqual(shard.type, "BoxGeometry");
 assert.ok(new Set(shard.attributes.position.array).size > 12, "fracture faces are irregular"); shard.dispose();

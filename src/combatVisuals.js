@@ -762,9 +762,11 @@ export class CombatVisuals {
     return slot;
   }
 
-  impact(position, weapon, owner, { size = 1.5, normal = null, explosive = false } = {}) {
+  impact(position, weapon, owner, { size = 1.5, normal = null, explosive = false, surface = null, ground = false } = {}) {
     if (!position || !weapon) return;
     const profile = weaponPresentation(weapon);
+    const surfaceKind = surface ? (surface.mesh?.material?.metalness >= .3 ? "metal" : "stone") : ground ? "stone" : null;
+    if (surfaceKind && normal && !explosive) this.explosions.surfaceMark(position, normal, Math.min(.45, size * .22), surface);
     const family = isCloseRapid(profile, weapon) ? "closeRapid" : impactFamily(profile, explosive);
     const ring = this.rings[this.cursors.ring++ % this.rings.length];
     ring.life = ring.maxLife = ["gravity", "implosion"].includes(family) ? .46
@@ -823,6 +825,11 @@ export class CombatVisuals {
       spark.family = family;
       spark.directional = weapon.id === "blaster" && !explosive && family === "plasma";
       spark.gravity = family === "flame" ? -1.5 : ["plasma", "arc", "gravity", "implosion", "disrupt", "scan"].includes(family) ? 4 : 13;
+      if (surfaceKind && !profile.energy && !blastLike) {
+        spark.color.setHex(surfaceKind === "metal" ? 0xffba63 : 0x89959e);
+        spark.directional = surfaceKind === "metal";
+        if (surfaceKind === "stone") { spark.size *= 1.5; spark.velocity.multiplyScalar(.55); }
+      }
     }
   }
 

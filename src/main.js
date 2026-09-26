@@ -2678,7 +2678,8 @@ class BlasterBattle {
   fireHitscan(player, weapon, direction) {
     const start = player.muzzlePoint(new THREE.Vector3());
     const aim = direction.clone().normalize();
-    const wall = this.world.grapplePoint(start, aim);
+    const wallTarget = this.world.grappleTarget(start, aim);
+    const wall = wallTarget?.point ?? null;
     const wallDistance = wall ? start.distanceTo(wall) : 1000;
     const hits = this.hitscanTargets(player, start, aim, wallDistance).slice(0, (weapon.penetration || 0) + 1);
     for (const { target } of hits) {
@@ -2690,7 +2691,8 @@ class BlasterBattle {
     this.spawnTracer(start, end, weapon, player, weapon.type === "rail" ? .16 : .105, weapon.type === "rail" ? .095 : .045);
     if (wall && (!hits.length || weapon.penetration)) this.damageTerrain(wall, weapon, player);
     if (wall && !hits.length) {
-      this.combatVisuals?.impact(wall, weapon, player, { size: weapon.type === "rail" ? 1.25 : .72, normal: aim.clone().negate() });
+      this.combatVisuals?.impact(wall, weapon, player, { size: weapon.type === "rail" ? 1.25 : .72,
+        normal: wallTarget.normal, surface: wallTarget.item, ground: wallTarget.mesh === this.world.ground });
       this.sound.playImpact(weapon, this.audioSpatial(wall, false, .72, player.id), 0, "wall");
     }
   }
@@ -3008,7 +3010,8 @@ class BlasterBattle {
     else if (shot.weapon.radius) this.explode(shot);
     else {
       const point = contact ? contact.point.addScaledVector(contact.normal, .012) : shot.mesh.position;
-      this.combatVisuals?.impact(point, shot.weapon, shot.owner, { size: 1.05, normal: contact?.normal });
+      this.combatVisuals?.impact(point, shot.weapon, shot.owner, { size: 1.05, normal: contact?.normal,
+        surface: contact?.surface, ground: contact?.ground });
       this.sound.playImpact(shot.weapon, this.audioSpatial(shot.mesh.position, false, .78, shot.owner.id), 0, "wall");
     }
     this.removeProjectile(index);

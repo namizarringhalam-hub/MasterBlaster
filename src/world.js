@@ -3177,11 +3177,12 @@ export class ArenaWorld {
     direction.multiplyScalar(1 / length);
     const ray = this.collisionRay.set(previous, direction), box = this.collisionBox, hit = this.collisionHit;
     let nearest = Infinity, contact = null;
-    const accept = (distance, point, axis, sign) => {
+    const accept = (distance, point, axis, sign, surface = null, ground = false) => {
       if (distance < 0 || distance > length + 1e-8 || distance >= nearest) return;
       nearest = distance;
       contact ||= { point: new THREE.Vector3(), normal: new THREE.Vector3() };
       contact.point.copy(point); contact.normal.set(0, 0, 0); contact.normal[axis] = sign;
+      contact.surface = surface; contact.ground = ground;
     };
     for (const item of this.nearbyObstacles(
       Math.min(previous.x, position.x) - radius, Math.max(previous.x, position.x) + radius,
@@ -3210,14 +3211,14 @@ export class ArenaWorld {
       hit.x = THREE.MathUtils.clamp(hit.x, item.x - item.w / 2, item.x + item.w / 2);
       hit.y = THREE.MathUtils.clamp(hit.y, item.baseY, item.top);
       hit.z = THREE.MathUtils.clamp(hit.z, item.z - item.d / 2, item.z + item.d / 2);
-      accept(distance, hit, faceAxis, faceSign);
+      accept(distance, hit, faceAxis, faceSign, item);
     }
     // The original boolean path also has center-based world-limit planes.
     for (const [axis, limit, sign] of [["x", -this.size, 1], ["x", this.size, -1],
       ["z", -this.size, 1], ["z", this.size, -1], ["y", 0, 1], ["y", this.height + 18, -1]]) {
       if ((previous[axis] - limit) * sign <= 0 || (position[axis] - limit) * sign > 0) continue;
       const distance = (limit - previous[axis]) / direction[axis];
-      accept(distance, ray.at(distance, hit), axis, sign);
+      accept(distance, ray.at(distance, hit), axis, sign, null, axis === "y" && limit === 0);
     }
     return contact;
   }
