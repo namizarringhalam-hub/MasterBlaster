@@ -7,7 +7,7 @@ import TEXT from "../src/playerText.js";
 const source = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
 const controller = source.slice(source.indexOf("class BlasterBattle"), source.indexOf("\nconst game = new BlasterBattle")).replaceAll("import.meta.url", '"test"');
 const ui = { querySelector: () => null };
-const Game = new Function("THREE", "TEXT", "ui", "clearTouchActions", "clampBotCount", "escapeHtml", `return ${controller}`)(THREE, TEXT, ui, () => {}, clampBotCount, String);
+const Game = new Function("THREE", "TEXT", "ui", "clearTouchActions", "clampBotCount", "escapeHtml", "prepareSurfaceTextures", `return ${controller}`)(THREE, TEXT, ui, () => {}, clampBotCount, String, async () => {});
 for (const mode of ["training", "quick", "private", "global"]) {
   const game = Object.create(Game.prototype);
   const local = ["training", "quick"].includes(mode);
@@ -16,6 +16,7 @@ for (const mode of ["training", "quick", "private", "global"]) {
   Object.assign(game, {
     mode, timeLimitMinutes: 3, settings: { botCount: 3 }, sound: {},
     clearMatch() { this.multiplayer = null; }, setMatchLoading() {},
+    prepareResources: async () => {},
     connectOnlineMatch: async () => { connections++; return { phase: "lobby" }; },
     renderPrivateLobby: () => "online lobby",
     renderPipeline: { setHighLoadMode() { throw arenaReached; } }

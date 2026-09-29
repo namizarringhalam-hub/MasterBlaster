@@ -1,87 +1,64 @@
 import * as THREE from "three/webgpu";
-import { seedFromText } from "./gameData.js";
+import { surfaceTextureData } from "./surfaceTextureData.js";
+import { backgroundYield } from "./resourceVersion.js";
+
+const preparedData = new Map();
+let preparing = Promise.resolve();
+
+export function prepareSurfaceTextures(seeds = [], report = () => {}) {
+  const entries = [
+    ...["metal", "concrete", "rubber", "glass"].map(finish => [`machined-${finish}`, true, finish]),
+    ...seeds.flatMap(seed => [[`${seed}-structure`, false, "metal"], [`${seed}-ground`, false, "concrete"], [`${seed}-cover`, true, "metal"]])
+  ];
+  preparing = preparing.catch(() => {}).then(async () => {
+    const missing = entries.filter(entry => !preparedData.has(JSON.stringify(entry)));
+    let complete = entries.length - missing.length;
+    report(complete, entries.length);
+    const accept = (key, buffers) => {
+      preparedData.set(key, buffers);
+      // Bound random-arena CPU data; active DataTextures retain their own arrays.
+      while (preparedData.size > 20) preparedData.delete(preparedData.keys().next().value);
+      report(++complete, entries.length);
+    };
+    if (missing.length && typeof Worker !== "undefined") {
+      try {
+        await new Promise((resolve, reject) => {
+          const worker = new Worker(new URL("./surfaceTextures.worker.js", import.meta.url), { type: "module" });
+          const timeout = setTimeout(() => { worker.terminate(); reject(new Error("Texture preparation timed out")); }, 60000);
+          const finish = error => { clearTimeout(timeout); worker.terminate(); error ? reject(error) : resolve(); };
+          worker.onerror = () => finish(new Error("Texture worker failed"));
+          worker.onmessage = ({ data }) => {
+            if (data.error) finish(new Error("Texture generation failed"));
+            else if (data.done) finish();
+            else accept(data.key, data.buffers);
+          };
+          worker.postMessage(missing);
+        });
+      } catch {
+        for (const entry of missing) if (!preparedData.has(JSON.stringify(entry))) {
+          await backgroundYield();
+          accept(JSON.stringify(entry), surfaceTextureData(...entry));
+        }
+      }
+    } else for (const entry of missing) {
+      await backgroundYield();
+      accept(JSON.stringify(entry), surfaceTextureData(...entry));
+    }
+    for (const finish of ["metal", "concrete", "rubber", "glass"]) surfaceMaps(finish);
+  });
+  return preparing;
+}
+
+export function sharedSurfaceTextures() {
+  return [...new Set([...sharedMaps.values()].flatMap(maps => Object.values(maps)))];
+}
 
 // Matched albedo/normal/ORM channels: recessed seams, bevel highlights and
 // fine brushed grain. Geometry, collision and structural IDs remain untouched.
 export function surfaceTextures(seed, repeat, machined = false, finish = "metal") {
-  const size = 256, tile = machined ? 128 : 64, fastenerInset = machined ? 20 : 6, seedValue = seedFromText(seed);
-  const buffers = Array.from({ length: 3 }, () => new Uint8Array(size * size * 4));
-  const hash = (x, y) => ((Math.imul(x + seedValue, 374761393) ^ Math.imul(y, 668265263)) >>> 0) % 251 / 251;
-  // Periodic smooth noise bakes broad grime into the existing maps. Keeping
-  // this on the CPU avoids more texture reads or procedural work per pixel.
-  const noise = (x, y, cells) => {
-    const px = x / size * cells, py = y / size * cells;
-    const ix = Math.floor(px), iy = Math.floor(py);
-    const fx = px - ix, fy = py - iy;
-    const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
-    const sample = (dx, dy) => hash((ix + dx) % cells, (iy + dy) % cells);
-    return THREE.MathUtils.lerp(THREE.MathUtils.lerp(sample(0, 0), sample(1, 0), u),
-      THREE.MathUtils.lerp(sample(0, 1), sample(1, 1), u), v);
-  };
-  const heights = new Float64Array(tile * tile);
-  for (let y = 0; y < tile; y++) for (let x = 0; x < tile; x++) {
-    const edge = Math.min(x, y, tile - 1 - x, tile - 1 - y);
-    const rivet = Math.hypot(Math.min(Math.abs(x - fastenerInset), Math.abs(x - tile + fastenerInset + 1)), Math.min(Math.abs(y - fastenerInset), Math.abs(y - tile + fastenerInset + 1)));
-    heights[y * tile + x] = machined
-      ? Math.min(1, edge) * .45 - Math.max(0, 1 - rivet / 1.4) * .16
-      : Math.min(1, edge / 2.4) * .45 + Math.max(0, 1 - rivet / 1.6) * .25;
-  }
-  const height = (x, y) => heights[((y + size) % tile) * tile + (x + size) % tile];
-  const [diffuse, normals, roughnessData] = buffers;
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const at = (y * size + x) * 4, h = height(x, y);
-    const grain = machined ? (hash(x, y) + hash(Math.floor(x / 32), y)) * 1.5 : hash(x, y) * 3 + hash(Math.floor(x / 12), y) * 2;
-    const variation = hash(Math.floor(x / tile), Math.floor(y / tile)) * 12;
-    const albedo = machined ? (h < .4 ? 145 : 184) + variation * .25 + grain : 154 + h * 52 + variation + grain;
-    diffuse[at] = albedo; diffuse[at + 1] = albedo + 3; diffuse[at + 2] = albedo + 7; diffuse[at + 3] = 255;
-    const dx = (height(x - 1, y) - height(x + 1, y)) * .7;
-    const dy = (height(x, y - 1) - height(x, y + 1)) * .7;
-    const length = Math.hypot(dx, dy, 1);
-    normals[at] = (dx / length * .5 + .5) * 255; normals[at + 1] = (dy / length * .5 + .5) * 255;
-    normals[at + 2] = (1 / length * .5 + .5) * 255; normals[at + 3] = 255;
-    const roughness = h < .4 ? 230 : (machined ? 184 : 207) + grain;
-    // Linear ORM: occlusion in red, roughness in green, metalness in blue.
-    // Seams/fasteners collect dirt; exposed plates retain the authored finish.
-    roughnessData[at] = h < .4 ? 165 + h * 180 : 255;
-    roughnessData[at + 1] = roughness;
-    roughnessData[at + 2] = h < .4 ? 145 + h * 180 : 244 + grain;
-    roughnessData[at + 3] = 255;
-    const stain = noise(x, y, 4) * .65 + noise(x, y, 16) * .35;
-    const grime = Math.max(0, stain - .35);
-    const edge = Math.min(x % tile, y % tile, tile - 1 - x % tile, tile - 1 - y % tile);
-    const wear = edge > 1 && edge < 5 && noise(x, y, 32) > .48 ? 1 : 0;
-    const scratch = hash(Math.floor(x / 24), y) > .985 && noise(x, y, 8) > .48 ? 1 : 0;
-    for (let channel = 0; channel < 3; channel++) diffuse[at + channel] = Math.min(255,
-      diffuse[at + channel] * (1 - grime * .24) + (wear * 23 + scratch * 17));
-    roughnessData[at] = Math.max(0, roughnessData[at] - grime * 35);
-    roughnessData[at + 1] = Math.min(255, Math.max(95, roughnessData[at + 1] + grime * 35 - wear * 48 - scratch * 40));
-    roughnessData[at + 2] = Math.max(0, roughnessData[at + 2] - grime * 95);
-    normals[at + 1] = Math.max(0, normals[at + 1] - scratch * 12);
-    if (finish === "concrete") {
-      // Baked aggregate and shallow expansion joints: no extra texture fetches.
-      const aggregate = hash(x, y), patch = stain;
-      const joint = Math.min(x % tile, y % tile) < 1;
-      const value = joint ? 124 : 177 + patch * 24 + aggregate * 12 - grime * 65;
-      diffuse[at] = value; diffuse[at + 1] = value; diffuse[at + 2] = value - 3;
-      normals[at] = 127 + (hash(x + 1, y) - aggregate) * 12;
-      normals[at + 1] = 127 + (hash(x, y + 1) - aggregate) * 12;
-      normals[at + 2] = 255;
-      roughnessData[at] = joint ? 208 : 250;
-      roughnessData[at + 1] = 218 + aggregate * 20 + patch * 16;
-      roughnessData[at + 2] = 0;
-    }
-    if (finish === "rubber" || finish === "glass") {
-      const glass = finish === "glass";
-      const value = glass ? 245 - grime * 10 : 185 + hash(x, y) * 22 - grime * 30;
-      diffuse[at] = diffuse[at + 1] = diffuse[at + 2] = value;
-      normals[at] = 128;
-      normals[at + 1] = glass ? 128 : 128 + Math.sin(y * Math.PI / 4) * 10;
-      normals[at + 2] = 255;
-      roughnessData[at] = 255 - grime * (glass ? 0 : 20);
-      roughnessData[at + 1] = glass ? 110 + grime * 65 : 225 + stain * 25;
-      roughnessData[at + 2] = 0;
-    }
-  }
+  const size = 256;
+  const key = JSON.stringify([seed, machined, finish]);
+  const buffers = preparedData.get(key) || surfaceTextureData(seed, machined, finish);
   return buffers.map((data, index) => {
     const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
     texture.name = `${seed}-${["albedo", "normal", "orm"][index]}`;

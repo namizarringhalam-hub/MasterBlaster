@@ -27,17 +27,18 @@
     <meta name="twitter:image:alt" content="{{site.socialImageAlt}}" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="preload" as="image" href="/menu-arena-v2.webp" fetchpriority="high" />
-    <link rel="preload" as="fetch" href="/audio/music/battle-drum.wav?bank=orchestra-2" type="audio/wav" crossorigin />
-    <link rel="preload" as="fetch" href="/audio/music/cello-trem.wav?bank=orchestra-2" type="audio/wav" crossorigin />
-    <link rel="preload" as="fetch" href="/audio/music/horn-sustain.wav?bank=orchestra-2" type="audio/wav" crossorigin />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,500;0,700;0,900;1,900&family=Inter:wght@400;600;700&display=swap" />
+    <link rel="stylesheet" href="/fonts/fonts.css" />
     <link rel="stylesheet" href="/src/styles.css" />
     <title>{{site.searchTitle}}</title>
   </head>
   <body>
     <div id="app">
+      <div id="resource-progress" class="resource-progress">
+        <span data-resource-label role="status" aria-live="polite">{{boot.preparation.waiting}}</span>
+        <span data-resource-detail></span>
+        <button data-resource-retry hidden>{{boot.preparation.retry}}</button>
+        <progress aria-label="{{boot.preparation.progress}}" max="1" value="0"></progress>
+      </div>
       <canvas id="game-canvas"></canvas>
       <div id="ui-root">
         <main class="menu-shell menu-scene" data-menu-scene="landing" data-menu-quality="high" style="--menu-energy:.22;--menu-accent:#52e9ff">

@@ -1,7 +1,10 @@
 import { defineConfig } from "vite";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { PLAYER_TEXT } from "./PLAYER_TEXT.js";
+import { hash, resourceBuild, writeResourceRelease } from "./scripts/resource-build.mjs";
+
+const resources = await resourceBuild();
 
 function textAt(path) {
   return path.split(".").reduce((value, key) => value?.[key], PLAYER_TEXT);
@@ -53,6 +56,10 @@ function manifest() {
 }
 
 export default defineConfig({
+  define: {
+    __RESOURCE_VERSION__: JSON.stringify(process.env.NODE_ENV === "production" ? resources.version : "development"),
+    __PUBLIC_RESOURCES__: JSON.stringify(process.env.NODE_ENV === "production" ? resources.urls : {})
+  },
   build: {
     rolldownOptions: {
       output: {
@@ -62,6 +69,10 @@ export default defineConfig({
   },
   plugins: [{
     name: "master-blaster-player-text",
+    enforce: "pre",
+    transform(code, id) {
+      if (process.env.NODE_ENV === "production" && id.endsWith(".css")) return resources.rewrite(code);
+    },
     transformIndexHtml: { order: "pre", handler: renderPlayerText },
     configureServer(server) {
       server.watcher.add("PLAYER_TEXT.js");
@@ -79,7 +90,17 @@ export default defineConfig({
       if (asset?.type === "asset") asset.source = manifest();
     },
     async writeBundle(options) {
-      await writeFile(resolve(options.dir || "dist", "manifest.webmanifest"), manifest());
+      const dir = options.dir || "dist";
+      const appManifest = resources.rewrite(manifest());
+      await writeFile(resolve(dir, "manifest.webmanifest"), appManifest);
+      const manifestURL = `/resources/${hash(appManifest)}/manifest.webmanifest`;
+      resources.copies.set(manifestURL, Buffer.from(appManifest));
+      const htmlPath = resolve(dir, "index.html");
+      const html = resources.rewrite(await readFile(htmlPath, "utf8"))
+        .replace('href="/manifest.webmanifest"', `href="${manifestURL}"`)
+        .replace("</head>", `<meta name="blaster-release" content="${resources.version}"></head>`);
+      await writeFile(htmlPath, html);
+      await writeResourceRelease(dir, resources);
     }
   }]
 });

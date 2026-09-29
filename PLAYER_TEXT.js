@@ -65,7 +65,24 @@ export const PLAYER_TEXT = {
 
   boot: {
     loading: "LOADING THE MAYHEM · PLEASE HOLD",
-    failed: "ARENA LAUNCH FAILED · RELOAD TO RETRY"
+    failed: "ARENA LAUNCH FAILED · RELOAD TO RETRY",
+    preparation: {
+      waiting: "Menu ready · preparing shortly",
+      checking: "Checking game resources",
+      downloading: "Saving game resources",
+      engine: "Preparing the game engine",
+      textures: "Preparing textures",
+      audio: "Preparing sounds and music",
+      graphics: "Preparing graphics",
+      ready: "Shared resources ready",
+      offline: "Available offline",
+      temporary: "Ready for this visit · offline storage unavailable",
+      failed: "Preparation incomplete · retry when connected",
+      update: "Update available · reload from the home menu",
+      retry: "Retry",
+      reload: "Update",
+      progress: "Background game preparation"
+    }
   },
 
   loading: {

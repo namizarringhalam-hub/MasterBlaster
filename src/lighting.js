@@ -1,5 +1,6 @@
 import * as THREE from "three/webgpu";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
+import { resourceURL } from "./resourceURLs.js";
 
 export const LIGHTING = {
   // Set to "/assets/textures/equirectangular.hdr" after adding the asset under public/.
@@ -115,7 +116,7 @@ export async function setupEnvironment(renderer, scene, { hdrUrl = LIGHTING.hdrU
   if (hdrUrl) {
     try {
       // HDRLoader is the current name for RGBELoader in Three r185.
-      const texture = await new HDRLoader().loadAsync(hdrUrl);
+      const texture = await new HDRLoader().loadAsync(resourceURL(hdrUrl));
       texture.mapping = THREE.EquirectangularReflectionMapping;
       environment = { texture, dispose: () => texture.dispose() };
     } catch (error) {

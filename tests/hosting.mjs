@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { gzipSync } from "node:zlib";
-import { MUSIC_ASSET_REVISION } from "../src/audio.js";
+import { resourceBuild } from "../scripts/resource-build.mjs";
+const resources = await resourceBuild();
 import { MUSIC_SAMPLE_MANIFEST } from "../src/musicScore.js";
 import { PLAYER_TEXT } from "../PLAYER_TEXT.js";
 
@@ -36,6 +37,17 @@ const response = await worker.fetch(new Request("https://example.test/"), { ASSE
 assert.equal(response.status, 200, "the deployed root falls back to client/index.html");
 assert.match(response.headers.get("cache-control"), /max-age=0/, "the HTML shell always revalidates so releases cannot become stale");
 const deployedHtml = await response.text();
+const release = JSON.parse(await readFile("dist/resources.json", "utf8"));
+assert.equal(release.version, resources.version, "release identity includes all current source, dependency and public inputs");
+assert.ok(deployedHtml.includes(`name="blaster-release" content="${release.version}"`));
+const { createHash } = await import("node:crypto");
+for (const entry of release.entries) {
+  const bytes = await readFile(join("dist/client", entry.url));
+  assert.equal(bytes.length, entry.bytes, `${entry.url} has a truthful progress weight`);
+  assert.equal(createHash("sha256").update(bytes).digest("hex"), entry.sha256, `${entry.url} matches the deployed release hash`);
+}
+assert.ok(release.entries.some(entry => entry.url.endsWith(".ttf")), "offline release includes menu fonts");
+assert.ok(release.entries.some(entry => entry.url.includes("surfaceTextures.worker-")), "offline release includes generator workers");
 assert.ok(deployedHtml.includes(`<title>${PLAYER_TEXT.site.searchTitle}</title>`), "the search title describes the game without changing its installed name");
 assert.match(deployedHtml, /<meta property="og:title" content="Master Blaster — Neon Arena Shooter"/, "shared links use the Master Blaster title");
 assert.match(deployedHtml, /<link rel="canonical" href="https:\/\/masterblaster\.se\/"/, "the public domain is canonical");
@@ -79,9 +91,12 @@ assert.ok(gzipSync(entryBytes).length < 12 * 1024, "the interactive boot module 
 const jsGzipSizes = await Promise.all(jsAssets.map(async (name) => gzipSync(await readFile(join("dist/client/assets", name))).length));
 assert.ok(Math.max(...jsGzipSizes) < 380 * 1024, "the deferred engine stays below a 380 KiB compressed budget");
 const cssGzipSizes = await Promise.all(cssAssets.map(async (name) => gzipSync(await readFile(join("dist/client/assets", name))).length));
-// Allow 0.5 KiB for the live graphics drawer and accessible effect controls.
-assert.ok(Math.max(...cssGzipSizes) < 13.5 * 1024, "each stylesheet stays below a 13.5 KiB compressed CSS budget");
-assert.ok(cssGzipSizes.reduce((sum, bytes) => sum + bytes, 0) < 14.5 * 1024, "menus, live graphics and deferred multiplayer styles stay below 14.5 KiB combined");
+const deployedCss = (await Promise.all(cssAssets.map(name => readFile(join("dist/client/assets", name), "utf8")))).join("\n");
+assert.ok(deployedCss.includes(resources.urls["/menu-arena-v2.webp"]), "CSS menu art uses its content hash, including offline launches");
+assert.doesNotMatch(deployedCss, /url\(["']?\/menu-arena-v2\.webp/, "CSS never bypasses the versioned resource address");
+// Includes the accessible home-menu preparation strip and hashed artwork URL.
+assert.ok(Math.max(...cssGzipSizes) < 14 * 1024, "each stylesheet stays below a 14 KiB compressed CSS budget");
+assert.ok(cssGzipSizes.reduce((sum, bytes) => sum + bytes, 0) < 15 * 1024, "menus, live graphics and deferred multiplayer styles stay below 15 KiB combined, including background preparation status");
 const assetResponse = await worker.fetch(new Request(`https://example.test${entryPath}`), { ASSETS: clientAssets });
 assert.match(assetResponse.headers.get("cache-control"), /max-age=31536000, immutable/, "hashed engine assets remain local across fresh-renderer match reloads");
 assert.ok(jsAssets.some((name) => name.startsWith("three-")), "the rendering library has its own reusable versioned chunk");
@@ -105,7 +120,7 @@ const audioBytes = (await Promise.all(audioNames.map((name) => readFile(join("di
 assert.ok(audioBytes < 4.7 * 1024 * 1024, "the lossless recorded score stays inside its network budget");
 
 for (const file of Object.values(MUSIC_SAMPLE_MANIFEST).flatMap((role) => role.files)) {
-  const musicResponse = await worker.fetch(new Request(`https://example.test${file.url}?bank=${MUSIC_ASSET_REVISION}`), { ASSETS: clientAssets });
+  const musicResponse = await worker.fetch(new Request(`https://example.test${resources.urls[file.url]}`), { ASSETS: clientAssets });
   assert.equal(musicResponse.status, 200, `${file.url} is included in the deployed client`);
   assert.equal(musicResponse.headers.get("content-type"), "audio/wav", `${file.url} is served as audio instead of the SPA fallback`);
   assert.match(musicResponse.headers.get("cache-control"), /max-age=31536000, immutable/, `${file.url} is reused without a network revalidation on later matches`);
@@ -115,7 +130,7 @@ const manifest = JSON.parse(await readFile("dist/client/manifest.webmanifest", "
 assert.equal(manifest.name, "Master Blaster", "the installable app uses the Master Blaster name");
 assert.equal(manifest.short_name, "Master Blaster", "the installed app label uses the Master Blaster name");
 assert.equal(manifest.description, PLAYER_TEXT.site.description, "installed-game metadata uses the editable description");
-assert.ok(manifest.icons.some((icon) => icon.src === "/favicon.svg"), "the installable app publishes its brand icon");
+assert.ok(manifest.icons.some((icon) => icon.src === resources.urls["/favicon.svg"]), "the installable app publishes its brand icon");
 
 const previewResponse = await worker.fetch(new Request("https://example.test/og.png"), { ASSETS: clientAssets });
 assert.equal(previewResponse.status, 200, "the social preview image is deployed");

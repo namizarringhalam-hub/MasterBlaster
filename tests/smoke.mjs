@@ -39,7 +39,7 @@ assert.match(mainSource, /new THREE\.WebGPURenderer/, "the game uses Three.js's 
 assert.match(mainSource, /await this\.renderer\.init\(\)/, "WebGPU initializes before environment generation");
 assert.match(mainSource, /this\.renderPipeline\.render\(\)/, "the game renders through the node-based HDR pipeline");
 assert.match(mainSource, /setDrawingBufferSize\(size.width, size.height, size.pixelRatio\)/, "resize changes dimensions and DPR in one public transaction");
-assert.match(mainSource, /frame\(time\) \{\s*this.commitResize\(\)/, "resize commits before the frame starts rendering");
+assert.match(mainSource, /frame\(time\) \{\s*(?:if \(this.preparingGraphics\) return;\s*)?this.commitResize\(\)/, "resize commits before the frame starts rendering");
 assert.doesNotMatch(mainSource.slice(mainSource.indexOf("  commitResize()"), mainSource.indexOf("  applyGraphicsSettings()")), /onSubmittedWorkDone/, "resizing does not add an unnecessary GPU queue wait");
 assert.match(renderPipelineSource, /RenderPipeline[\s\S]*?bloom\([\s\S]*?ao\(/, "the HDR pipeline combines bloom with ambient grounding");
 assert.match(renderPipelineSource, /this\.direct = false[\s\S]*?if \(!nativeWebGPU\)[\s\S]*?bloom\([\s\S]*?renderer\.render\(this\.scene, this\.camera\)/, "pointer type cannot silently replace a selected graphics tier with direct rendering");
@@ -111,7 +111,8 @@ assert.match(mainSource, /TEXT\.landing\.kicker[\s\S]*?TEXT\.landing\.headlineLi
 assert.match(indexSource, /\{\{loading\.kicker\}\}[\s\S]*?\{\{loading\.title\}\}[\s\S]*?\{\{loading\.description\}\}[\s\S]*?\{\{loading\.freshArena\}\}/, "match loading copy comes from the editable player-text source");
 assert.match(indexSource, /master-blaster-settings[\s\S]*?dataset\.menuQuality[\s\S]*?reducedMotion/, "the lightweight shell applies saved graphics and motion preferences before the engine downloads");
 assert.match(indexSource, /menu-atmosphere[\s\S]*?arena-grid[\s\S]*?arena-towers[\s\S]*?arena-rings[\s\S]*?grapple-arc[\s\S]*?arena-streaks/, "the lightweight shell paints the complete arena-energy atmosphere before the engine downloads");
-assert.match(indexSource, /preload" as="image" href="\/menu-arena-v2\.webp"[\s\S]*?battle-drum\.wav\?bank=orchestra-2[\s\S]*?cello-trem\.wav\?bank=orchestra-2[\s\S]*?horn-sustain\.wav\?bank=orchestra-2/, "the arena plate and core menu orchestra begin loading with the shell");
+assert.match(indexSource, /preload" as="image" href="\/menu-arena-v2\.webp"/, "menu art remains a shell priority");
+assert.doesNotMatch(indexSource, /preload" as="fetch"|fonts\.googleapis/, "game audio is deferred and fonts are self-hosted");
 assert.match(mainSource, /data-menu-quality="\$\{this\.settings\.graphics\}"/, "menu animation density follows the saved graphics quality");
 assert.match(mainSource, /pulseMenuEnergy[\s\S]*?setMusicIntensity/, "menu visuals and adaptive orchestral intensity share one bounded action signal");
 assert.match(mainSource, /accentMenuAction\(menuLevel[\s\S]*?dataset\.action === "start"/, "real menu clicks trigger an immediate recorded musical accent, including Start before navigation");
@@ -186,7 +187,7 @@ assert.match(mainSource, /document\.addEventListener\("visibilitychange"/, "page
 assert.match(mainSource, /if \(this\.paused\) \{[\s\S]*?clearTouchActions\(this\.touch\)/, "pausing clears held and queued touch actions");
 assert.match(mainSource, /pointercancel", cancel/, "cancelled action touches cannot replay queued actions");
 assert.match(serviceWorkerSource, /pathname\.startsWith\("\/assets\/"\)/, "content-hashed engine assets use the local immutable cache");
-assert.match(serviceWorkerSource, /pathname\.startsWith\("\/audio\/"\).*searchParams\.has\("bank"\)/s, "only versioned audio enters the immutable cache");
+assert.match(serviceWorkerSource, /pathname\.startsWith\("\/resources\/"\)/, "content-addressed public resources use the immutable cache");
 assert.match(serviceWorkerSource, /cache\.match\(request\)[\s\S]*if \(cached && isAssetResponse\(request, cached\)\) return \{ response: cached \}/, "repeat sessions read validated immutable assets without revalidation");
 assert.match(serviceWorkerSource, /async function loadShell[\s\S]*?await fetch\(request\)[\s\S]*?catch \(error\)[\s\S]*?match\(key\)/, "navigation fetches current releases first and uses the cached shell only offline");
 assert.match(serviceWorkerSource, /clients\.claim/, "the cache takes control without forcing a disruptive refresh");

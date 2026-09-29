@@ -40,6 +40,26 @@ movement/hit proposals and ricochet validation still use client input and
 tolerances. Complete trajectory authority would require server simulation.
 Offline games run on the player's device and cannot be made tamper-proof.
 
+## Background preparation and resource updates
+
+The home menu, artwork, fonts and navigation load first. After the menu paints,
+the top progress strip saves the release's resources, prepares reusable textures
+and sounds, decodes the recorded score and warms shared graphics resources.
+Setup remains accessible during preparation; a match waits for required resources.
+Arena geometry and shader variants specific to the selected match still finish
+behind the match loader. Progress percentages describe the current stage.
+
+Production builds automatically fingerprint source, generator code, dependencies
+and public files. Downloaded assets have content-addressed URLs and SHA-256 checks;
+generated data is keyed by release and generation inputs. Only a complete download
+replaces the offline release. Partial updates, quota failures and corrupt entries
+cannot mark a release available offline. Updates detected in an open session are
+offered on the home menu; active matches retain their release. Offline launches use
+the last complete release. Browser storage remains optional and can be evicted;
+the game prepares in memory when persistence is unavailable. Generated disk data
+and random-seed memory data have bounded caches. `npm run build` produces matching
+resource manifests for both hosting layouts; deploy the complete output together.
+
 ## Controls
 
 - Move: `WASD`

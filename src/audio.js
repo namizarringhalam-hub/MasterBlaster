@@ -1,6 +1,8 @@
 import { MUSIC, MUSIC_SAMPLE_MANIFEST, musicEventsForStep, tempoForIntensity } from "./musicScore.js";
 import { weaponPresentation } from "./weaponPresentation.js";
 import { WEAPONS } from "./gameData.js";
+import { resourceURL } from "./resourceURLs.js";
+import { backgroundYield } from "./resourceVersion.js";
 
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 const MASTER_GAIN = .52;
@@ -8,7 +10,6 @@ const VOICE_LIMIT = 48;
 const CONTINUOUS_LIMIT = 40;
 const MUSIC_PRIORITY = 34;
 export const MUSIC_PROGRAM_GAIN = 4.2;
-export const MUSIC_ASSET_REVISION = "orchestra-2";
 
 export const AUDIO_EVENTS = Object.freeze([
   "uiHover", "uiConfirm", "uiBack", "uiInvalid", "weaponSelect", "pause", "resume",
@@ -157,8 +158,18 @@ export class SoundBoard {
     }
     this.audioAssetPromise = new Promise((resolve, reject) => {
       const worker = this.audioAssetWorker = new Worker(new URL("./audioAssets.worker.js", import.meta.url), { type: "module" });
+      const timeout = setTimeout(() => {
+        this.lifecycleTimers.delete(timeout);
+        worker.terminate();
+        if (worker === this.audioAssetWorker) this.audioAssetWorker = null;
+        reject(new Error("Sound preparation timed out"));
+      }, 60000);
+      this.lifecycleTimers.add(timeout);
       worker.onmessage = ({ data }) => {
+        clearTimeout(timeout);
+        this.lifecycleTimers.delete(timeout);
         if (this.disposed || worker !== this.audioAssetWorker) return resolve(false);
+        if (data.error) return worker.onerror(new Error("Sound generation failed"));
         this.audioAssetData = data;
         worker.terminate();
         this.audioAssetWorker = null;
@@ -166,6 +177,8 @@ export class SoundBoard {
         resolve(true);
       };
       worker.onerror = (error) => {
+        clearTimeout(timeout);
+        this.lifecycleTimers.delete(timeout);
         if (worker === this.audioAssetWorker) this.audioAssetWorker = null;
         worker.terminate();
         reject(error);
@@ -175,6 +188,33 @@ export class SoundBoard {
     return this.audioAssetPromise;
   }
 
+  async prepareResources(report = () => {}) {
+    const generated = await this.prefetchAudioAssets();
+    if (!generated) { this.audioAssetPromise = null; throw new Error("Sound generation incomplete"); }
+    // A suspended context can decode and own buffers before playback is unlocked.
+    // resume() remains tied to normal menu interaction for audible playback.
+    if (!this.context) {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return;
+      this.context = new AudioContext();
+      this._buildMixer();
+    }
+    this._hydrateAudioAssets();
+    const names = Object.keys(this.sampleBank);
+    for (let index = 0; index < names.length; index++) {
+      void this.sampleBank[names[index]];
+      if (index % 8 === 0) { report(index, names.length); await backgroundYield(); }
+    }
+    report(names.length, names.length);
+    await this._loadMusicSamples();
+    const complete = Object.entries(MUSIC_SAMPLE_MANIFEST).every(([name, asset]) => this.musicSamples[name]?.length === asset.files.length);
+    if (!complete) {
+      this.musicSamplePromise = null;
+      this.musicSamples = {};
+      throw new Error("Music preparation incomplete");
+    }
+  }
+
   async _prepareAudioAssetsFallback() {
     if (this.disposed) return false;
     try {
@@ -182,9 +222,13 @@ export class SoundBoard {
       if (this.disposed) return false;
       const sampleRate = 48000;
       const assets = {
-        ...createProceduralAudioAssets(sampleRate),
-        ...createWeaponAudioAssets(sampleRate, Object.values(WEAPONS), WEAPON_AUDIO_IDENTITIES)
+        ...createProceduralAudioAssets(sampleRate)
       };
+      for (const weapon of Object.values(WEAPONS)) {
+        await backgroundYield();
+        if (this.disposed) return false;
+        Object.assign(assets, createWeaponAudioAssets(sampleRate, [weapon], WEAPON_AUDIO_IDENTITIES));
+      }
       if (this.disposed) return false;
       this.audioAssetData = { sampleRate, entries: Object.entries(assets) };
       this._hydrateAudioAssets();
@@ -357,8 +401,7 @@ export class SoundBoard {
 
   _musicFileData(file, { retry = false, signal } = {}) {
     if (!retry && this.musicFileData.has(file.url)) return this.musicFileData.get(file.url);
-    const separator = file.url.includes("?") ? "&" : "?";
-    const pending = fetch(`${file.url}${separator}bank=${MUSIC_ASSET_REVISION}`, { cache: retry ? "reload" : "force-cache", signal })
+    const pending = fetch(resourceURL(file.url), { cache: retry ? "reload" : "force-cache", signal })
       .then((response) => {
         if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
         return response.arrayBuffer();

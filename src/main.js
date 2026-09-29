@@ -19,6 +19,9 @@ import { createGrappleRopeGeometry, updateGrappleRopeGeometry } from "./grappleR
 import TEXT, { formatText } from "./playerText.js";
 import { GlobalMultiplayer } from "./globalMultiplayer.js";
 import { aimedHeadContact, headContact, headshotDamage, projectileHitRadius } from "./headshots.js";
+import { prepareSurfaceTextures, sharedSurfaceTextures, surfaceMaps } from "./surfaceTextures.js";
+import { backgroundYield } from "./resourceVersion.js";
+import { preparationProgress } from "./resourceProgress.js";
 
 const canvas = document.querySelector("#game-canvas");
 const ui = document.querySelector("#ui-root");
@@ -293,12 +296,6 @@ class BlasterBattle {
     this.renderMain();
     performance.mark?.("blaster-engine-ready");
     performance.measure?.("blaster-shell-to-engine", "blaster-shell-visible", "blaster-engine-ready");
-    const prefetchAudio = () => {
-      this.sound.prefetchAudioAssets?.();
-      this.sound.prefetchMusic?.();
-    };
-    if ("requestIdleCallback" in window) requestIdleCallback(prefetchAudio, { timeout: 1800 });
-    else setTimeout(prefetchAudio, 400);
     this.resize(true);
     addEventListener("resize", () => this.resize());
     addEventListener("blur", () => {
@@ -534,6 +531,7 @@ class BlasterBattle {
   }
 
   clearMatch(preserveNetwork = false) {
+    this.resourceLaunchToken = null;
     this.renderPipeline?.motionBlur?.reset();
     this.hideMatchLoadingAfterFrame = false;
     this.matchStartQueued = false;
@@ -1571,6 +1569,7 @@ class BlasterBattle {
     if (!welcomeOverride && !loadingPainted) return this.queueMatchStart(false);
     this.globalMultiplayer?.clearCountdown();
     this.clearMatch(Boolean(welcomeOverride));
+    const resourceLaunchToken = this.resourceLaunchToken = {};
     this.state = "loading";
     if (welcomeOverride) this.setMatchLoading(true, this.seed, false);
     let welcome = welcomeOverride;
@@ -1588,6 +1587,19 @@ class BlasterBattle {
       }
     }
     if (["lobby", "countdown"].includes(welcome?.phase)) return this.renderPrivateLobby(welcome);
+    if (this.resourceLaunchToken !== resourceLaunchToken) return;
+    try {
+      await this.prepareResources();
+      await prepareSurfaceTextures([this.seed]);
+    } catch (error) {
+      if (this.resourceLaunchToken !== resourceLaunchToken) return;
+      this.setMatchLoading(false);
+      this.renderMain();
+      preparationProgress("failed");
+      console.warn("Match resource preparation incomplete", error);
+      return;
+    }
+    if (this.resourceLaunchToken !== resourceLaunchToken) return;
     this.state = "play";
     this.paused = false;
     this.matchTime = welcome
@@ -2176,6 +2188,7 @@ class BlasterBattle {
   }
 
   frame(time) {
+    if (this.preparingGraphics) return;
     this.commitResize();
     this.timer.update(time);
     const rawDt = Math.min(.25, this.timer.getDelta());
@@ -3903,6 +3916,39 @@ class BlasterBattle {
     this.world?.updatePresentation(this.camera, this.settings.reducedMotion);
     this.renderPipeline.render();
     return true;
+  }
+
+  prepareResources() {
+    this.resourcePreparation ||= (async () => {
+      const seeds = [...new Set([TEXT.loading.defaultSeed, ...Object.values(this.settings.matchSettings).map(settings => settings.seed)])];
+      preparationProgress("textures");
+      await prepareSurfaceTextures(seeds, (done, total) => preparationProgress("textures", done, total));
+      preparationProgress("audio");
+      await this.sound.prepareResources((done, total) => preparationProgress("audio", done, total));
+      preparationProgress("graphics");
+      for (const texture of sharedSurfaceTextures()) {
+        this.renderer.initTexture(texture);
+        await backgroundYield();
+      }
+      // Keep this small receiver alive so compiled material and shadow resources
+      // survive preparation. It is hidden before gameplay; match-specific shader
+      // variants still use the existing first-frame gate.
+      this.preparingGraphics = true;
+      try {
+        this.resourceWarmupMesh ||= new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1),
+          new THREE.MeshStandardNodeMaterial({ ...surfaceMaps() }));
+        this.resourceWarmupMesh.receiveShadow = this.resourceWarmupMesh.castShadow = true;
+        this.resourceWarmupMesh.visible = true;
+        this.scene.add(this.resourceWarmupMesh);
+        this.renderPipeline.render();
+        await this.renderer.backend.device?.queue.onSubmittedWorkDone();
+      } finally {
+        if (this.resourceWarmupMesh) this.resourceWarmupMesh.visible = false;
+        this.preparingGraphics = false;
+      }
+      performance.mark?.("blaster-resources-ready");
+    })().catch(error => { this.resourcePreparation = null; throw error; });
+    return this.resourcePreparation;
   }
 
   removeProjectile(index) {

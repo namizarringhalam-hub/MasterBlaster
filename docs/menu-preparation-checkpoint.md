@@ -1,0 +1,15 @@
+# Menu-first resource preparation
+
+Authorized: implement menu-first background preparation, progress, automatic resource freshness; validate, commit and push to origin/main.
+
+Design: wait for the complete menu (including fonts/art) and a paint before engine imports or generated work. Content-address public files and build a SHA-256 release manifest covering runtime chunks, workers, fonts, audio, images and shell. Keep a complete offline release separate from a partial download. Generated outputs are keyed by automatic source/dependency release hash plus inputs. Warm shared textures/audio/GPU resources while menus remain usable; retain the match-specific first-frame gate.
+
+Implemented: automatic release fingerprint and SHA-256 manifest; content-addressed public resources and self-hosted fonts; menu load/font/paint gate; background progress/retry/update UI; atomic complete offline release; generated texture worker and version/input-keyed IndexedDB store; eager sound decoding and shared GPU warmup; match preparation/cancellation gate.
+
+Verified: all 30 Node checks and 20 Worker tests pass; final production build/hosting checks pass (boot <12 KiB gzip). Regression coverage includes release integrity, corrupt download repair, partial-update fallback, old-tab rollback prevention, offline navigation, quota failures, menu/font/paint ordering, generated version/input invalidation, generated corruption repair, texture equivalence, and launch cancellation/failure. Existing assertions and harnesses now reflect deferred audio and automatic hashes. Worker tooling emitted its existing sandbox static-analysis warnings while executing all tests successfully.
+
+Live production browser: home reaches Shared resources ready / Available offline with no console errors; Settings and Training navigation work. Stopped only the owned localhost server; reloaded the game offline and launched a real Training match with working HUD, countdown, bots and pause, with no console errors. Restarted the owned server with subsequent builds and verified the new home reaches ready. Preview saved outside the repository in the chat's visualization directory.
+
+Review corrections: versioned CSS artwork and PWA manifest as well as JS/audio/fonts; serialized release promotion so old tabs cannot replace a newer offline release; bounded generated disk/memory entries; generation-worker error and timeout fallback; sound timeout cleanup on disposal. Match-specific arena geometry and shader variants remain behind the existing first-frame gate. No claim of universally higher sustained FPS or zero startup work.
+
+Implementation and validation complete. Final production build passes after excluding deployment-only metadata from the download inventory. Final home preview verified. Publication: commit this request's files and push origin/main; the publishing commit is identifiable in Git history as "Prepare versioned game resources after the home menu loads". No unexplained stopped process or lost test session counted as passing.
