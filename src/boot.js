@@ -73,7 +73,7 @@ async function saveRelease() {
       armTimeout();
       if (data.type === "progress") preparationProgress("downloading", data.complete, data.total);
       if (data.type === "complete") finish(null, data.persistent);
-      if (data.type === "failed") finish(new Error("Resource preparation incomplete"));
+      if (data.type === "failed") finish(new Error(data.error || "Resource download incomplete"));
     };
     armTimeout();
     ready.active.postMessage({ type: "PREPARE_RELEASE", version: RESOURCE_VERSION }, [channel.port2]);
@@ -103,7 +103,7 @@ function prepare() {
     preparationProgress("ready", 1, 1,
       persistent ? TEXT.boot.preparation.offline : TEXT.boot.preparation.temporary);
   })().catch(error => {
-    preparationProgress(updateAvailable ? "update" : "failed");
+    preparationProgress(updateAvailable ? "update" : "failed", 0, 0, error.message);
     console.warn("Background resource preparation incomplete", error);
     preparation = null;
   });

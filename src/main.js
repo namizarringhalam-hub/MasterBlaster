@@ -1583,7 +1583,7 @@ class BlasterBattle {
       if (this.resourceLaunchToken !== resourceLaunchToken) return;
       this.setMatchLoading(false);
       this.renderMain();
-      preparationProgress("failed");
+      preparationProgress("failed", 0, 0, error.message);
       console.warn("Match resource preparation incomplete", error);
       return;
     }
@@ -1678,7 +1678,7 @@ class BlasterBattle {
       if (!valid()) return;
       this.setMatchLoading(false);
       this.renderMain();
-      preparationProgress("failed");
+      preparationProgress("failed", 0, 0, error.message);
       console.warn("Gameplay GPU preparation incomplete", error);
       return;
     } finally {
@@ -3933,7 +3933,7 @@ class BlasterBattle {
     this.menuPreparationPipeline = this.renderPipeline;
     this.prepareGameplayResources(seed).catch(error => {
       console.warn("Background gameplay preparation incomplete", error);
-      preparationProgress("failed");
+      preparationProgress("failed", 0, 0, error.message);
     });
   }
 

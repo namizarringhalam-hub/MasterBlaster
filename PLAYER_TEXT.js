@@ -78,7 +78,7 @@ export const PLAYER_TEXT = {
       ready: "Shared resources ready",
       offline: "Available offline",
       temporary: "Ready for this visit · offline storage unavailable",
-      failed: "Preparation incomplete · retry when connected",
+      failed: "Preparation incomplete · retry",
       update: "Update available · reload from the home menu",
       retry: "Retry",
       reload: "Update",

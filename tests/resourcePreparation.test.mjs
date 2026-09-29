@@ -8,6 +8,7 @@ import { prepareSurfaceTextures, surfaceTextures } from "../src/surfaceTextures.
 const sha = data => createHash("sha256").update(data).digest("hex");
 const origin = "https://game.test", handlers = {}, stores = new Map(), network = new Map();
 let offline = false, quota = false, fetches = 0, navigationPolicy;
+const transientFailures = new Map();
 const key = request => typeof request === "string" ? request : request.url;
 const storage = {
   async open(name) {
@@ -27,6 +28,12 @@ vm.runInNewContext(await readFile("public/sw.js", "utf8"), {
     fetches++;
     if (options) navigationPolicy = options.cache;
     if (offline) throw Error("Offline");
+    if (transientFailures.has(key(request))) {
+      const failure = transientFailures.get(key(request));
+      transientFailures.delete(key(request));
+      if (failure === "network") throw Error("Connection reset");
+      return new Response("Temporarily unavailable", { status: 503 });
+    }
     return network.get(key(request))?.clone() || new Response("Missing", { status: 404 });
   }
 });
@@ -59,6 +66,17 @@ assert.equal(messages.at(-1).type, "complete");
 assert.equal(messages.at(-1).persistent, true);
 assert.equal(await active(), first.version);
 assert.equal(messages.at(-1).complete, messages.at(-1).total);
+const manifestURL = `${origin}/resources-${first.version}.json`;
+for (const body of ["broken JSON", JSON.stringify({ version: "wrong", entries: [] })]) {
+  await (await storage.open("blaster-immutable-v1")).put(manifestURL, new Response(body, { headers: { "content-type": "application/json" } }));
+  assert.equal((await prepare(first.version)).at(-1).type, "complete", "reload repairs corrupt cached release metadata without a manual retry");
+}
+for (const failure of ["network", "http"]) {
+  const url = origin + first.entries[1].url;
+  await (await storage.open("blaster-immutable-v1")).delete(url);
+  transientFailures.set(url, failure);
+  assert.equal((await prepare(first.version)).at(-1).type, "complete", `${failure}: transient download failures retry automatically`);
+}
 offline = true;
 const before = fetches;
 assert.equal((await prepare(first.version)).at(-1).type, "complete");
@@ -71,7 +89,9 @@ handlers.fetch({ request: { url: origin + "/", method: "GET", mode: "navigate" }
 assert.match(await (await refreshed).text(), new RegExp(second.version), "refresh selects the new release without an update button, even with an older offline shell");
 assert.equal(navigationPolicy, "no-cache", "navigation revalidates the HTTP cache before selecting resources");
 const saved = network.get(missing); network.delete(missing);
-assert.equal((await prepare(second.version)).at(-1).type, "failed");
+const missingResult = (await prepare(second.version)).at(-1);
+assert.equal(missingResult.type, "failed");
+assert.match(missingResult.error, /font.ttf: Download failed \(HTTP 404\)/, "the actual failed file and status survive worker error reporting");
 assert.equal(await active(), first.version, "an interrupted update preserves the complete offline release");
 network.set(missing, saved);
 await (await storage.open("blaster-immutable-v1")).put(origin + second.entries[1].url, new Response("stale", { headers: { "content-type": "text/javascript" } }));
@@ -135,12 +155,12 @@ for (const [stage, hidden, retryHidden] of [["ready", true, true], ["checking", 
 // A newer deployment during an open session must not resurrect a completed bar.
 // Only a failed preparation exposes recovery, and reconnect retries automatically.
 for (const fail of [false, true]) {
-  const stages = [], events = {};
+  const stages = [], details = [], events = {};
   let attempts = 0;
   const context = vm.createContext({
     console: { warn() {} }, setTimeout, clearTimeout, AbortSignal,
     RESOURCE_VERSION: first.version, TEXT: { boot: { preparation: {} } },
-    preparationProgress: stage => stages.push(stage), backgroundYield: async () => {},
+    preparationProgress: (stage, _done, _total, detail) => { stages.push(stage); details.push(detail); }, backgroundYield: async () => {},
     performance: { now: () => 0 }, navigator: {},
     requestAnimationFrame: callback => setImmediate(callback),
     document: { readyState: "complete", querySelector: selector => selector === "#ui-root" ? menu : null },
@@ -151,6 +171,7 @@ for (const fail of [false, true]) {
   vm.runInContext(boot, context);
   await vm.runInContext("prepare()", context);
   assert.equal(stages.at(-1), fail ? "update" : "ready");
+  if (fail) assert.equal(details.at(-1), "Preparation failed", "the UI explains the real failure instead of guessing connectivity");
   events.online();
   await vm.runInContext("prepare()", context);
   assert.equal(stages.at(-1), "ready", "successful preparation stays complete after reconnect");

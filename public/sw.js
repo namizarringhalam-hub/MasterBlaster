@@ -118,13 +118,23 @@ async function prepareRelease(version, report) {
   let persistent = true, staging;
   try {
     const manifestRequest = new Request(`${self.location.origin}/resources-${version}.json`);
-    const loaded = await loadAsset(manifestRequest);
-    if (!loaded.response.ok) throw new Error("Release manifest unavailable");
-    const manifest = await loaded.response.clone().json();
-    if (manifest.version !== version || !Array.isArray(manifest.entries) || !manifest.entries.length) throw new Error("Invalid release manifest");
+    let manifestResponse, manifest;
+    // Repair cached metadata as well as resource bytes. Never retry a broken
+    // entry from the same cache, and bound recovery to one fresh download.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        if (attempt) report({ type: "progress", complete: 0, total: 0 });
+        const request = new Request(manifestRequest, { cache: attempt ? "reload" : "default", signal: AbortSignal.timeout(45000) });
+        manifestResponse = (await loadAsset(request)).response;
+        if (!manifestResponse.ok) throw new Error(`Release manifest unavailable (HTTP ${manifestResponse.status})`);
+        manifest = await manifestResponse.clone().json();
+        if (manifest.version !== version || !Array.isArray(manifest.entries) || !manifest.entries.length) throw new Error("Invalid release manifest");
+        break;
+      } catch (error) { if (attempt) throw error; }
+    }
     try {
       staging = await caches.open(`blaster-release-${version}`);
-      await (await caches.open(IMMUTABLE_CACHE)).put(manifestRequest, loaded.response.clone());
+      await (await caches.open(IMMUTABLE_CACHE)).put(manifestRequest, manifestResponse.clone());
     } catch { persistent = false; }
     let complete = 0;
     const total = manifest.entries.reduce((sum, entry) => sum + entry.bytes, 0);
@@ -135,15 +145,21 @@ async function prepareRelease(version, report) {
       while (queue.length) {
         const entry = queue.shift();
         if (!entry.url.startsWith("/") || entry.url.startsWith("//") || !/^[a-f0-9]{64}$/.test(entry.sha256)) throw new Error("Invalid resource entry");
-        const request = new Request(`${self.location.origin}${entry.url}`, { signal: AbortSignal.timeout(45000) });
-        let response = isImmutable(request) ? (await loadAsset(request)).response
-          : await staging?.match(request) || await fetch(new Request(request, { cache: "reload" }));
-        if (!response.ok) throw new Error("Resource unavailable");
-        let bytes = await response.clone().arrayBuffer();
-        if (bytes.byteLength !== entry.bytes || await digest(bytes) !== entry.sha256) {
-          response = await fetch(new Request(request, { cache: "reload" }));
-          bytes = await response.clone().arrayBuffer();
-          if (!response.ok || bytes.byteLength !== entry.bytes || await digest(bytes) !== entry.sha256) throw new Error("Resource version mismatch");
+        const request = new Request(`${self.location.origin}${entry.url}`);
+        let response;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            if (attempt) report({ type: "progress", complete, total });
+            const download = new Request(request, { cache: attempt ? "reload" : "default", signal: AbortSignal.timeout(45000) });
+            response = attempt ? await fetch(download) : isImmutable(request) ? (await loadAsset(download)).response
+              : await staging?.match(request) || await fetch(new Request(download, { cache: "reload" }));
+            if (!response.ok) throw new Error(`Download failed (HTTP ${response.status})`);
+            const bytes = await response.clone().arrayBuffer();
+            if (bytes.byteLength !== entry.bytes || await digest(bytes) !== entry.sha256) throw new Error("Resource version mismatch");
+            break;
+          } catch (error) {
+            if (attempt) throw new Error(`${entry.url.split("/").pop()}: ${error.message}`);
+          }
         }
         try {
           const target = isImmutable(request) ? await caches.open(IMMUTABLE_CACHE) : staging;
@@ -155,7 +171,8 @@ async function prepareRelease(version, report) {
       }
     }
     const results = await Promise.allSettled([save(), save()]);
-    if (results.some(result => result.status === "rejected")) throw new Error("Incomplete release");
+    const failure = results.find(result => result.status === "rejected");
+    if (failure) throw failure.reason;
     if (!manifest.entries.some(entry => entry.url === "/index.html")) throw new Error("Missing release shell");
     if (persistent) {
       try {
@@ -175,5 +192,5 @@ async function prepareRelease(version, report) {
       } catch { persistent = false; }
     }
     report({ type: "complete", persistent, complete, total });
-  } catch { report({ type: "failed" }); }
+  } catch (error) { report({ type: "failed", error: error.message || "Resource download incomplete" }); }
 }
