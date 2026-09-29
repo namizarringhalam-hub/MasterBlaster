@@ -120,6 +120,10 @@ export class InputManager {
         event.preventDefault();
         return;
       }
+    });
+    // Mouse events report each button independently, including chorded presses/releases.
+    canvas.addEventListener("mousedown", (event) => {
+      if (!this.shouldCapture()) return;
       if (document.pointerLockElement !== canvas) {
         canvas.requestPointerLock?.();
         event.preventDefault();
@@ -141,6 +145,8 @@ export class InputManager {
         event.preventDefault();
         return;
       }
+    });
+    addEventListener("mouseup", (event) => {
       if (event.button === 0) this.mouse.left = false;
       if (event.button === 2) this.mouse.right = false;
     });

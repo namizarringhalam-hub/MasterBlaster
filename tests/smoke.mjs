@@ -566,14 +566,44 @@ const desktopCanvas = {
   requestPointerLock() { lockRequests++; }
 };
 const desktopInput = new InputManager(desktopCanvas);
-canvasListeners.pointerdown({ pointerType: "mouse", button: 0, preventDefault() {} });
+canvasListeners.mousedown({ button: 0, preventDefault() {} });
 assert.equal(lockRequests, 1, "the first gameplay click requests mouse capture");
 assert.equal(desktopInput.mouse.left, false, "the click used to capture the mouse is consumed instead of firing");
 assert.equal(desktopInput.tapped("MouseLeft"), false, "the capture click never queues a projectile shot");
 globalThis.document.pointerLockElement = desktopCanvas;
-canvasListeners.pointerdown({ pointerType: "mouse", button: 0, preventDefault() {} });
+canvasListeners.mousedown({ button: 0, preventDefault() {} });
 assert.equal(desktopInput.mouse.left, true, "left click fires normally after mouse capture is active");
 assert.equal(desktopInput.tapped("MouseLeft"), true, "captured clicks still queue normal weapon input");
+windowListeners.mouseup({ button: 0 });
+desktopInput.endFrame();
+for (const first of [0, 2]) {
+  const second = first === 0 ? 2 : 0;
+  for (const released of [first, second]) {
+    const held = released === 0 ? 2 : 0;
+    const side = (button) => button === 0 ? "left" : "right";
+    const action = (button) => button === 0 ? "MouseLeft" : "MouseRight";
+    // Browsers emit pointerdown only for the first button and pointerup only for the last.
+    canvasListeners.pointerdown({ pointerType: "mouse", button: first, preventDefault() {} });
+    canvasListeners.mousedown({ button: first, preventDefault() {} });
+    desktopInput.endFrame();
+    canvasListeners.mousedown({ button: second, preventDefault() {} });
+    assert.equal(desktopInput.mouse.left, true, "firing/charging stays held alongside grapple");
+    assert.equal(desktopInput.mouse.right, true, "grapple stays held alongside firing/charging");
+    assert.equal(desktopInput.tapped(action(second)), true, "the second button queues its action independently");
+    assert.equal(desktopInput.tapped(action(first)), false, "the second press does not repeat the first action");
+    windowListeners.mouseup({ button: released });
+    assert.equal(desktopInput.mouse[side(released)], false, "either button releases while the other stays down");
+    assert.equal(desktopInput.mouse[side(held)], true, "releasing one button preserves the other");
+    desktopInput.endFrame();
+    canvasListeners.mousedown({ button: released, preventDefault() {} });
+    assert.equal(desktopInput.tapped(action(released)), true, "a button can be pressed again while the other stays held");
+    windowListeners.mouseup({ button: released });
+    windowListeners.pointerup({ pointerType: "mouse", button: held });
+    windowListeners.mouseup({ button: held });
+    assert.equal(desktopInput.mouse.left || desktopInput.mouse.right, false, "neither button sticks after release");
+    desktopInput.endFrame();
+  }
+}
 if (previousAddEventListener) globalThis.addEventListener = previousAddEventListener;
 else delete globalThis.addEventListener;
 if (previousDocument) globalThis.document = previousDocument;
