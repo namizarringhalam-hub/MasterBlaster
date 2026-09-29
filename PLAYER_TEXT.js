@@ -60,6 +60,7 @@ export const PLAYER_TEXT = {
     connectionRequired: "Connect to the global lobby before joining a round.", roundUnavailable: "This round is no longer available. Choose another round.",
     connectionLost: "Connection interrupted. Reconnecting…", joinFailed: "Could not join. The round may be full or already starting. Please try another round.",
     favorite: "Mark {name} as a favorite", unfavorite: "Unmark {name} as a favorite", favoritesNote: "Star friends to show them first on this browser.",
+    favoriteSymbol: "☆", unfavoriteSymbol: "★",
     statuses: { lobby: "In the lobby", countdown: "Starting a round", playing: "Playing", waiting: "Waiting in a round" }
   },
 
@@ -158,6 +159,9 @@ export const PLAYER_TEXT = {
       moveLeftAria: "Move {weapon} left",
       moveRightAria: "Move {weapon} right",
       removeAria: "Remove {weapon}",
+      moveLeft: "‹",
+      moveRight: "›",
+      remove: "×",
       full: "All five weapon slots are full.",
       removed: "{weapon} removed.",
       added: "{weapon} added to slot {slot}.",
@@ -305,6 +309,7 @@ export const PLAYER_TEXT = {
     measuringFramePace: "MEASURING FRAME PACE",
     performance: "{fps} FPS · {draws} DRAWS · {fighters} FIGHTERS · {mode} · {seconds}/60 SEC",
     pauseAria: "Pause",
+    pauseSymbol: "Ⅱ",
     matchType: "Deathmatch",
     touchControlsAria: "Touch controls",
     swap: "SWAP",
@@ -317,6 +322,7 @@ export const PLAYER_TEXT = {
     fireAria: "Fire weapon",
     impact: "impact",
     health: "Health",
+    healthValue: "{health} HP",
     eliminatedBy: "ELIMINATED BY {name}",
     environment: "THE ARENA",
     respawningIn: "RESPAWNING IN {seconds}",
@@ -352,6 +358,7 @@ export const PLAYER_TEXT = {
     title: "Take a breath.",
     resume: "RESUME",
     controls: "CONTROLS",
+    graphics: "Graphics",
     restart: "RESTART MATCH",
     mainMenu: "MAIN MENU"
   },

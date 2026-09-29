@@ -724,7 +724,7 @@ class BlasterBattle {
           <p class="lobby-rules">${formatText(TEXT.privateLobby.matchRules, {
             minutes: this.privateLobby.timeLimitMinutes,
             bots: this.privateLobby.configuredBotCount,
-            difficulty: escapeHtml(this.privateLobby.difficulty || TEXT.setup.difficulties.normal)
+            difficulty: escapeHtml(TEXT.setup.difficulties[this.privateLobby.difficulty] || TEXT.setup.difficulties.normal)
           })}</p>
           <p class="lobby-wait">${isHost
             ? TEXT.privateLobby.hostReady
@@ -802,9 +802,9 @@ class BlasterBattle {
       return `<div class="loadout-slot ${weapon ? "" : "empty"} ${active ? "active" : ""}" draggable="${Boolean(weapon)}" data-loadout-drag="${index}" style="--category:${weapon ? WEAPON_CATEGORY_BY_ID[weapon.id].color : "#617b8d"}">
         <button class="slot-select" data-loadout-edit="${index}" aria-expanded="${active}" aria-label="${formatText(TEXT.setup.loadout.editSlot, { slot: index + 1, weapon: escapeHtml(name) })}"><span>${index + 1}</span><b>${escapeHtml(name)}</b></button>
         <div class="slot-actions" ${active && weapon ? "" : "hidden"}>
-          <button data-loadout-move="${index}" data-direction="-1" aria-label="${formatText(TEXT.setup.loadout.moveLeftAria, { weapon: escapeHtml(name) })}" ${index === 0 ? "disabled" : ""}>‹</button>
-          <button data-loadout-move="${index}" data-direction="1" aria-label="${formatText(TEXT.setup.loadout.moveRightAria, { weapon: escapeHtml(name) })}" ${index >= loadout.length - 1 ? "disabled" : ""}>›</button>
-          <button data-loadout-remove="${index}" aria-label="${formatText(TEXT.setup.loadout.removeAria, { weapon: escapeHtml(name) })}">×</button>
+          <button data-loadout-move="${index}" data-direction="-1" aria-label="${formatText(TEXT.setup.loadout.moveLeftAria, { weapon: escapeHtml(name) })}" ${index === 0 ? "disabled" : ""}>${TEXT.setup.loadout.moveLeft}</button>
+          <button data-loadout-move="${index}" data-direction="1" aria-label="${formatText(TEXT.setup.loadout.moveRightAria, { weapon: escapeHtml(name) })}" ${index >= loadout.length - 1 ? "disabled" : ""}>${TEXT.setup.loadout.moveRight}</button>
+          <button data-loadout-remove="${index}" aria-label="${formatText(TEXT.setup.loadout.removeAria, { weapon: escapeHtml(name) })}">${TEXT.setup.loadout.remove}</button>
         </div>
       </div>`;
     }).join("");
@@ -1943,7 +1943,7 @@ class BlasterBattle {
         <section class="combatant left">
           <div><b>${escapeHtml(this.players[0].name)}</b><span data-score="0">0</span></div>
           <div class="health" data-health-meter role="progressbar" aria-label="${TEXT.hud.health}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><i data-health="0"></i></div>
-          <small class="health-value" data-health-value>100 HP</small>
+          <small class="health-value" data-health-value>${formatText(TEXT.hud.healthValue, { health: 100 })}</small>
         </section>
         <section class="match-state">
           <small>${escapeHtml(this.world.theme.name)} · ${TEXT.setup.modes[this.mode].tag} · ${escapeHtml(this.seed)}</small>
@@ -1979,7 +1979,7 @@ class BlasterBattle {
         </div>
         <div class="grapple-readout" data-grapple>${this.coarsePointer ? TEXT.hud.grappleReadyTouch : TEXT.hud.grappleReadyDesktop}</div>
         <div class="perf-readout" data-perf>${TEXT.hud.measuringFramePace}</div>
-        <button class="pause" data-action="pause" aria-label="${TEXT.hud.pauseAria}">Ⅱ</button>
+        <button class="pause" data-action="pause" aria-label="${TEXT.hud.pauseAria}">${TEXT.hud.pauseSymbol}</button>
         <div class="scoreboard" data-scoreboard>
           <h2>${TEXT.hud.matchType}</h2>
           <div class="score-list">
@@ -2097,7 +2097,7 @@ class BlasterBattle {
           <p>${TEXT.pause.section}</p><h1 id="pause-title">${TEXT.pause.title}</h1>
           <button class="primary" data-action="pause" autofocus>${TEXT.pause.resume}</button>
           <button data-action="controls">${TEXT.pause.controls}</button>
-          <button data-action="graphics-settings">${TEXT.settings.graphicsPanel.title}</button>
+          <button data-action="graphics-settings">${TEXT.pause.graphics}</button>
           ${this.trainingControlsMarkup()}
           ${this.mode === "global" ? `<button data-global="leave">${TEXT.globalLobby.back}</button>` : `<button data-action="rematch">${TEXT.pause.restart}</button>`}
           <button data-screen="main">${TEXT.pause.mainMenu}</button>
@@ -3736,7 +3736,7 @@ class BlasterBattle {
     if (this.hud.root.dataset.playerState !== actionState) this.hud.root.dataset.playerState = actionState;
     setStyle(this.hud.health, "width", `${player.health}%`);
     const roundedHealth = Math.round(clamp(player.health, 0, 100));
-    setText(this.hud.healthValue, `${roundedHealth} HP`);
+    setText(this.hud.healthValue, formatText(TEXT.hud.healthValue, { health: roundedHealth }));
     if (this.hud.healthMeter.getAttribute("aria-valuenow") !== String(roundedHealth)) this.hud.healthMeter.setAttribute("aria-valuenow", String(roundedHealth));
     setText(this.hud.score, this.scores[0]);
     let rankingChanged = false;

@@ -98,7 +98,7 @@ export class GlobalMultiplayer {
     const sorted = [...players].sort((a, b) => Number(this.favorites.has(b.id)) - Number(this.favorites.has(a.id)) || a.name.localeCompare(b.name));
     this.ui.querySelector("[data-global-players]").innerHTML = sorted.map((player) => {
       const favorite = this.favorites.has(player.id), room = rooms.find((entry) => entry.roomCode === player.roomCode);
-      return `<div class="global-person"><button class="global-star" data-global-favorite="${esc(player.id)}" aria-pressed="${favorite}" aria-label="${esc(formatText(favorite ? copy.unfavorite : copy.favorite, { name: player.name }))}">${favorite ? "★" : "☆"}</button><div><b>${esc(player.name)}${player.id === this.directory?.playerId ? ` <span>${copy.you}</span>` : ""}</b><small>${player.roomCode && player.status === "lobby" ? copy.statuses.waiting : copy.statuses[player.status] || copy.statuses.lobby}</small></div>${room ? join(room) : ""}</div>`;
+      return `<div class="global-person"><button class="global-star" data-global-favorite="${esc(player.id)}" aria-pressed="${favorite}" aria-label="${esc(formatText(favorite ? copy.unfavorite : copy.favorite, { name: player.name }))}">${favorite ? copy.unfavoriteSymbol : copy.favoriteSymbol}</button><div><b>${esc(player.name)}${player.id === this.directory?.playerId ? ` <span>${copy.you}</span>` : ""}</b><small>${player.roomCode && player.status === "lobby" ? copy.statuses.waiting : copy.statuses[player.status] || copy.statuses.lobby}</small></div>${room ? join(room) : ""}</div>`;
     }).join("");
   }
 
