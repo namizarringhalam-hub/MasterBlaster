@@ -30,8 +30,8 @@ export const PLAYER_TEXT = {
       private: { label: "PRIVATE ROOM", description: "Bring friends. Break everything." },
       global: { label: "GLOBAL MULTIPLAYER", description: "Find open rounds. See who’s online." },
       training: { label: "TRAINING", description: "Test 47 weapons on up to 15 bots" },
-      settings: "Settings",
-      credits: "Credits"
+      settings: "SETTINGS",
+      credits: "CREDITS"
     },
     features: [
       { number: "01", title: "GRAPPLE ANYTHING", description: "Walls. Floors. Towers. If you can hit it, hook it." },
@@ -358,7 +358,7 @@ export const PLAYER_TEXT = {
     title: "Take a breath.",
     resume: "RESUME",
     controls: "CONTROLS",
-    graphics: "Graphics",
+    graphics: "GRAPHICS",
     restart: "RESTART MATCH",
     mainMenu: "MAIN MENU"
   },
