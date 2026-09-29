@@ -24,6 +24,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 }
 
 #ui-root { position: fixed; inset: 0; pointer-events: none; }
+/* Menu artwork stays visible while gameplay resources render behind it. */
+body:has([data-menu-scene]) #game-canvas { visibility: hidden; }
 #ui-root button, #ui-root input, #ui-root select { pointer-events: auto; }
 
 .resource-progress { position: fixed; z-index: 20; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 12px; padding: max(7px, env(safe-area-inset-top)) 18px 9px; background: #07111df2; color: #b8d9e6; font-size: 11px; pointer-events: none; }

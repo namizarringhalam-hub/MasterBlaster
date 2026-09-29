@@ -36,6 +36,11 @@ Object.assign(game, {
   startMatchCountdown() { countdowns++; }, showRendererFailure() { failures++; }
 });
 game.frame(0);
+game.preparingMatch = true;
+game.frame(1);
+assert.equal(renders, 1, "fighter warmup cannot submit a visible gameplay frame");
+assert.equal(updates, 0, "fighter warmup cannot advance simulation");
+game.preparingMatch = false;
 for (let i = 0; i < 400; i++) game.frame(i * 16);
 assert.equal(renders, 1, "do not enqueue more GPU work while the first frame is pending");
 assert.equal(updates, 0); assert.equal(countdowns, 0); assert.equal(game.matchTime, 420);
@@ -66,6 +71,10 @@ Object.assign(game, { hideMatchLoadingAfterFrame: true, awaitingAudioGesture: tr
 game.resumeAudioAfterReload();
 assert.equal(audioStarts, 0, "an audio unlock gesture during GPU warmup cannot start the countdown");
 assert.equal(game.awaitingAudioGesture, false);
+game.hideMatchLoadingAfterFrame = false; game.preparingMatch = true;
+game.resumeAudioAfterReload();
+assert.equal(audioStarts, 0, "an audio unlock gesture during fighter preparation also waits");
+game.preparingMatch = false;
 let audioPaused;
 Object.assign(game, { mode: "global", world: { theme: { id: "test" } },
   sound: { startAmbience() {}, setMusicIntensity() {}, setMusicScene() {}, startMusic() {}, setPaused(value) { audioPaused = value; } }

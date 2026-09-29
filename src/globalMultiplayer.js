@@ -34,6 +34,7 @@ export class GlobalMultiplayer {
     this.game.mode = "global";
     this.game.state = "global";
     this.renderLobby();
+    this.game.queueGameplayPreparation(this.game.seed);
     if (this.directory?.connected) { this.updateLobby(); return; }
     this.directory?.close();
     const client = new MultiplayerClient();
@@ -142,6 +143,7 @@ export class GlobalMultiplayer {
     game.state = "lobby";
     game.paused = false;
     game.privateLobby = { ...(game.privateLobby || {}), ...message };
+    game.queueGameplayPreparation(game.seed);
     game.setMatchLoading(false);
     game.sound.setPaused(false); game.sound.setMusicScene("menu"); game.sound.startMusic("menu", game.seed);
     const local = message.players?.find((player) => player.id === game.multiplayer?.playerId);

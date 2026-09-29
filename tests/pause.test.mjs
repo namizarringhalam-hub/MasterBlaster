@@ -17,6 +17,7 @@ for (const mode of ["training", "quick", "private", "global"]) {
     mode, timeLimitMinutes: 3, settings: { botCount: 3 }, sound: {},
     clearMatch() { this.multiplayer = null; }, setMatchLoading() {},
     prepareResources: async () => {},
+    prepareGameplayResources: async () => {},
     connectOnlineMatch: async () => { connections++; return { phase: "lobby" }; },
     renderPrivateLobby: () => "online lobby",
     renderPipeline: { setHighLoadMode() { throw arenaReached; } }

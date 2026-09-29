@@ -1781,6 +1781,8 @@ export class ArenaWorld {
     const geometry = fractureShardGeometry();
     const debrisMaterial = material(0xffffff, 0, 1, { roughness: .7, metalness: .45 });
     const mesh = new THREE.InstancedMesh(geometry, debrisMaterial, count);
+    // Keep the first destruction's vertex-color shader layout warm as well.
+    mesh.setColorAt(0, new THREE.Color(0xffffff));
     mesh.count = 0;
     mesh.name = "Pooled structural scrap";
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);

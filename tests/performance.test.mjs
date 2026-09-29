@@ -356,7 +356,7 @@ assert.equal(mixedTierDecoy.mesh.userData.decoyRendered, false, "partial coverag
 decoyHarness.removeDecoy(mixedTierDecoy);
 assert.ok(decoyHarness.decoyRenderAnchor === currentTierDecoy.mesh);
 decoyHarness.clearTransientNetworkCombat();
-decoyHarness.clearMatch = new Function("clearTouchActions", `return (class {${clearMatchMethod}}).prototype.clearMatch;`)(() => {});
+decoyHarness.clearMatch = new Function("clearTouchActions", "disposeGameplaySamples", `return (class {${clearMatchMethod}}).prototype.clearMatch;`)(() => {}, () => {});
 Object.assign(decoyHarness, { input: { releasePointer() {} }, touch: {}, hideNetworkReconnecting() {},
   sound: { stopAll() {} }, players: [], botTargets: new Map(), networkTargets: new Map(), networkRespawnRequests: new Map() });
 decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
@@ -380,7 +380,7 @@ const menuMethod = new Function("ui", "TEXT", "menuAtmosphereMarkup", `return ({
 const frameSource = mainSource.slice(mainSource.indexOf("\n  frame(time) {"), mainSource.indexOf("\n  update(dt, realDt = dt) {"));
 const menuMarks = [], loaderCalls = [];
 const frameMethod = new Function("performance", `return ({${frameSource}}).frame;`)({ mark: name => menuMarks.push(name), measure: name => menuMarks.push(name) });
-Object.assign(decoyHarness, { settings: {}, bindUi() {}, commitResize() {},
+Object.assign(decoyHarness, { settings: {}, bindUi() {}, commitResize() {}, stopGameplayPreparation() {},
   timer: { update() {}, getDelta: () => 1 / 60 }, renderScene: () => true,
   loaderVisible: true, hideMatchLoadingAfterFrame: true,
   setMatchLoading(visible) { this.loaderVisible = visible; loaderCalls.push(visible); } });

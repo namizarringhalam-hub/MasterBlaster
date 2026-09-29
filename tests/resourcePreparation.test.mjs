@@ -171,6 +171,7 @@ const launch = Object.assign(Object.create(Game.prototype), {
   clearMatch() { this.resourceLaunchToken = null; }, setMatchLoading() {},
   renderMain() { menus++; },
   prepareResources: () => new Promise((resolve, reject) => { resolvePreparation = resolve; rejectPreparation = reject; }),
+  prepareGameplayResources: async () => {},
   renderPipeline: { setHighLoadMode() { builds++; throw Error("arena reached"); } }
 });
 const cancelled = launch.startMatch(null, true);
@@ -184,4 +185,7 @@ assert.equal(menus, 1); assert.equal(builds, 0, "failed preparation cannot enter
 const readyLaunch = launch.startMatch(null, true);
 resolvePreparation(); await assert.rejects(readyLaunch, /arena reached/);
 assert.equal(builds, 1);
+launch.seed = "OLD";
+launch.renderPrivateLobby = () => launch.seed;
+assert.equal(await launch.startMatch({ phase: "lobby", seed: "SERVER-SEED" }), "SERVER-SEED", "server seed changes replace the menu's prepared seed");
 console.log("Generated cache identity/repair/quota and match-preparation cancellation/failure checks passed.");

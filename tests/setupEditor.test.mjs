@@ -12,6 +12,7 @@ const Game = new Function(...Object.keys(bindings), `return ${controller}`)(...O
 const storage = new Map();
 globalThis.localStorage = { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
 const game = Object.create(Game.prototype);
+game.queueGameplayPreparation = () => {};
 game.settings = data.loadSettings();
 game.mode = "training";
 game.state = "menu";

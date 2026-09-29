@@ -1,0 +1,102 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gameplay GPU warmup checks</title><link rel="stylesheet" href="/src/styles.css">
+<div id="app"><canvas id="game-canvas"></canvas><div id="ui-root"></div></div>
+<div id="match-loading" hidden><span data-match-seed></span><span data-match-kind></span></div>
+<aside style="position:fixed;z-index:999;bottom:0;max-height:45vh;overflow:auto;background:#09131df2;color:white;padding:10px;font:12px monospace">
+<button id="run" disabled>Verify gameplay warmup</button><pre id="metrics">Loading engine</pre></aside>
+<script type="module">
+import { Vector3 } from 'three/webgpu';
+import { WEAPONS } from '../src/gameData.js';
+import { applyGraphicsPreset } from '../src/graphicsPresets.js';
+performance.mark('blaster-shell-visible');
+const metrics = document.querySelector('#metrics'), button = document.querySelector('#run'), errors = [], samples = [];
+addEventListener('error', event => errors.push(event.message));
+addEventListener('unhandledrejection', event => errors.push(String(event.reason)));
+const { gameReady } = await import('../src/main.js');
+const game = await gameReady;
+const quality = new URLSearchParams(location.search).get('quality') || 'high';
+const gl = game.renderer.backend.gl, debug = gl?.getExtension('WEBGL_debug_renderer_info');
+const adapter = debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : game.renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL';
+let phase = 'Ready', reused = false, renderCalls = 0, longestRenderMs = 0;
+const rebuild = game.rebuildRenderPipeline.bind(game);
+game.rebuildRenderPipeline = () => { rebuild(); instrument(); };
+function instrument() {
+  const pipeline = game.renderPipeline, render = pipeline.render.bind(pipeline);
+  pipeline.render = () => {
+    const started = performance.now();
+    try { return render(); } finally {
+      renderCalls++; longestRenderMs = Math.max(longestRenderMs, Math.round(performance.now() - started));
+    }
+  };
+}
+instrument();
+const report = () => metrics.textContent = JSON.stringify({ phase, backend: game.renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL', adapter, quality, direct: game.renderPipeline.direct, reused, renderCalls, longestRenderMs,
+  preparedWeapons: game.gameplayPreparation?.ready?.fighters.reduce((sum, fighter) => sum + fighter.weaponModels.size, 0), errors, samples }, null, 2);
+const reporting = setInterval(report, 1000);
+const assert = (condition, message) => { if (!condition) throw Error(message); };
+const within = promise => Promise.race([promise, new Promise((_, reject) => {
+  const timer = setTimeout(() => reject(Error('GPU preparation exceeded 120 seconds')), 120000);
+  promise.then(() => clearTimeout(timer), () => clearTimeout(timer));
+})]);
+const wait = predicate => new Promise((resolve, reject) => {
+  let frame;
+  const timeout = setTimeout(() => { cancelAnimationFrame(frame); reject(Error('Startup exceeded 120 seconds')); }, 120000);
+  const poll = () => { if (predicate()) { clearTimeout(timeout); resolve(); } else frame = requestAnimationFrame(poll); }; poll();
+});
+button.disabled = false; report();
+button.onclick = async () => {
+  button.disabled = true;
+  try {
+    game.settings.matchSettings.training.seed = 'GPU-WARMUP';
+    game.settings.matchSettings.training.botCount = 1;
+    game.settings.matchSettings.training.botsStandStill = true;
+    game.settings.matchSettings.training.botsDontAttack = true;
+    applyGraphicsPreset(game.settings, quality); game.applyGraphicsSettings();
+    phase = 'Preparing all weapons and arena in Training menu'; report();
+    game.renderSetup('training');
+    let started = performance.now();
+    const prepared = await within(game.gameplayPreparation.pending);
+    assert(prepared?.complete, 'Menu preparation did not complete');
+    assert(!game.world && prepared.world.time === 0 && prepared.visuals.effectTime === 0, 'Preparation advanced gameplay');
+    samples.push({ stage: 'Menu', milliseconds: Math.round(performance.now() - started), ...game.renderer.info.memory });
+    phase = 'Reusing prepared arena for match'; report();
+    game.setMatchLoading(true); started = performance.now();
+    await within(game.startMatch(null, true));
+    await wait(() => game.state === 'play' && !game.hideMatchLoadingAfterFrame);
+    reused = game.world === prepared.world && game.combatVisuals === prepared.visuals;
+    assert(reused, 'Launch discarded prepared arena or effects');
+    assert(game.players.every(player => player.health === 100 && player.weaponModels.size === new Set(player.loadout).size), 'Fighters not fully prepared');
+    samples.push({ stage: 'Launch', milliseconds: Math.round(performance.now() - started), ...game.renderer.info.memory });
+    game.togglePause();
+    const programs = game.renderer.info.memory.programs;
+    const impact = game.camera.getWorldDirection(new Vector3()).multiplyScalar(12).add(game.camera.position);
+    game.combatVisuals.impact(impact, WEAPONS.rocket_launcher, game.players[0], { size: 3, explosive: true });
+    game.combatVisuals.update(1 / 60);
+    game.renderScene();
+    await game.renderer.backend.device?.queue.onSubmittedWorkDone();
+    const explosionPrograms = game.renderer.info.memory.programs - programs;
+    samples.push({ stage: 'First explosion', newPrograms: explosionPrograms });
+    assert(explosionPrograms === 0, 'First explosion compiled an unwarmed shader');
+    phase = 'Refreshing changed seed and graphics'; report();
+    game.renderMain(); game.settings.matchSettings.training.seed = 'GPU-CHANGED'; game.renderSetup('training');
+    applyGraphicsPreset(game.settings, quality === 'low' ? 'low' : 'medium');
+    if (quality === 'low') game.settings.graphicsOptions.renderScale = .75;
+    game.applyGraphicsSettings();
+    const changed = await within(game.gameplayPreparation.pending);
+    assert(changed?.world.seed === 'GPU-CHANGED' && changed.complete, 'Changed seed did not refresh');
+    assert(changed.pipeline === game.renderPipeline && changed.pipeline !== prepared.pipeline, 'Changed render graph did not refresh');
+    samples.push({ stage: 'Refreshed', ...game.renderer.info.memory });
+    phase = 'Cancelling and cleaning up'; report();
+    game.renderMain();
+    game.renderSetup('quick'); game.renderMain();
+    if (game.gameplayPreparation.pending) await within(game.gameplayPreparation.pending);
+    assert(!game.gameplayPreparation.ready && !game.preparingGraphics, 'Cancelled work survived navigation');
+    assert(!game.scene.getObjectByName('Neon Parkour Arena') && !game.scene.getObjectByName('Combat visuals'), 'Cancelled GPU resources retained');
+    assert(!game.renderPipeline.direct, 'Render graph degraded during warmup');
+    assert(!errors.length, 'Browser reported errors');
+    phase = 'PASS';
+  } catch (error) { errors.push(String(error)); phase = 'FAIL'; game.renderMain(); }
+  clearInterval(reporting);
+  report();
+};
+</script>

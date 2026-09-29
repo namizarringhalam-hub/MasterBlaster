@@ -204,6 +204,34 @@ export class NeonRenderPipeline {
     } else pipeline.outputNode = this.effects.antialiasing ? fxaa(resolved) : resolved;
   }
 
+  async prepareScene(roots, valid = () => true) {
+    // WebGL drivers can block for seconds when first-use linking happens in a
+    // draw. Use Three's parallel compilation for the menu-owned scene, retaining
+    // its resources until this promise settles, before submitting real draws.
+    if (this.nativeWebGPU) return;
+    const renderer = this.renderer;
+    const state = THREE.RendererUtils.saveRendererState(renderer);
+    try {
+      if (!this.direct && this.renderQuality !== "low") {
+        const pass = this.scenePass;
+        pass.renderTarget.samples = renderer.samples;
+        pass.renderTarget.texture.type = renderer.getOutputBufferType();
+        renderer.setRenderTarget(pass.renderTarget);
+        renderer.setMRT(pass.getMRT());
+      }
+      const objects = new Set();
+      for (const root of roots) root.traverseVisible(object => {
+        if (object.isMesh || object.isLine || object.isPoints || object.isSprite) objects.add(object);
+      });
+      // One object at a time gives navigation/configuration changes a safe
+      // cancellation boundary instead of finishing an obsolete scene walk.
+      for (const object of objects) {
+        if (!valid()) return;
+        await renderer.compileAsync(object, this.camera, this.scene);
+      }
+    } finally { THREE.RendererUtils.restoreRendererState(renderer, state); }
+  }
+
   render() {
     if (this.direct || this.renderQuality === "low") return this.renderer.render(this.scene, this.camera);
     try {

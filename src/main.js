@@ -5,6 +5,7 @@ import { GRAPHICS_PRESETS, GRAPHICS_OPTIONS, applyGraphicsPreset, isCustomGraphi
 import { LIGHTING, fitArenaShadow, setupEnvironment } from "./lighting.js";
 import { Line2 } from "three/addons/lines/webgpu/Line2.js";
 import { SoundBoard } from "./audio.js";
+import { createHazardVisual } from "./hazardVisuals.js";
 import { CombatVisuals } from "./combatVisuals.js";
 import { ArenaWorld } from "./world.js";
 import { Fighter, PROJECTILE_SPAWN_OFFSET, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraCollisionFirstPerson, cameraRelative, damageIndicatorAngle, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reconcileRemotePosition, reticleAim } from "./player.js";
@@ -20,6 +21,7 @@ import TEXT, { formatText } from "./playerText.js";
 import { GlobalMultiplayer } from "./globalMultiplayer.js";
 import { aimedHeadContact, headContact, headshotDamage, projectileHitRadius } from "./headshots.js";
 import { prepareSurfaceTextures, sharedSurfaceTextures, surfaceMaps } from "./surfaceTextures.js";
+import { GameplayPreparation, gameplayPreparationKey, prepareFighterWeapons, warmFighterWeapons, disposeGameplaySamples } from "./gameplayPreparation.js";
 import { backgroundYield } from "./resourceVersion.js";
 import { preparationProgress } from "./resourceProgress.js";
 
@@ -83,31 +85,6 @@ function weaponPreviewVariables(weapon, index) {
   const angle = -8 + index * .36;
   const offset = index % 4 * .75;
   return `--preview-length:${length}px;--preview-height:${height}px;--preview-angle:${angle}deg;--preview-offset:${offset}px`;
-}
-
-function vortexRibbonGeometry(radius = 2.25, height = 3.8, turns = 3.4, segments = 76) {
-  const positions = [];
-  const indices = [];
-  for (let index = 0; index <= segments; index++) {
-    const t = index / segments;
-    const angle = t * Math.PI * 2 * turns;
-    const centreRadius = radius * (1 - t * .58) + Math.sin(t * Math.PI * 7) * .08;
-    const halfWidth = .07 + (1 - t) * .05;
-    for (const side of [-1, 1]) {
-      const r = centreRadius + side * halfWidth;
-      positions.push(Math.cos(angle) * r, t * height, Math.sin(angle) * r);
-    }
-    if (index < segments) {
-      const base = index * 2;
-      indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
-    }
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-  return geometry;
 }
 
 const PLAYER_COLORS = [
@@ -532,6 +509,7 @@ class BlasterBattle {
 
   clearMatch(preserveNetwork = false) {
     this.resourceLaunchToken = null;
+    this.preparingMatch = false;
     this.renderPipeline?.motionBlur?.reset();
     this.hideMatchLoadingAfterFrame = false;
     this.matchStartQueued = false;
@@ -551,6 +529,8 @@ class BlasterBattle {
     this.hideNetworkReconnecting();
     this.combatVisuals?.dispose();
     this.combatVisuals = null;
+    disposeGameplaySamples(this, this.matchPreparation);
+    this.matchPreparation = null;
     this.world?.dispose();
     for (const player of this.players) {
       this.sound.stopOwner(player.id);
@@ -589,13 +569,15 @@ class BlasterBattle {
   }
 
   renderMain() {
+    this.stopGameplayPreparation();
     if (this.mode === "global") this.multiplayer?.send("lobby_leave");
     this.globalMultiplayer?.close();
     clearTimeout(this.menuLaunchTimer);
     this.menuLaunchTimer = 0;
+    const dismissMatchLoading = this.hideMatchLoadingAfterFrame || this.preparingMatch || this.state === "loading";
     this.state = "menu";
     this.paused = false;
-    if (this.hideMatchLoadingAfterFrame) this.setMatchLoading(false);
+    if (dismissMatchLoading) this.setMatchLoading(false);
     this.clearMatch();
     this.sound.resume();
     this.sound.setVolume(this.settings.volume);
@@ -679,6 +661,7 @@ class BlasterBattle {
       </main>`;
     this.bindUi();
     queueMicrotask(() => this.pulseMenuEnergy(.48, MENU_ACCENTS[mode], 2300));
+    this.queueGameplayPreparation(this.seed);
   }
 
   renderPrivateLobby(message) {
@@ -692,6 +675,7 @@ class BlasterBattle {
     this.privateLobby = { ...(this.privateLobby || {}), ...message };
     this.onlineWelcome = { ...(this.onlineWelcome || {}), ...message };
     this.seed = this.privateLobby.roomCode || this.seed;
+    this.queueGameplayPreparation(this.seed);
     this.networkEndsAt = 0;
     if (this.multiplayer && this.privateLobby.botHostId) this.multiplayer.botHostId = this.privateLobby.botHostId;
     this.setMatchLoading(false);
@@ -1297,6 +1281,7 @@ class BlasterBattle {
     saveSettings(this.settings);
     const summary = ui.querySelector("[data-match-summary]");
     if (summary) summary.textContent = this.matchSummary();
+    this.queueGameplayPreparation(this.seed);
   }
 
   captureSettingsPreferences() {
@@ -1377,7 +1362,7 @@ class BlasterBattle {
     if (!this.sound.resume()) return false;
     this.sound.setVolume(this.settings.volume);
     this.sound.setMix({ music: this.settings.musicVolume, effects: this.settings.effectsVolume, ambience: this.settings.ambienceVolume });
-    if (this.hideMatchLoadingAfterFrame) {
+    if (this.hideMatchLoadingAfterFrame || this.preparingMatch) {
       this.awaitingAudioGesture = false;
       return true;
     }
@@ -1569,6 +1554,7 @@ class BlasterBattle {
     if (!welcomeOverride && !loadingPainted) return this.queueMatchStart(false);
     this.globalMultiplayer?.clearCountdown();
     this.clearMatch(Boolean(welcomeOverride));
+    if (welcomeOverride?.seed) this.seed = welcomeOverride.seed;
     const resourceLaunchToken = this.resourceLaunchToken = {};
     this.state = "loading";
     if (welcomeOverride) this.setMatchLoading(true, this.seed, false);
@@ -1591,6 +1577,8 @@ class BlasterBattle {
     try {
       await this.prepareResources();
       await prepareSurfaceTextures([this.seed]);
+      if (this.resourceLaunchToken !== resourceLaunchToken) return;
+      await this.prepareGameplayResources(this.seed);
     } catch (error) {
       if (this.resourceLaunchToken !== resourceLaunchToken) return;
       this.setMatchLoading(false);
@@ -1615,7 +1603,11 @@ class BlasterBattle {
     // Player-count optimizations batch equivalent geometry; the selected graphics
     // tier remains unchanged at maximum room capacity.
     this.renderPipeline.setHighLoadMode(fighterCount >= 13);
-    this.world = new ArenaWorld(this.scene, this.seed);
+    const prepared = this.gameplayPreparation?.take(this.seed);
+    if (!prepared) this.gameplayPreparation?.cancel();
+    this.menuPreparationSeed = null;
+    this.matchPreparation = prepared;
+    this.world = prepared?.world || new ArenaWorld(this.scene, this.seed);
     fitArenaShadow(this.keyLight, this.world);
     this.world.setGraphicsProfile(this.graphics, this.renderer.getMaxAnisotropy());
     if (welcome?.structuralState) {
@@ -1630,7 +1622,7 @@ class BlasterBattle {
       }
     }
     if (!welcome?.structuralState && welcome?.terrainEvents?.length) this.world.settleStructuralChanges();
-    this.combatVisuals = new CombatVisuals(this.scene, {
+    this.combatVisuals = prepared?.visuals || new CombatVisuals(this.scene, {
       reducedMotion: this.settings.reducedMotion,
       quality: this.graphics.combatQuality
     });
@@ -1671,8 +1663,33 @@ class BlasterBattle {
     this.renderHud();
     this.scene.updateMatrixWorld(true);
     performance.mark?.("blaster-arena-build-complete");
-    // The selected pipeline compiles during its first normal render. A detached
-    // compileAsync walk can outlive teardown and recreate already-disposed data.
+    const valid = () => this.resourceLaunchToken === resourceLaunchToken;
+    // Keep accepting authoritative network state while local simulation and
+    // the first visible frame wait for fighter buffers and render passes.
+    this.preparingMatch = true;
+    try {
+      for (const player of this.players) {
+        await prepareFighterWeapons(player, () => valid() && this.players.includes(player));
+        if (!valid()) return;
+      }
+      if (!await warmFighterWeapons(this, this.players,
+        [this.world.group, this.combatVisuals.group, ...this.players.map(player => player.group)], valid)) return;
+    } catch (error) {
+      if (!valid()) return;
+      this.setMatchLoading(false);
+      this.renderMain();
+      preparationProgress("failed");
+      console.warn("Gameplay GPU preparation incomplete", error);
+      return;
+    } finally {
+      if (valid()) this.preparingMatch = false;
+    }
+    if (!valid()) return;
+    if (welcome) {
+      this.matchTime = Math.max(0, (welcome.endsAt - Math.max(Date.now(), welcome.startsAt)) / 1000);
+      this.matchStartDelay = Math.max(0, (welcome.startsAt - Date.now()) / 1000);
+    }
+    // Retain the first visible-frame gate after offscreen preparation.
     this.hideMatchLoadingAfterFrame = true;
   }
 
@@ -2188,8 +2205,12 @@ class BlasterBattle {
   }
 
   frame(time) {
-    if (this.preparingGraphics) return;
+    if (this.preparingGraphics || this.preparingMatch) return;
     this.commitResize();
+    if (this.menuPreparationSeed != null && this.state !== "play" && this.state !== "loading") {
+      const key = gameplayPreparationKey(this, this.menuPreparationSeed);
+      if (key !== this.menuPreparationKey || this.menuPreparationPipeline !== this.renderPipeline) this.queueGameplayPreparation(this.menuPreparationSeed);
+    }
     this.timer.update(time);
     const rawDt = Math.min(.25, this.timer.getDelta());
     const dt = Math.min(.033, rawDt);
@@ -3297,60 +3318,7 @@ class BlasterBattle {
       .filter(({ hazard }) => hazard.owner === owner && hazard.weapon.id === weapon.id);
     if (ownerHazards.length >= (weapon.maxActiveHazards || 2)) this.removeHazard(ownerHazards[0].index);
     if (this.hazards.length >= 24) this.removeHazard(0);
-    const hazardRadius = weapon.hazard === "black_hole" ? 9 : weapon.hazard === "tornado" ? 7 : 6;
-    const mesh = new THREE.Group();
-    const ringOpacity = weapon.hazard === "tornado" ? .12 : weapon.hazard === "black_hole" ? .18 : .28;
-    const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(hazardRadius * .48, .22, 8, 34),
-      new THREE.MeshBasicMaterial({ color: weapon.color, transparent: true, opacity: ringOpacity, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false })
-    );
-    ring.rotation.x = Math.PI / 2;
-    mesh.add(ring);
-    let instances = null;
-    const fadeMaterials = [{ material: ring.material, baseOpacity: ringOpacity }];
-    if (weapon.hazard === "napalm") {
-      const count = 9;
-      const flames = new THREE.InstancedMesh(
-        new THREE.ConeGeometry(.42, 1.8, 7),
-        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .46, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }),
-        count
-      );
-      const dummy = new THREE.Object3D();
-      const bases = [];
-      const phases = [];
-      for (let index = 0; index < 9; index++) {
-        const angle = index / 9 * Math.PI * 2;
-        const base = new THREE.Vector3(Math.cos(angle) * hazardRadius * .42, .65 + index % 2 * .25, Math.sin(angle) * hazardRadius * .42);
-        bases.push(base);
-        phases.push(index * .73);
-        dummy.position.copy(base);
-        dummy.scale.set(.82 + index % 3 * .12, .78 + index % 2 * .24, .82 + index % 3 * .12);
-        dummy.updateMatrix();
-        flames.setMatrixAt(index, dummy.matrix);
-        flames.setColorAt(index, new THREE.Color(index % 2 ? weapon.color : 0xffd061));
-      }
-      flames.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      mesh.add(flames);
-      fadeMaterials.push({ material: flames.material, baseOpacity: .46 });
-      instances = { kind: "flame", mesh: flames, dummy, bases, phases };
-    } else if (weapon.hazard === "black_hole") {
-      const core = new THREE.Mesh(new THREE.SphereGeometry(1.25, 16, 10), new THREE.MeshBasicMaterial({ color: 0x210337, transparent: true, opacity: .58, depthWrite: false, toneMapped: false }));
-      const vertical = new THREE.Mesh(new THREE.TorusGeometry(2.1, .13, 7, 28), ring.material.clone());
-      vertical.material.opacity = .24;
-      vertical.rotation.y = Math.PI / 2;
-      mesh.add(core, vertical);
-      fadeMaterials.push({ material: core.material, baseOpacity: .58 }, { material: vertical.material, baseOpacity: .24 });
-    } else {
-      const vortexMaterial = ring.material.clone();
-      vortexMaterial.opacity = .1;
-      vortexMaterial.side = THREE.DoubleSide;
-      vortexMaterial.blending = THREE.NormalBlending;
-      const ribbon = new THREE.Mesh(vortexRibbonGeometry(), vortexMaterial);
-      ribbon.position.y = .18;
-      mesh.add(ribbon);
-      fadeMaterials.push({ material: vortexMaterial, baseOpacity: .1 });
-      instances = { kind: "ribbon", mesh: ribbon };
-    }
+    const { mesh, radius: hazardRadius, instances, fadeMaterials } = createHazardVisual(weapon);
     const hazardPosition = position.clone();
     if (weapon.hazard === "napalm") hazardPosition.y = this.world.surfaceHeightAt(hazardPosition, position.y + 2) + .12;
     else hazardPosition.y = Math.max(.18, position.y);
@@ -3952,6 +3920,26 @@ class BlasterBattle {
       performance.mark?.("blaster-resources-ready");
     })().catch(error => { this.resourcePreparation = null; throw error; });
     return this.resourcePreparation;
+  }
+
+  prepareGameplayResources(seed) {
+    this.gameplayPreparation ||= new GameplayPreparation(this);
+    return this.gameplayPreparation.request(seed);
+  }
+
+  queueGameplayPreparation(seed) {
+    this.menuPreparationSeed = seed;
+    this.menuPreparationKey = gameplayPreparationKey(this, seed);
+    this.menuPreparationPipeline = this.renderPipeline;
+    this.prepareGameplayResources(seed).catch(error => {
+      console.warn("Background gameplay preparation incomplete", error);
+      preparationProgress("failed");
+    });
+  }
+
+  stopGameplayPreparation() {
+    this.menuPreparationSeed = null;
+    this.gameplayPreparation?.cancel();
   }
 
   removeProjectile(index) {
