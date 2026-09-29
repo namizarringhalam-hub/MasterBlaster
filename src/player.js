@@ -6,7 +6,7 @@ import { weaponUsesAmmo, WEAPONS } from "./gameData.js";
 import { weaponPresentation } from "./weaponPresentation.js";
 import { createMechaRig } from "./mecha.js";
 import { surfaceMaps, projectSurfaceUVs } from "./surfaceTextures.js";
-import { headContact } from "./headshots.js";
+import { combatShotOrigin, headContact } from "./headshots.js";
 
 const clamp = THREE.MathUtils.clamp;
 export const PROJECTILE_SPAWN_OFFSET = .08;
@@ -1427,7 +1427,8 @@ export function reticleAim(player, cameraOrigin, cameraDirection, world, targets
   // Exact ray intersections only: this corrects third-person parallax without aim assist.
   for (const target of targets) {
     if (target === player || !target.alive) continue;
-    for (const [height, radius] of [[.55, target.radius * .72], [1.2, target.radius], [2.08, target.radius * .72]]) {
+    const samples = target.isDecoy ? [[1.05, target.radius]] : [[.55, target.radius * .72], [1.2, target.radius], [2.08, target.radius * .72]];
+    for (const [height, radius] of samples) {
       const sphere = new THREE.Sphere(target.position.clone().add(new THREE.Vector3(0, height, 0)), radius);
       if (!ray.intersectSphere(sphere, hit)) continue;
       const hitDistance = cameraOrigin.distanceTo(hit);
@@ -1438,9 +1439,22 @@ export function reticleAim(player, cameraOrigin, cameraDirection, world, targets
     }
   }
 
-  const muzzle = player.position.clone().add(new THREE.Vector3(0, 1.25, 0));
-  const aim = point.sub(muzzle);
-  if (selectedTarget && aim.dot(direction) <= 0) aim.copy(selectedTarget.position).add(new THREE.Vector3(0, 1.2, 0)).sub(muzzle);
+  const weapon = player.weapon || {};
+  const origin = combatShotOrigin(player, weapon, direction);
+  const aim = point.clone().sub(new THREE.Vector3(player.position.x, origin.y, player.position.z));
+  if (selectedTarget && aim.dot(direction) <= 0 && selectedTarget.position.distanceToSquared(player.position) < selectedTarget.radius ** 2) {
+    aim.copy(selectedTarget.position).add(new THREE.Vector3(0, 1.2, 0)).sub(new THREE.Vector3(player.position.x, origin.y, player.position.z));
+  }
+  // The shoulder muzzle is half a metre to the right of the firing line.
+  // Solve its yaw exactly so close headshots converge on the camera hit point.
+  const lateral = weapon.hitscan || weapon.type === "flame" ? .5 : 0;
+  const horizontal = Math.hypot(aim.x, aim.z);
+  if (lateral && horizontal > lateral) {
+    const yaw = Math.atan2(aim.x, aim.z) - Math.asin(lateral / horizontal);
+    const forward = Math.sqrt(horizontal * horizontal - lateral * lateral);
+    aim.x = Math.sin(yaw) * forward;
+    aim.z = Math.cos(yaw) * forward;
+  }
   return (aim.lengthSq() > .001 ? aim : direction).normalize();
 }
 

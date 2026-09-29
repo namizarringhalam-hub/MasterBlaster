@@ -7,7 +7,7 @@ import { Line2 } from "three/addons/lines/webgpu/Line2.js";
 import { SoundBoard } from "./audio.js";
 import { CombatVisuals } from "./combatVisuals.js";
 import { ArenaWorld } from "./world.js";
-import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraCollisionFirstPerson, cameraRelative, damageIndicatorAngle, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reconcileRemotePosition, reticleAim } from "./player.js";
+import { Fighter, PROJECTILE_SPAWN_OFFSET, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraCollisionFirstPerson, cameraRelative, damageIndicatorAngle, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reconcileRemotePosition, reticleAim } from "./player.js";
 import { InputManager, clearTouchActions, deliberateTouchTap, updateOrbit } from "./input.js";
 import { activePresetLoadout, clampMatchMinutes, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, topScoreIndices, weaponFireMode, weaponUsesAmmo, WEAPON_GROUPS, WEAPONS } from "./gameData.js";
 import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, clampBotCount, safestSpawn, shouldBotPlaceWall } from "./botBrain.js";
@@ -2313,6 +2313,8 @@ class BlasterBattle {
     if (this.input.tapped("KeyE") || this.input.tapped("MouseRight") || this.touch.grappleTap) this.toggleGrapple(player);
     this.touch.grappleTap = false;
     this.updateGrapple(player, dt, this.input.down("KeyW") || this.input.touchDirection().y < -.1);
+    // Movement and grapple physics may have moved the muzzle since the pose update.
+    player.aim.copy(reticleAim(player, this.camera.position, this.camera.getWorldDirection(this.aimDirection), this.world, this.aimTargets));
     if (this.input.tapped("KeyR") && !this.beginReload(player)) this.sound.play("uiInvalid");
     const fireHeld = this.input.mouse.left || this.touch.fire;
     const fireTapped = this.input.tapped("MouseLeft") || this.touch.fireTap;
@@ -2667,7 +2669,7 @@ class BlasterBattle {
     this.sound.playWeapon(weapon, this.audioSpatial(player.position, player === listener, distanceScale, player.id));
     this.combatVisuals?.muzzle(player, weapon, player.aim);
     if (fireMode === "spread") {
-      for (let i = 0; i < weapon.pellets; i++) this.spawnProjectile(player, weapon, aimWithSpread(player.aim, weapon.spread));
+      for (let i = 0; i < weapon.pellets; i++) this.spawnProjectile(player, weapon, player.aim);
       return;
     }
     if (fireMode === "mine") return this.spawnMine(player, weapon);
@@ -2675,8 +2677,8 @@ class BlasterBattle {
     if (fireMode === "chain") return this.fireChain(player, weapon);
     if (fireMode === "flame") return this.fireFlame(player, weapon);
     if (fireMode === "melee") return this.fireMelee(player, weapon);
-    if (fireMode === "hitscan") return this.fireHitscan(player, weapon, aimWithSpread(player.aim, weapon.spread));
-    this.spawnProjectile(player, weapon, aimWithSpread(player.aim, weapon.spread));
+    if (fireMode === "hitscan") return this.fireHitscan(player, weapon, player.aim);
+    this.spawnProjectile(player, weapon, player.aim);
   }
 
   beginBurst(player, weapon, replicate = true) {
@@ -2713,7 +2715,7 @@ class BlasterBattle {
     const listener = this.players[0];
     const distanceScale = player === listener ? 1 : Math.max(.18, 1 - player.position.distanceTo(listener.position) / 110) * .42;
     this.sound.playWeapon(weapon, this.audioSpatial(player.position, player === listener, distanceScale, player.id));
-    const direction = aimWithSpread(player.aim, weapon.spread);
+    const direction = player.aim.clone();
     this.combatVisuals?.muzzle(player, weapon, direction);
     this.fireHitscan(player, weapon, direction);
   }
@@ -2756,7 +2758,7 @@ class BlasterBattle {
     player.recoil(chargedWeapon.recoil);
     this.sound.playWeapon(chargedWeapon, this.audioSpatial(player.position, player === this.players[0], player === this.players[0] ? 1 : .4, player.id));
     this.combatVisuals?.muzzle(player, chargedWeapon, player.aim);
-    this.fireHitscan(player, chargedWeapon, aimWithSpread(player.aim, weapon.spread));
+    this.fireHitscan(player, chargedWeapon, player.aim);
   }
 
   cancelCharge(player) {
@@ -2889,7 +2891,7 @@ class BlasterBattle {
 
   fireBeam(player, weapon) {
     const start = player.forwardPoint(1.05);
-    const direction = aimWithSpread(player.aim, weapon.spread).normalize();
+    const direction = player.aim.clone().normalize();
     let cursor = start.clone();
     let wall = this.world.grapplePoint(cursor, direction);
     let end = wall || start.clone().addScaledVector(direction, 1000);
@@ -2910,7 +2912,8 @@ class BlasterBattle {
         : direction.clone().multiplyScalar(weapon.recoil * 1.7);
       this.damageTarget(target, weapon.damage, push, player, weapon, { point: start.clone().addScaledVector(direction, hitDistance) });
     }
-    if (damagesTerrain && wall && !weapon.penetration) this.damageTerrain(wall, weapon, player);
+    if (targets.length && !weapon.penetration) end = start.clone().addScaledVector(direction, targets[0].distance);
+    if (damagesTerrain && wall && !targets.length && !weapon.penetration) this.damageTerrain(wall, weapon, player);
     this.spawnTracer(start, end, weapon, player, .13);
     if (wall && !targets.length) this.sound.playImpact(weapon, this.audioSpatial(wall, false, .72, player.id), 0, "wall");
   }
