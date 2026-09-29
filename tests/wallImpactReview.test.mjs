@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as THREE from "three/webgpu";
 import * as data from "../src/gameData.js";
+import * as headshots from "../src/headshots.js";
 import { Fighter, PROJECTILE_SPAWN_OFFSET, aimWithSpread, projectileTouchesPlayer, cameraCollisionFirstPerson } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
 import { CombatVisuals } from "../src/combatVisuals.js";
@@ -11,7 +12,7 @@ const source = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
 const controller = source.slice(source.indexOf("class BlasterBattle"), source.indexOf("\nconst game = new BlasterBattle"))
   .replaceAll("import.meta.url", JSON.stringify(new URL("../src/main.js", import.meta.url).href));
 const audio = source.slice(source.indexOf("function projectileNeedsLoop("), source.indexOf("function setText("));
-const bindings = { THREE, ...data, PROJECTILE_SPAWN_OFFSET, aimWithSpread, projectileTouchesPlayer, cameraCollisionFirstPerson, clamp: THREE.MathUtils.clamp };
+const bindings = { THREE, ...data, ...headshots, PROJECTILE_SPAWN_OFFSET, aimWithSpread, projectileTouchesPlayer, cameraCollisionFirstPerson, clamp: THREE.MathUtils.clamp };
 const Game = new Function(...Object.keys(bindings), `${audio};return ${controller}`)(...Object.values(bindings));
 // Every weapon retains its original finish branch; only direct impact VFX use
 // the owned contact. Explosion/split origins and all audio positions stay exact.

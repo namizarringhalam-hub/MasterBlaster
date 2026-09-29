@@ -269,6 +269,7 @@ export const PLAYER_TEXT = {
   },
 
   hud: {
+    headshot: "HEADSHOT",
     firstTo: "FIRST TO {score}",
     leaders: "TOP 3 · {count} FIGHTERS",
     enemy: "ENEMY",

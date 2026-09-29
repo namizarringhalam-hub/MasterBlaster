@@ -18,6 +18,7 @@ import { advanceRespawnRetry, respawnDisposition, serverRemainingSeconds, unique
 import { createGrappleRopeGeometry, updateGrappleRopeGeometry } from "./grappleRope.js";
 import TEXT, { formatText } from "./playerText.js";
 import { GlobalMultiplayer } from "./globalMultiplayer.js";
+import { aimedHeadContact, headContact, headshotDamage, projectileHitRadius } from "./headshots.js";
 
 const canvas = document.querySelector("#game-canvas");
 const ui = document.querySelector("#ui-root");
@@ -543,6 +544,7 @@ class BlasterBattle {
     this.input.releasePointer();
     clearTouchActions(this.touch);
     clearTimeout(this.damageVignetteTimer);
+    clearTimeout(this.headshotTimer);
     clearTimeout(this.targetHealthTimer);
     clearTimeout(this.damageDirectionTimer);
     clearTimeout(this.privateStartTimer);
@@ -1846,7 +1848,7 @@ class BlasterBattle {
     if (target.alive) applyWeaponStatus(target, weapon);
     this.combatMusicPulse = Math.max(this.combatMusicPulse, target === this.players[0] || attacker === this.players[0] ? .8 : .45);
     this.spawnImpact(target.position, target, weapon, attacker);
-    this.showCombatFeedback(target, attacker, weapon, message.killed || killed);
+    this.showCombatFeedback(target, attacker, weapon, message.killed || killed, message.headshot === true);
     if (message.killed || killed) {
       target.networkRespawnId = "";
       target.networkRespawnSpawnIndex = -1;
@@ -1943,6 +1945,7 @@ class BlasterBattle {
           </div>
         </section>
         <div class="damage-vignette" data-damage-vignette></div>
+        <div class="headshot-announcement" data-headshot role="status" aria-live="polite"></div>
         <div class="motion-vignette" data-motion-vignette></div>
         <div class="incoming-direction" data-incoming-direction aria-hidden="true"><i></i></div>
         <div class="reticle" data-reticle aria-hidden="true"><i></i></div>
@@ -2002,6 +2005,7 @@ class BlasterBattle {
       targetValue: ui.querySelector("[data-target-value]"),
       targetFill: ui.querySelector("[data-target-fill]"),
       damageVignette: ui.querySelector("[data-damage-vignette]"),
+      headshot: ui.querySelector("[data-headshot]"),
       motionVignette: ui.querySelector("[data-motion-vignette]"),
       combatLog: ui.querySelector("[data-combat-log]"),
       respawnStatus: ui.querySelector("[data-respawn-status]"),
@@ -2753,7 +2757,7 @@ class BlasterBattle {
     if (weapon.type === "remote") {
       this.trimRemoteCharges(player, weapon, weapon.maxCharges - 1, true);
     }
-    const radius = weapon.projectileRadius ?? (weapon.type === "rocket" ? .25 : weapon.type === "plasma" ? .42 : weapon.type === "grenade" ? .28 : .11);
+    const radius = projectileHitRadius(weapon);
     const mesh = this.combatVisuals.createProjectile(player, weapon, radius);
     mesh.position.copy(position || player.forwardPoint(PROJECTILE_SPAWN_OFFSET));
     if (weapon.type === "rail") mesh.lookAt(mesh.position.clone().add(direction));
@@ -2827,8 +2831,8 @@ class BlasterBattle {
     const wall = wallTarget?.point ?? null;
     const wallDistance = wall ? start.distanceTo(wall) : 1000;
     const hits = this.hitscanTargets(player, start, aim, wallDistance).slice(0, (weapon.penetration || 0) + 1);
-    for (const { target } of hits) {
-      this.damageTarget(target, weapon.damage, aim.clone().multiplyScalar(weapon.recoil * 1.7), player, weapon);
+    for (const { target, distance } of hits) {
+      this.damageTarget(target, weapon.damage, aim.clone().multiplyScalar(weapon.recoil * 1.7), player, weapon, { point: start.clone().addScaledVector(aim, distance) });
     }
     const end = hits.length && !weapon.penetration
       ? start.clone().addScaledVector(aim, hits[0].distance)
@@ -2887,11 +2891,11 @@ class BlasterBattle {
     }
     const distance = start.distanceTo(end);
     const targets = this.hitscanTargets(player, start, direction, distance).slice(0, (weapon.penetration || 0) + 1);
-    for (const { target } of targets) {
+    for (const { target, distance: hitDistance } of targets) {
       const push = weapon.beamPull
         ? player.position.clone().sub(target.position).normalize().multiplyScalar(weapon.beamPull)
         : direction.clone().multiplyScalar(weapon.recoil * 1.7);
-      this.damageTarget(target, weapon.damage, push, player, weapon);
+      this.damageTarget(target, weapon.damage, push, player, weapon, { point: start.clone().addScaledVector(direction, hitDistance) });
     }
     if (damagesTerrain && wall && !weapon.penetration) this.damageTerrain(wall, weapon, player);
     this.spawnTracer(start, end, weapon, player, .13);
@@ -2920,9 +2924,10 @@ class BlasterBattle {
       remaining.sort((a, b) => a.position.distanceToSquared(from) - b.position.distanceToSquared(from));
       const target = remaining.shift();
       if (jump > 0 && target.position.distanceTo(from) > 14) break;
-      const end = target.position.clone().add(new THREE.Vector3(0, 1.05, 0));
+      const head = jump === 0 ? aimedHeadContact(target, origin, player.aim) : null;
+      const end = head ? new THREE.Vector3(head.x, head.y, head.z) : target.position.clone().add(new THREE.Vector3(0, 1.05, 0));
       this.spawnTracer(from, end, weapon, player, .18);
-      this.damageTarget(target, Math.ceil(weapon.damage * Math.pow(.72, jump)), target.position.clone().sub(from).normalize().multiplyScalar(weapon.recoil * 1.5), player, weapon);
+      this.damageTarget(target, Math.ceil(weapon.damage * Math.pow(.72, jump)), target.position.clone().sub(from).normalize().multiplyScalar(weapon.recoil * 1.5), player, weapon, { point: end });
       hitTargets.add(target);
       from = end;
     }
@@ -2943,11 +2948,12 @@ class BlasterBattle {
 
     for (const target of [...this.players, ...this.decoys]) {
       if (target === player || !target.alive) continue;
-      const targetPoint = target.position.clone().add(new THREE.Vector3(0, 1.05, 0));
+      const head = aimedHeadContact(target, origin, direction);
+      const targetPoint = head ? new THREE.Vector3(head.x, head.y, head.z) : target.position.clone().add(new THREE.Vector3(0, 1.05, 0));
       const factor = flameConeFactor(origin, direction, targetPoint, target.radius, weapon.reach, weapon.coneAngle);
       if (factor <= 0 || this.world.ropeBlocked(origin, targetPoint)) continue;
       const push = direction.clone().multiplyScalar(weapon.recoil * 1.7);
-      this.damageTarget(target, weapon.damage * factor, push, player, weapon);
+      this.damageTarget(target, weapon.damage * factor, push, player, weapon, { point: targetPoint });
     }
   }
 
@@ -2958,12 +2964,13 @@ class BlasterBattle {
     if (surface && origin.distanceTo(surface) <= weapon.reach) this.damageTerrain(surface, weapon, player);
     for (const target of [...this.players, ...this.decoys]) {
       if (target === player || !target.alive) continue;
-      const targetPoint = target.position.clone().add(new THREE.Vector3(0, 1, 0));
+      const head = aimedHeadContact(target, origin, player.aim);
+      const targetPoint = head ? new THREE.Vector3(head.x, head.y, head.z) : target.position.clone().add(new THREE.Vector3(0, 1, 0));
       const offset = targetPoint.clone().sub(origin);
       if (offset.length() > weapon.reach + target.radius || offset.normalize().dot(player.aim) < 1 - weapon.arc) continue;
       if (this.world.ropeBlocked(origin, targetPoint)) continue;
       const damage = weapon.executeThreshold && !target.isDecoy && target.health <= weapon.executeThreshold ? target.health : weapon.damage;
-      this.damageTarget(target, damage, player.aim.clone().multiplyScalar(weapon.recoil * 1.8).setY(weapon.recoil * .45), player, weapon);
+      this.damageTarget(target, damage, player.aim.clone().multiplyScalar(weapon.recoil * 1.8).setY(weapon.recoil * .45), player, weapon, { point: targetPoint });
     }
     this.spawnTracer(origin, end, weapon, player, .12, Math.max(.12, weapon.arc * .35));
   }
@@ -3041,8 +3048,7 @@ class BlasterBattle {
               this.sound.play("construct", shot.weapon, this.audioSpatial(previous, false, .75, shot.owner.id));
               this.removeProjectile(index);
             } else if (shot.weapon.sticky || shot.remote) {
-              shot.mesh.position.copy(target.position);
-              shot.mesh.position.y += 1.05;
+              shot.attachedOffset = shot.mesh.position.clone().sub(target.position);
               shot.velocity.set(0, 0, 0);
               shot.stuck = true;
               shot.attachedTarget = target;
@@ -3050,10 +3056,11 @@ class BlasterBattle {
               this.sound.play("stick", shot.weapon, this.audioSpatial(shot.mesh.position, false, .82, shot.owner.id));
               this.sound.play("arm", shot.weapon, this.audioSpatial(shot.mesh.position, false, .48, shot.owner.id));
             } else if (explosive) {
+              shot.directTarget = target;
               this.finishProjectile(index, shot);
             } else {
               this.damageTarget(target, shot.weapon.damage, shot.velocity.clone().normalize().multiplyScalar(shot.weapon.recoil * 1.7), shot.owner, shot.weapon, {
-                point: shot.mesh.position.clone(), direction: shot.velocity.clone(), sourceSlot: shot.sourceSlot, shotId: shot.networkShotId
+                point: shot.mesh.position.clone(), direction: shot.velocity.clone(), sourceSlot: shot.sourceSlot, shotId: shot.networkShotId, hitRadius: shot.radius
               });
               shot.hitTargets.add(target.id);
               if (shot.remainingPenetration > 0) {
@@ -3111,8 +3118,7 @@ class BlasterBattle {
         }
         if (removed) continue;
       } else if (shot.attachedTarget?.alive) {
-        shot.mesh.position.copy(shot.attachedTarget.position);
-        shot.mesh.position.y += 1.05;
+        shot.mesh.position.copy(shot.attachedTarget.position).add(shot.attachedOffset);
       }
       this.combatVisuals?.updateProjectile(shot, dt);
       if (shot.life <= 0) {
@@ -3151,8 +3157,10 @@ class BlasterBattle {
   }
 
   finishProjectile(index, shot, contact = null) {
-    if (shot.weapon.split && !shot.split) this.splitProjectile(shot);
-    else if (shot.weapon.radius) this.explode(shot);
+    if (shot.weapon.split && !shot.split) {
+      if (shot.directTarget) this.explode(shot);
+      this.splitProjectile(shot);
+    } else if (shot.weapon.radius) this.explode(shot);
     else {
       const point = contact ? contact.point.addScaledVector(contact.normal, .012) : shot.mesh.position;
       this.combatVisuals?.impact(point, shot.weapon, shot.owner, { size: 1.05, normal: contact?.normal,
@@ -3193,7 +3201,8 @@ class BlasterBattle {
       const factor = 1 - distance / shot.weapon.radius;
       const selfScale = target === shot.owner ? .35 : 1;
       const push = targetPoint.clone().sub(position).setY(.18).normalize().multiplyScalar((8 + shot.weapon.recoil) * factor * (shot.weapon.pull ? -1 : 1));
-      this.damageTarget(target, Math.ceil(shot.weapon.damage * factor * selfScale), push, shot.owner, shot.weapon, { point: position, phase: "impact", shotId: shot.networkShotId });
+      const headshot = target !== shot.owner && headContact(target, position, shot.radius);
+      this.damageTarget(target, headshot ? shot.weapon.damage : Math.ceil(shot.weapon.damage * factor * selfScale), push, shot.owner, shot.weapon, { point: position, phase: "impact", shotId: shot.networkShotId, headshot });
       if (shot.weapon.grappleDisrupt && target.grapple) this.releaseGrapple(target);
     }
     if (shot.weapon.terrainRadius > 0 || shot.weapon.structureDamage > 0) this.damageTerrain(position, shot.weapon, shot.owner, shot.networkShotId);
@@ -3497,12 +3506,14 @@ class BlasterBattle {
       if (attacker && authorityWeapon && this.controlsNetworkPlayer(attacker)) this.multiplayer.reportHit(attacker, target, authorityWeapon, damage, push, context);
       return false;
     }
-    const killed = target.takeHit(damage, push);
+    const headshot = damage > 0 && attacker !== target && context.phase !== "hazard"
+      && (context.headshot ?? headContact(target, context.point, context.hitRadius || 0));
+    const killed = target.takeHit(headshotDamage(damage, headshot), push);
     if (target === this.players[0] || attacker === this.players[0] || target.position.distanceToSquared(this.players[0].position) < 34 ** 2) {
       this.combatMusicPulse = Math.max(this.combatMusicPulse, killed ? 1 : .76);
     }
     this.spawnImpact(target.position, target, weapon, attacker);
-    this.showCombatFeedback(target, attacker, weapon, killed);
+    this.showCombatFeedback(target, attacker, weapon, killed, headshot);
     if (!killed) return;
     this.releaseGrapple(target);
     const attackerIndex = this.players.indexOf(attacker);
@@ -3511,13 +3522,27 @@ class BlasterBattle {
     this.respawnTimers[targetIndex] = 2.8;
   }
 
-  showCombatFeedback(target, attacker, weapon, killed) {
+  showCombatFeedback(target, attacker, weapon, killed, headshot = false) {
     if (!this.hud) return;
     if (killed && target === this.players[0]) this.localEliminatorName = attacker?.name || TEXT.hud.environment;
     if (attacker === this.players[0]) {
+      if (headshot && target !== attacker && this.hud.headshot) {
+        this.hud.headshot.textContent = TEXT.hud.headshot;
+        this.hud.headshot.classList.remove("visible");
+        void this.hud.headshot.offsetWidth;
+        this.hud.headshot.classList.add("visible");
+        clearTimeout(this.headshotTimer);
+        this.headshotTimer = setTimeout(() => {
+          if (!this.hud?.headshot) return;
+          this.hud.headshot.classList.remove("visible");
+          this.hud.headshot.textContent = "";
+          this.hud.reticle.classList.remove("headshot-hit");
+        }, 900);
+      }
       this.hud.reticle.classList.remove("hit", "elimination");
       void this.hud.reticle.offsetWidth;
       this.hud.reticle.classList.add(killed ? "elimination" : "hit");
+      this.hud.reticle.classList.toggle("headshot-hit", headshot);
       this.sound.play(killed ? "elimination" : "hitConfirm");
       if (target !== attacker) {
         const health = Math.round(clamp(target.health, 0, 100));

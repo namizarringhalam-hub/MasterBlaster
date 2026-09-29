@@ -6,6 +6,7 @@ import { weaponUsesAmmo, WEAPONS } from "./gameData.js";
 import { weaponPresentation } from "./weaponPresentation.js";
 import { createMechaRig } from "./mecha.js";
 import { surfaceMaps, projectSurfaceUVs } from "./surfaceTextures.js";
+import { headContact } from "./headshots.js";
 
 const clamp = THREE.MathUtils.clamp;
 export const PROJECTILE_SPAWN_OFFSET = .08;
@@ -1454,6 +1455,7 @@ export function cameraCollisionFirstPerson(clearance, active = false) {
 
 export function projectileTouchesPlayer(player, position, radius = .22) {
   if (!player.alive) return false;
+  if (!player.isDecoy && position.y - player.position.y >= 1.9) return headContact(player, position, radius);
   const body = new THREE.Vector3(
     player.position.x,
     clamp(position.y, player.position.y + .72, player.position.y + 1.85),

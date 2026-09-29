@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Headshot HUD regression</title>
+<link rel="stylesheet" href="/src/styles.css">
+<div id="app"><canvas id="game-canvas"></canvas><div id="ui-root"></div></div>
+<div id="match-loading" hidden><span data-match-seed></span><span data-match-kind></span></div>
+<aside style="position:fixed;z-index:100;left:12px;bottom:120px;background:#07111dee;padding:12px;font:12px monospace">
+  <button id="run">Replay headshot</button><button id="hold">Hold impact frame</button><pre id="results">Ready</pre>
+</aside>
+<script type="module">
+import * as THREE from "three/webgpu";
+import { WEAPONS } from "../src/gameData.js";
+import { GAME_CONFIG } from "../GAME_CONFIG.js";
+performance.mark("blaster-shell-visible");
+const { gameReady } = await import("../src/main.js");
+const game = await gameReady;
+async function preview(hold = false) {
+  game.mode = "training";
+  game.settings.botCount = 1;
+  game.settings.matchSettings.training.botsStandStill = true;
+  game.settings.matchSettings.training.botsDontAttack = true;
+  if (game.state !== "play") await game.startMatch(null, true);
+  const attacker = game.players[0], target = game.players[1];
+  target.health = 100;
+  target.alive = true;
+  game.hud.headshot.getAnimations({ subtree: true }).forEach(animation => animation.cancel());
+  const point = target.position.clone().add(new THREE.Vector3(0, 2.08, 0));
+  game.damageTarget(target, WEAPONS.blaster.damage, new THREE.Vector3(), attacker, WEAPONS.blaster, { point });
+  const expected = 100 - WEAPONS.blaster.damage * GAME_CONFIG.headshotDamageMultiplier;
+  const pass = target.health === expected && game.hud.headshot.textContent === "HEADSHOT" && game.hud.headshot.classList.contains("visible");
+  document.querySelector("#results").textContent = `${pass ? "PASS" : "FAIL"}: health ${target.health}; HEADSHOT displayed.\n${hold ? "Impact frame held for inspection." : "Live animation: pop, overshoot, settle, fade (900ms)."}`;
+  if (hold) {
+    clearTimeout(game.headshotTimer);
+    game.hud.headshot.getAnimations({ subtree: true }).forEach(animation => { animation.pause(); animation.currentTime = 240; });
+  }
+}
+document.querySelector("#run").onclick = () => preview();
+document.querySelector("#hold").onclick = () => preview(true);
+</script></html>

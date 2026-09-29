@@ -625,6 +625,15 @@ dialog[data-modal="pause"]:has(~ dialog[data-modal="graphics"]) { visibility: hi
 
 .damage-vignette { position: absolute; inset: 0; opacity: 0; background: radial-gradient(circle at center, transparent 48%, color-mix(in srgb, var(--damage-color, #ff365d) 50%, transparent) 74%, color-mix(in srgb, var(--damage-color, #ff365d) 84%, transparent)), repeating-conic-gradient(from 12deg at 50% 50%, transparent 0 8deg, color-mix(in srgb, var(--damage-color, #ff365d) 18%, transparent) 8.2deg 8.7deg); mix-blend-mode: screen; }
 .damage-vignette.visible { animation: damage-flash .5s ease-out; }
+.headshot-announcement { position: absolute; top: calc(50% - 92px); left: 50%; transform: translateX(-50%); pointer-events: none; opacity: 0; padding: 4px 16px; white-space: nowrap; color: #ff3449; font-size: clamp(22px, 2.8vw, 34px); font-weight: 900; font-style: italic; letter-spacing: .1em; text-shadow: 0 2px 3px #000; }
+.headshot-announcement::before, .headshot-announcement::after { content: ""; position: absolute; top: 50%; width: 24px; height: 3px; background: #ff3449; }
+.headshot-announcement::before { right: 100%; }
+.headshot-announcement::after { left: 100%; }
+.headshot-announcement.visible { animation: headshot-impact .9s ease-out forwards; }
+.hud .reticle.headshot-hit { border-color: #ff3449; filter: drop-shadow(0 0 8px #ff3449); }
+.hud .reticle.headshot-hit i { border-color: #ff3449; }
+@keyframes headshot-impact { 0% { opacity: 0; transform: translate(-50%, 14px) scale(.65); } 12% { opacity: 1; transform: translate(-50%, -3px) scale(1.12); } 26%, 65% { opacity: 1; transform: translate(-50%, 0) scale(1); } 100% { opacity: 0; transform: translate(-50%, -14px) scale(.94); } }
+.reduce-motion .headshot-announcement.visible { animation: none; opacity: 1; }
 .motion-vignette {
   position: absolute;
   inset: -8%;

@@ -16,6 +16,30 @@ For local online matches, run the Cloudflare service in a second terminal:
 npm.cmd run dev:multiplayer
 ```
 
+## Gameplay configuration
+
+Edit `GAME_CONFIG.js` in the repository root. `headshotDamageMultiplier: 2`
+gives double damage; `1.5`, `1.2`, or `1` also work. The client and multiplayer
+Worker import this same file. Rebuild/publish the client **and** redeploy the
+Worker after changing it. Cached offline clients need to update while online.
+The announcement text is `PLAYER_TEXT.js` → `hud.headshot`.
+
+A direct helmet hit shows a red HEADSHOT confirmation just above the crosshair,
+with a quick pop, overshoot, streaks and fade. The reticle pulses red with it;
+reduced-motion mode uses a steady brief confirmation.
+The rule applies across damaging weapon families, including individual shotgun
+pellets, beams, aimed melee/flame hits, and explosive contact. Chain lightning
+can headshot its aimed first target; subsequent body-directed jumps, ordinary
+splash, self-damage, lingering hazards, and zero-damage tools do not get a bonus.
+Sticky charges preserve their attachment height until detonation.
+
+Online health and the headshot confirmation come from the server. Client-sent
+damage, multiplier, and headshot flags cannot override the server's rules.
+This protects the setting, but is not comprehensive anti-cheat: existing
+movement/hit proposals and ricochet validation still use client input and
+tolerances. Complete trajectory authority would require server simulation.
+Offline games run on the player's device and cannot be made tamper-proof.
+
 ## Controls
 
 - Move: `WASD`

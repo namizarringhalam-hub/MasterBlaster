@@ -1,4 +1,5 @@
 import { structuralPartBounds, structuralTowerBlueprints, weaponFireMode } from "./gameData.js";
+import { aimedHeadContact, headContact, headshotDamage, projectileHitRadius } from "./headshots.js";
 
 const PLAYER_RADIUS = .72;
 const TARGET_HEIGHT = 1.05;
@@ -119,13 +120,12 @@ function canonicalPush(weapon, from, to, factor = 1) {
   return { x: direction.x * strength * signed, y: Math.max(0, direction.y * strength + (weapon.radius ? .18 * strength : 0)), z: direction.z * strength * signed };
 }
 
-function followsAuthoritativeProjectilePath(shot, impact, weapon, ageMs) {
+function followsAuthoritativeProjectilePath(shot, impact, weapon, ageMs, tolerance = 3.5 + (weapon.projectileRadius || .2)) {
   const speed = Math.max(0, weapon.projectileSpeed || 0);
   if (!speed || weapon.bounces || weapon.returning) return true;
   const direction = normalize(shot.direction);
   const offset = subtract(impact, shot.origin);
   const maximumTime = Math.min(ageMs / 1000 + .25, 3.5);
-  const tolerance = 3.5 + (weapon.projectileRadius || .2);
   if (!weapon.gravity && !weapon.arcLift) {
     const distanceAlongShot = Math.max(0, Math.min(speed * maximumTime, dot(offset, direction)));
     const nearest = {
@@ -178,11 +178,14 @@ export function validateHitProposal({ shot, attacker, target, weapon, impact, ph
   const ageMs = now - shot.firedAt;
   if (ageMs < 0 || ageMs > shotLifetimeMs(weapon)) return null;
   const origin = shot.origin;
-  const targetCenter = targetPoint(target);
+  const strategy = weaponAuthorityStrategy(weapon);
+  const aimedHead = ["ray", "melee", "cone", "chain"].includes(strategy)
+    && !(strategy === "chain" && shot.hitPositions?.length)
+    ? aimedHeadContact(target, origin, shot.direction) : null;
+  const targetCenter = aimedHead || targetPoint(target);
   const offset = subtract(targetCenter, origin);
   const distance = length(offset);
   const direction = normalize(shot.direction);
-  const strategy = weaponAuthorityStrategy(weapon);
   const damageScale = shot.damageScale || 1;
   const canonicalDamage = weapon.damage * damageScale;
 
@@ -199,8 +202,8 @@ export function validateHitProposal({ shot, attacker, target, weapon, impact, ph
     const factor = strategy === "cone" ? Math.max(.18, 1 - distance / allowedRange) : 1;
     const damage = weapon.executeThreshold && target.health <= weapon.executeThreshold
       ? target.health
-      : Math.max(1, Math.ceil(canonicalDamage * factor));
-    return { damage, push: canonicalPush(weapon, origin, targetCenter, factor), strategy };
+      : aimedHead ? headshotDamage(canonicalDamage * factor, true) : Math.max(1, Math.ceil(canonicalDamage * factor));
+    return { damage, headshot: Boolean(aimedHead), push: canonicalPush(weapon, origin, targetCenter, factor), strategy };
   }
 
   if (strategy === "chain") {
@@ -210,16 +213,20 @@ export function validateHitProposal({ shot, attacker, target, weapon, impact, ph
     if (length(subtract(targetCenter, from)) > maximumDistance || lineBlockedByStructure(from, targetCenter, seed, structuralHealth, arenaRevision, structuralFailures, now)) return null;
     if (!priorPositions.length && dot(direction, normalize(offset)) <= .45) return null;
     const jump = priorPositions.length;
-    return { damage: Math.max(1, Math.ceil(canonicalDamage * .72 ** jump)), push: canonicalPush(weapon, from, targetCenter, .72 ** jump), strategy };
+    return { damage: headshotDamage(Math.max(1, Math.ceil(canonicalDamage * .72 ** jump)), Boolean(aimedHead)), headshot: Boolean(aimedHead), push: canonicalPush(weapon, from, targetCenter, .72 ** jump), strategy };
   }
 
   if (!impact) return null;
   if (!validateImpactProposal({ shot, weapon, impact, now })) return null;
 
   const targetDistance = length(subtract(targetCenter, impact));
+  const headshot = target.id !== attacker.id && phase !== "hazard"
+    && headContact(target, impact, projectileHitRadius(weapon))
+    // A body-hit tolerance must not turn a forged higher impact into a bonus.
+    && followsAuthoritativeProjectilePath(shot, impact, weapon, ageMs, .12 + projectileHitRadius(weapon));
   if (strategy === "projectile") {
     if (targetDistance > PLAYER_RADIUS + (weapon.projectileRadius || .2) + .7) return null;
-    return { damage: Math.max(1, Math.ceil(canonicalDamage)), push: canonicalPush(weapon, origin, targetCenter), strategy };
+    return { damage: headshot ? headshotDamage(canonicalDamage, true) : Math.max(1, Math.ceil(canonicalDamage)), headshot, push: canonicalPush(weapon, origin, targetCenter), strategy };
   }
 
   const radius = weapon.radius || 0;
@@ -232,7 +239,8 @@ export function validateHitProposal({ shot, attacker, target, weapon, impact, ph
     return { damage: Math.max(1, Math.ceil(perTick * (target.id === attacker.id ? .35 : 1))), push: canonicalPush(weapon, impact, targetCenter, factor), strategy: "hazard" };
   }
   return {
-    damage: Math.max(1, Math.ceil(canonicalDamage * factor * (target.id === attacker.id ? .35 : 1))),
+    damage: headshot ? headshotDamage(canonicalDamage, true) : Math.max(1, Math.ceil(canonicalDamage * factor * (target.id === attacker.id ? .35 : 1))),
+    headshot,
     push: canonicalPush(weapon, impact, targetCenter, factor), strategy
   };
 }

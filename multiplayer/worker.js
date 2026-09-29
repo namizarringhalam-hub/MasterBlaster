@@ -3,6 +3,7 @@ export { GlobalLobby } from "./globalLobby.js";
 import { ARENA_PORTAL_COOLDOWN_SECONDS, ARENA_SPAWN_POINTS, DEFAULT_LOADOUT, WEAPONS, isArenaPortalTransition, structuralPartBounds, structuralTowerBlueprints, weaponFireMode, weaponUsesAmmo } from "../src/gameData.js";
 import TEXT, { formatText } from "../src/playerText.js";
 import { hitProposalLimit, lineBlockedByStructure, playerCapsuleIntersectsStructure, validateHitProposal, validateImpactProposal, weaponAuthorityStrategy } from "../src/combatAuthority.js";
+import { combatShotOrigin } from "../src/headshots.js";
 import {
   MATCH_TARGET_SCORE,
   MAX_MATCH_PLAYERS,
@@ -802,7 +803,7 @@ export class MatchRoom extends DurableObject {
     const shot = {
       id: /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(requestedShotId) ? requestedShotId : crypto.randomUUID(),
       playerId: player.id, weaponId: weapon.id, firedAt: now,
-      origin: { x: player.position.x, y: player.position.y + 1.2, z: player.position.z },
+      origin: combatShotOrigin(player, weapon, direction),
       direction, hits: Object.create(null), hitPositions: [],
       damageScale: weapon.chargeTime
         ? .35 + finiteNumber(message.chargeRatio, weapon.minCharge || 0, weapon.minCharge || 0, 1) * .65
@@ -884,7 +885,7 @@ export class MatchRoom extends DurableObject {
     if (killed && (targetResumeChanged || attackerResumeChanged)) await this.persistResumeSessions();
     this.broadcast({
       type: "damage", attackerId: attacker.id, targetId: target.id, weaponId: weapon.id,
-      damage, health: target.health, killed, push: validation.push, respawnAt: target.respawnAt,
+      damage, health: target.health, killed, headshot: validation.headshot === true, push: validation.push, respawnAt: target.respawnAt,
       lifeSequence: target.deaths, scores: Object.fromEntries(this.allPlayers().map((player) => [player.id, player.score])), serverTime: now
     });
     return killed;

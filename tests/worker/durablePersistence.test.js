@@ -4,6 +4,40 @@ import { describe, expect, it } from "vitest";
 import { ARENA_SPAWN_POINTS, DEFAULT_LOADOUT, structuralPartBounds, structuralTowerBlueprints, WEAPONS } from "../../src/gameData.js";
 
 describe("MatchRoom durable authority", () => {
+  it("calculates and broadcasts headshots without trusting client damage or bonus flags", async () => {
+    const stub = env.MATCH_ROOMS.getByName("HEADSHOT-AUTHORITY");
+    await runInDurableObject(stub, async (room) => {
+      await room.ready;
+      room.meta = { seed: "AUTHORITY", phase: "playing", ended: false, endsAt: Date.now() + 60_000, targetScore: 10, arenaRevision: 2 };
+      const attacker = {
+        id: "shooter", bot: true, alive: true, health: 100, score: 0, deaths: 0,
+        loadout: ["machine_gun"], ammo: { machine_gun: 5 }, lastFireAt: {}, reloadEndsAt: {},
+        position: { x: 0, y: 0, z: 0 }
+      };
+      const target = { ...attacker, id: "target", position: { x: 8, y: 0, z: -.5 } };
+      room.bots.set(attacker.id, attacker);
+      room.bots.set(target.id, target);
+      const socket = { deserializeAttachment: () => ({ id: attacker.id }) };
+      const broadcasts = [];
+      room.broadcast = (message) => broadcasts.push(message);
+      for (const [pitch, expectedHeadshot] of [[0, false], [.65 / 8, true]]) {
+        attacker.lastFireAt = {};
+        const fire = { playerId: attacker.id, weaponId: "machine_gun", slotIndex: 0, shotId: crypto.randomUUID(), direction: { x: 1, y: pitch, z: 0 } };
+        await room.handleFire(socket, fire);
+        const hit = { attackerId: attacker.id, targetId: target.id, weaponId: fire.weaponId, shotId: fire.shotId,
+          impact: { x: 8, y: 2.08, z: -.5 }, headshot: true, damage: 9999, headshotDamageMultiplier: 9999 };
+        const before = target.health;
+        await room.handleHit(socket, hit);
+        const damage = WEAPONS.machine_gun.damage * (expectedHeadshot ? 2 : 1);
+        expect(target.health).toBe(before - damage);
+        expect(broadcasts.at(-1)).toMatchObject({ type: "damage", headshot: expectedHeadshot, damage });
+        await room.handleHit(socket, hit);
+        expect(target.health).toBe(before - damage);
+      }
+      if (room.persistenceTask) await room.persistenceTask;
+    });
+  });
+
   it("awards a dead shooter one point for an in-flight kill", async () => {
     const stub = env.MATCH_ROOMS.getByName("POSTHUMOUS-KILL");
     await runInDurableObject(stub, async (room) => {
