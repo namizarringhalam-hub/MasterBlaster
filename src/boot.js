@@ -86,7 +86,7 @@ async function checkUpdate() {
     const response = await fetch("/resources.json", { cache: "no-store", signal: AbortSignal.timeout(10000) });
     if (response.ok) {
       const { version } = await response.json();
-      if (/^[a-f0-9]{64}$/.test(version) && version !== RESOURCE_VERSION) updateAvailable = true;
+      if (/^[a-f0-9]{64}$/.test(version)) updateAvailable = version !== RESOURCE_VERSION;
     }
   } catch { /* Offline launches keep the last complete release. */ }
 }
@@ -100,7 +100,7 @@ function prepare() {
     preparationProgress("engine");
     const game = await (await loadEngine()).gameReady;
     await game.prepareResources();
-    preparationProgress(updateAvailable ? "update" : "ready", 1, 1,
+    preparationProgress("ready", 1, 1,
       persistent ? TEXT.boot.preparation.offline : TEXT.boot.preparation.temporary);
   })().catch(error => {
     preparationProgress(updateAvailable ? "update" : "failed");
@@ -114,15 +114,7 @@ document.querySelector("[data-resource-retry]")?.addEventListener("click", () =>
   if (updateAvailable) location.reload();
   else prepare();
 });
-window.addEventListener("online", async () => {
-  await checkUpdate();
-  if (updateAvailable) preparationProgress("update", 1, 1);
-  else if (!preparation) prepare();
-});
-document.addEventListener("visibilitychange", async () => {
-  if (!document.hidden && preparation) {
-    await checkUpdate();
-    if (updateAvailable) preparationProgress("update", 1, 1);
-  }
+window.addEventListener("online", () => {
+  if (!preparation) prepare();
 });
 prepare();

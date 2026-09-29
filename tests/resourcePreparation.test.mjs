@@ -7,7 +7,7 @@ import { prepareSurfaceTextures, surfaceTextures } from "../src/surfaceTextures.
 
 const sha = data => createHash("sha256").update(data).digest("hex");
 const origin = "https://game.test", handlers = {}, stores = new Map(), network = new Map();
-let offline = false, quota = false, fetches = 0;
+let offline = false, quota = false, fetches = 0, navigationPolicy;
 const key = request => typeof request === "string" ? request : request.url;
 const storage = {
   async open(name) {
@@ -23,8 +23,9 @@ const storage = {
 vm.runInNewContext(await readFile("public/sw.js", "utf8"), {
   URL, Map, Set, Request, Response, AbortSignal, crypto: webcrypto, caches: storage,
   self: { location: { origin }, addEventListener(name, callback) { handlers[name] = callback; } },
-  async fetch(request) {
+  async fetch(request, options) {
     fetches++;
+    if (options) navigationPolicy = options.cache;
     if (offline) throw Error("Offline");
     return network.get(key(request))?.clone() || new Response("Missing", { status: 404 });
   }
@@ -64,6 +65,11 @@ assert.equal((await prepare(first.version)).at(-1).type, "complete");
 assert.equal(fetches, before, "a complete release can prepare entirely offline");
 offline = false;
 const second = release(2), missing = origin + second.entries[2].url;
+network.set(origin + "/", network.get(origin + "/index.html").clone());
+let refreshed;
+handlers.fetch({ request: { url: origin + "/", method: "GET", mode: "navigate" }, respondWith: promise => { refreshed = promise; } });
+assert.match(await (await refreshed).text(), new RegExp(second.version), "refresh selects the new release without an update button, even with an older offline shell");
+assert.equal(navigationPolicy, "no-cache", "navigation revalidates the HTTP cache before selecting resources");
 const saved = network.get(missing); network.delete(missing);
 assert.equal((await prepare(second.version)).at(-1).type, "failed");
 assert.equal(await active(), first.version, "an interrupted update preserves the complete offline release");
@@ -113,6 +119,43 @@ assert.equal(imports, 0); frames.shift()(); assert.equal(imports, 0);
 frames.shift()(); await click;
 assert.equal(imports, 1); assert.equal(setups, 1);
 assert.ok(marks.includes("blaster-menu-ready"));
+
+// Completion hides the strip, while a later preparation or failure restores it.
+const controls = new Map(["[data-resource-label]", "[data-resource-detail]", "[data-resource-retry]", "progress"]
+  .map(selector => [selector, { removeAttribute() {} }]));
+const strip = { dataset: {}, querySelector: selector => controls.get(selector) };
+const progressContext = vm.createContext({ TEXT: { boot: { preparation: {} } }, document: { querySelector: () => strip } });
+vm.runInContext((await readFile("src/resourceProgress.js", "utf8")).replace(/^import .*;\r?\n/gm, "").replace("export function", "function"), progressContext);
+for (const [stage, hidden, retryHidden] of [["ready", true, true], ["checking", false, true], ["failed", false, false], ["update", false, false], ["ready", true, true]]) {
+  progressContext.preparationProgress(stage);
+  assert.equal(strip.hidden, hidden, `${stage}: strip visibility`);
+  assert.equal(controls.get("[data-resource-retry]").hidden, retryHidden, `${stage}: recovery action visibility`);
+}
+
+// A newer deployment during an open session must not resurrect a completed bar.
+// Only a failed preparation exposes recovery, and reconnect retries automatically.
+for (const fail of [false, true]) {
+  const stages = [], events = {};
+  let attempts = 0;
+  const context = vm.createContext({
+    console: { warn() {} }, setTimeout, clearTimeout, AbortSignal,
+    RESOURCE_VERSION: first.version, TEXT: { boot: { preparation: {} } },
+    preparationProgress: stage => stages.push(stage), backgroundYield: async () => {},
+    performance: { now: () => 0 }, navigator: {},
+    requestAnimationFrame: callback => setImmediate(callback),
+    document: { readyState: "complete", querySelector: selector => selector === "#ui-root" ? menu : null },
+    window: { addEventListener(name, callback) { events[name] = callback; } },
+    fetch: async () => new Response(JSON.stringify({ version: second.version })),
+    loadGame: async () => ({ gameReady: { async prepareResources() { if (++attempts === 1 && fail) throw Error("Preparation failed"); } } })
+  });
+  vm.runInContext(boot, context);
+  await vm.runInContext("prepare()", context);
+  assert.equal(stages.at(-1), fail ? "update" : "ready");
+  events.online();
+  await vm.runInContext("prepare()", context);
+  assert.equal(stages.at(-1), "ready", "successful preparation stays complete after reconnect");
+  assert.equal(attempts, fail ? 2 : 1, "reconnect retries failures, not completed preparation");
+}
 
 await prepareSurfaceTextures(["PREPARED"]);
 for (const [seed, machined, finish] of [["PREPARED-ground", false, "concrete"], ["machined-glass", true, "glass"]]) {

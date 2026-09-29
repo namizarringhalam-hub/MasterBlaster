@@ -36,7 +36,8 @@ async function loadAsset(request) {
 async function loadShell(request) {
   const key = new Request(`${self.location.origin}/`);
   try {
-    const response = await fetch(request);
+    // Refresh always revalidates the shell, which selects the current release.
+    const response = await fetch(request, { cache: "no-cache" });
     if (response.ok && /text\/html/i.test(response.headers.get("content-type") || "")) {
       // A versioned shell becomes an offline fallback only with a complete release.
       if (!(await response.clone().text()).includes('name="blaster-release"')) {

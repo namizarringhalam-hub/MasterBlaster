@@ -47,14 +47,15 @@ the top progress strip saves the release's resources, prepares reusable textures
 and sounds, decodes the recorded score and warms shared graphics resources.
 Setup remains accessible during preparation; a match waits for required resources.
 Arena geometry and shader variants specific to the selected match still finish
-behind the match loader. Progress percentages describe the current stage.
+behind the match loader. Progress percentages describe the current stage. The strip
+disappears when preparation succeeds; failures keep a retry/update action visible.
 
 Production builds automatically fingerprint source, generator code, dependencies
 and public files. Downloaded assets have content-addressed URLs and SHA-256 checks;
 generated data is keyed by release and generation inputs. Only a complete download
 replaces the offline release. Partial updates, quota failures and corrupt entries
-cannot mark a release available offline. Updates detected in an open session are
-offered on the home menu; active matches retain their release. Offline launches use
+cannot mark a release available offline. Refreshing online automatically loads the
+current release and prepares changed resources; active matches retain their release. Offline launches use
 the last complete release. Browser storage remains optional and can be evicted;
 the game prepares in memory when persistence is unavailable. Generated disk data
 and random-seed memory data have bounded caches. `npm run build` produces matching
