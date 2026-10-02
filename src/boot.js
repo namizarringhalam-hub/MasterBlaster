@@ -1,6 +1,7 @@
 import TEXT from "./playerText.js";
 import { RESOURCE_VERSION, backgroundYield } from "./resourceVersion.js";
 import { preparationProgress } from "./resourceProgress.js";
+import "./journeys.js";
 
 const ui = document.querySelector("#ui-root");
 const status = ui.querySelector("[data-boot-status]");

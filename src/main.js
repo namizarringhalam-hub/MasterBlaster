@@ -24,6 +24,7 @@ import { prepareSurfaceTextures, sharedSurfaceTextures, surfaceMaps } from "./su
 import { GameplayPreparation, gameplayPreparationKey, prepareFighterWeapons, warmFighterWeapons, disposeGameplaySamples } from "./gameplayPreparation.js";
 import { backgroundYield } from "./resourceVersion.js";
 import { preparationProgress } from "./resourceProgress.js";
+import { setJourney } from "./journeys.js";
 
 const canvas = document.querySelector("#game-canvas");
 const ui = document.querySelector("#ui-root");
@@ -311,6 +312,11 @@ class BlasterBattle {
     this.scene.add(rim);
   }
 
+  setJourney(path) {
+    this.journeyPath = path;
+    setJourney(path);
+  }
+
   showModal(markup, { kind = "notice", cancel = "block" } = {}) {
     const previous = document.activeElement;
     ui.insertAdjacentHTML("beforeend", `<dialog class="overlay" data-modal="${kind}">${markup}</dialog>`);
@@ -334,6 +340,12 @@ class BlasterBattle {
       if (event.key === "Escape") handleCancel(event);
     });
     dialog.showModal();
+    const journeyPath = { pause: "/pause", controls: "/controls", graphics: "/graphics-settings", results: "/results", "renderer-error": "/graphics-error", "network-disconnect": "/connection-error" }[kind];
+    if (journeyPath) {
+      dialog.journeyReturnPath = this.journeyPath || "/game";
+      dialog.journeyPath = journeyPath;
+      this.setJourney(journeyPath);
+    }
     queueMicrotask(() => (dialog.querySelector("[autofocus]") || dialog.querySelector("button"))?.focus());
     return dialog;
   }
@@ -343,6 +355,11 @@ class BlasterBattle {
     const returnFocus = dialog.returnFocus;
     if (dialog.open) dialog.close();
     dialog.remove();
+    if (dialog.journeyReturnPath && this.journeyPath === dialog.journeyPath) {
+      const path = dialog.journeyReturnPath === "/loading" && this.state === "play" && !this.hideMatchLoadingAfterFrame && !this.preparingMatch
+        ? "/game" : dialog.journeyReturnPath;
+      this.setJourney(path);
+    }
     returnFocus?.focus?.();
   }
 
@@ -569,6 +586,7 @@ class BlasterBattle {
   }
 
   renderMain() {
+    this.setJourney("/");
     this.stopGameplayPreparation();
     if (this.mode === "global") this.multiplayer?.send("lobby_leave");
     this.globalMultiplayer?.close();
@@ -617,6 +635,7 @@ class BlasterBattle {
       this.globalMultiplayer ||= new GlobalMultiplayer(this, ui, menuAtmosphereMarkup);
       return this.globalMultiplayer.open();
     }
+    this.setJourney({ quick: "/quick-play", private: "/private-match", training: "/training" }[mode]);
     this.mode = mode;
     this.activeLoadoutSlot = null;
     const savedDefault = activePresetLoadout(this.settings);
@@ -666,6 +685,7 @@ class BlasterBattle {
 
   renderPrivateLobby(message) {
     if (message.mode === "global" || this.mode === "global") return this.globalMultiplayer.renderRoom(message);
+    this.setJourney("/private-lobby");
     clearTimeout(this.privateStartTimer);
     this.privateStartTimer = 0;
     const returnedFromMatch = this.state === "play";
@@ -868,6 +888,7 @@ class BlasterBattle {
   }
 
   renderSettings() {
+    this.setJourney("/settings");
     ui.innerHTML = `
       <main class="screen">
         <section class="dialog settings-dialog">
@@ -912,6 +933,7 @@ class BlasterBattle {
   }
 
   renderCredits() {
+    this.setJourney("/credits");
     ui.innerHTML = `
       <main class="screen">
         <section class="dialog credits-dialog">
@@ -1323,6 +1345,12 @@ class BlasterBattle {
   }
 
   setMatchLoading(visible, seed = this.seed, sameSeed = false) {
+    if (visible) {
+      if (this.journeyPath !== "/loading") this.loadingJourneyPath = this.journeyPath;
+      this.setJourney("/loading");
+    } else if (this.journeyPath === "/loading" && this.state !== "play") {
+      this.setJourney(this.loadingJourneyPath || "/");
+    }
     if (!matchLoading) return;
     matchLoading.hidden = !visible;
     if (!visible) return;
@@ -2225,6 +2253,7 @@ class BlasterBattle {
         this.startMatchCountdown();
         this.updateHud();
         this.setMatchLoading(false);
+        if (!this.paused) this.setJourney("/game");
       } else this.waitForMatchFrame();
     }
     if (this.state === "play" && !this.paused && !this.hideMatchLoadingAfterFrame) this.updatePerformanceSample(rawDt);

@@ -3,11 +3,12 @@ import { readFileSync } from "node:fs";
 import * as THREE from "three/webgpu";
 import { clampBotCount } from "../src/botBrain.js";
 import TEXT from "../src/playerText.js";
+import { setJourney } from "../src/journeys.js";
 
 const source = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
 const controller = source.slice(source.indexOf("class BlasterBattle"), source.indexOf("\nconst game = new BlasterBattle")).replaceAll("import.meta.url", '"test"');
 const ui = { querySelector: () => null };
-const Game = new Function("THREE", "TEXT", "ui", "clearTouchActions", "clampBotCount", "escapeHtml", "prepareSurfaceTextures", `return ${controller}`)(THREE, TEXT, ui, () => {}, clampBotCount, String, async () => {});
+const Game = new Function("THREE", "TEXT", "ui", "clearTouchActions", "clampBotCount", "escapeHtml", "prepareSurfaceTextures", "setJourney", `return ${controller}`)(THREE, TEXT, ui, () => {}, clampBotCount, String, async () => {}, setJourney);
 for (const mode of ["training", "quick", "private", "global"]) {
   const game = Object.create(Game.prototype);
   const local = ["training", "quick"].includes(mode);
@@ -72,12 +73,22 @@ try {
   globalThis.document = { activeElement: { focus() { focused = true; } } };
   ui.insertAdjacentHTML = () => {};
   ui.querySelector = () => dialog;
+  game.journeyPath = "/pause";
   Game.prototype.showModal.call(game, markup, options);
+  assert.equal(game.journeyPath, "/controls");
   handlers.keydown({ key: "Escape", preventDefault() { prevented = true; } });
   assert.equal(prevented, true);
   assert.equal(dialog.open, false);
   assert.equal(focused, true, "focus returns to the Controls button");
   assert.equal(game.paused, true, "closing Controls preserves the paused match");
+  assert.equal(game.journeyPath, "/pause", "closing Controls restores its parent journey");
+  Object.assign(dialog, { journeyPath: "/pause", journeyReturnPath: "/loading" });
+  Object.assign(game, { journeyPath: "/pause", state: "play", hideMatchLoadingAfterFrame: false, preparingMatch: false });
+  game.closeModal(dialog);
+  assert.equal(game.journeyPath, "/game", "a pause opened during loading resumes the completed game journey");
+  game.journeyPath = "/";
+  game.closeModal(dialog);
+  assert.equal(game.journeyPath, "/", "an old dialog cannot replace the current menu journey");
 } finally {
   globalThis.document = previousDocument;
 }

@@ -68,15 +68,16 @@ for (const [path, options] of [["/", {}], ["/api/health", {}], ["/assets/game-ab
 }
 console.log("Asset cache deduplication, warm reuse, repair, and storage-failure checks passed.");
 
-function navigate() {
+function navigate(path = "/") {
   let response;
-  handlers.fetch({ request: { url: "https://game.test/", method: "GET", mode: "navigate" }, respondWith: (p) => { response = p; } });
+  handlers.fetch({ request: { url: `https://game.test${path}`, method: "GET", mode: "navigate" }, respondWith: (p) => { response = p; } });
   return response;
 }
 html = true;
 assert.match(await (await navigate()).text(), /<html>/);
 offline = true;
 assert.match(await (await navigate()).text(), /<html>/, "cached navigation supports offline launch and rematches");
+assert.match(await (await navigate("/quick-play")).text(), /<html>/, "journey paths keep the same offline shell fallback");
 offline = false;
 html = false;
 await navigate();

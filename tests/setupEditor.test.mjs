@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { setJourney } from "../src/journeys.js";
 import { readFileSync } from "node:fs";
 import * as data from "../src/gameData.js";
 import TEXT, { formatText } from "../src/playerText.js";
@@ -7,7 +8,7 @@ const source = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
 const controller = source.slice(source.indexOf("class BlasterBattle"), source.indexOf("\nconst game = new BlasterBattle")).replaceAll("import.meta.url", JSON.stringify(import.meta.url));
 const nodes = new Map();
 const ui = { querySelector: selector => nodes.get(selector) || null, querySelectorAll: () => [] };
-const bindings = { ...data, TEXT, formatText, ui, escapeHtml: value => String(value).replaceAll('"', '&quot;').replaceAll('<', '&lt;'), WEAPON_CATEGORY_BY_ID: Object.fromEntries(data.WEAPON_GROUPS.flatMap(group => group.ids.map(id => [id, group]))), WEAPON_INDEX_BY_ID: {}, weaponPreviewVariables: () => "" };
+const bindings = { ...data, TEXT, formatText, ui, setJourney, escapeHtml: value => String(value).replaceAll('"', '&quot;').replaceAll('<', '&lt;'), WEAPON_CATEGORY_BY_ID: Object.fromEntries(data.WEAPON_GROUPS.flatMap(group => group.ids.map(id => [id, group]))), WEAPON_INDEX_BY_ID: {}, weaponPreviewVariables: () => "" };
 const Game = new Function(...Object.keys(bindings), `return ${controller}`)(...Object.values(bindings));
 const storage = new Map();
 globalThis.localStorage = { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };

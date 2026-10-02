@@ -380,7 +380,7 @@ const menuMethod = new Function("ui", "TEXT", "menuAtmosphereMarkup", `return ({
 const frameSource = mainSource.slice(mainSource.indexOf("\n  frame(time) {"), mainSource.indexOf("\n  update(dt, realDt = dt) {"));
 const menuMarks = [], loaderCalls = [];
 const frameMethod = new Function("performance", `return ({${frameSource}}).frame;`)({ mark: name => menuMarks.push(name), measure: name => menuMarks.push(name) });
-Object.assign(decoyHarness, { settings: {}, bindUi() {}, commitResize() {}, stopGameplayPreparation() {},
+Object.assign(decoyHarness, { settings: {}, bindUi() {}, commitResize() {}, stopGameplayPreparation() {}, setJourney() {},
   timer: { update() {}, getDelta: () => 1 / 60 }, renderScene: () => true,
   loaderVisible: true, hideMatchLoadingAfterFrame: true,
   setMatchLoading(visible) { this.loaderVisible = visible; loaderCalls.push(visible); } });

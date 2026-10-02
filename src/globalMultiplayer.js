@@ -73,6 +73,7 @@ export class GlobalMultiplayer {
   }
 
   renderLobby() {
+    this.game.setJourney("/global-multiplayer");
     this.game.state = "global";
     this.game.paused = false;
     this.game.sound.setPaused(false);
@@ -104,6 +105,7 @@ export class GlobalMultiplayer {
   }
 
   renderCreate() {
+    this.game.setJourney("/global-multiplayer/create");
     this.game.state = "global-create";
     this.ui.innerHTML = this.shell(`<header><button class="back" data-global="back">${copy.back}</button></header><h1>${copy.create}</h1><p class="dialog-lead">${copy.createDescription}</p><div class="setup-form global-create-form"><label>${copy.roomName}<input id="global-name" maxlength="18" value="${esc(formatText(copy.defaultName, { name: this.game.settings.displayName }).slice(0, 18))}"></label><label>${copy.capacity}<select id="global-capacity">${[2,3,4,6,8,12,16].map((n) => `<option ${n === 4 ? "selected" : ""}>${n}</option>`).join("")}</select></label></div><details class="setup-options"><summary>${TEXT.setup.editSettings}<span data-global-create-summary>${formatText(TEXT.setup.matchSummary, { bots: 2, difficulty: TEXT.setup.difficulties.normal, minutes: 3 })}</span></summary><div class="setup-form global-create-form"><label>${copy.bots}<input id="global-bots" type="number" min="0" max="12" step="1" value="2"></label><label>${TEXT.setup.labels.timeLimit}<input id="global-minutes" type="number" min="1" max="30" step="1" value="3"></label><label>${TEXT.setup.labels.botDifficulty}<select id="global-difficulty">${["rookie", "normal", "veteran"].map((level) => `<option value="${level}" ${level === "normal" ? "selected" : ""}>${TEXT.setup.difficulties[level]}</option>`).join("")}</select></label></div><p class="global-help">${copy.capacityHint}</p></details><p data-global-status class="loadout-status" role="status"></p><button class="launch primary" data-global="open">${copy.create}</button>`);
     this.game.bindUi();
@@ -139,6 +141,7 @@ export class GlobalMultiplayer {
 
   renderRoom(message) {
     const game = this.game;
+    game.setJourney("/global-multiplayer/lobby");
     if (game.world) game.clearMatch(true);
     game.state = "lobby";
     game.paused = false;
