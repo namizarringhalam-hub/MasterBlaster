@@ -1,7 +1,9 @@
 # Master Blaster: first player-growth experiment
 
 Prepared 20 September 2026. Default: organic promotion, no advertising spend.
-Status: campaign drafts prepared; no posts, outreach, listings or ads published.
+Revised 4 October 2026. Status: existing approved directory outreach is recorded
+in seo-checkpoint.md; new community targets await user review. Use brand accounts
+only. See [the current target list](community-outreach-targets.md).
 
 ## What we know
 
@@ -79,10 +81,11 @@ Use actual captured gameplay. These are shot lists, not completed video assets.
 
 ## Distribution priorities and constraints
 
-1. Start with existing social accounts and relevant playtesting communities.
-   r/playmygame is a candidate, but read the current rules before posting. Its
-   moderators explicitly enforce participation requirements; do not treat it as
-   a link-drop channel. [Moderator guidance](https://www.reddit.com/r/playmygame/comments/1m61887/)
+1. Start only after the user reviews and approves targets in
+   [the current community list](community-outreach-targets.md). That list includes
+   Reddit, arena-shooter/Liero, browser-game and AI-builder audiences with source
+   links and posting constraints. Use brand accounts and truthful affiliation;
+   new accounts, joins, moderator contacts and posts await target approval.
 2. Consider itch.io as the first portal experiment. It supports uploaded HTML5
    games, but requires relative asset paths. This project currently uses
    root-relative assets and same-origin multiplayer endpoints, so the production
@@ -117,6 +120,7 @@ with a completed match. Compare source quality before choosing paid promotion.
 
 ## Next unfinished step
 
-Confirm preferred channels and budget, capture the three gameplay clips, and
-inspect available analytics. Publishing from the owner's accounts or contacting
-creators needs an explicit instruction to publish/send. No spending is authorized.
+Have the user review the numbered community target list. Do not pursue new
+accounts, community joins, moderator contacts or posts until targets are approved.
+Then prepare suitable real gameplay clips and community-specific material under
+their current rules. No spending or use of personal accounts is authorized.

@@ -270,3 +270,35 @@
   computer or stopped app cannot check promptly or provide immediate recovery/
   notification. Existing unrelated paused automations remain untouched. Pause this
   follow-up once all remaining work is achieved or the user explicitly stops it.
+
+## Community target review — 4 October 2026
+
+- User rejected Lemmy SDF and requested a replacement list for review, including
+  Reddit, Quake/arena-shooter, Liero, PC/Mac gaming and AI-builder communities.
+  Removed Lemmy SDF from the active outreach plan. Its historical registration
+  record above does not authorize further monitoring, login attempts or posting.
+- Updated ACTIVE daily 09:00 Europe/Stockholm heartbeat
+  master-blaster-seo-follow-up through the app tool and verified its saved prompt.
+  It excludes Lemmy SDF and requires target approval before new accounts, joins,
+  moderator contacts, outreach or posts. Existing approved directory checks and
+  independent performance work remain in scope; unrelated paused work is untouched.
+- Added docs/community-outreach-targets.md with 11 numbered proposed targets,
+  primary source links, fit, posting/AI rules and unresolved checks. Updated
+  docs/player-growth-plan.md to use that list and the user's review gate. All
+  proposed targets remain unapproved; no accounts, joins, contacts or posts made.
+- Preferred starting candidates: r/WebGames (AI-policy discussion needs a fresh
+  check), r/playmygame (current AI policy allows AI-built games), ESReality General
+  Gaming, HTML5 Game Devs Game Showcase and r/Codex's current showcase thread.
+  r/IndieDev permits new users in its megathread. ArenaFPS, official Liero Discord,
+  Mac gaming and the other AI communities have explicit checks documented.
+- Excluded r/pcgaming because browser games are prohibited; r/IndieGaming's
+  substantial generative-AI restriction makes it a poor fit. No invented account
+  eligibility or compatibility claims. No personal details or creator bios used.
+- Validation: reviewed the changed documentation, source rules and automation
+  configuration; git diff --check passes. No application code changed, so no
+  build or application tests required for this documentation-only request.
+- Next step: user reviews the numbered targets and selects approvals/removals.
+  Then recheck approved communities' current rules and prepare suitable material.
+  Editorial directory publication and quality backlinks remain unconfirmed;
+  mobile LCP remains 2.9 seconds at the last measurement. No new speed measurement
+  or listing publication claim was made during this research.
