@@ -232,3 +232,9 @@
   Approved listing draft preserved for handoff. Remaining external work: user image
   and submission receipt; editorial publication/quality backlinks; forum activation;
   mobile LCP under 2 seconds (last measured 2.9 s). Creator bio intentionally skipped.
+- User supplied 191559.png and explicitly selected it as the replacement. Copied
+  its bytes unchanged to public/press/gameplay.png and removed the rejected JPEG.
+  PNG is a genuine unedited arena canvas from the bot-combat session, 16:9,
+  with no visible usernames/chat. Production build and hosting checks passed.
+  Next: wait for this public asset to deploy, replace the draft attachment and
+  submit under the already approved license; verify Airtable's receipt.
