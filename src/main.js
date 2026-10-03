@@ -3926,7 +3926,7 @@ class BlasterBattle {
   }
 
   renderScene() {
-    if (this.pendingResize) return false;
+    if (!this.world || this.pendingResize) return false;
     if (this.state !== "play" || this.paused) this.updateCamera();
     this.world?.updatePresentation(this.camera, this.settings.reducedMotion);
     this.renderPipeline.render();

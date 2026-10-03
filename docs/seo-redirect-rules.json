@@ -1,0 +1,49 @@
+{
+  "name": "Master Blaster canonical redirects",
+  "kind": "zone",
+  "phase": "http_request_dynamic_redirect",
+  "rules": [
+    {
+      "ref": "masterblaster_home_alias",
+      "description": "Send index.html directly to the canonical HTTPS homepage",
+      "expression": "http.host in {\"masterblaster.se\" \"www.masterblaster.se\"} and http.request.uri.path eq \"/index.html\"",
+      "action": "redirect",
+      "action_parameters": {
+        "from_value": {
+          "target_url": { "value": "https://masterblaster.se/" },
+          "status_code": 301,
+          "preserve_query_string": true
+        }
+      },
+      "enabled": true
+    },
+    {
+      "ref": "masterblaster_guide_alias",
+      "description": "Send guide aliases directly to the canonical HTTPS guide",
+      "expression": "http.host in {\"masterblaster.se\" \"www.masterblaster.se\"} and http.request.uri.path in {\"/how-to-play\" \"/how-to-play/index.html\"}",
+      "action": "redirect",
+      "action_parameters": {
+        "from_value": {
+          "target_url": { "value": "https://masterblaster.se/how-to-play/" },
+          "status_code": 301,
+          "preserve_query_string": true
+        }
+      },
+      "enabled": true
+    },
+    {
+      "ref": "masterblaster_host_and_https",
+      "description": "Combine WWW and HTTP normalization into one redirect",
+      "expression": "http.host in {\"masterblaster.se\" \"www.masterblaster.se\"} and (http.host eq \"www.masterblaster.se\" or not ssl)",
+      "action": "redirect",
+      "action_parameters": {
+        "from_value": {
+          "target_url": { "expression": "concat(\"https://masterblaster.se\", http.request.uri.path)" },
+          "status_code": 301,
+          "preserve_query_string": true
+        }
+      },
+      "enabled": true
+    }
+  ]
+}

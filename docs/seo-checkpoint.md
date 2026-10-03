@@ -85,7 +85,28 @@
   Exclude the social-only 1,963,583-byte og.png from mandatory offline downloads;
   keep the original social preview live. Startup/navigation/browser match and
   build/hosting checks passed, including focused DOM retention regression.
-- Pending: publish follow-up and remeasure; Cloudflare dashboard still signed out.
+- Published 920f4b3 and verified production deployment. Second mobile run:
+  performance 83, FCP 2.3 s, LCP 3.9 s, TBT 0 ms, CLS 0; desktop FCP 0.5 s,
+  LCP 0.8 s, TBT 300 ms. Under-two-second mobile loading is not achieved.
+- Final performance work: three compact Inter UI subsets reduce their combined
+  first UI downloads from 332,940 to 63,716 bytes; original complete fonts remain
+  available via complementary Unicode ranges. Verified all current text coverage,
+  exact outlines/advances/vertical metrics/hint programs/copyright metadata. No
+  runtime/build dependency added. Regenerate from original WOFF2 with fontTools
+  subset: --unicodes=U+0000-00FF,U+2000-206F,U+2161,U+2190,U+2605-2606
+  --layout-features=* --glyph-names --notdef-outline --name-IDs=*
+  --name-languages=* --hinting --flavor=woff2, output <stem>-latin.woff2.
+  Hidden empty-world canvas rendering skipped; CSS also hides canvas behind
+  Settings/Credits to avoid stale warmup/match frames. Startup/paused-arena,
+  gameplay warmup, cache/offline and complete build/hosting checks passed.
+- Submitted canonical game URL as MasterBlasterGame to somethingbig.ai/games;
+  site confirmed receipt for editorial review. No email/social/personal details
+  submitted. Publication/backlink not yet confirmed; no repeated submissions.
+- Prepared docs/seo-redirect-rules.json for Cloudflare Single Redirects. This is
+  an unapplied draft: preserve existing zone rules and insert these ordered rules
+  rather than replacing an existing ruleset. www duplicate/HTTP alias chains remain.
+- Pending: publish final performance changes and remeasure; Cloudflare dashboard
+  still signed out.
   Free Proton mailbox signup prepared as masterblastergame@proton.me, awaiting
   action-time terms approval required by browser policy. No paid plan selected
   and no mailbox created. Directory email delivery/submissions await brand contact

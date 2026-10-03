@@ -34,6 +34,17 @@ assert.deepEqual(bootButtons.map(button => button.dataset), [{ mode: "quick" }, 
 assert.equal(bootStatus.textContent, PLAYER_TEXT.landing.highlights);
 menu.renderMain();
 assert.equal(markupWrites, 1, "returning from another game screen still renders the landing menu");
+let submittedFrames = 0;
+const scene = Object.assign(Object.create(Game.prototype), {
+  state: "menu", world: null, updateCamera() {}, settings: {},
+  renderPipeline: { render() { submittedFrames++; } }
+});
+assert.equal(scene.renderScene(), false, "the hidden game canvas does not consume GPU frames behind menus");
+assert.equal(submittedFrames, 0);
+scene.world = { updatePresentation() {} };
+scene.state = "play"; scene.paused = true;
+assert.equal(scene.renderScene(), true, "paused matches keep their visible arena background");
+assert.equal(submittedFrames, 1);
 const game = Object.create(Game.prototype);
 const renderer = {}, sound = {}, pipeline = {}, settings = { loadout: ["a", "b"] };
 let starts = 0, label;
