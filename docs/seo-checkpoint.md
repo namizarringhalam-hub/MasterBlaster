@@ -251,3 +251,22 @@
   and a live quality backlink remain unconfirmed. Other remaining work is verified
   forum activation/post and mobile LCP below 2 seconds (last measured 2.9 s).
   Creator information remains intentionally excluded as requested.
+
+## Scheduled SEO follow-up — 3 October 2026
+
+- User requested dependable follow-up/reporting on the remaining SEO items.
+  Created ACTIVE thread heartbeat "Master Blaster SEO follow-up", automation ID
+  master-blaster-seo-follow-up, daily at 09:00 Europe/Stockholm, first scheduled
+  check 4 October. It returns to this same thread and reports each run, including
+  pending reviews, with verified publication/post URLs when available.
+- Follow-up covers iogames.party and Something Big publication, Free Play Games
+  replies/listing, SDF Lemmy brand-account activation and a permitted relevant
+  introduction, plus justified mobile LCP improvements. Avoid duplicate submissions
+  or posts and remeasure speed only after meaningful performance changes.
+- Forum is https://lemmy.sdf.org/, MasterBlasterGame. Registration submitted;
+  activation is unverified because login has not established an authenticated
+  session. No particular community or tailored post has been selected yet.
+- This automation needs the computer on and the local app running. An offline
+  computer or stopped app cannot check promptly or provide immediate recovery/
+  notification. Existing unrelated paused automations remain untouched. Pause this
+  follow-up once all remaining work is achieved or the user explicitly stops it.
