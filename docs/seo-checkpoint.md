@@ -238,3 +238,16 @@
   with no visible usernames/chat. Production build and hosting checks passed.
   Next: wait for this public asset to deploy, replace the draft attachment and
   submit under the already approved license; verify Airtable's receipt.
+- Published ff4884a to origin/main. Live /press/gameplay.png returns image/png/200,
+  exactly 804,703 bytes and SHA-256 b6643b10fcf5a4bc91cedf626478863809ebe8e4e308309cbbf87cea5f1e91a6,
+  matching the user's selected original and both build hosting layouts. Press
+  assets remain excluded from mandatory offline resource downloads.
+- Removed the old gameplay.jpg attachment and imported gameplay.png into the
+  iogames.party draft. Submitted once with approved license, factual descriptions,
+  canonical game/guide links and brand mailbox. Reciprocal prioritization unchecked.
+  Airtable confirmed: "Thank you for submitting the form!" Receipt retained in
+  ignored .wrangler/tmp/seo/io-directory-submitted.jpg; receipt tab deliverable.
+- No further approval or login needed for this submission. Editorial publication
+  and a live quality backlink remain unconfirmed. Other remaining work is verified
+  forum activation/post and mobile LCP below 2 seconds (last measured 2.9 s).
+  Creator information remains intentionally excluded as requested.
