@@ -173,9 +173,11 @@ assert.equal(manifest.description, PLAYER_TEXT.site.description, "installed-game
 assert.ok(manifest.icons.some((icon) => icon.src === resources.urls["/favicon.svg"]), "the installable app publishes its brand icon");
 
 const previewResponse = await worker.fetch(new Request("https://example.test/og.png"), { ASSETS: clientAssets });
+assert.ok(release.entries.every(entry => !entry.url.endsWith("/og.png")), "the mandatory game download excludes the crawler-only social image");
 assert.equal(previewResponse.status, 200, "the social preview image is deployed");
 assert.equal(previewResponse.headers.get("content-type"), "image/png", "the social preview is served as a PNG");
 assert.equal(Buffer.from(await previewResponse.arrayBuffer()).subarray(1, 4).toString("ascii"), "PNG", "the social preview contains PNG bytes");
+assert.deepEqual(await readFile("dist/client/og.png"), await readFile("public/og.png"), "social crawlers receive the original preview bytes outside the game cache");
 
 const faviconResponse = await worker.fetch(new Request("https://example.test/favicon.svg"), { ASSETS: clientAssets });
 assert.equal(faviconResponse.status, 200, "the favicon is deployed");

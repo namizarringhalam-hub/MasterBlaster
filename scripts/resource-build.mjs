@@ -17,7 +17,8 @@ export async function resourceBuild() {
   const version = hash((await Promise.all(inputs.sort().map(async path => `${path}:${hash(await readFile(path))}`))).join("\n"));
   const publicFiles = await filesIn("public");
   const copies = new Map(), urls = {};
-  for (const path of publicFiles.filter(path => !/\.(?:css|webmanifest)$/.test(path) && !path.endsWith("/sw.js") && !basename(path).startsWith("_"))) {
+  // Social previews stay public for crawlers, but are never needed to play offline.
+  for (const path of publicFiles.filter(path => !/\.(?:css|webmanifest)$/.test(path) && !path.endsWith("/sw.js") && path !== "public/og.png" && !basename(path).startsWith("_"))) {
     const bytes = await readFile(path);
     const url = `/resources/${hash(bytes)}/${basename(path)}`;
     urls[path.slice(6)] = url;

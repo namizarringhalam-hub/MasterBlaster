@@ -1,12 +1,39 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { PLAYER_TEXT } from "../PLAYER_TEXT.js";
 
 const source = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
 const controller = source.slice(source.indexOf("class BlasterBattle"), source.indexOf("\nconst game = new BlasterBattle")).replaceAll("import.meta.url", '"test"');
 const frames = [];
 const journeys = [];
-const Game = new Function("requestAnimationFrame", "performance", "TEXT", "setJourney", "matchLoading", `return ${controller}`)(
-  callback => frames.push(callback), { mark() {}, measure() {} }, { errors: { graphicsReset: "GPU lost" } }, path => journeys.push(path), null);
+let markupWrites = 0, bootStatusPresent = true, menuBindings = 0;
+const shell = { dataset: {} };
+const bootButtons = [{ dataset: { bootMode: "quick" } }, { dataset: { bootScreen: "settings" } }];
+const bootStatus = {
+  textContent: "Loading",
+  removeAttribute(name) { if (name === "data-boot-status") bootStatusPresent = false; },
+  setAttribute() {}
+};
+const ui = {
+  querySelector: selector => selector === "[data-boot-status]" ? bootStatusPresent && bootStatus : shell,
+  querySelectorAll: () => bootButtons,
+  set innerHTML(value) { markupWrites++; assert.match(value, /<h1>/); }
+};
+const Game = new Function("requestAnimationFrame", "performance", "TEXT", "setJourney", "matchLoading", "ui", "menuAtmosphereMarkup", `return ${controller}`)(
+  callback => frames.push(callback), { mark() {}, measure() {} }, PLAYER_TEXT, path => journeys.push(path), null, ui, () => "");
+const menu = Object.assign(Object.create(Game.prototype), {
+  settings: { graphics: "low" },
+  sound: Object.fromEntries(["resume", "setVolume", "setMix", "setPaused", "setMusicScene", "startMusic"].map(name => [name, () => {}])),
+  stopGameplayPreparation() {}, clearMatch() {}, bindUi() { menuBindings++; }
+});
+menu.renderMain({ reuseShell: true });
+assert.equal(markupWrites, 0, "engine readiness retains the painted heading and focused menu controls");
+assert.equal(menuBindings, 1);
+assert.equal(shell.dataset.menuQuality, "low");
+assert.deepEqual(bootButtons.map(button => button.dataset), [{ mode: "quick" }, { screen: "settings" }], "ready buttons have one handler path, with no boot attributes");
+assert.equal(bootStatus.textContent, PLAYER_TEXT.landing.highlights);
+menu.renderMain();
+assert.equal(markupWrites, 1, "returning from another game screen still renders the landing menu");
 const game = Object.create(Game.prototype);
 const renderer = {}, sound = {}, pipeline = {}, settings = { loadout: ["a", "b"] };
 let starts = 0, label;

@@ -271,7 +271,7 @@ class BlasterBattle {
       reportRendererError(info);
       this.renderPipeline.degradeToDirect(info);
     };
-    this.renderMain();
+    this.renderMain({ reuseShell: true });
     performance.mark?.("blaster-engine-ready");
     performance.measure?.("blaster-shell-to-engine", "blaster-shell-visible", "blaster-engine-ready");
     this.resize(true);
@@ -585,7 +585,7 @@ class BlasterBattle {
     this.sound.stopAll();
   }
 
-  renderMain() {
+  renderMain({ reuseShell = false } = {}) {
     this.setJourney("/");
     this.stopGameplayPreparation();
     if (this.mode === "global") this.multiplayer?.send("lobby_leave");
@@ -603,7 +603,21 @@ class BlasterBattle {
     this.sound.setPaused(false);
     this.sound.setMusicScene("menu");
     this.sound.startMusic("menu", this.seed);
-    ui.innerHTML = `
+    // Keep the painted landing page and its keyboard focus when the engine arrives.
+    const bootStatus = reuseShell && ui.querySelector("[data-boot-status]");
+    if (bootStatus) {
+      ui.querySelector("[data-menu-scene]").dataset.menuQuality = this.settings.graphics;
+      for (const button of ui.querySelectorAll("[data-boot-mode], [data-boot-screen]")) {
+        if (button.dataset.bootMode) button.dataset.mode = button.dataset.bootMode;
+        if (button.dataset.bootScreen) button.dataset.screen = button.dataset.bootScreen;
+        delete button.dataset.bootMode;
+        delete button.dataset.bootScreen;
+      }
+      bootStatus.textContent = TEXT.landing.highlights;
+      bootStatus.removeAttribute("data-boot-status");
+      bootStatus.removeAttribute("role");
+      bootStatus.setAttribute("aria-label", TEXT.landing.highlightsAria);
+    } else ui.innerHTML = `
       <main class="menu-shell menu-scene" data-menu-scene="landing" data-menu-quality="${this.settings.graphics}" style="--menu-energy:.22;--menu-accent:#52e9ff">
         ${menuAtmosphereMarkup("landing")}
         <section class="hero-panel">

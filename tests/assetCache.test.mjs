@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import { readFile, mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { hash, writeResourceRelease } from "../scripts/resource-build.mjs";
+import { hash, resourceBuild, writeResourceRelease } from "../scripts/resource-build.mjs";
 import vm from "node:vm";
 
 const source = await readFile(new URL("../public/sw.js", import.meta.url), "utf8");
+const runtimeResources = await resourceBuild();
+assert.equal(runtimeResources.urls["/og.png"], undefined, "social previews do not become game runtime URLs");
+assert.ok([...runtimeResources.copies.keys()].every(path => !path.endsWith("/og.png")), "offline game preparation never downloads the social preview");
+assert.ok(runtimeResources.copies.has(runtimeResources.urls["/menu-arena-v2.webp"]), "the actual menu artwork remains available offline");
 const handlers = {}, stored = new Map();
 let downloads = 0, writes = 0, failOpen = false, failWrite = false, offline = false, html = false;
 let htmlContent = "<html>fallback</html>";

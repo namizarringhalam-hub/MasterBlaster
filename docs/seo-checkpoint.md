@@ -70,6 +70,23 @@
 - Access blocker: deployment credentials can list/publish Pages but Cloudflare
   rulesets/settings API returns 403. Dashboard sign-in requested for edge redirects.
   Dedicated brand mailbox preference requested before new public accounts.
-- Next: publish validated technical/content changes using brand commit identity;
-  verify production; remeasure PageSpeed, submit updated sitemap/guide and execute
-  allowed promotion. Finish edge rules when Cloudflare access is restored.
+- Published 4800350 to origin/main with brand commit identity; production Pages
+  deployment succeeded. Live guide/crawler files return 200; missing pages/assets
+  now return 404. No user name or personal contact information published.
+- Resubmitted sitemap.xml in Search Console on 3 October: successful submission.
+  Requested indexing of /how-to-play/: Google confirmed addition to crawl queue.
+  Submitted homepage and guide to IndexNow: HTTP 200 accepted. Actual guide
+  indexing and backlinks remain unconfirmed; queue acceptance is not indexing.
+- First published remeasurement: mobile performance 80, FCP 2.1 s, LCP 4.2 s,
+  TBT 190 ms, CLS 0; SEO/accessibility/best-practices each 100. LCP identifies the
+  homepage H1, which engine startup unnecessarily recreated after GPU init.
+- Follow-up: retain the initial menu DOM/focus during startup, promote existing
+  button attributes to one engine handler, preserve later normal menu rendering.
+  Exclude the social-only 1,963,583-byte og.png from mandatory offline downloads;
+  keep the original social preview live. Startup/navigation/browser match and
+  build/hosting checks passed, including focused DOM retention regression.
+- Pending: publish follow-up and remeasure; Cloudflare dashboard still signed out.
+  Free Proton mailbox signup prepared as masterblastergame@proton.me, awaiting
+  action-time terms approval required by browser policy. No paid plan selected
+  and no mailbox created. Directory email delivery/submissions await brand contact
+  and applicable license approval. Forum application activation remains unknown.
