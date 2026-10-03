@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#07111d">
+    <meta name="description" content="Learn Master Blaster's keyboard and touch controls, grappling, weapon loadouts, offline bot battles and online multiplayer with friends.">
+    <meta name="robots" content="index, follow, max-image-preview:large">
+    <link rel="canonical" href="https://masterblaster.se/how-to-play/">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <title>How to Play Master Blaster — Controls &amp; Multiplayer Guide</title>
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="How to Play Master Blaster">
+    <meta property="og:description" content="Keyboard and touch controls, grappling, weapons, offline play and multiplayer with friends.">
+    <meta property="og:url" content="https://masterblaster.se/how-to-play/">
+    <meta property="og:image" content="https://masterblaster.se/og.png">
+    <meta property="og:image:alt" content="Master Blaster neon arena combat">
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; color: #f2f8ff; background: #07111d; }
+      * { box-sizing: border-box; }
+      body { margin: 0; line-height: 1.65; }
+      header, main, footer { width: min(880px, 100%); margin: auto; padding: 24px; }
+      header { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid #234050; }
+      a { color: #52e9ff; text-underline-offset: 3px; }
+      a:focus-visible, summary:focus-visible { outline: 3px solid #52e9ff; outline-offset: 5px; }
+      .brand { color: #f2f8ff; font-weight: 800; letter-spacing: .08em; text-decoration: none; }
+      .play { display: inline-block; padding: 9px 17px; border: 1px solid #52e9ff; border-radius: 4px; text-decoration: none; font-weight: 700; }
+      nav ol { display: flex; flex-wrap: wrap; gap: 10px; padding: 0; list-style: none; font-size: .9rem; }
+      nav li + li::before { content: "/"; padding-right: 10px; color: #91a7b7; }
+      h1 { font-size: clamp(2rem, 6vw, 3rem); line-height: 1.1; margin: 30px 0 20px; }
+      h2 { color: #dff9ff; font-size: 1.5rem; line-height: 1.3; margin-top: 40px; }
+      p, li, td { color: #c3d1dc; }
+      strong, th { color: #f2f8ff; }
+      table { width: 100%; border-collapse: collapse; text-align: left; }
+      th, td { padding: 10px 12px; border-bottom: 1px solid #234050; vertical-align: top; }
+      th { font-size: .9rem; }
+      td:first-child { width: 40%; }
+      kbd { font: inherit; color: #dff9ff; white-space: nowrap; }
+      details { padding: 16px 0; border-bottom: 1px solid #234050; }
+      summary { font-weight: 700; cursor: pointer; }
+      details p { margin-bottom: 0; }
+      footer { margin-top: 20px; border-top: 1px solid #234050; }
+      @media (max-width: 480px) { header, main, footer { padding: 20px 16px; } th, td { padding: 10px 6px; } }
+    </style>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebPage",
+            "@id": "https://masterblaster.se/how-to-play/#webpage",
+            "url": "https://masterblaster.se/how-to-play/",
+            "name": "How to Play Master Blaster — Controls & Multiplayer Guide",
+            "description": "Learn Master Blaster's keyboard and touch controls, grappling, weapon loadouts, offline bot battles and online multiplayer with friends.",
+            "inLanguage": "en",
+            "isPartOf": { "@id": "https://masterblaster.se/#website" },
+            "about": { "@id": "https://masterblaster.se/#game" },
+            "breadcrumb": { "@id": "https://masterblaster.se/how-to-play/#breadcrumb" }
+          },
+          {
+            "@type": "BreadcrumbList",
+            "@id": "https://masterblaster.se/how-to-play/#breadcrumb",
+            "itemListElement": [
+              { "@type": "ListItem", "position": 1, "name": "Master Blaster", "item": "https://masterblaster.se/" },
+              { "@type": "ListItem", "position": 2, "name": "How to play", "item": "https://masterblaster.se/how-to-play/" }
+            ]
+          },
+          {
+            "@type": "FAQPage",
+            "@id": "https://masterblaster.se/how-to-play/#faq",
+            "isPartOf": { "@id": "https://masterblaster.se/how-to-play/#webpage" },
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Is Master Blaster free, and do I need a download?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Master Blaster is free to play in your browser. You do not need to install an app. The browser loads and prepares the game resources when you visit." }
+              },
+              {
+                "@type": "Question",
+                "name": "Can I play Master Blaster offline?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Quick Play and Training run locally against bots. First visit while connected and let the home menu finish preparing resources. When it reports Available offline, this browser has saved the game for offline visits. Private Room and Global Multiplayer require an internet connection. Browsers can clear saved data, so offline availability depends on retaining those resources." }
+              },
+              {
+                "@type": "Question",
+                "name": "How do I play with friends?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Choose Private Room to create or join a room using a shared room code. Wait for your friends in the private lobby; the host starts the match. Global Multiplayer lets you find open games or create a public game that appears in the global lobby." }
+              },
+              {
+                "@type": "Question",
+                "name": "Can I play on a phone or tablet?",
+                "acceptedAnswer": { "@type": "Answer", "text": "The game has touch controls for movement, aiming, firing, jumping, grappling and weapon switching. Use landscape orientation for more space. Performance depends on your browser and device; try Low graphics in Settings if the game runs slowly." }
+              },
+              {
+                "@type": "Question",
+                "name": "What should I do if the game runs slowly?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Open Settings and choose Low graphics. You can also reduce bot count before a match. Reduce motion and flashes is available in Settings. Keep hardware acceleration enabled in your browser; more demanding graphics effects depend on your device's capabilities." }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="/">MASTER BLASTER</a>
+      <a class="play" href="/">Play free</a>
+    </header>
+    <main>
+      <nav aria-label="Breadcrumb">
+        <ol><li><a href="/">Master Blaster</a></li><li aria-current="page">How to play</li></ol>
+      </nav>
+      <h1>How to play Master Blaster</h1>
+      <p>Master Blaster is a free browser arena shooter with grappling, destructible towers and 47 weapons. Fight bots, invite friends or join a public game. Matches support up to 16 fighters, including bots.</p>
+
+      <h2>Start your first match</h2>
+      <ol>
+        <li><a href="/">Open the game</a> and choose <strong>Quick Play</strong> for a local bot match or <strong>Training</strong> to practice.</li>
+        <li>Choose your bot count, difficulty and time limit in match settings.</li>
+        <li>Choose five weapons. Their slots become keys <kbd>1–5</kbd> during the match.</li>
+        <li>Start the match. On a computer, click the arena once to capture your mouse, then aim and fire.</li>
+      </ol>
+
+      <h2>Keyboard and mouse controls</h2>
+      <table>
+        <thead><tr><th scope="col">Control</th><th scope="col">Action</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>W A S D</kbd></td><td>Move</td></tr>
+          <tr><td>Mouse</td><td>Look and aim</td></tr>
+          <tr><td><kbd>Space</kbd></td><td>Jump</td></tr>
+          <tr><td>Left click</td><td>Fire</td></tr>
+          <tr><td><kbd>R</kbd></td><td>Reload</td></tr>
+          <tr><td><kbd>1–5</kbd> / <kbd>Q</kbd></td><td>Select a weapon slot / switch to the next weapon</td></tr>
+          <tr><td><kbd>E</kbd> / right click</td><td>Attach or release the grapple hook</td></tr>
+          <tr><td><kbd>F</kbd></td><td>Switch between first and third person</td></tr>
+          <tr><td><kbd>Tab</kbd></td><td>Hold to see the scoreboard</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>Open or close the pause menu</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Grappling, weapons and cover</h2>
+      <p>Aim at a surface and press <kbd>E</kbd> or right click to hook it. Hold <kbd>W</kbd> while attached to reel in faster. Release the hook to carry your momentum through the arena.</p>
+      <p>Each loadout has five weapon slots. Try a close-range weapon, a long-range weapon and an explosive to learn how they handle. Charged weapons fire when you release Fire after charging. Remote explosives detonate when you fire again after a charge sticks. Empty weapons reload automatically when you try to fire.</p>
+      <p>Towers and platforms can break apart during a fight. Watch the cover above and around you: collapsing structures can damage fighters underneath.</p>
+
+      <h2>Choose a game mode</h2>
+      <ul>
+        <li><strong>Quick Play:</strong> fight up to 15 bots locally. Pausing freezes the local match.</li>
+        <li><strong>Training:</strong> practice with up to 15 bots. Training controls can stop bots moving or attacking.</li>
+        <li><strong>Private Room:</strong> create or join an online room with a shared room code. The host starts the match when the group is ready.</li>
+        <li><strong>Global Multiplayer:</strong> browse open public games or create your own. A public game needs at least two players before the host starts it.</li>
+      </ul>
+
+      <h2>Touch controls</h2>
+      <p>Drag the left side to move and the right side to aim. Use <strong>FIRE</strong>, <strong>JUMP</strong> and <strong>HOOK</strong> for combat and movement. <strong>SWAP</strong> cycles weapons; tap a weapon slot to select it directly. Tap <strong>Ⅱ</strong> to open the pause menu. Moving forward while grappling reels you in faster.</p>
+
+      <h2 id="faq">Frequently asked questions</h2>
+      <details>
+        <summary>Is Master Blaster free, and do I need a download?</summary>
+        <p>Master Blaster is free to play in your browser. You do not need to install an app. The browser loads and prepares the game resources when you visit.</p>
+      </details>
+      <details>
+        <summary>Can I play Master Blaster offline?</summary>
+        <p>Quick Play and Training run locally against bots. First visit while connected and let the home menu finish preparing resources. When it reports Available offline, this browser has saved the game for offline visits. Private Room and Global Multiplayer require an internet connection. Browsers can clear saved data, so offline availability depends on retaining those resources.</p>
+      </details>
+      <details>
+        <summary>How do I play with friends?</summary>
+        <p>Choose Private Room to create or join a room using a shared room code. Wait for your friends in the private lobby; the host starts the match. Global Multiplayer lets you find open games or create a public game that appears in the global lobby.</p>
+      </details>
+      <details>
+        <summary>Can I play on a phone or tablet?</summary>
+        <p>The game has touch controls for movement, aiming, firing, jumping, grappling and weapon switching. Use landscape orientation for more space. Performance depends on your browser and device; try Low graphics in Settings if the game runs slowly.</p>
+      </details>
+      <details>
+        <summary>What should I do if the game runs slowly?</summary>
+        <p>Open Settings and choose Low graphics. You can also reduce bot count before a match. Reduce motion and flashes is available in Settings. Keep hardware acceleration enabled in your browser; more demanding graphics effects depend on your device's capabilities.</p>
+      </details>
+    </main>
+    <footer><a class="play" href="/">Play Master Blaster</a></footer>
+  </body>
+</html>

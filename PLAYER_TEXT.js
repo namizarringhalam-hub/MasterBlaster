@@ -31,7 +31,8 @@ export const PLAYER_TEXT = {
       global: { label: "GLOBAL MULTIPLAYER", description: "Find open games. See who’s online." },
       training: { label: "TRAINING", description: "Test 47 weapons on up to 15 bots" },
       settings: "SETTINGS",
-      credits: "CREDITS"
+      credits: "CREDITS",
+      howToPlay: "HOW TO PLAY"
     },
     features: [
       { number: "01", title: "GRAPPLE ANYTHING", description: "Walls. Floors. Towers. If you can hit it, hook it." },

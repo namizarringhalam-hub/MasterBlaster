@@ -1,17 +1,22 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { hash, writeResourceRelease } from "../scripts/resource-build.mjs";
 import vm from "node:vm";
 
 const source = await readFile(new URL("../public/sw.js", import.meta.url), "utf8");
 const handlers = {}, stored = new Map();
 let downloads = 0, writes = 0, failOpen = false, failWrite = false, offline = false, html = false;
+let htmlContent = "<html>fallback</html>";
+const cacheKey = request => typeof request === "string" ? request : request.url;
 const cache = {
-  match: async (request) => stored.get(request.url)?.clone(),
-  delete: async (request) => stored.delete(request.url),
+  match: async (request) => stored.get(cacheKey(request))?.clone(),
+  delete: async (request) => stored.delete(cacheKey(request)),
   async put(request, response) {
     if (failWrite) throw new Error("Quota exceeded");
     writes++;
-    stored.set(request.url, response.clone());
+    stored.set(cacheKey(request), response.clone());
   }
 };
 vm.runInNewContext(source, {
@@ -21,7 +26,7 @@ vm.runInNewContext(source, {
   async fetch() {
     downloads++;
     if (offline) throw new Error("Offline");
-    return new Response(html ? "<html>fallback</html>" : "export const loaded = true;", { headers: { "content-type": html ? "text/html" : "text/javascript" } });
+    return new Response(html ? htmlContent : "export const loaded = true;", { headers: { "content-type": html ? "text/html" : "text/javascript" } });
   }
 });
 function request(path = "/assets/game-abc123.js", options) {
@@ -84,3 +89,35 @@ await navigate();
 offline = true;
 assert.match(await (await navigate()).text(), /<html>/, "non-HTML responses never replace the offline page");
 console.log("Offline shell fallback and online navigation refresh passed.");
+
+// The linked guide belongs to the complete offline release at its navigation URL.
+const guideHtml = await readFile("public/how-to-play/index.html", "utf8");
+const releaseDir = await mkdtemp(join(tmpdir(), "blaster-guide-cache-"));
+try {
+  await Promise.all(["assets", "resources", "how-to-play"].map(path => mkdir(join(releaseDir, path))));
+  await writeFile(join(releaseDir, "how-to-play/index.html"), guideHtml);
+  await writeFile(join(releaseDir, "index.html"), "<html>Game release</html>");
+  await writeFile(join(releaseDir, "manifest.webmanifest"), "{}");
+  const version = "a".repeat(64);
+  await writeResourceRelease(releaseDir, { version, copies: new Map() });
+  const manifest = JSON.parse(await readFile(join(releaseDir, "resources.json"), "utf8"));
+  const guideEntry = manifest.entries.find(entry => entry.url === "/how-to-play/index.html");
+  assert.ok(guideEntry, "offline release includes the guide at its stable URL");
+  assert.equal(guideEntry.bytes, Buffer.byteLength(guideHtml));
+  assert.equal(guideEntry.sha256, hash(guideHtml), "offline guide bytes are integrity checked with the release");
+
+  offline = false; html = true; htmlContent = guideHtml;
+  await navigate("/how-to-play/");
+  offline = true;
+  assert.equal(await (await navigate()).text(), "<html>fallback</html>", "visiting the guide never replaces the legacy game fallback");
+  stored.set("https://game.test/active-release", new Response(version));
+  stored.set("https://game.test/index.html", new Response("<html>Game release</html>"));
+  stored.set(`https://game.test${guideEntry.url}`, new Response(guideHtml));
+  for (const path of ["/how-to-play/", "/how-to-play", "/how-to-play/index.html"]) {
+    assert.equal(await (await navigate(path)).text(), guideHtml, `${path} returns the real guide offline`);
+  }
+  assert.equal(await (await navigate("/game")).text(), "<html>Game release</html>", "game screen journeys retain the complete offline game shell");
+} finally {
+  await rm(releaseDir, { recursive: true, force: true });
+}
+console.log("Guide release URL/hash, offline guide navigation and preserved game fallback passed.");

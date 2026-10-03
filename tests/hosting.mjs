@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { gzipSync } from "node:zlib";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { resourceBuild } from "../scripts/resource-build.mjs";
 const resources = await resourceBuild();
 import { MUSIC_SAMPLE_MANIFEST } from "../src/musicScore.js";
@@ -17,7 +19,8 @@ const types = {
   ".webp": "image/webp",
   ".wav": "audio/wav",
   ".txt": "text/plain",
-  ".xml": "application/xml"
+  ".xml": "application/xml",
+  ".woff2": "font/woff2"
 };
 
 const { default: worker } = await import(`../dist/server/index.js?test=${Date.now()}`);
@@ -46,7 +49,7 @@ for (const entry of release.entries) {
   assert.equal(bytes.length, entry.bytes, `${entry.url} has a truthful progress weight`);
   assert.equal(createHash("sha256").update(bytes).digest("hex"), entry.sha256, `${entry.url} matches the deployed release hash`);
 }
-assert.ok(release.entries.some(entry => entry.url.endsWith(".ttf")), "offline release includes menu fonts");
+assert.ok(release.entries.some(entry => entry.url.endsWith(".woff2")), "offline release includes compressed menu fonts");
 assert.ok(release.entries.some(entry => entry.url.includes("surfaceTextures.worker-")), "offline release includes generator workers");
 assert.ok(deployedHtml.includes(`<title>${PLAYER_TEXT.site.searchTitle}</title>`), "the search title describes the game without changing its installed name");
 assert.match(deployedHtml, /<meta property="og:title" content="Master Blaster — Neon Arena Shooter"/, "shared links use the Master Blaster title");
@@ -57,6 +60,18 @@ assert.ok(deployedHtml.includes(`<meta name="description" content="${PLAYER_TEXT
 assert.match(deployedHtml, /<span>MASTER<\/span><b>BLASTER<\/b>/, "the server-rendered menu uses the Master Blaster brand");
 assert.doesNotMatch(deployedHtml, /Blaster Battle/i, "the deployed shell contains no retired title");
 assert.match(deployedHtml, /data-boot-mode="quick"/, "the interactive menu shell is server-rendered before the deferred game engine executes");
+assert.equal((deployedHtml.match(/<h1(?:\s|>)/g) || []).length, 1, "the homepage has one primary heading, including hidden markup");
+assert.match(deployedHtml, /href="\/how-to-play\/"/, "the static guide is linked from the rendered homepage");
+assert.doesNotMatch(deployedHtml, /<link[^>]*rel="stylesheet"/, "the first menu paint does not wait for separate stylesheet downloads");
+const fontPreloads = [...deployedHtml.matchAll(/<link\b[^>]*>/g)].map(([tag]) => tag)
+  .filter(tag => tag.includes('rel="preload"') && tag.includes('as="font"'))
+  .map(tag => tag.match(/href="([^"]+)"/)?.[1]);
+assert.equal(fontPreloads.length, 3, "the three critical menu fonts are preloaded from versioned resources");
+for (const fontPath of fontPreloads) {
+  assert.match(fontPath, /^\/resources\/[a-f0-9]+\/[^/]+\.woff2$/);
+  assert.ok(release.entries.some(entry => entry.url === fontPath), "each preload belongs to the complete offline release");
+  assert.ok(deployedHtml.includes(`url(${fontPath})`), "inline font CSS points at the same content-addressed font as its preload");
+}
 assert.match(deployedHtml, /src="\/assets\//, "the production shell loads only its hashed boot module eagerly");
 assert.doesNotMatch(deployedHtml, /\{\{[a-zA-Z0-9_.]+\}\}|noindex/, "crawlers receive rendered, indexable HTML");
 assert.ok(deployedHtml.includes(`<p class="lead">${PLAYER_TEXT.landing.lead}</p>`), "the game description is readable without JavaScript");
@@ -112,6 +127,31 @@ assert.match(redirectedAsset.headers.get("cache-control"), /immutable/, "asset c
 const missingAsset = await worker.fetch(new Request("https://example.test/assets/missing-release.js"), { ASSETS: clientAssets });
 assert.equal(missingAsset.status, 404, "missing engine chunks never become successful HTML fallbacks");
 assert.doesNotMatch(missingAsset.headers.get("cache-control"), /immutable/, "missing release assets remain repairable");
+const rules = (await readFile("public/_redirects", "utf8")).split(/\r?\n/)
+  .filter(line => line.trim() && !line.startsWith("#"))
+  .map(line => line.trim().split(/\s+/));
+assert.equal(await readFile("dist/client/_redirects", "utf8"), await readFile("public/_redirects", "utf8"), "Pages and alternate hosting use the same exact route policy");
+for (const [from, to, status] of rules) {
+  const result = await worker.fetch(new Request(`https://example.test${from}?ref=hosting-check`), { ASSETS: clientAssets });
+  assert.equal(result.status, Number(status), `${from} preserves page aliases and game refreshes`);
+  if (status === "301") assert.equal(result.headers.get("location"), `https://example.test${to}?ref=hosting-check`, "canonical redirects preserve attribution");
+  else assert.equal(await result.text(), deployedHtml, "only listed game screen paths receive the home shell");
+}
+for (const address of ["http://masterblaster.se/index.html", "https://www.masterblaster.se/index.html", "http://www.masterblaster.se/index.html"]) {
+  const result = await worker.fetch(new Request(`${address}?ref=hosting-check`), { ASSETS: clientAssets });
+  assert.equal(result.status, 301);
+  assert.equal(result.headers.get("location"), "https://masterblaster.se/?ref=hosting-check", "alternate hosting normalizes host, scheme and page alias in one hop");
+}
+const guide = await worker.fetch(new Request("https://example.test/how-to-play/"), { ASSETS: clientAssets });
+assert.equal(guide.status, 200, "the linked game guide is served as a separate static page");
+assert.match(await guide.text(), /rel="canonical" href="https:\/\/masterblaster\.se\/how-to-play\/"/);
+for (const path of ["/missing-page", "/assets/missing-release.js", "/resources/missing/style.css", "/global-multiplayer/missing-room", "/_headers", "/_redirects"]) {
+  const navigation = new Request(`https://example.test${path}`);
+  Object.defineProperty(navigation, "mode", { value: "navigate" });
+  const result = await worker.fetch(navigation, { ASSETS: clientAssets });
+  assert.equal(result.status, 404, `${path} is still a real 404 when opened directly in a browser`);
+  assert.match(await result.text(), /<h1>Page not found<\/h1>/, "missing URLs offer useful recovery links");
+}
 const serviceWorker = await worker.fetch(new Request("https://example.test/sw.js"), { ASSETS: clientAssets });
 assert.match(serviceWorker.headers.get("cache-control"), /max-age=0/, "the service worker checks for cache-policy updates");
 
@@ -146,4 +186,39 @@ const arenaResponse = await worker.fetch(new Request("https://example.test/menu-
 assert.equal(arenaResponse.status, 200, "the cinematic menu arena is deployed");
 assert.equal(arenaResponse.headers.get("content-type"), "image/webp", "the menu arena is served as WebP instead of the SPA fallback");
 assert.equal(Buffer.from(await arenaResponse.arrayBuffer()).subarray(8, 12).toString("ascii"), "WEBP", "the menu arena contains WebP bytes");
+
+// Check the preview HTTP server itself, not just the alternate cloud adapter.
+const preview = spawn(process.execPath, ["server.mjs"], { env: { ...process.env, PORT: "0" }, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+let startupTimeout;
+try {
+  const [output] = await Promise.race([
+    once(preview.stdout, "data"),
+    once(preview, "exit").then(([code]) => { throw new Error(`Preview server exited before listening (${code})`); }),
+    new Promise((_, reject) => { startupTimeout = setTimeout(() => reject(new Error("Preview server startup timed out")), 10000); })
+  ]);
+  clearTimeout(startupTimeout);
+  const origin = String(output).match(/http:\/\/127\.0\.0\.1:\d+/)?.[0];
+  assert.ok(origin, "preview server reports its listening address");
+  for (const [path, expectedStatus, contentType] of [
+    ["/", 200, "text/html"], ["/game", 200, "text/html"],
+    ["/how-to-play/", 200, "text/html"], ["/missing-page", 404, "text/html"],
+    ["/assets/missing.js", 404, "text/html"], ["/robots.txt", 200, "text/plain"],
+    ["/sitemap.xml", 200, "application/xml"], ["/_headers", 404, "text/html"],
+    ["/server/index.js", 404, "text/html"]
+  ]) {
+    const result = await fetch(`${origin}${path}`, { signal: AbortSignal.timeout(3000) });
+    assert.equal(result.status, expectedStatus, `${path} is correct in local previews`);
+    assert.ok(result.headers.get("content-type")?.includes(contentType), `${path} uses its real MIME type`);
+    await result.arrayBuffer();
+  }
+  const alias = await fetch(`${origin}/index.html?ref=test`, { redirect: "manual", signal: AbortSignal.timeout(3000) });
+  assert.equal(alias.status, 301);
+  assert.equal(alias.headers.get("location"), "/?ref=test");
+  const head = await fetch(`${origin}/missing-page`, { method: "HEAD", signal: AbortSignal.timeout(3000) });
+  assert.equal(head.status, 404);
+  assert.equal(await head.text(), "", "HEAD preserves the real status without a response body");
+} finally {
+  clearTimeout(startupTimeout);
+  preview.kill();
+}
 console.log("Master Blaster hosting check passed.");

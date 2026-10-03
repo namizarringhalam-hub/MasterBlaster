@@ -40,7 +40,8 @@ export async function writeResourceRelease(dir, build) {
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, bytes);
   }
-  const paths = [...await filesIn(`${dir}/assets`), ...await filesIn(`${dir}/resources`), `${dir}/index.html`, `${dir}/manifest.webmanifest`];
+  const paths = [...await filesIn(`${dir}/assets`), ...await filesIn(`${dir}/resources`),
+    ...await filesIn(`${dir}/how-to-play`), `${dir}/index.html`, `${dir}/manifest.webmanifest`];
   const entries = await Promise.all(paths.map(async path => {
     const bytes = await readFile(path);
     return { url: `/${path.slice(dir.length + 1).replaceAll("\\", "/")}`, bytes: bytes.length, sha256: hash(bytes) };

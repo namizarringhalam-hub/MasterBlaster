@@ -3,47 +3,119 @@
   font-style: italic;
   font-weight: 900;
   font-display: swap;
-  src: url(/fonts/HTxyL3I-JCGChYJ8VI-L6OO_au7B6xTrW3bWvA.ttf) format('truetype');
+  src: url(/fonts/HTxyL3I-JCGChYJ8VI-L6OO_au7B6xTrW3bWvA.woff2) format('woff2');
 }
 @font-face {
   font-family: 'Barlow Condensed';
   font-style: normal;
   font-weight: 500;
   font-display: swap;
-  src: url(/fonts/HTxwL3I-JCGChYJ8VI-L6OO_au7B4-Lw_3E.ttf) format('truetype');
+  src: url(/fonts/HTxwL3I-JCGChYJ8VI-L6OO_au7B4-Lw_3E.woff2) format('woff2');
 }
 @font-face {
   font-family: 'Barlow Condensed';
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url(/fonts/HTxwL3I-JCGChYJ8VI-L6OO_au7B46r2_3E.ttf) format('truetype');
+  src: url(/fonts/HTxwL3I-JCGChYJ8VI-L6OO_au7B46r2_3E.woff2) format('woff2');
 }
 @font-face {
   font-family: 'Barlow Condensed';
   font-style: normal;
   font-weight: 900;
   font-display: swap;
-  src: url(/fonts/HTxwL3I-JCGChYJ8VI-L6OO_au7B45L0_3E.ttf) format('truetype');
+  src: url(/fonts/HTxwL3I-JCGChYJ8VI-L6OO_au7B45L0_3E.woff2) format('woff2');
 }
 @font-face {
   font-family: 'Inter';
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url(/fonts/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfMZg.ttf) format('truetype');
+  src: url(/fonts/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfMZg.woff2) format('woff2');
 }
 @font-face {
   font-family: 'Inter';
   font-style: normal;
   font-weight: 600;
   font-display: swap;
-  src: url(/fonts/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuGKYMZg.ttf) format('truetype');
+  src: url(/fonts/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuGKYMZg.woff2) format('woff2');
 }
 @font-face {
   font-family: 'Inter';
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url(/fonts/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuFuYMZg.ttf) format('truetype');
+  src: url(/fonts/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuFuYMZg.woff2) format('woff2');
+}
+
+/* Match local Arial advance widths and vertical metrics while web fonts load. */
+@font-face {
+  font-family: 'Inter Fallback';
+  font-style: normal;
+  font-weight: 400;
+  src: local('Arial'), local('ArialMT');
+  size-adjust: 104.707%;
+  ascent-override: 92.520%;
+  descent-override: 23.037%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Inter Fallback';
+  font-style: normal;
+  font-weight: 600;
+  src: local('Arial Bold'), local('Arial-BoldMT');
+  size-adjust: 103.013%;
+  ascent-override: 94.042%;
+  descent-override: 23.416%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Inter Fallback';
+  font-style: normal;
+  font-weight: 700;
+  src: local('Arial Bold'), local('Arial-BoldMT');
+  size-adjust: 104.345%;
+  ascent-override: 92.841%;
+  descent-override: 23.117%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Barlow Condensed Fallback';
+  font-style: normal;
+  font-weight: 500;
+  src: local('Arial'), local('ArialMT');
+  size-adjust: 66.423%;
+  ascent-override: 150.550%;
+  descent-override: 30.110%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Barlow Condensed Fallback';
+  font-style: normal;
+  font-weight: 700;
+  src: local('Arial Bold'), local('Arial-BoldMT');
+  size-adjust: 67.963%;
+  ascent-override: 147.139%;
+  descent-override: 29.428%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Barlow Condensed Fallback';
+  font-style: normal;
+  font-weight: 900;
+  src: local('Arial Bold'), local('Arial-BoldMT');
+  size-adjust: 70.590%;
+  ascent-override: 141.663%;
+  descent-override: 28.333%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Barlow Condensed Fallback';
+  font-style: italic;
+  font-weight: 900;
+  src: local('Arial Bold Italic'), local('Arial-BoldItalicMT');
+  size-adjust: 68.472%;
+  ascent-override: 146.046%;
+  descent-override: 29.209%;
+  line-gap-override: 0%;
 }

@@ -620,6 +620,7 @@ class BlasterBattle {
           <div class="secondary-actions">
             <button data-screen="settings">${TEXT.landing.buttons.settings}</button>
             <button data-screen="credits">${TEXT.landing.buttons.credits}</button>
+            <a class="how-to-play-link" href="/how-to-play/">${TEXT.landing.buttons.howToPlay}</a>
           </div>
           <div class="capabilities" aria-label="${TEXT.landing.highlightsAria}">${TEXT.landing.highlights}</div>
         </section>

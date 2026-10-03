@@ -27,6 +27,9 @@
     <meta name="twitter:image:alt" content="{{site.socialImageAlt}}" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="preload" as="image" href="/menu-arena-v2.webp" fetchpriority="high" />
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/HTxwL3I-JCGChYJ8VI-L6OO_au7B45L0_3E.woff2" crossorigin />
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/HTxyL3I-JCGChYJ8VI-L6OO_au7B6xTrW3bWvA.woff2" crossorigin />
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfMZg.woff2" crossorigin />
     <link rel="stylesheet" href="/fonts/fonts.css" />
     <link rel="stylesheet" href="/src/styles.css" />
     <title>{{site.searchTitle}}</title>
@@ -61,6 +64,7 @@
             <div class="secondary-actions">
               <button data-boot-screen="settings">{{landing.buttons.settings}}</button>
               <button data-boot-screen="credits">{{landing.buttons.credits}}</button>
+              <a class="how-to-play-link" href="/how-to-play/">{{landing.buttons.howToPlay}}</a>
             </div>
             <div class="capabilities" role="status" data-boot-status>{{landing.highlights}}</div>
           </section>
@@ -77,7 +81,7 @@
       <section class="rematch-loading-card">
         <p class="kicker">{{loading.kicker}}</p>
         <div class="rematch-loading-core" aria-hidden="true"><i></i><i></i><span></span></div>
-        <h1>{{loading.title}}</h1>
+        <h2>{{loading.title}}</h2>
         <p>{{loading.description}}</p>
         <div class="rematch-loading-track" aria-hidden="true"><i></i></div>
         <small><b data-match-seed>{{loading.defaultSeed}}</b><span data-match-kind>{{loading.newSession}}</span><span>{{loading.freshArena}}</span></small>

@@ -39,3 +39,37 @@
   guaranteed. No duplicate submission needed.
 - All setup/submission steps are complete. Future performance/indexing reports
   can be checked in the verified https://masterblaster.se/ Search Console property.
+
+## SEO completion work — 3 October 2026
+
+- Scope: complete the SEO checklist except creator information. Public promotion
+  and brand accounts authorized; never use the user's personal identity/details.
+  Existing creators remain Sam and Kian; no author bio or personal profiles added.
+- Initial live audit: crawler assets/meta/canonical present; normal linked resources
+  return 200. Unknown pages and missing JS incorrectly return the homepage/200;
+  www serves a duplicate; HTTP /index.html takes two redirects.
+- Baseline PageSpeed mobile, Slow 4G / Moto G Power: performance 77,
+  FCP 3.5 s, LCP 4.5 s, CLS 0.039, TBT 0 ms. No CrUX field data available.
+- Search Console baseline: 1 click, 13 impressions in selected three-month report;
+  Links report has 0 external links and 0 internal links recorded.
+- In progress: native 404/exact game routes, static linked how-to-play guide with
+  FAQ/breadcrumb schema, one homepage H1, WOFF2 conversion and removal of blocking
+  CSS requests. Font bytes reduced from 1,323,456 to 464,392 (raw, not page timing).
+- Validated: font glyph/metrics preservation; playerText, journeys, matchStartup,
+  assetCache and resourcePreparation regressions; guide FAQ/schema consistency;
+  unified production build/hosting checks; real Wrangler Pages route checks.
+  Browser checked desktop/mobile landing/guide and a real Quick Play match.
+- Independent review caught offline guide fallback returning the game; fixed by
+  including the stable guide in the release and caching its own navigation page.
+- Promotion: prepared topical directory submissions and captured unedited gameplay.
+  Free Play Games form only invokes mailto:; no message sent/delivery confirmed.
+  Submitted SDF Lemmy brand registration as MasterBlasterGame without email;
+  signup returned to home, but administrator acceptance/account activation unverified.
+  Credentials protected locally with Windows DPAPI in ignored temporary files.
+  iogames.party requires brand email, gameplay screenshot and a content-use license.
+- Access blocker: deployment credentials can list/publish Pages but Cloudflare
+  rulesets/settings API returns 403. Dashboard sign-in requested for edge redirects.
+  Dedicated brand mailbox preference requested before new public accounts.
+- Next: publish validated technical/content changes using brand commit identity;
+  verify production; remeasure PageSpeed, submit updated sitemap/guide and execute
+  allowed promotion. Finish edge rules when Cloudflare access is restored.

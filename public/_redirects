@@ -1,0 +1,24 @@
+# Canonical page aliases. Query strings are preserved by Cloudflare Pages.
+/index.html / 301
+/how-to-play /how-to-play/ 301
+/how-to-play/index.html /how-to-play/ 301
+
+# These are passive game screen URLs, not separate public content pages.
+# Allow refreshes without turning missing files or arbitrary paths into the game.
+/quick-play / 200
+/private-match / 200
+/training / 200
+/private-lobby / 200
+/global-multiplayer / 200
+/global-multiplayer/create / 200
+/global-multiplayer/lobby / 200
+/settings / 200
+/credits / 200
+/loading / 200
+/game / 200
+/pause / 200
+/controls / 200
+/graphics-settings / 200
+/results / 200
+/graphics-error / 200
+/connection-error / 200

@@ -1,6 +1,6 @@
 :root {
   color: #f2f8ff;
-  font-family: Inter, system-ui, sans-serif;
+  font-family: Inter, "Inter Fallback", system-ui, sans-serif;
   background: #07111d;
   font-synthesis: none;
   --cyan: #52e9ff;
@@ -10,9 +10,9 @@
 [hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 html, body, #app { width: 100%; height: 100%; min-width: 0; margin: 0; overflow: hidden; }
-button, input, select { font: inherit; }
+button, input, select, .how-to-play-link { font: inherit; }
 button { color: inherit; }
-button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #48e8ff; outline-offset: 3px; }
+button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 3px solid #48e8ff; outline-offset: 3px; }
 
 #game-canvas {
   position: fixed;
@@ -26,7 +26,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 #ui-root { position: fixed; inset: 0; pointer-events: none; }
 /* Menu artwork stays visible while gameplay resources render behind it. */
 body:has([data-menu-scene]) #game-canvas { visibility: hidden; }
-#ui-root button, #ui-root input, #ui-root select { pointer-events: auto; }
+#ui-root button, #ui-root input, #ui-root select, #ui-root a { pointer-events: auto; }
 
 .resource-progress { position: fixed; z-index: 20; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 12px; padding: max(7px, env(safe-area-inset-top)) 18px 9px; background: #07111df2; color: #b8d9e6; font-size: 11px; pointer-events: none; }
 .resource-progress progress { position: absolute; bottom: 0; left: 0; width: 100%; height: 3px; border: 0; appearance: none; accent-color: var(--cyan); }
@@ -89,7 +89,7 @@ body:not(:has([data-menu-scene="landing"])) .resource-progress { display: none; 
 }
 
 .rematch-loading-card .kicker { margin: 0 0 22px; color: var(--cyan); }
-.rematch-loading-card h1 { margin: 24px 0 10px; font: 900 clamp(38px, 8vw, 62px)/.92 "Barlow Condensed", sans-serif; letter-spacing: -.02em; text-transform: uppercase; }
+.rematch-loading-card h2 { margin: 24px 0 10px; font: 900 clamp(38px, 8vw, 62px)/.92 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; letter-spacing: -.02em; text-transform: uppercase; }
 .rematch-loading-card > p:not(.kicker) { margin: 0 auto; max-width: 390px; color: #93aabd; line-height: 1.55; }
 .rematch-loading-card small { display: flex; justify-content: center; flex-wrap: wrap; gap: 9px 16px; margin-top: 15px; color: #7691a5; font-size: 9px; letter-spacing: .17em; }
 .rematch-loading-card small span::before { content: "\2022"; margin-right: 16px; color: #ef3f58; }
@@ -111,7 +111,7 @@ body:not(:has([data-menu-scene="landing"])) .resource-progress { display: none; 
   .rematch-loading { place-items: start center; padding-top: 12px; padding-bottom: 12px; }
   .rematch-loading-card { margin: auto; padding: 18px 28px; }
   .rematch-loading-card .kicker { margin-bottom: 10px; }
-  .rematch-loading-card h1 { margin: 12px 0 6px; font-size: 34px; }
+  .rematch-loading-card h2 { margin: 12px 0 6px; font-size: 34px; }
   .rematch-loading-core { width: 46px; height: 46px; }
   .rematch-loading-core i:nth-child(2) { inset: 7px; }
   .rematch-loading-core span { inset: 17px; }
@@ -119,7 +119,7 @@ body:not(:has([data-menu-scene="landing"])) .resource-progress { display: none; 
   .rematch-loading-card small { margin-top: 8px; }
 }
 
-button {
+button, .how-to-play-link {
   position: relative;
   isolation: isolate;
   overflow: hidden;
@@ -135,7 +135,7 @@ button {
   transition: transform .16s ease, border-color .16s ease, background .16s ease, box-shadow .16s ease;
 }
 
-button::before {
+button::before, .how-to-play-link::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -146,8 +146,8 @@ button::before {
   transition: transform .46s cubic-bezier(.2,.7,.2,1);
 }
 
-button:hover:not(:disabled) { transform: translateY(-2px); border-color: #45e8ff; background: rgba(25, 49, 71, .95); box-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 12px 32px rgba(0, 196, 255, .12); }
-button:hover:not(:disabled)::before { transform: translateX(125%); }
+button:hover:not(:disabled), .how-to-play-link:hover { transform: translateY(-2px); border-color: #45e8ff; background: rgba(25, 49, 71, .95); box-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 12px 32px rgba(0, 196, 255, .12); }
+button:hover:not(:disabled)::before, .how-to-play-link:hover::before { transform: translateX(125%); }
 button:disabled { opacity: .4; cursor: not-allowed; }
 button.primary { background: #e83952; border-color: #ff6f83; box-shadow: 0 12px 34px rgba(232, 57, 82, .24); }
 button.primary:hover:not(:disabled) { background: #ff4862; border-color: #fff; }
@@ -343,7 +343,7 @@ button.primary:hover:not(:disabled) { background: #ff4862; border-color: #fff; }
   display: flex;
   gap: 8px;
   align-items: baseline;
-  font: 900 clamp(26px, 4vw, 42px)/1 "Barlow Condensed", sans-serif;
+  font: 900 clamp(26px, 4vw, 42px)/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif;
   letter-spacing: .09em;
   filter: drop-shadow(0 0 18px rgba(82, 233, 255, .12));
 }
@@ -362,7 +362,7 @@ button.primary:hover:not(:disabled) { background: #ff4862; border-color: #fff; }
 
 .hero-panel h1, .dialog h1 {
   margin: 0;
-  font: 900 clamp(58px, 8vw, 98px)/.84 "Barlow Condensed", sans-serif;
+  font: 900 clamp(58px, 8vw, 98px)/.84 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif;
   text-transform: uppercase;
   letter-spacing: -.03em;
 }
@@ -373,12 +373,13 @@ button.primary:hover:not(:disabled) { background: #ff4862; border-color: #fff; }
 
 .primary-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 30px; }
 .primary-actions button { min-height: 92px; text-align: left; display: flex; flex-direction: column; justify-content: center; }
-.primary-actions span { font: 800 19px/1 "Barlow Condensed", sans-serif; letter-spacing: .06em; }
+.primary-actions span { font: 800 19px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; letter-spacing: .06em; }
 .primary-actions small { margin-top: 8px; color: #9db0c0; font-size: 11px; font-weight: 500; letter-spacing: 0; }
 .secondary-actions { display: flex; gap: 10px; margin-top: 10px; }
-.secondary-actions button { flex: 1; min-height: 42px; padding: 8px; color: #a7bbc9; }
+.secondary-actions :is(button, .how-to-play-link) { flex: 1; min-width: 0; min-height: 42px; padding: 8px; color: #a7bbc9; }
+.how-to-play-link { display: flex; align-items: center; justify-content: center; text-align: center; text-decoration: none; }
 
-.capabilities { display: flex; flex-wrap: wrap; gap: 13px; margin-top: 24px; color: #8198a9; font: 700 10px/1 Inter, sans-serif; letter-spacing: .08em; }
+.capabilities { display: flex; flex-wrap: wrap; gap: 13px; margin-top: 24px; color: #8198a9; font: 700 10px/1 Inter, "Inter Fallback", sans-serif; letter-spacing: .08em; }
 .capabilities .ok::first-letter { color: #48e8ff; }
 .capabilities .bad { color: #ff7a8e; }
 
@@ -390,8 +391,8 @@ button.primary:hover:not(:disabled) { background: #ff4862; border-color: #fff; }
   border-left: 1px solid rgba(82, 233, 255, .22);
 }
 
-.feature-rail > span { color: #e83952; font: 800 14px/1 "Barlow Condensed", sans-serif; }
-.feature-rail b { display: block; font: 800 20px/1 "Barlow Condensed", sans-serif; letter-spacing: .07em; }
+.feature-rail > span { color: #e83952; font: 800 14px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; }
+.feature-rail b { display: block; font: 800 20px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; letter-spacing: .07em; }
 .feature-rail small { display: block; color: #8298a8; margin-top: 7px; line-height: 1.35; }
 
 .screen {
@@ -451,27 +452,27 @@ input, select {
 
 .loadout-builder { margin-top: 32px; }
 .loadout-builder > div:first-child { display: flex; align-items: end; justify-content: space-between; }
-.loadout-builder h2 { margin: 0; font: 800 25px/1 "Barlow Condensed", sans-serif; text-transform: uppercase; }
+.loadout-builder h2 { margin: 0; font: 800 25px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
 .loadout-builder [data-loadout-count] { color: #4fe9ff; font-size: 12px; font-weight: 700; }
 .loadout-help { margin: 7px 0 0; color: #728b9c; font-size: 10px; line-height: 1.4; }
 .loadout-order { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; margin-top: 14px; }
 .loadout-slot { min-width: 0; padding: 7px; border: 1px solid #294052; border-top: 2px solid var(--category); border-radius: 5px; background: rgba(9, 23, 37, .75); }
 .loadout-slot.active { border-color: var(--category); background: color-mix(in srgb, var(--category) 8%, #091725); }
 .loadout-slot .slot-select { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 58px; padding: 5px; text-align: left; border: 0; background: transparent; }
-.slot-select span { color: var(--category); font: 900 20px/1 "Barlow Condensed", sans-serif; }
-.slot-select b { color: #eaf7ff; font: 800 15px/1.1 "Barlow Condensed", sans-serif; text-transform: uppercase; }
+.slot-select span { color: var(--category); font: 900 20px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; }
+.slot-select b { color: #eaf7ff; font: 800 15px/1.1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
 .loadout-slot .slot-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 5px; }
 .slot-actions button { min-height: 36px; padding: 2px; color: #9db7c8; }
 .loadout-slot.empty { border-style: dashed; }
 .loadout-slot.empty b { color: #8fa7b8; }
 .preset-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-top: 22px; }
-.preset-heading h3 { margin: 0; font: 800 19px/1 "Barlow Condensed", sans-serif; text-transform: uppercase; }
+.preset-heading h3 { margin: 0; font: 800 19px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
 .preset-heading span { color: #728b9c; font-size: 9px; text-align: right; text-transform: uppercase; }
 .loadout-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 8px 0 18px; }
 .loadout-preset { min-width: 0; padding: 10px; border: 1px solid #294a62; border-radius: 5px; background: rgba(8, 22, 36, .8); }
 .loadout-preset.default { border-color: #ffd166; box-shadow: inset 0 0 0 1px rgba(255, 209, 102, .18); }
 .loadout-preset header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; margin: 0; }
-.loadout-preset input { min-width: 0; height: 36px; margin: 0; padding: 7px 9px; font: 800 14px "Barlow Condensed", sans-serif; text-transform: uppercase; }
+.loadout-preset input { min-width: 0; height: 36px; margin: 0; padding: 7px 9px; font: 800 14px "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
 .loadout-preset header button { min-height: 36px; padding: 5px 8px; color: #8ba4b5; font-size: 9px; }
 .loadout-preset.default header button { color: #ffd166; }
 .preset-summary { display: grid; gap: 3px; min-height: 104px; margin: 9px 0; }
@@ -485,7 +486,7 @@ input, select {
 .weapon-categories { display: grid; gap: 18px; margin-top: 14px; }
 .weapon-category { padding: 12px 0; border: 0; }
 .weapon-category > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 1px 2px 10px; border-bottom: 1px solid color-mix(in srgb, var(--category) 38%, transparent); }
-.weapon-category > header h3 { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--category); font: 900 18px/1 "Barlow Condensed", sans-serif; letter-spacing: .06em; text-transform: uppercase; }
+.weapon-category > header h3 { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--category); font: 900 18px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; letter-spacing: .06em; text-transform: uppercase; }
 .weapon-category > header h3 i { width: 9px; height: 9px; background: var(--category); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); box-shadow: 0 0 10px var(--category); }
 .weapon-category > header span { color: color-mix(in srgb, var(--category) 62%, #8da5b5); font-size: 8px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .weapon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; margin-top: 11px; }
@@ -519,15 +520,15 @@ input, select {
 .weapon-choice:is([data-weapon="freeze_gun"],[data-weapon="teleport_projectile"],[data-weapon="weapon_stealing_projectile"]) .weapon-preview::before { border-radius: 50%; clip-path: polygon(50% 0, 62% 34%, 100% 50%, 62% 66%, 50% 100%, 38% 66%, 0 50%, 38% 34%); background: radial-gradient(circle, #fff 0 8%, var(--weapon) 12% 28%, #07131f 32%); }
 .weapon-choice:is([data-weapon="ricochet_cannon"],[data-weapon="gravity_grenade"],[data-weapon="grapple_disrupting_pulse"]) .weapon-preview::before { border-radius: 50%; clip-path: none; background: repeating-radial-gradient(circle, transparent 0 3px, var(--weapon) 4px 5px); }
 .weapon-choice b, .weapon-choice em, .weapon-choice small { display: block; }
-.weapon-choice b { font: 800 17px/1 "Barlow Condensed", sans-serif; text-transform: uppercase; }
+.weapon-choice b { font: 800 17px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
 .weapon-choice em { margin-top: 5px; color: var(--category); font-size: 8px; font-style: normal; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .weapon-choice.selected i { width: 4px; opacity: 1; }
 .weapon-choice .weapon-capacity { position: absolute; left: 16px; right: 10px; bottom: 9px; color: var(--category); font-size: 8px; font-style: normal; font-weight: 800; line-height: 1.2; letter-spacing: .03em; text-align: right; text-transform: uppercase; }
 .weapon-choice small { margin-top: 10px; color: #94aabb; font-size: 10px; line-height: 1.35; letter-spacing: 0; }
 .network-error { padding: 10px 12px; border: 1px solid #ff607d; color: #ffdce4; background: rgba(92,13,37,.48); font-size: 11px; letter-spacing: .04em; }
-.network-reconnecting { position: absolute; top: 88px; left: 50%; z-index: 80; padding: 8px 13px; color: #d9fbff; border: 1px solid rgba(82,233,255,.65); background: rgba(4,17,28,.9); box-shadow: 0 0 24px rgba(82,233,255,.2); font: 800 9px/1 Inter, sans-serif; letter-spacing: .12em; pointer-events: none; text-transform: uppercase; transform: translateX(-50%); }
+.network-reconnecting { position: absolute; top: 88px; left: 50%; z-index: 80; padding: 8px 13px; color: #d9fbff; border: 1px solid rgba(82,233,255,.65); background: rgba(4,17,28,.9); box-shadow: 0 0 24px rgba(82,233,255,.2); font: 800 9px/1 Inter, "Inter Fallback", sans-serif; letter-spacing: .12em; pointer-events: none; text-transform: uppercase; transform: translateX(-50%); }
 .weapon-choice.selected { border-color: var(--category, #4fe9ff); background: linear-gradient(145deg, color-mix(in srgb, var(--category) 16%, #172d42), #0b1b2b); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--weapon) 68%, #fff), inset 0 -28px 60px color-mix(in srgb, var(--category) 10%, transparent), 0 8px 24px rgba(0,0,0,.2); }
-.weapon-choice.selected::after { content: attr(data-slot); position: absolute; right: 9px; top: 7px; display: grid; place-items: center; width: 21px; height: 21px; color: #07111d; background: var(--category, #4fe9ff); border-radius: 50%; box-shadow: 0 0 8px color-mix(in srgb, var(--category, #4fe9ff) 45%, transparent); font: 900 12px/1 "Barlow Condensed", sans-serif; }
+.weapon-choice.selected::after { content: attr(data-slot); position: absolute; right: 9px; top: 7px; display: grid; place-items: center; width: 21px; height: 21px; color: #07111d; background: var(--category, #4fe9ff); border-radius: 50%; box-shadow: 0 0 8px color-mix(in srgb, var(--category, #4fe9ff) 45%, transparent); font: 900 12px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; }
 .launch { width: 100%; margin-top: 22px; min-height: 58px; }
 .prototype-note { margin: 14px 0 0; text-align: center; color: #6e8698; font-size: 10px; letter-spacing: .06em; }
 
@@ -586,18 +587,18 @@ dialog[data-modal="pause"]:has(~ dialog[data-modal="graphics"]) { visibility: hi
 .combatant.left { left: 22px; }
 .combatant.right { right: 22px; border-color: #ff4a6a; background: linear-gradient(-90deg, rgba(8, 20, 33, .92), rgba(8, 20, 33, .55)); clip-path: polygon(0 0, 100% 0, 100% 100%, 6% 100%, 0 82%); }
 .combatant > div:first-child { display: flex; align-items: center; justify-content: space-between; }
-.combatant b { font: 800 20px/1 "Barlow Condensed", sans-serif; letter-spacing: .06em; text-transform: uppercase; }
-.combatant span { color: #fff; font: 900 24px/1 "Barlow Condensed", sans-serif; }
+.combatant b { font: 800 20px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; letter-spacing: .06em; text-transform: uppercase; }
+.combatant span { color: #fff; font: 900 24px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; }
 .health { height: 6px; margin-top: 10px; background: #162636; overflow: hidden; }
 .health i { display: block; width: 100%; height: 100%; background: #39e1ff; transition: width .18s ease; }
-.combatant > .health-value { margin-top: 5px; color: #b9f6ff; font: 800 11px/1 Inter, sans-serif; letter-spacing: .08em; }
+.combatant > .health-value { margin-top: 5px; color: #b9f6ff; font: 800 11px/1 Inter, "Inter Fallback", sans-serif; letter-spacing: .08em; }
 .combatant.right .health i { margin-left: auto; background: #f24463; }
 .combatant > small { display: block; margin-top: 9px; color: #8da4b4; font-size: 9px; letter-spacing: .1em; }
 .leaders { padding: 10px 13px 12px; }
 .leaders > small { margin: 0 0 5px; text-align: right; }
 .leaders > .leader-list { display: grid; gap: 2px; }
 .leader-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 7px; min-height: 21px; }
-.leader-row i { color: #708a9d; font: 900 11px/1 "Barlow Condensed", sans-serif; }
+.leader-row i { color: #708a9d; font: 900 11px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; }
 .leader-row b { overflow: hidden; color: #c9d9e4; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
 .leader-row span { font-size: 19px; }
 .leader-row:first-child i, .leader-row:first-child b { color: #fff; }
@@ -605,7 +606,7 @@ dialog[data-modal="pause"]:has(~ dialog[data-modal="graphics"]) { visibility: hi
 
 .match-state { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); min-width: 230px; padding: 8px 28px 11px; text-align: center; background: linear-gradient(180deg, rgba(4, 13, 25, .92), rgba(5, 16, 29, .68)); border-top: 2px solid rgba(116, 236, 255, .62); clip-path: polygon(8% 0, 92% 0, 100% 76%, 84% 100%, 16% 100%, 0 76%); text-shadow: 0 2px 8px #000; }
 .match-state small, .match-state span { display: block; color: #8da4b4; font-size: 9px; font-weight: 700; letter-spacing: .12em; }
-.match-state strong { display: block; margin: 3px 0; font: 900 32px/1 "Barlow Condensed", sans-serif; }
+.match-state strong { display: block; margin: 3px 0; font: 900 32px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; }
 
 .reticle { position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; transform: translate(-50%, -50%); border: 1px solid rgba(255,255,255,.72); border-radius: 50%; filter: drop-shadow(0 0 5px rgba(71, 231, 255, .7)); transition: transform .1s ease-out, border-color .1s ease-out, filter .1s ease-out; }
 .reticle::before, .reticle::after { content: ""; position: absolute; background: #fff; }
@@ -628,7 +629,7 @@ dialog[data-modal="pause"]:has(~ dialog[data-modal="graphics"]) { visibility: hi
 
 .target-health { position: absolute; left: 50%; top: calc(50% + 40px); width: min(220px, 48vw); padding: 7px 9px 8px; opacity: 0; transform: translate(-50%, 6px); color: #f3f8fc; background: linear-gradient(90deg, rgba(5,14,24,.9), rgba(12,24,36,.82)); border: 1px solid rgba(255,255,255,.18); border-top-color: #ff5572; box-shadow: 0 8px 24px rgba(0,0,0,.34); clip-path: polygon(0 0, 100% 0, 96% 100%, 4% 100%); transition: opacity .16s ease-out, transform .16s ease-out; }
 .target-health > span { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 5px; }
-.target-health > span b, .target-health > span strong { overflow: hidden; font: 800 10px/1 "Barlow Condensed", sans-serif; letter-spacing: .1em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.target-health > span b, .target-health > span strong { overflow: hidden; font: 800 10px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; letter-spacing: .1em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
 .target-health > span strong { color: #ff7b91; }
 .target-health > i { display: block; height: 5px; overflow: hidden; background: rgba(255,255,255,.12); }
 .target-health > i b { display: block; width: 100%; height: 100%; background: linear-gradient(90deg, #ff315f, #ff718a); box-shadow: 0 0 8px rgba(255,49,95,.7); transition: width .12s ease-out; }
@@ -677,11 +678,11 @@ dialog[data-modal="pause"]:has(~ dialog[data-modal="graphics"]) { visibility: hi
 }
 .motion-vignette.grappling { opacity: calc(.16 + var(--motion, 0) * .48); }
 .combat-log { position: absolute; top: 182px; right: 22px; width: min(340px, 42vw); text-align: right; }
-.combat-log p { margin: 0 0 5px; padding: 7px 10px; color: #9fb5c5; background: linear-gradient(90deg, transparent, rgba(4, 13, 24, .78)); border-right: 2px solid rgba(100, 229, 255, .5); font: 700 10px/1.2 Inter, sans-serif; animation: combat-log-in .2s ease-out; text-transform: uppercase; }
+.combat-log p { margin: 0 0 5px; padding: 7px 10px; color: #9fb5c5; background: linear-gradient(90deg, transparent, rgba(4, 13, 24, .78)); border-right: 2px solid rgba(100, 229, 255, .5); font: 700 10px/1.2 Inter, "Inter Fallback", sans-serif; animation: combat-log-in .2s ease-out; text-transform: uppercase; }
 .combat-log b { font-weight: 900; }
 .respawn-status { position: absolute; left: 50%; top: calc(50% - 104px); display: grid; gap: 8px; width: min(330px, calc(100% - 32px)); padding: 13px 18px; transform: translateX(-50%); text-align: center; background: rgba(5, 13, 23, .9); border-top: 2px solid #ff4b68; box-shadow: 0 14px 42px rgba(0,0,0,.35); }
-.respawn-status strong { color: #fff; font: 900 22px/1 "Barlow Condensed", sans-serif; letter-spacing: .07em; }
-.respawn-status span { color: #ff8ba0; font: 800 12px/1 Inter, sans-serif; letter-spacing: .12em; }
+.respawn-status strong { color: #fff; font: 900 22px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; letter-spacing: .07em; }
+.respawn-status span { color: #ff8ba0; font: 800 12px/1 Inter, "Inter Fallback", sans-serif; letter-spacing: .12em; }
 .sr-status { position: fixed; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .hud[data-player-state="death"] .reticle { opacity: 0; }
 
@@ -706,13 +707,13 @@ dialog[data-modal="pause"]:has(~ dialog[data-modal="graphics"]) { visibility: hi
 
 .weapon-strip button { position: relative; min-height: 64px; padding: 8px 10px; text-align: left; display: grid; grid-template-columns: 20px 15px 1fr; align-items: center; overflow: hidden; pointer-events: auto; }
 .weapon-strip button::after { content: ""; position: absolute; inset: auto 0 0; height: 2px; background: var(--weapon); opacity: .42; }
-.weapon-strip button > span { grid-row: 1 / 3; color: #657e91; font: 800 18px "Barlow Condensed", sans-serif; }
+.weapon-strip button > span { grid-row: 1 / 3; color: #657e91; font: 800 18px "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; }
 .weapon-strip button > i { grid-row: 1 / 3; width: 9px; height: 9px; border: 2px solid var(--weapon); transform: rotate(45deg); box-shadow: 0 0 8px color-mix(in srgb, var(--weapon) 65%, transparent); }
 .weapon-strip button[data-category="rapid-fire"] > i { width: 12px; height: 3px; border-width: 1px 0; transform: none; }
 .weapon-strip button[data-category="explosive"] > i { border-radius: 50%; transform: none; }
 .weapon-strip button[data-category="energy"] > i { border-radius: 50%; box-shadow: inset 0 0 4px var(--weapon), 0 0 9px var(--weapon); }
 .weapon-strip button[data-category="melee"] > i { width: 3px; height: 13px; border-width: 0 2px 0 0; transform: rotate(38deg); }
-.weapon-strip b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 13px "Barlow Condensed", sans-serif; text-transform: uppercase; }
+.weapon-strip b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 13px "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
 .weapon-strip small { grid-column: 3; color: #8197a7; font-size: 9px; }
 .weapon-strip button.selected { border-color: var(--weapon); background: color-mix(in srgb, var(--weapon) 13%, #112536); box-shadow: 0 -4px 24px color-mix(in srgb, var(--weapon) 26%, transparent); }
 .weapon-strip button.selected > span { color: var(--weapon); }
@@ -740,7 +741,7 @@ dialog[data-modal="pause"]:has(~ dialog[data-modal="graphics"]) { visibility: hi
   color: #7392a8;
   background: rgba(4, 15, 25, .62);
   border-left: 2px solid rgba(79, 233, 255, .48);
-  font: 700 8px/1 Inter, sans-serif;
+  font: 700 8px/1 Inter, "Inter Fallback", sans-serif;
   letter-spacing: .09em;
 }
 
@@ -760,7 +761,7 @@ dialog[data-modal="pause"]:has(~ dialog[data-modal="graphics"]) { visibility: hi
 }
 .score-list { max-height: min(62vh, 520px); overflow-y: auto; }
 .scoreboard.visible { opacity: 1; visibility: visible; transform: translate(-50%, -50%) scale(1); }
-.scoreboard h2 { margin: 0 0 18px; font: 900 32px "Barlow Condensed", sans-serif; text-transform: uppercase; }
+.scoreboard h2 { margin: 0 0 18px; font: 900 32px "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
 .scoreboard p { display: flex; justify-content: space-between; padding: 13px; border-top: 1px solid #274159; }
 
 .overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y pinch-zoom; background: rgba(3, 9, 16, .78); pointer-events: auto; backdrop-filter: blur(8px); }
@@ -775,11 +776,11 @@ dialog.overlay { width: 100%; height: 100%; max-width: none; max-height: none; m
 .controls-dialog h1 { font-size: clamp(40px, 6vw, 60px); }
 .controls-dialog .dialog-lead { margin: 12px 0 20px; font-size: 14px; }
 .controls-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 36px; }
-.controls-group h2, .controls-touch summary { margin: 0; padding-bottom: 10px; color: var(--cyan); border-bottom: 1px solid #294359; font: 800 12px/1.4 Inter, sans-serif; letter-spacing: .12em; text-transform: uppercase; }
+.controls-group h2, .controls-touch summary { margin: 0; padding-bottom: 10px; color: var(--cyan); border-bottom: 1px solid #294359; font: 800 12px/1.4 Inter, "Inter Fallback", sans-serif; letter-spacing: .12em; text-transform: uppercase; }
 .controls-list { margin: 8px 0 0; }
 .controls-list > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 34px; padding: 3px 0; }
 .controls-list dt { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; flex-shrink: 0; }
-.controls-list kbd { display: inline-block; min-width: 24px; padding: 5px 6px; color: #e1f8ff; background: #152c3d; border: 1px solid #3e5d70; border-bottom-width: 3px; border-radius: 4px; font: 700 11px/1.2 Inter, sans-serif; text-align: center; }
+.controls-list kbd { display: inline-block; min-width: 24px; padding: 5px 6px; color: #e1f8ff; background: #152c3d; border: 1px solid #3e5d70; border-bottom-width: 3px; border-radius: 4px; font: 700 11px/1.2 Inter, "Inter Fallback", sans-serif; text-align: center; }
 .controls-list dt > span { color: #8298a8; font-size: 12px; }
 .controls-list dd { margin: 0; color: #b4c5d2; font-size: 12px; line-height: 1.5; text-align: right; }
 .controls-dialog .controls-hint { margin: 18px 0 0; color: #93aabd; font-size: 12px; line-height: 1.6; }
@@ -796,18 +797,18 @@ dialog.overlay { width: 100%; height: 100%; max-width: none; max-height: none; m
 .results-ranking span { color: #4fe9ff; font-weight: 900; }
 
 .private-lobby-dialog { width: min(760px, 100%); }
-.lobby-result { padding: 10px 13px; color: #ffd166; border: 1px solid rgba(255, 209, 102, .28); background: rgba(255, 209, 102, .06); font: 800 12px/1 Inter, sans-serif; letter-spacing: .1em; text-transform: uppercase; }
+.lobby-result { padding: 10px 13px; color: #ffd166; border: 1px solid rgba(255, 209, 102, .28); background: rgba(255, 209, 102, .06); font: 800 12px/1 Inter, "Inter Fallback", sans-serif; letter-spacing: .1em; text-transform: uppercase; }
 .lobby-code { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; margin: 24px 0; padding: 14px 16px; border: 1px solid rgba(82, 233, 255, .3); background: rgba(3, 14, 24, .78); }
-.lobby-code span, .lobby-heading span, .lobby-rules { color: #7893a7; font: 800 9px/1 Inter, sans-serif; letter-spacing: .14em; text-transform: uppercase; }
-.lobby-code strong { color: #52e9ff; font: 900 25px/1 "Barlow Condensed", sans-serif; letter-spacing: .16em; text-shadow: 0 0 18px rgba(82, 233, 255, .35); }
+.lobby-code span, .lobby-heading span, .lobby-rules { color: #7893a7; font: 800 9px/1 Inter, "Inter Fallback", sans-serif; letter-spacing: .14em; text-transform: uppercase; }
+.lobby-code strong { color: #52e9ff; font: 900 25px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; letter-spacing: .16em; text-shadow: 0 0 18px rgba(82, 233, 255, .35); }
 .lobby-code button { min-height: 42px; padding: 8px 13px; }
 .lobby-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
-.lobby-heading h2 { margin: 0; font: 900 24px/1 "Barlow Condensed", sans-serif; letter-spacing: .05em; text-transform: uppercase; }
+.lobby-heading h2 { margin: 0; font: 900 24px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; letter-spacing: .05em; text-transform: uppercase; }
 .lobby-roster { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; margin: 10px 0 18px; }
 .lobby-roster > div { display: grid; grid-template-columns: 12px 1fr auto; gap: 10px; align-items: center; min-height: 45px; padding: 9px 12px; border: 1px solid #244257; background: rgba(7, 19, 31, .86); }
 .lobby-roster i { width: 9px; height: 9px; background: var(--fighter); box-shadow: 0 0 10px var(--fighter); transform: rotate(45deg); }
-.lobby-roster b { overflow: hidden; color: #eaf7ff; font: 800 15px/1 "Barlow Condensed", sans-serif; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
-.lobby-roster span { color: #ef3f58; font: 900 8px/1 Inter, sans-serif; letter-spacing: .12em; }
+.lobby-roster b { overflow: hidden; color: #eaf7ff; font: 800 15px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.lobby-roster span { color: #ef3f58; font: 900 8px/1 Inter, "Inter Fallback", sans-serif; letter-spacing: .12em; }
 .lobby-rules { margin: 0 0 12px; }
 .lobby-wait { color: #aebfcb; font-size: 12px; line-height: 1.5; }
 .private-lobby-dialog > .launch { width: 100%; margin-top: 10px; }
@@ -845,7 +846,7 @@ summary:focus-visible { outline: 2px solid #52e9ff; outline-offset: 4px; }
 .loadout-builder > .loadout-status { margin: 10px 0; }
 .weapon-picker { margin-top: 18px; padding-top: 18px; border-top: 1px solid #294052; }
 .picker-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
-.picker-heading h3 { margin: 0; font: 800 22px/1.1 "Barlow Condensed", sans-serif; text-transform: uppercase; }
+.picker-heading h3 { margin: 0; font: 800 22px/1.1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
 .picker-heading button { min-height: 40px; padding: 7px 18px; }
 .weapon-filters { scrollbar-width: thin; scrollbar-color: #294a62 transparent; display: flex; gap: 6px; overflow-x: auto; margin: 6px -6px 0; padding: 6px; }
 .weapon-filters button { flex: 0 0 auto; min-height: 40px; padding: 8px 12px; color: #92adbe; background: transparent; border-color: #294052; font-size: 11px; }
@@ -870,7 +871,7 @@ summary:focus-visible { outline: 2px solid #52e9ff; outline-offset: 4px; }
   .hero-panel h1 { font-size: clamp(54px, 18vw, 84px); }
   .primary-actions { grid-template-columns: 1fr; }
   .primary-actions button { min-height: 72px; }
-  .secondary-actions button { min-height: 44px; }
+  .secondary-actions :is(button, .how-to-play-link) { min-height: 44px; }
   .screen { padding: 12px; align-items: start; }
   .overlay { padding: 12px; place-items: start center; }
   .dialog { margin: 12px 0; padding: 22px; }
@@ -927,7 +928,7 @@ summary:focus-visible { outline: 2px solid #52e9ff; outline-offset: 4px; }
   .primary-actions span { font-size: 16px; }
   .primary-actions small { margin-top: 4px; font-size: 9px; }
   .secondary-actions { gap: 8px; margin-top: 7px; }
-  .secondary-actions button { min-height: 44px; padding: 5px; }
+  .secondary-actions :is(button, .how-to-play-link) { min-height: 44px; padding: 5px; }
   .capabilities { display: none; }
 }
 
@@ -1019,9 +1020,9 @@ summary:focus-visible { outline: 2px solid #52e9ff; outline-offset: 4px; }
     background: linear-gradient(90deg, rgba(4, 15, 25, .9), rgba(4, 15, 25, .72) 78%, transparent);
     text-shadow: 0 1px 5px #02070b;
   }
-  .active-weapon-readout small { color: #70dff1; font: 800 10px/1 Inter, sans-serif; letter-spacing: .14em; }
-  .active-weapon-readout b { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 900 15px/1.15 "Barlow Condensed", sans-serif; text-transform: uppercase; }
-  .active-weapon-readout span { color: #9eb2c0; font: 800 11px/1 Inter, sans-serif; }
+  .active-weapon-readout small { color: #70dff1; font: 800 10px/1 Inter, "Inter Fallback", sans-serif; letter-spacing: .14em; }
+  .active-weapon-readout b { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 900 15px/1.15 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
+  .active-weapon-readout span { color: #9eb2c0; font: 800 11px/1 Inter, "Inter Fallback", sans-serif; }
   .touch-controls {
     position: absolute;
     inset: auto 0 max(88px, calc(env(safe-area-inset-bottom) + 78px));

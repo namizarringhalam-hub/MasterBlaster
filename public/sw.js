@@ -34,7 +34,9 @@ async function loadAsset(request) {
 }
 
 async function loadShell(request) {
-  const key = new Request(`${self.location.origin}/`);
+  const guide = /^\/how-to-play(?:\/index\.html|\/)?$/.test(new URL(request.url).pathname);
+  const page = guide ? "/how-to-play/index.html" : "/index.html";
+  const key = new Request(`${self.location.origin}${guide ? page : "/"}`);
   try {
     // Refresh always revalidates the shell, which selects the current release.
     const response = await fetch(request, { cache: "no-cache" });
@@ -50,7 +52,7 @@ async function loadShell(request) {
       const pointer = await (await caches.open("blaster-releases")).match(`${self.location.origin}/active-release`);
       const version = pointer && await pointer.text();
       if (version) {
-        const shell = await (await caches.open(`blaster-release-${version}`)).match(`${self.location.origin}/index.html`);
+        const shell = await (await caches.open(`blaster-release-${version}`)).match(`${self.location.origin}${page}`);
         if (shell) return shell;
       }
     } catch {}

@@ -96,9 +96,17 @@ export default defineConfig({
       const manifestURL = `/resources/${hash(appManifest)}/manifest.webmanifest`;
       resources.copies.set(manifestURL, Buffer.from(appManifest));
       const htmlPath = resolve(dir, "index.html");
-      const html = resources.rewrite(await readFile(htmlPath, "utf8"))
+      let html = resources.rewrite(await readFile(htmlPath, "utf8"))
         .replace('href="/manifest.webmanifest"', `href="${manifestURL}"`)
         .replace("</head>", `<meta name="blaster-release" content="${resources.version}"></head>`);
+      // ponytail: inline the small compressed stylesheet to avoid two blocking
+      // mobile round trips; keep emitted assets available for offline releases.
+      const fontCss = resources.rewrite(await readFile("public/fonts/fonts.css", "utf8"));
+      html = html.replace(/<link[^>]+rel="stylesheet"[^>]+href="[^\"]*fonts\.css"[^>]*>/, `<style data-fonts>${fontCss}</style>`);
+      for (const link of html.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="(\/assets\/[^\"]+\.css)"[^>]*>/g)) {
+        const css = await readFile(resolve(dir, `.${link[1]}`), "utf8");
+        html = html.replace(link[0], `<style data-app-styles>${css}</style>`);
+      }
       await writeFile(htmlPath, html);
       await writeResourceRelease(dir, resources);
     }
