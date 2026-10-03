@@ -33,8 +33,8 @@
     },
     {
       "ref": "masterblaster_host_and_https",
-      "description": "Combine WWW and HTTP normalization into one redirect",
-      "expression": "http.host in {\"masterblaster.se\" \"www.masterblaster.se\"} and (http.host eq \"www.masterblaster.se\" or not ssl)",
+      "description": "Combine WWW and HTTP normalization into one redirect, preserving multiplayer API routes",
+      "expression": "http.host in {\"masterblaster.se\" \"www.masterblaster.se\"} and (http.host eq \"www.masterblaster.se\" or not ssl) and not starts_with(http.request.uri.path, \"/api/\") and http.request.uri.path ne \"/api\"",
       "action": "redirect",
       "action_parameters": {
         "from_value": {

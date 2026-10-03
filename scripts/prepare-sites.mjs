@@ -10,6 +10,7 @@ await cp("dist/audio", "dist/client/audio", { recursive: true });
 await cp("dist/fonts", "dist/client/fonts", { recursive: true });
 await cp("dist/resources", "dist/client/resources", { recursive: true });
 await cp("dist/how-to-play", "dist/client/how-to-play", { recursive: true });
+await cp("dist/press", "dist/client/press", { recursive: true });
 const { version } = JSON.parse(await readFile("dist/resources.json", "utf8"));
 await copyFile("dist/resources.json", "dist/client/resources.json");
 await copyFile(`dist/resources-${version}.json`, `dist/client/resources-${version}.json`);

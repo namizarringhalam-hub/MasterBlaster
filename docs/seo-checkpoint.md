@@ -143,3 +143,52 @@
   before mailbox creation; if it requests a human challenge, hand off to user.
   Complete permitted email/forum/directory workflows after any required license
   acceptance, keep brand identity only, record actual publication URLs/results.
+
+## Redirects and brand contact follow-up — 3 October 2026
+
+- User signed into Cloudflare. No existing Single Redirect rules were present.
+  Deployed the three ordered rules from docs/seo-redirect-rules.json: homepage
+  alias (2f376eae724742e3aaa3d86958c1e482), guide aliases
+  (961ba515e63f4eb0b56fa074aa31d76c), canonical host/HTTPS
+  (18ded9d28c9d4ff1b6f9a2a06db58402). All are active, 301, query preserved.
+  General normalization explicitly excludes /api and /api/* to preserve POST
+  and WebSocket multiplayer requests from already-open www/offline clients.
+- Independent live verification: 42/42 checks passed at 20:03 UTC. Public HTTP,
+  www and page aliases reach the canonical HTTPS apex URL in exactly one 301;
+  encoded queries preserved. Canonical pages/crawler files/favicon return 200,
+  missing pages/assets 404. Both HTTPS /api/health hosts return JSON/200 directly.
+  Evidence retained in ignored .wrangler/tmp/seo/redirects-after.json.
+- User explicitly approved free Proton signup and completed the CAPTCHA.
+  Created masterblastergame@proton.me on Free, without personal contact details
+  or a paid plan. Credentials remain DPAPI-protected in an ignored local file.
+- Sent factual game suggestion to info@freeplaygames.com from this brand mailbox.
+  Proton confirmed "Message sent." Subject: "Game suggestion: Master Blaster".
+  It includes canonical game/guide URLs and real game features, signed only
+  MasterBlasterGame. Recipient delivery/publication/backlink remain unconfirmed.
+- iogames.party draft now includes the brand email. Its text/screenshot license
+  is still unapproved; no form submission. User requested a more lively real
+  gameplay screenshot (explosion/grapple action); capture/preparation in progress.
+- Next unfinished steps: finish heading-font subsets and validate/publish;
+  capture/review/upload real action screenshot; request the directory's specific
+  content license approval after the complete draft is reviewable. Forum activation,
+  published backlinks, actual guide indexing and mobile LCP under 2 s remain open.
+- Follow-up Search Console inspection confirms /how-to-play/ is indexed: "URL
+  is on Google", successful Googlebot smartphone crawl on 3 October at 21:03:17,
+  canonical = inspected URL, one valid breadcrumb item. Fresh sitemap detail:
+  last read 03/10/2026, "Sitemap processed successfully", two discovered pages.
+  No indexing requests repeated. Something Big public listing still lacks the
+  submitted game; editorial receipt remains pending publication. Forum brand
+  login did not establish an authenticated session; activation remains unverified.
+- Heading fonts: Barlow Condensed normal/italic 900 subsets reduce first heading
+  transfers from 66,708 to 41,800 bytes (24,908 saved). Retain complete originals
+  via complementary Unicode ranges. Exact glyphs, outlines, advances, vertical
+  metrics, hint programs/tables, supported Unicode and licensing metadata checked.
+  Use the same fontTools subset options recorded for Inter above, keeping original
+  timestamps. Focused startup, build/hosting and real local Quick Play/pause/menu
+  browser checks passed. Source changes not yet published or remeasured.
+- Prepared public/press/gameplay.jpg: real unedited 1280x720 gameplay capture,
+  brand player/seed only, robot actively grappling through the neon arena. No
+  confirmed simultaneous explosion/headshot captured; do not claim one. Browser
+  pointer-lock limitation prevented mouse aiming/firing in this capture session.
+  Screenshot copied byte-for-byte into both hosting layouts and excluded from
+  mandatory offline downloads. Final build/hosting and asset-cache checks passed.
