@@ -1,9 +1,10 @@
 # Master Blaster: community outreach targets
 
-Researched 4 October 2026. Status: proposed targets awaiting user review.
-Approved targets: none. No new accounts, joins, moderator messages or posts were
-made during this research. The user's request to review targets overrides the
-earlier blanket outreach authorization for these new targets.
+Researched 4 October 2026. The user accepted this target list ("These look good")
+and requested a generic post including all assets/links for review. The
+[generic draft and exact asset package](player-growth-plan.md) await content
+approval before new outreach. No new accounts, joins, moderator messages or posts
+have been made. Target acceptance does not resolve eligibility checks below.
 
 Use the Master Blaster brand identity and mailbox only. State our involvement
 honestly, describe AI assistance accurately and avoid personal details or creator
@@ -52,9 +53,37 @@ audience-fit recommendations, not guarantees of acceptance or SEO ranking gains.
 - Quake map/mod release sections are inappropriate for a standalone game. No
   claims of being a Quake or Liero mod should be made.
 
+## Published-post register and daily activity checks
+
+No community posts have been published as of this review on 4 October 2026.
+Do not treat draft approval, account creation, submission or a queued moderation
+review as verified publication. Add exact permalinks after success:
+
+| Target / community | Published URL | Published date | Brand account | Content version | Status | Last successful check |
+| --- | --- | --- | --- | --- | --- | --- |
+| None yet | — | — | — | — | Draft review pending | — |
+
+The ACTIVE daily 09:00 Europe/Stockholm heartbeat master-blaster-seo-follow-up
+checks every registered post and reports here. For new replies/feedback, record
+the check date, stable reply permalink/identifier, a concise paraphrase, required
+engagement and whether it has already been reported. Preserve the last successful
+check so the same old feedback is not repeatedly presented as new.
+
+Daily summaries cover checked post URLs, new feedback/questions, repeated issues,
+where the user should engage and the topic to address, moderation/publication
+status and access blockers. Link the specific reply when available. Report "no
+new activity" only after a successful check; inaccessible/deleted/login-blocked
+posts need an explicit status. Read and summarize replies without publishing
+responses unless the user authorizes them. Use brand accounts only.
+
+Monitoring continues until the user pauses or cancels it, including after the
+technical SEO/directory tasks finish. The computer and local app must be running
+for these checks; offline/stopped operation cannot provide immediate monitoring.
+
 ## Next step
 
-The user reviews this numbered list and selects targets to approve or remove.
-All entries remain unapproved until that reply. Continue read-only checks of
-already submitted directory listings and independent performance work; do not
-start new outreach while this review is pending.
+The user reviews the generic feedback draft and exact assets/links in
+player-growth-plan.md. Keep new accounts, joins, moderator contacts and posts
+pending that review. After approval, recheck eligible targets' rules, adapt
+approved content and record each successful publication for daily monitoring.
+Continue existing approved directory checks and independent performance work.

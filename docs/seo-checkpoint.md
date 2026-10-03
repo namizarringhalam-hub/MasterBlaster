@@ -302,3 +302,39 @@
   Editorial directory publication and quality backlinks remain unconfirmed;
   mobile LCP remains 2.9 seconds at the last measurement. No new speed measurement
   or listing publication claim was made during this research.
+
+## Generic post review and daily activity monitoring — 4 October 2026
+
+- User accepted the proposed target list and requested a generic post here for
+  review with all assets/links, explicitly asking for player feedback. Publication
+  remains pending this content review; target eligibility checks still apply.
+- Replaced the old playtest draft in docs/player-growth-plan.md with brand copy
+  asking about grapple feel, combat readability and what would earn a rematch.
+  It accurately discloses AI-assisted coding, separates local Quick Play/Training
+  bots from online Private Room/Global Multiplayer and includes no personal names,
+  account details or creator information. Corrected the stale online Quick Play
+  claim and personal-account distribution language in that older plan.
+- Exact review package: https://masterblaster.se/,
+  https://masterblaster.se/how-to-play/ and the user's unchanged 960 × 540 PNG at
+  https://masterblaster.se/press/gameplay.png. All return HTTP 200; PNG content type
+  and 804,703-byte length verified, local hash still matches the selected original.
+  Inspected the image; caption/alt text describe the arena view without invented
+  explosions, grapple action or headshots. No video attached.
+- Updated docs/community-outreach-targets.md with accepted-list/pending-copy
+  status, an empty verified-publication register and daily activity reporting
+  requirements. No new accounts, joins, contacts or community posts made.
+- Updated ACTIVE daily 09:00 Europe/Stockholm heartbeat
+  master-blaster-seo-follow-up via the app tool; update confirmed. It now checks
+  each successfully published permalink daily, tracks newly reported replies,
+  summarizes feedback and points to where the user should engage. Failed access
+  is reported explicitly, never as no activity. No automatic replies authorized.
+  Monitoring continues until user pause/cancellation; Lemmy SDF remains excluded.
+- Existing directory/performance follow-up preserved. Local monitoring requires
+  the computer on and app running; no immediate checks/notification while offline
+  or stopped. Unrelated paused work is untouched.
+- Validation: read-only copy review caught and corrected the stale mode claim;
+  inspected chosen image, checked current text/README, verified public URLs and
+  reviewed documentation diffs; git diff --check passes. No application code
+  changes or new speed claims; no build/application tests needed for these docs.
+- Next: user reviews the draft and exact asset package, then permitted approved
+  adaptations can proceed and publication URLs must enter the daily-check register.
