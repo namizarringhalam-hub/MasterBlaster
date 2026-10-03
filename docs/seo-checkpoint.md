@@ -124,3 +124,22 @@
   checks passed; early Training click reaches setup after startup. Next: publish
   this cleanup and record the final speed measurement, then report remaining
   access/approval/publication blockers without claiming backlinks or indexing.
+- Published 24ce7d3; Cloudflare production deployment succeeded. Last mobile
+  measurement: performance 91, FCP 1.8 s, LCP 3.0 s, TBT 0 ms, CLS 0.
+  Last desktop: performance 82, FCP 0.5 s, LCP 0.7 s, TBT 400 ms, CLS 0,
+  interactive at 1.2 s. SEO/accessibility/best-practices each 100 in both tests.
+  https://pagespeed.web.dev/analysis/https-masterblaster-se/zwzvkfl8f9?form_factor=mobile
+  Scores vary (previous mobile 95); no field-data or universal under-2s claim.
+- All implemented source changes validated/pushed; final tree clean before this
+  record. Guide canonical/meta/one-H1/live navigation checked; original Sam/Kian
+  credits untouched. No new creator bio or personal identity/contact published.
+- iogames.party draft filled with game URL and factual 147-character/long copy;
+  screenshot captured. No form submitted; brand email and license approval needed.
+  Free Play Games mailto request remains unsent. Something Big editorial receipt
+  is the only confirmed directory submission; no published backlink confirmed.
+- Unfinished external steps: user signs into the existing Cloudflare Edge tab;
+  inspect/merge/apply the three draft redirects and verify all schemes/hosts/aliases
+  terminate in one hop. User approves free Proton terms (signup already prepared)
+  before mailbox creation; if it requests a human challenge, hand off to user.
+  Complete permitted email/forum/directory workflows after any required license
+  acceptance, keep brand identity only, record actual publication URLs/results.
