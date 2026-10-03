@@ -192,3 +192,22 @@
   pointer-lock limitation prevented mouse aiming/firing in this capture session.
   Screenshot copied byte-for-byte into both hosting layouts and excluded from
   mandatory offline downloads. Final build/hosting and asset-cache checks passed.
+- Published 47a5865 to origin/main. Cloudflare production deployment
+  a7199f2d-257f-4afd-873c-88ec8155a77b; live homepage references both new Barlow
+  subsets, each served byte-identical to tested source. Public press JPEG returns
+  image/jpeg/200 and exact 104,090 bytes. No multiplayer worker changes.
+- Fresh single mobile PageSpeed run after publication: performance 94, SEO 100,
+  accessibility 100, best practices 100; FCP 1.7 s, LCP 2.9 s, TBT 80 ms,
+  CLS 0, Speed Index 2.7 s. Slow 4G/Moto G Power, 3 October 22:22 GMT+2;
+  no field data. https://pagespeed.web.dev/analysis/https-masterblaster-se/uoqpqm6yj4?form_factor=mobile
+  Under-2-second mobile LCP remains unmet; no broad loading-time guarantee.
+- iogames.party draft is complete: factual short/long copy, canonical game URL,
+  brand email and imported gameplay.jpg attachment (JPEG, 104.1 KB). Reciprocal
+  prioritization unchecked. Awaiting the user's specific approval for submission
+  and non-exclusive royalty-free worldwide text/screenshot license; no Submit
+  action performed. Keep draft tab marked for handoff, brand mailbox deliverable.
+- Remaining: directory license/submission approval; actual editorial publication
+  and quality backlinks; verified forum activation/post; improved mobile LCP.
+  More dramatic explosion/headshot screenshot not achieved with browser pointer
+  lock blocked; current screenshot shows genuine grapple action. Creator bio
+  intentionally skipped. Google indexing/sitemap and canonical redirects complete.
