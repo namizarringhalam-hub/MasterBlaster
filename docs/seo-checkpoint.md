@@ -211,3 +211,24 @@
   More dramatic explosion/headshot screenshot not achieved with browser pointer
   lock blocked; current screenshot shows genuine grapple action. Creator bio
   intentionally skipped. Google indexing/sitemap and canonical redirects complete.
+
+## Directory approval and replacement screenshot — 3 October 2026
+
+- User explicitly approved the iogames.party listing and its non-exclusive
+  royalty-free worldwide text/screenshot content license. No further license
+  confirmation is needed. Form remains unsubmitted while replacing the image.
+- User rejected the first screenshot and then requested using their own image.
+  Latest message contains no accessible image attachment; next step is receive
+  that image, inspect it, replace the old Airtable attachment, submit the approved
+  draft and verify its receipt. Do not submit the rejected existing attachment.
+- Explored actual engine captures with combat, grapple lines and rocket effects;
+  staged candidates remain ignored local artifacts, unpublished and unattached.
+  Do not describe them as earned headshots or unstaged live gameplay.
+- Fixed the graphics review harness's startup diagnostic race: boost-pad metrics
+  use an empty list while startMatch asynchronously prepares the world. Focused
+  syntax/null/ready checks passed; existing in-app browser reached ready with
+  draw calls and zero errors after reloading. No product gameplay changes.
+- Temporary capture tab closed, viewport override reset, owned dev server stopped.
+  Approved listing draft preserved for handoff. Remaining external work: user image
+  and submission receipt; editorial publication/quality backlinks; forum activation;
+  mobile LCP under 2 seconds (last measured 2.9 s). Creator bio intentionally skipped.
