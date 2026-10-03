@@ -118,19 +118,8 @@ function menuAtmosphereMarkup(variant = "landing") {
   </div>`;
 }
 
-function capabilities() {
-  return {
-    webgpu: Boolean(navigator.gpu),
-    webgl2: Boolean(document.createElement("canvas").getContext("webgl2")),
-    wasm: typeof WebAssembly === "object",
-    websocket: typeof WebSocket === "function",
-    pointer: typeof PointerEvent === "function"
-  };
-}
-
 class BlasterBattle {
   constructor() {
-    this.capabilities = capabilities();
     this.settings = loadSettings();
     this.coarsePointer = matchMedia("(pointer: coarse)").matches;
     this.graphics = graphicsProfile(this.settings.graphics, this.coarsePointer, devicePixelRatio, this.settings.graphicsOptions);
@@ -252,9 +241,11 @@ class BlasterBattle {
   }
 
   async init() {
+    await backgroundYield();
     await this.renderer.init();
-    this.capabilities[this.renderer.backend.isWebGPUBackend === true ? "webgpu renderer" : "webgl2 fallback"] = true;
+    await backgroundYield();
     this.environmentTarget = await setupEnvironment(this.renderer, this.scene);
+    await backgroundYield();
     this.rebuildRenderPipeline();
     const reportDeviceLost = this.renderer.onDeviceLost.bind(this.renderer);
     this.renderer.onDeviceLost = (info) => {

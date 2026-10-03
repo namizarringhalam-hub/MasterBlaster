@@ -111,3 +111,16 @@
   action-time terms approval required by browser policy. No paid plan selected
   and no mailbox created. Directory email delivery/submissions await brand contact
   and applicable license approval. Forum application activation remains unknown.
+- Published 772ad78; production deploy succeeded. Mobile performance 95,
+  FCP 1.7 s, LCP 2.9 s, TBT 90 ms, CLS 0. Desktop paints quickly (FCP 0.5 s,
+  LCP 0.7 s) but scores 72 with 880 ms of startup blocking. No CrUX data.
+  Final browser checked immediate pre-engine Quick Play click, actual match,
+  pause, Settings and Credits after match; no stale canvas, one screen heading.
+  Homepage remains indexed; Google confirmed a new homepage recrawl request.
+- Additional startup cleanup: remove unused capabilities probe that creates a
+  second WebGL context; yield via existing scheduler at renderer/environment
+  preparation boundaries. Native PMREM generation still runs synchronously.
+  Lighting, startup, gameplay warmup, resource preparation and production build
+  checks passed; early Training click reaches setup after startup. Next: publish
+  this cleanup and record the final speed measurement, then report remaining
+  access/approval/publication blockers without claiming backlinks or indexing.
