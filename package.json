@@ -8,7 +8,7 @@
     "prebuild": "node scripts/patch-three.mjs",
     "predev": "node scripts/patch-three.mjs",
     "pretest": "node scripts/patch-three.mjs",
-    "build": "vite build && node scripts/prepare-sites.mjs && node tests/hosting.mjs",
+    "build": "vite build && node scripts/prepare-hosting.mjs && node tests/hosting.mjs",
     "dev": "vite --host 127.0.0.1",
     "dev:multiplayer": "wrangler dev --port 8787",
     "deploy:multiplayer": "wrangler deploy",

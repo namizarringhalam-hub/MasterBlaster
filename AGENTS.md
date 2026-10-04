@@ -4,6 +4,10 @@
 - After every validated user-requested code or content change, commit only the files changed for that request and push the commit to `origin/main` before reporting completion, unless the user explicitly asks not to publish or the push is blocked.
 - Preserve unrelated user changes. Never rewrite published history or force-push.
 
+## Deployment
+
+- `masterblaster.se`, deployed through Cloudflare Pages from `origin/main`, is the only game host. Never create or publish a `chatgpt.site` copy unless the user explicitly reverses this instruction.
+
 ## Long-running work recovery
 
 - Keep a concise persistent checkpoint for substantial multi-session work, including changed files, verified tests, reviewer findings, blockers and the next unfinished step. Update it at material milestones and before yielding.
