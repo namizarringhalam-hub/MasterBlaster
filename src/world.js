@@ -370,7 +370,7 @@ function skyBackground(theme) {
 }
 
 export class ArenaWorld {
-  constructor(scene, seed = "BLAST-01") {
+  constructor(scene, seed = "BLAST-01", { deferBuild = false } = {}) {
     this.scene = scene;
     this.seed = seed;
     this.theme = MAP_THEMES[seedFromText(seed) % MAP_THEMES.length];
@@ -503,8 +503,9 @@ export class ArenaWorld {
     });
     this.time = 0;
     scene.add(this.group);
-    this.createDebrisPool();
-    this.build();
+    this.buildComplete = false;
+    this.buildIterator = this.buildSteps();
+    if (!deferBuild) this.build();
   }
 
   setGraphicsProfile(profile, maxAnisotropy = 16) {
@@ -555,6 +556,17 @@ export class ArenaWorld {
   }
 
   build() {
+    while (!this.advanceBuild()) {}
+  }
+
+  advanceBuild() {
+    if (!this.buildComplete) this.buildComplete = this.buildIterator.next().done;
+    return this.buildComplete;
+  }
+
+  *buildSteps() {
+    this.createDebrisPool();
+    yield;
     const random = seededRandom(seedFromText(this.seed));
     const structuralBlueprints = structuralTowerBlueprints(this.seed, random);
     this.ground = box(this.size * 2, .5, this.size * 2, this.theme.ground, 0, -.28, 0, 0, { colorNode: this.waterLight, wetSurface: this.wetSurface });
@@ -568,8 +580,11 @@ export class ArenaWorld {
     this.ground.material.roughness = .9;
     this.ground.material.metalness = 0;
     this.group.add(this.ground);
+    yield;
     this.addGroundTreatment();
+    yield;
     this.addDistrictLights();
+    yield;
 
     const grid = new THREE.GridHelper(this.size * 2, 44, this.theme.grid, 0x244b67);
     grid.position.y = .018;
@@ -577,56 +592,85 @@ export class ArenaWorld {
     grid.material.transparent = true;
     grid.material.depthWrite = false;
     this.group.add(grid);
+    yield;
 
     for (const [x, z, w, d] of [
       [0, -this.size, this.size * 2, 1.2], [0, this.size, this.size * 2, 1.2],
       [-this.size, 0, 1.2, this.size * 2], [this.size, 0, 1.2, this.size * 2]
-    ]) this.addBox(x, z, w, d, 44, 0x263d53);
+    ]) {
+      this.addBox(x, z, w, d, 44, 0x263d53);
+      yield;
+    }
     this.addBoundaryBands();
+    yield;
 
     // Four real combat elevations plus a 70-metre central grapple spire.
     this.addPlatform(0, 15, 0, 42, 42, 1.5, 0x203d55);
+    yield;
     this.addPlatform(0, 66, 0, 28, 28, 1.7, 0x294b65);
+    yield;
 
     // Every outer tower deck and its segmented stand is structural. The two
     // central floors and their spire stay immutable, preserving one reliable
     // vertical route after the battlefield has been demolished.
-    for (const tower of structuralBlueprints.slice(0, 6)) this.addStructuralTower(
-      tower.x, tower.z, tower.segmentCount, tower.w, tower.d,
-      { top: tower.top, platformThickness: tower.thickness, pillarWidth: tower.pillarWidth, major: true }
-    );
+    for (const tower of structuralBlueprints.slice(0, 6)) {
+      this.addStructuralTower(
+        tower.x, tower.z, tower.segmentCount, tower.w, tower.d,
+        { top: tower.top, platformThickness: tower.thickness, pillarWidth: tower.pillarWidth, major: true }
+      );
+      yield;
+    }
 
     // Long aerial bridges turn the map into a navigable volume, not stacked islands.
     this.addPlatform(-26, 15, -24, 50, 5, 1, 0x35566d);
+    yield;
     this.addPlatform(28, 15, 24, 54, 5, 1, 0x35566d);
+    yield;
     this.addPlatform(31, 31, 4, 5, 48, 1, 0x35566d);
+    yield;
     this.addPlatform(-30, 47, 14, 5, 48, 1, 0x35566d);
+    yield;
     this.addPlatform(0, 66, 28, 5, 30, 1, 0x35566d);
+    yield;
 
     this.addLandmark(this.addBox(0, 0, 7, 7, 70, 0x1d344b, false, true), 0);
+    yield;
 
     // Seeded structural towers fill the mid-field with destructible vertical routes.
-    for (const tower of structuralBlueprints.slice(6)) this.addStructuralTower(
-      tower.x, tower.z, tower.segmentCount, tower.w, tower.d,
-      { top: tower.top, platformThickness: tower.thickness, pillarWidth: tower.pillarWidth, major: tower.major, landmarkIndex: tower.landmarkIndex }
-    );
-    this.batchStructuralGeometry();
+    for (const tower of structuralBlueprints.slice(6)) {
+      this.addStructuralTower(
+        tower.x, tower.z, tower.segmentCount, tower.w, tower.d,
+        { top: tower.top, platformThickness: tower.thickness, pillarWidth: tower.pillarWidth, major: tower.major, landmarkIndex: tower.landmarkIndex }
+      );
+      yield;
+    }
+    yield* this.batchStructuralGeometrySteps();
 
     // Alternate ascent routes for players who miss a grapple.
     for (const pad of [
       [-18, 0, -18, 24], [18, 0, 18, 24], [-66, 0, 22, 29], [66, 0, -22, 29],
       [-52, 15, -48, 26], [53, 15, 49, 26], [42, 31, -22, 27], [-42, 47, 30, 28]
-    ]) this.addBoostPad(...pad);
+    ]) {
+      this.addBoostPad(...pad);
+      yield;
+    }
 
     this.addMovingPlatform(-80, 18, 0, 12, 10, "y", 11, .85, 0);
+    yield;
     this.addMovingPlatform(80, 25, 0, 12, 10, "y", 15, .7, Math.PI);
+    yield;
     this.addMovingPlatform(0, 34, -82, 11, 11, "x", 25, .62, Math.PI / 2);
+    yield;
     this.addMovingPlatform(0, 51, 82, 11, 11, "x", 25, .55, -Math.PI / 2);
+    yield;
     for (const [entry, exit] of ARENA_PORTAL_PAIRS) {
       this.addPortalPair(new THREE.Vector3(entry.x, entry.y, entry.z), new THREE.Vector3(exit.x, exit.y, exit.z));
+      yield;
     }
     this.addSweeper(-70, 0, 48, 20, 1.15);
+    yield;
     this.addSweeper(70, 0, -48, 24, -.9);
+    yield;
 
     for (let i = 0; i < 34; i++) {
       const angle = random() * Math.PI * 2;
@@ -637,11 +681,16 @@ export class ArenaWorld {
       const d = 3 + random() * 5;
       const h = 2.5 + random() * 5;
       this.addBox(x, z, w, d, h, i % 3 ? this.theme.danger : this.theme.accent, true);
+      yield;
     }
     this.addDistantSkyline();
+    yield;
     this.addAtmosphere();
+    yield;
     this.batchDestructibleBodies();
+    yield;
     this.buildObstacleIndex();
+    yield;
     this.freezeStaticTransforms();
   }
 
@@ -2637,10 +2686,15 @@ export class ArenaWorld {
   }
 
   batchStructuralGeometry() {
+    for (const step of this.batchStructuralGeometrySteps()) {}
+  }
+
+  *batchStructuralGeometrySteps() {
     const segments = this.structures.flatMap((structure) => structure.segments);
     const platforms = this.structures.flatMap((structure) => structure.platformChunks);
     const anchors = this.structures.map((structure) => structure.anchor);
     const segmentBatch = this.createStructuralBatch(structuralPanelGeometry(.25), segments[0].mesh.material, segments.length, "Instanced destructible pillar modules");
+    yield;
     const seamMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, transparent: true, opacity: .18, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
     const segmentSeamBatch = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), seamMaterial, segments.length);
     segmentSeamBatch.name = "Instanced pillar section seams";
@@ -2649,6 +2703,7 @@ export class ArenaWorld {
     segmentSeamBatch.receiveShadow = false;
     this.group.add(segmentSeamBatch);
     this.structuralBatchMeshes.push(segmentSeamBatch);
+    yield;
     const segmentRailBatch = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), seamMaterial.clone(), segments.length * 4);
     segmentRailBatch.name = "Instanced pillar load rails";
     segmentRailBatch.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -2656,7 +2711,9 @@ export class ArenaWorld {
     segmentRailBatch.receiveShadow = false;
     this.group.add(segmentRailBatch);
     this.structuralBatchMeshes.push(segmentRailBatch);
+    yield;
     const platformBatch = this.createStructuralBatch(structuralPanelGeometry(), platforms[0].mesh.material, platforms.length, "Instanced destructible platform decks");
+    yield;
     const topMaterial = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       vertexColors: true,
@@ -2673,6 +2730,7 @@ export class ArenaWorld {
     platformTopBatch.receiveShadow = false;
     this.group.add(platformTopBatch);
     this.structuralBatchMeshes.push(platformTopBatch);
+    yield;
     const platformFrameBatch = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), topMaterial.clone(), platforms.length * 4);
     platformFrameBatch.name = "Instanced destructible deck perimeter stress rails";
     platformFrameBatch.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -2680,6 +2738,7 @@ export class ArenaWorld {
     platformFrameBatch.receiveShadow = false;
     this.group.add(platformFrameBatch);
     this.structuralBatchMeshes.push(platformFrameBatch);
+    yield;
 
     const anchorMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, toneMapped: false });
     const anchorBatch = new THREE.InstancedMesh(new THREE.SphereGeometry(.55, 14, 10), anchorMaterial, anchors.length);
@@ -2688,6 +2747,7 @@ export class ArenaWorld {
     anchorBatch.castShadow = false;
     this.group.add(anchorBatch);
     this.structuralBatchMeshes.push(anchorBatch);
+    yield;
     const cageMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, wireframe: true, transparent: true, opacity: .5, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
     const cageBatch = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.92, 1), cageMaterial, anchors.length);
     cageBatch.name = "Instanced structural grapple cages";
@@ -2695,8 +2755,10 @@ export class ArenaWorld {
     cageBatch.castShadow = false;
     this.group.add(cageBatch);
     this.structuralBatchMeshes.push(cageBatch);
+    yield;
 
-    segments.forEach((part, index) => {
+    // ponytail: eight parts per step keep instance batching cancellable without another build path.
+    for (const [index, part] of segments.entries()) {
       part.visualColor = part.mesh.material.color.getHex();
       part.instanceVisuals = [
         { mesh: segmentBatch, index, scale: new THREE.Vector3(part.w, part.h, part.d), yOffset: 0 },
@@ -2720,8 +2782,9 @@ export class ArenaWorld {
       segmentBatch.setColorAt(index, new THREE.Color(part.visualColor));
       segmentSeamBatch.setColorAt(index, new THREE.Color(part.structure.color));
       for (let corner = 0; corner < 4; corner++) segmentRailBatch.setColorAt(index * 4 + corner, new THREE.Color(part.structure.color));
-    });
-    platforms.forEach((part, index) => {
+      if (index % 8 === 7 || index === segments.length - 1) yield;
+    }
+    for (const [index, part] of platforms.entries()) {
       part.visualColor = part.mesh.material.color.getHex();
       part.instanceVisuals = [
         { mesh: platformBatch, index, scale: new THREE.Vector3(part.w, part.h, part.d), yOffset: 0 },
@@ -2748,8 +2811,9 @@ export class ArenaWorld {
       platformTopBatch.setColorAt(index, new THREE.Color(part.structure.color));
       platformTopBatch.setColorAt(platforms.length + index, new THREE.Color(part.structure.color));
       for (let edge = 0; edge < 4; edge++) platformFrameBatch.setColorAt(index * 4 + edge, new THREE.Color(part.structure.color));
-    });
-    anchors.forEach((anchor, index) => {
+      if (index % 8 === 7 || index === platforms.length - 1) yield;
+    }
+    for (const [index, anchor] of anchors.entries()) {
       const structure = this.structures[index];
       anchor.instanceVisuals = [
         { mesh: anchorBatch, index, scale: new THREE.Vector3(1, 1, 1), yOffset: 0 },
@@ -2758,11 +2822,13 @@ export class ArenaWorld {
       anchor.mesh = anchorBatch;
       this.updateStructuralAnchor(anchor);
       for (const visual of anchor.instanceVisuals) visual.mesh.setColorAt(index, new THREE.Color(structure.color));
-    });
+      if (index % 8 === 7 || index === anchors.length - 1) yield;
+    }
     for (const mesh of this.structuralBatchMeshes) {
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
       mesh.computeBoundingSphere();
+      yield;
     }
   }
 
@@ -3479,6 +3545,7 @@ export class ArenaWorld {
   }
 
   dispose() {
+    this.buildIterator.return();
     this.scene.background = this.previousBackground;
     this.scene.backgroundNode = this.previousBackgroundNode;
     this.scene.fog = this.previousFog;

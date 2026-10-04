@@ -680,6 +680,7 @@ class BlasterBattle {
       </main>`;
     this.bindUi();
     queueMicrotask(() => this.pulseMenuEnergy(.48, MENU_ACCENTS[mode], 2300));
+    this.queueArenaPreparation(this.seed);
   }
 
   renderPrivateLobby(message) {
@@ -694,6 +695,7 @@ class BlasterBattle {
     this.privateLobby = { ...(this.privateLobby || {}), ...message };
     this.onlineWelcome = { ...(this.onlineWelcome || {}), ...message };
     this.seed = this.privateLobby.roomCode || this.seed;
+    this.queueArenaPreparation(this.seed);
     this.networkEndsAt = 0;
     if (this.multiplayer && this.privateLobby.botHostId) this.multiplayer.botHostId = this.privateLobby.botHostId;
     this.setMatchLoading(false);
@@ -1364,6 +1366,7 @@ class BlasterBattle {
     };
     saveSettings(this.settings);
     this.updateMatchSummary();
+    this.queueArenaPreparation(this.seed);
   }
 
   captureSettingsPreferences() {
@@ -4009,6 +4012,11 @@ class BlasterBattle {
   prepareGameplayResources(seed) {
     this.gameplayPreparation ||= new GameplayPreparation(this);
     return this.gameplayPreparation.request(seed);
+  }
+
+  queueArenaPreparation(seed) {
+    this.gameplayPreparation ||= new GameplayPreparation(this);
+    this.gameplayPreparation.preload(seed);
   }
 
   stopGameplayPreparation() {

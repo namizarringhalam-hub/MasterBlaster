@@ -67,6 +67,11 @@ profile.onclick = async () => {
   sample.windowMs = Math.round(performance.now() - sample.started);
   sample.preparedWeapons = game.gameplayPreparation?.ready?.fighters.reduce((sum, fighter) => sum + fighter.weaponModels.size, 0) || 0;
   sample.preparationPending = Boolean(game.gameplayPreparation?.pending);
+  const arena = game.gameplayPreparation?.arena.entry;
+  sample.arenaSteps = arena?.steps || 0;
+  sample.arenaCpuReady = Boolean(arena?.cpuComplete);
+  sample.arenaMaxStepMs = Math.round((arena?.maxStepMs || 0) * 10) / 10;
+  sample.arenaLimited = Boolean(arena?.limited);
   sample.sceneMeshes = 0;
   game.scene.traverse(object => { if (object.isMesh) sample.sceneMeshes++; });
   sample.loadedImages = [...document.querySelectorAll('.loadout-armory img')].filter(image => image.complete && image.naturalWidth).length;
@@ -77,6 +82,7 @@ profile.onclick = async () => {
 launch.onclick = async () => {
   launch.disabled = true;
   let earlyCountdowns = 0, loaderBeforePreparation = false;
+  const arenaBeforeLaunch = game.gameplayPreparation?.arena.entry?.world;
   const countdown = game.startMatchCountdown.bind(game), prepare = game.prepareGameplayResources.bind(game);
   game.startMatchCountdown = () => { if (!game.matchFrameReady) earlyCountdowns++; countdown(); };
   game.prepareGameplayResources = (...args) => { loaderBeforePreparation = !document.querySelector('#match-loading').hidden; return prepare(...args); };
@@ -87,9 +93,10 @@ launch.onclick = async () => {
     await wait(() => game.state === 'play' && game.matchFrameReady && !game.preparingMatch && !game.hideMatchLoadingAfterFrame && !game.matchStartQueued);
     const sample = { launchMs: Math.round(performance.now() - started), loaderBeforePreparation, earlyCountdowns,
       matchFrameReady: game.matchFrameReady, matchTime: game.matchTime, players: game.players.length,
+      preloadedArenaReused: arenaBeforeLaunch ? game.world === arenaBeforeLaunch : null,
       allWeaponsPrepared: game.players.every(player => player.weaponModels.size === new Set(player.loadout).size) };
     samples.push(sample);
-    if (!loaderBeforePreparation || earlyCountdowns || !sample.allWeaponsPrepared) throw Error('Launch readiness gate failed');
+    if (!loaderBeforePreparation || earlyCountdowns || !sample.allWeaponsPrepared || sample.preloadedArenaReused === false) throw Error('Launch readiness gate failed');
     if (errors.length) throw Error('Browser reported errors');
     game.togglePause(); phase = 'PASS';
   } catch (error) { errors.push(String(error)); phase = 'FAIL'; }

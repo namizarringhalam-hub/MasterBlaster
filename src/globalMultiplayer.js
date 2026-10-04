@@ -145,6 +145,7 @@ export class GlobalMultiplayer {
     game.state = "lobby";
     game.paused = false;
     game.privateLobby = { ...(game.privateLobby || {}), ...message };
+    game.queueArenaPreparation(game.seed);
     game.setMatchLoading(false);
     game.sound.setPaused(false); game.sound.setMusicScene("menu"); game.sound.startMusic("menu", game.seed);
     const local = message.players?.find((player) => player.id === game.multiplayer?.playerId);

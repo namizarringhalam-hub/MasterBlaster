@@ -4,11 +4,16 @@ import { backgroundYield } from "./resourceVersion.js";
 
 const preparedData = new Map();
 let preparing = Promise.resolve();
+const arenaEntries = seed => [[`${seed}-structure`, false, "metal"], [`${seed}-ground`, false, "concrete"], [`${seed}-cover`, true, "metal"]];
 
-export function prepareSurfaceTextures(seeds = [], report = () => {}) {
+export function surfaceTexturesReady(seed) {
+  return arenaEntries(seed).every(entry => preparedData.has(JSON.stringify(entry)));
+}
+
+export function prepareSurfaceTextures(seeds = [], report = () => {}, { background = false } = {}) {
   const entries = [
     ...["metal", "concrete", "rubber", "glass"].map(finish => [`machined-${finish}`, true, finish]),
-    ...seeds.flatMap(seed => [[`${seed}-structure`, false, "metal"], [`${seed}-ground`, false, "concrete"], [`${seed}-cover`, true, "metal"]])
+    ...seeds.flatMap(arenaEntries)
   ];
   preparing = preparing.catch(() => {}).then(async () => {
     const missing = entries.filter(entry => !preparedData.has(JSON.stringify(entry)));
@@ -35,15 +40,17 @@ export function prepareSurfaceTextures(seeds = [], report = () => {}) {
           worker.postMessage(missing);
         });
       } catch {
-        for (const entry of missing) if (!preparedData.has(JSON.stringify(entry))) {
+        if (!background) for (const entry of missing) if (!preparedData.has(JSON.stringify(entry))) {
           await backgroundYield();
           accept(JSON.stringify(entry), surfaceTextureData(...entry));
         }
       }
-    } else for (const entry of missing) {
+    } else if (!background) for (const entry of missing) {
       await backgroundYield();
       accept(JSON.stringify(entry), surfaceTextureData(...entry));
     }
+    // Optional preparation never falls back to CPU generation or allocates shared maps.
+    if (background) return entries.every(entry => preparedData.has(JSON.stringify(entry)));
     for (const finish of ["metal", "concrete", "rubber", "glass"]) surfaceMaps(finish);
   });
   return preparing;

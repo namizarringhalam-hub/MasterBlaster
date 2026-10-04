@@ -1,6 +1,5 @@
 import * as THREE from "three/webgpu";
 import { materialOpacity } from "three/tsl";
-import { ArenaWorld } from "./world.js";
 import { Fighter } from "./player.js";
 import { CombatVisuals, createProjectileVisual } from "./combatVisuals.js";
 import { WEAPONS } from "./gameData.js";
@@ -10,6 +9,7 @@ import { RESOURCE_VERSION, backgroundYield } from "./resourceVersion.js";
 import { createHazardVisual } from "./hazardVisuals.js";
 import { Line2 } from "three/addons/lines/webgpu/Line2.js";
 import { createGrappleRopeGeometry, updateGrappleRopeGeometry } from "./grappleRope.js";
+import { ArenaPreparation } from "./arenaPreparation.js";
 
 const atmosphereKeys = ["background", "backgroundNode", "fog", "fogNode"];
 const atmosphere = scene => Object.fromEntries(atmosphereKeys.map(key => [key, scene[key]]));
@@ -123,7 +123,9 @@ export function disposeGameplaySamples(game, entry) {
 }
 
 export class GameplayPreparation {
-  constructor(game) { this.game = game; this.requested = null; this.ready = null; this.pending = null; }
+  constructor(game) { this.game = game; this.requested = null; this.ready = null; this.pending = null; this.arena = new ArenaPreparation(game); }
+
+  preload(seed) { if (!this.pending) this.arena.preload(seed); }
 
   request(seed) {
     this.requested = seed;
@@ -135,6 +137,7 @@ export class GameplayPreparation {
 
   cancel() {
     this.requested = null;
+    this.arena.cancel();
     if (!this.pending) this.discard();
   }
 
@@ -177,12 +180,12 @@ export class GameplayPreparation {
         await prepareSurfaceTextures([seed]);
         await backgroundYield();
         if (!valid()) continue;
-        const entry = this.ready = { key, pipeline, renderer, complete: false, fighters: [], projectiles: new THREE.Group() };
-        const previous = atmosphere(game.scene);
-        try {
-          entry.world = new ArenaWorld(game.scene, seed);
-          entry.atmosphere = atmosphere(game.scene);
-        } finally { Object.assign(game.scene, previous); }
+        const arena = await this.arena.promote(seed, valid);
+        if (!arena || !valid()) { arena?.world.dispose(); continue; }
+        const entry = this.ready = { key, pipeline, renderer, complete: false, fighters: [], projectiles: new THREE.Group(), ...arena };
+        for (const property of atmosphereKeys) entry.world[`previous${property[0].toUpperCase()}${property.slice(1)}`] = game.scene[property];
+        entry.world.scene = game.scene;
+        game.scene.add(entry.world.group);
         entry.world.group.visible = false;
         entry.world.setGraphicsProfile(game.graphics, game.renderer.getMaxAnisotropy());
         entry.world.setGraphicsEffects(game.settings.graphicsEffects);

@@ -3,6 +3,7 @@ import * as THREE from "three/webgpu";
 import { GameplayPreparation, gameplayPreparationKey, prepareFighterWeapons, warmGameplayScene, disposeGameplaySamples } from "../src/gameplayPreparation.js";
 import { graphicsProfile, loadSettings, WEAPONS } from "../src/gameData.js";
 import { NeonRenderPipeline } from "../src/renderPipeline.js";
+import { prepareSurfaceTextures } from "../src/surfaceTextures.js";
 
 // Exercise real arena, fighter, effect and hazard constructors; only GPU submit
 // is replaced here. The browser companion verifies real shader/render work.
@@ -14,7 +15,7 @@ scene.add(keyLight, keyLight.target);
 const observed = new Set();
 let renders = 0, inject = null;
 const game = {
-  scene, camera, keyLight, settings: loadSettings(), graphics: graphicsProfile("low", false, 1),
+  state: "menu", scene, camera, keyLight, settings: loadSettings(), graphics: graphicsProfile("low", false, 1),
   renderSize: { width: 800, height: 600, pixelRatio: 1 },
   renderer: { samples: 0, backend: {}, getMaxAnisotropy: () => 4 },
   renderPipeline: { render() {
@@ -41,7 +42,34 @@ game.renderSize.width--;
 
 const preparation = new GameplayPreparation(game);
 const beforeCamera = camera.clone(), beforeBackground = scene.backgroundNode;
-const first = await preparation.request("WARMUP-A");
+await prepareSurfaceTextures(["WARMUP-A"]);
+const foregroundIdle = globalThis.requestIdleCallback, previousCancelIdle = globalThis.cancelIdleCallback;
+const optionalIdle = new Map();
+let idleId = 0, first, partialWorld;
+try {
+  globalThis.requestIdleCallback = callback => { const id = ++idleId; optionalIdle.set(id, callback); return id; };
+  globalThis.cancelIdleCallback = id => optionalIdle.delete(id);
+  preparation.preload("WARMUP-A");
+  await new Promise(resolve => setTimeout(resolve, 360));
+  const idle = optionalIdle.entries().next().value;
+  assert.ok(idle, "quiet menu time schedules optional CPU preparation");
+  optionalIdle.delete(idle[0]);
+  idle[1]({ didTimeout: false, timeRemaining: () => 20 });
+  partialWorld = preparation.arena.entry.world;
+  assert.ok(partialWorld && !partialWorld.buildComplete, "one idle callback leaves a reusable partial arena");
+  assert.notEqual(partialWorld.scene, scene);
+  assert.equal(scene.getObjectByName("Neon Parkour Arena"), undefined);
+  assert.equal(renders, 0, "optional arena construction does no GPU warmup");
+  globalThis.requestIdleCallback = foregroundIdle;
+  first = await preparation.request("WARMUP-A");
+} finally {
+  globalThis.requestIdleCallback = foregroundIdle;
+  if (previousCancelIdle === undefined) delete globalThis.cancelIdleCallback; else globalThis.cancelIdleCallback = previousCancelIdle;
+}
+assert.equal(first.world, partialWorld, "full gameplay preparation resumes and adopts the exact speculative arena");
+assert.equal(first.world.scene, scene, "the promoted arena changes ownership to the live scene");
+assert.equal(first.world.group.parent, scene);
+assert.equal(first.world.buildComplete, true);
 assert.equal(first.complete, true);
 assert.equal(first.world.time, 0, "preparation never simulates the arena");
 assert.ok(first.world.debrisMesh.instanceColor, "debris color layout exists before first destruction");

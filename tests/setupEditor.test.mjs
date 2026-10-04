@@ -26,7 +26,9 @@ const Game = new Function(...Object.keys(bindings), `return ${controller}`)(...O
 const storage = new Map();
 globalThis.localStorage = { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
 const game = Object.create(Game.prototype);
-game.queueGameplayPreparation = game.prepareGameplayResources = () => assert.fail("interactive setup and lobby changes must not construct or warm gameplay resources");
+const preloadSeeds = [];
+game.queueArenaPreparation = seed => preloadSeeds.push(seed);
+game.queueGameplayPreparation = game.prepareGameplayResources = () => assert.fail("interactive setup and lobby changes must not start gameplay GPU preparation");
 game.settings = data.loadSettings();
 assert.deepEqual(game.settings.loadout, data.RECOMMENDED_LOADOUT, "new players arrive with the complete recommended kit");
 game.mode = "training";
@@ -178,7 +180,8 @@ assert.deepEqual(game.settings.loadout, custom, "returning to Quick Play keeps t
 for (const mode of ["training", "private", "quick"]) {
   game.renderSetup(mode);
   assert.equal(game.mode, mode);
-  assert.deepEqual(game.settings.loadout, custom, "changing setup mode does not replace a custom kit or start gameplay preparation");
+  assert.equal(preloadSeeds.at(-1), game.seed, "Armory entry queues optional CPU work for the selected seed");
+  assert.deepEqual(game.settings.loadout, custom, "changing setup mode preserves a custom kit while queuing optional CPU preparation");
 }
 game.settings.defaultLoadoutPreset = 0;
 game.settings.loadout = [...data.DEFAULT_LOADOUT];
@@ -222,6 +225,7 @@ nodes.set("[data-match-summary]", settingsSummary);
 nodes.set("[data-launch-summary]", launchSummary);
 for (const [selector, value] of [["#display-name", "Tester"], ["#map-seed", "TEST"], ["#bot-difficulty", "rookie"], ["#bot-count", "4"], ["#time-limit", "7"]]) nodes.set(selector, { value });
 game.captureSetupPreferences();
+assert.equal(preloadSeeds.at(-1), "TEST", "committed setup preferences retarget optional CPU preparation");
 assert.equal(settingsSummary.textContent, game.matchSummary());
 assert.equal(launchSummary.textContent, game.matchSummary(), "match preferences update the summary beside Start");
 const beforeTrainingToggle = launchSummary.textContent;
@@ -279,13 +283,17 @@ assert.match(roomUi.innerHTML, /data-preset-select/);
 assert.equal(roomNodes.get("[data-global-rules]").textContent, formatText(TEXT.setup.matchSummary, { bots: 2, difficulty: TEXT.setup.difficulties.normal, minutes: 3 }));
 room.renderRoom({ type: "lobby", configuredBotCount: 3 });
 assert.equal(roomNodes.get("[data-global-rules]").textContent, formatText(TEXT.setup.matchSummary, { bots: 3, difficulty: TEXT.setup.difficulties.normal, minutes: 3 }), "passive room updates refresh rules without gameplay preparation");
+assert.equal(preloadSeeds.at(-1), game.seed, "a waiting room queues optional CPU work for its known seed");
 game.clearMatch = () => {};
 game.multiplayer.send = () => {};
 room.directory = { connected: true };
+const beforeDirectory = preloadSeeds.length;
 await room.open();
 assert.equal(game.state, "global", "opening a connected public directory stays in the menu");
+assert.equal(preloadSeeds.length, beforeDirectory, "the public directory does not speculate on an unknown room seed");
 game.mode = "private";
 game.renderPrivateLobby({ phase: "lobby", roomCode: "WAITING", hostId: "local", configuredBotCount: 2, difficulty: "normal", timeLimitMinutes: 3, players: [{ id: "local", name: "Tester" }] });
 assert.equal(game.state, "lobby");
 assert.equal(game.seed, "WAITING", "private waiting rooms update their seed without building the arena");
-console.log("Setup entry, preference capture and private/public waiting-room updates stay free of gameplay construction and GPU warmup; armory settings and slots remain available.");
+assert.equal(preloadSeeds.at(-1), "WAITING", "private waiting rooms retarget optional CPU preparation");
+console.log("Setup and private/public waiting-room updates queue optional CPU preparation while staying free of gameplay GPU warmup; armory settings and slots remain available.");
