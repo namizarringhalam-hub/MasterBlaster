@@ -49,7 +49,7 @@ const playerMergeSource = readFileSync(new URL("../src/player.js", import.meta.u
 {
   const scene = new THREE.Scene(), effects = new CombatVisuals(scene);
   const removeSource = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
-  const removeObject = new Function(`return function(object) {${removeSource.split("  removeObject(object) {")[1].split("\n  }\n}")[0]}}`)();
+  const removeObject = new Function(`return function(object) {${removeSource.split("  removeObject(object) {")[1].split(/\r?\n  }\r?\n}/)[0]}}`)();
   let geometry, colorAttribute, geometryDisposals = 0;
   const materials = new Set();
   for (let i = 0; i < 32; i++) {
@@ -856,7 +856,7 @@ for (const view of ["hand-front", "hand-side", "hand-opposite", "hand-palm", "ha
   hero.dispose();
 }
 const captureSource = graphicsFixture.slice(graphicsFixture.indexOf("    const grapple = game.players[0]?.grapple;"), graphicsFixture.indexOf('    const link = select("canvas-capture");'));
-const captureFrame = new Function("THREE", "game", "renderedFrames", "sceneSerial", "select", "ropeRenders", "ropeRendersBefore", "errorCount", "thrusterSortControl", "thrusterRenderOrder", "poseReview", `let canvasCapture; ${captureSource}; return canvasCapture;`).bind(null, THREE);
+const captureFrame = new Function("THREE", "game", "renderedFrames", "sceneSerial", "select", "ropeRenders", "ropeRendersBefore", "errorCount", "thrusterSortControl", "thrusterRenderOrder", "poseReview", "pressAction = null", `let canvasCapture; ${captureSource}; return canvasCapture;`).bind(null, THREE);
 {
   const hero = new Fighter(new THREE.Scene(), { id: "hand-metadata", color: 0x129dba, accent: 0x6ff6ff }, ["rocket_launcher"], new THREE.Vector3());
   hero.group.updateMatrixWorld(true);

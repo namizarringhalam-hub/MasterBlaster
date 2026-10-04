@@ -506,14 +506,12 @@ export class Fighter {
       disposeChildren(model.group);
       this.weaponModels.delete(id);
     }
-    const glow = material(weapon.color, weapon.color, {
-      emissiveIntensity: .25, roughness: .35, metalness: .32, clearcoat: .4,
-      iridescence: .22, iridescenceIOR: 1.28, iridescenceThicknessRange: [90, 280]
-    });
-    const identity = material(this.accent, this.accent, { emissiveIntensity: .25, roughness: .35, metalness: .22, clearcoat: .4, iridescence: .38 });
-    glow.color.multiplyScalar(.38);
-    identity.color.multiplyScalar(.38);
-    const dark = material(0x091424, this.accent, { emissiveIntensity: .03, roughness: .28, metalness: .76, clearcoat: .48 });
+    const glow = material(weapon.color, weapon.color, { emissiveIntensity: .25, roughness: .3, metalness: .25, clearcoat: .15 });
+    glow.color.multiplyScalar(.32);
+    const paint = material(new THREE.Color(weapon.color).lerp(new THREE.Color(0x303840), .72), 0,
+      { roughness: .64, metalness: .38, clearcoat: .08 });
+    const steel = material(0x667078, 0, { roughness: .48, metalness: .88, clearcoat: .06 });
+    const dark = material(0x303942, 0, { roughness: .62, metalness: .62, clearcoat: .08 });
     const rubber = material(0x17212b, 0, { ...surfaceMaps("rubber"), roughness: .96, metalness: 0, clearcoat: 0 });
     const presentation = weaponPresentation(weapon);
     this.weaponGrip.set(.05, -.2, .11);
@@ -539,52 +537,43 @@ export class Fighter {
     this.weaponPiston = null;
     this.weaponMagazine = null;
     this.weaponMuzzleDistance = .92;
-    const addSignature = () => {
-      const z = Math.min(1.18, Math.max(.28, this.weaponMuzzleDistance * .58));
-      let marker;
-      if (["gravity", "implosion"].includes(presentation.payload)) {
-        marker = part(new THREE.TorusGeometry(.18, .045, 5, 14), identity, .05, .16, z, false);
-        marker.rotation.x = Math.PI / 2;
-        const inner = part(new THREE.TorusGeometry(.11, .028, 4, 12), glow, .05, .16, z, false);
-        inner.rotation.x = Math.PI / 2;
-        this.weaponGroup.add(inner);
-      } else if (presentation.payload === "freeze") {
-        marker = part(new THREE.OctahedronGeometry(.17, 0), glow, .05, .17, z, false);
-        marker.scale.set(.72, 1.35, .72);
-      } else if (presentation.payload === "fireball") {
-        marker = part(new THREE.SphereGeometry(.17, 9, 7), glow, .05, .17, z, false);
-        const flame = part(new THREE.ConeGeometry(.12, .38, 7), glow, .05, .38, z, false);
-        this.weaponGroup.add(flame);
-      } else if (["teleport", "steal", "decoy"].includes(presentation.payload)) {
-        marker = part(new THREE.TorusKnotGeometry(.1, .025, 24, 5), identity, .05, .17, z, false);
-      } else if (presentation.payload === "cluster") {
-        marker = new THREE.Group();
-        for (let index = 0; index < 3; index++) {
-          const angle = index / 3 * Math.PI * 2;
-          marker.add(part(new THREE.SphereGeometry(.055, 6, 4), glow, .05 + Math.cos(angle) * .14, .16 + Math.sin(angle) * .14, z, false));
-        }
-      } else if (["sticky", "ricochet", "disrupt"].includes(presentation.payload)) {
-        marker = part(new THREE.TorusGeometry(.16, .038, 4, presentation.payload === "ricochet" ? 4 : 12), identity, .05, .16, z, false);
-        marker.rotation.x = Math.PI / 2;
-      } else if (presentation.payload === "drill") {
-        marker = part(new THREE.ConeGeometry(.13, .42, 7), glow, .05, .16, z, false);
-        marker.rotation.x = Math.PI / 2;
-      } else if (["wall", "kinetic"].includes(presentation.payload)) {
-        marker = part(new THREE.BoxGeometry(.3, .055, .16), identity, .05, .17, z, false);
-        marker.rotation.z = presentation.variant * Math.PI / 6;
-      } else {
-        marker = part(new THREE.IcosahedronGeometry(.13 + presentation.signature * .045, 0), glow, .05, .17, z, false);
+    // ponytail: reuse the existing primitive builder and material batching for all weapon fittings.
+    const box = (w, h, d, mat, x, y, z, parent = this.weaponGroup) => {
+      const source = new THREE.BoxGeometry(w, h, d);
+      // Thin plates, rails and vent cuts keep crisp edges; only the main housings need bevels.
+      let geometry = source;
+      if (Math.min(w, h, d) < (weapon.id === "blaster" ? .16 : .06)) {
+        geometry = new THREE.BufferGeometry().copy(source);
+        source.dispose();
       }
-      this.weaponGroup.add(marker);
-      const bands = 1 + presentation.variant;
-      for (let index = 0; index < bands; index++) {
-        const band = part(new THREE.TorusGeometry(.1 + index * .025, .018, 4, 9), index % 2 ? glow : identity, .05, .06, Math.min(this.weaponMuzzleDistance - .08, .42 + index * .19), false);
-        band.rotation.x = Math.PI / 2;
-        this.weaponGroup.add(band);
+      const mesh = part(geometry, mat, x, y, z);
+      parent.add(mesh); return mesh;
+    };
+    const armor = (w, h, d, mat, x, y, z, parent = this.weaponGroup) => {
+      const geometry = new RoundedBoxGeometry(w, h, d, 1, Math.min(.04, w * .2, h * .2, d * .2));
+      const positions = geometry.attributes.position;
+      for (let i = 0; i < positions.count; i++) {
+        const front = positions.getZ(i) / d + .5;
+        positions.setX(i, positions.getX(i) * (1 - front * .22));
+        positions.setY(i, positions.getY(i) * (1 - front * .3));
       }
+      geometry.computeVertexNormals();
+      const mesh = part(geometry, mat, x, y, z);
+      parent.add(mesh); return mesh;
+    };
+    const tube = (front, back, length, mat, x, y, z, parent = this.weaponGroup, open = false) => {
+      const mesh = part(new THREE.CylinderGeometry(front, back, length, 8, 1, open), mat, x, y, z);
+      mesh.rotation.x = Math.PI / 2;
+      parent.add(mesh); return mesh;
+    };
+    const ring = (radius, thickness, mat, x, y, z, parent = this.weaponGroup) => {
+      const mesh = part(new THREE.TorusGeometry(radius, thickness, weapon.id === "blaster" ? 3 : 4, weapon.id === "blaster" ? 8 : 12), mat, x, y, z);
+      parent.add(mesh); return mesh;
+    };
+    const vents = (x, y, z, count = 3, parent = this.weaponGroup) => {
+      for (let i = 0; i < count; i++) box(.014, .085, .025, dark, x, y, z + i * .06, parent);
     };
     const finish = () => {
-      addSignature();
       if (this.weaponSpinner?.isGroup) {
         mergeRigidMeshes(this.weaponSpinner);
         combineMaterialBatches(this.weaponSpinner);
@@ -606,228 +595,435 @@ export class Fighter {
       });
     };
     if (weapon.type === "mine" || weapon.type === "remote") {
-      const body = part(new THREE.CylinderGeometry(.3, .36, .2, 10), dark, .04, .04, .2);
-      const cap = part(new THREE.CylinderGeometry(.22, .28, .05, 10), glow, .04, .17, .2, false);
-      const marker = part(new THREE.TorusGeometry(.18, .035, 4, 12), identity, .04, .205, .2, false);
-      marker.rotation.x = Math.PI / 2;
-      this.weaponGroup.add(body, cap, marker);
+      if (weapon.type === "mine") {
+        const body = part(new THREE.CylinderGeometry(.28, .34, .18, 10), dark, .04, .035, .2);
+        const cap = part(new THREE.CylinderGeometry(.23, .25, .045, 10), paint, .04, .148, .2);
+        this.weaponGroup.add(body, cap);
+        for (const x of [-.18, .26]) {
+          box(.09, .055, .34, steel, x, .155, .2);
+          box(.035, .065, .035, rubber, x, .205, .2);
+        }
+        box(.095, .04, .095, dark, .04, .19, .2);
+        box(.03, .008, .035, glow, .04, .215, .2);
+      } else {
+        armor(.5, .2, .4, dark, .04, .04, .2);
+        armor(.38, .05, .3, paint, .04, .16, .2);
+        for (const z of [.08, .32]) box(.54, .04, .045, steel, .04, .18, z);
+        box(.16, .045, .12, rubber, .04, .198, .2);
+        box(.055, .012, .035, glow, .04, .227, .2);
+        const aerial = tube(.014, .014, .22, steel, .25, .22, .3);
+        aerial.rotation.x = 0;
+      }
       this.weaponMuzzleDistance = .55;
       finish();
       return;
     }
     if (weapon.id === "fireball") {
-      const bracer = part(new THREE.CylinderGeometry(.2, .26, .62, 8), dark, .05, -.04, .28);
-      bracer.rotation.x = Math.PI / 2;
-      const cuff = part(new THREE.TorusGeometry(.25, .055, 5, 10), identity, .05, -.04, .03, false);
-      const palm = part(new THREE.BoxGeometry(.34, .12, .36), dark, .05, .03, .62);
-      const ember = part(new THREE.SphereGeometry(.22, 10, 8), glow, .05, .24, .82, false);
-      const flameA = part(new THREE.ConeGeometry(.14, .48, 7), glow, .05, .55, .82, false);
-      const flameB = part(new THREE.ConeGeometry(.09, .32, 6), identity, -.11, .43, .82, false);
-      const flameC = part(new THREE.ConeGeometry(.08, .28, 6), glow, .19, .4, .82, false);
-      const clawA = part(new THREE.ConeGeometry(.055, .42, 5), glow, -.17, .11, .86, false);
-      const clawB = part(new THREE.ConeGeometry(.055, .42, 5), glow, .27, .11, .86, false);
-      clawA.rotation.x = clawB.rotation.x = Math.PI / 2;
-      this.weaponGroup.add(bracer, cuff, palm, ember, flameA, flameB, flameC, clawA, clawB);
+      tube(.21, .25, .58, dark, .05, -.04, .28);
+      ring(.25, .035, steel, .05, -.04, .03);
+      tube(.17, .2, .12, rubber, .05, -.04, .035, this.weaponGroup, true);
+      armor(.38, .13, .4, paint, .05, .1, .32);
+      armor(.34, .15, .42, dark, .05, -.06, .7);
+      tube(.12, .14, .26, glow, .05, .04, .81);
+      for (const x of [-.14, .24]) box(.075, .18, .53, steel, x, .04, .8);
+      armor(.36, .06, .44, dark, .05, .2, .75);
+      ring(.16, .045, steel, .05, .04, 1.035);
+      tube(.12, .12, .13, dark, .05, .04, 1.02, this.weaponGroup, true);
+      vents(.247, .1, .25);
       this.weaponMuzzleDistance = 1.12;
       finish();
       return;
     }
     if (weapon.type === "flame") {
-      const receiver = part(new THREE.BoxGeometry(.34, .34, .58), dark, .05, .01, .28);
-      const fuelTank = part(new THREE.CylinderGeometry(.19, .19, .58, 10), glow, -.18, -.04, .18, false);
+      armor(.34, .32, .58, dark, .05, .01, .28);
+      box(.045, .23, .4, paint, .242, .035, .27);
+      const fuelTank = tube(.15, .15, .56, paint, -.18, -.04, .18);
+      fuelTank.rotation.x = 0;
       fuelTank.rotation.z = Math.PI / 2;
-      const nozzle = part(new THREE.CylinderGeometry(.075, .14, 1.05, 10), dark, .05, .06, .83);
-      nozzle.rotation.x = Math.PI / 2;
-      const heatShield = part(new THREE.CylinderGeometry(.18, .18, .42, 10, 1, true), glow, .05, .06, .94, false);
-      heatShield.rotation.x = Math.PI / 2;
-      const muzzle = part(new THREE.TorusGeometry(.19, .045, 5, 12), identity, .05, .06, 1.37, false);
-      const pilot = part(new THREE.ConeGeometry(.08, .26, 7), glow, .05, .06, 1.52, false);
-      pilot.rotation.x = Math.PI / 2;
-      this.weaponGroup.add(receiver, fuelTank, nozzle, heatShield, muzzle, pilot);
+      tube(.075, .12, 1.08, dark, .05, .06, .86, this.weaponGroup, true);
+      for (const z of [.73, .94, 1.15]) ring(.145, .035, steel, .05, .06, z);
+      for (const x of [-.085, .185]) box(.055, .13, .69, steel, x, .06, .99);
+      box(.045, .09, .83, rubber, -.18, -.18, .73);
+      ring(.14, .035, steel, .05, .06, 1.39);
+      tube(.024, .033, .16, steel, .05, -.065, 1.39);
+      tube(.018, .018, .035, glow, .05, -.065, 1.475);
+      box(.16, .36, .18, rubber, .05, -.15, .13);
+      vents(.27, .06, .16);
       this.weaponMuzzleDistance = 1.52;
       finish();
       return;
     }
     if (weapon.type === "melee") {
       const reachScale = Math.min(1.5, weapon.reach / 3.5);
-      const grip = part(new THREE.CylinderGeometry(.07, .085, .34, 8), rubber, .06, -.01, .03);
-      grip.rotation.x = Math.PI / 2;
-      this.weaponGroup.add(grip);
+      tube(.07, .085, .34, rubber, .06, -.01, .03);
+      ring(.085, .02, steel, .06, -.01, -.14);
+      box(.03, .025, .055, glow, .06, .075, .13);
       if (weapon.id === "hammer") {
-        const shaft = part(new THREE.CylinderGeometry(.06, .075, 1.28, 8), dark, .06, .04, .62);
-        shaft.rotation.x = Math.PI / 2;
-        const head = part(new THREE.BoxGeometry(.72, .42, .4), glow, .06, .04, 1.28, false);
-        const face = part(new THREE.BoxGeometry(.82, .2, .24), identity, .06, .04, 1.28, false);
-        this.weaponGroup.add(shaft, head, face);
+        tube(.065, .08, 1.28, steel, .06, .04, .62);
+        tube(.095, .095, .38, rubber, .06, .04, .59);
+        armor(.66, .36, .4, dark, .06, .04, 1.28);
+        armor(.48, .39, .32, paint, .06, .04, 1.28);
+        for (const x of [-.31, .43]) {
+          box(.11, .45, .44, steel, x, .04, 1.28);
+          box(.018, .27, .27, dark, x + Math.sign(x) * .061, .04, 1.28);
+        }
+        box(.25, .1, .25, steel, .06, .275, 1.28);
         this.weaponMuzzleDistance = 1.72;
       } else if (weapon.id === "punch_glove") {
         const pistonGroup = new THREE.Group();
-        const piston = part(new THREE.CylinderGeometry(.1, .13, .55, 8), dark, .06, .04, .35);
-        piston.rotation.x = Math.PI / 2;
-        const fist = part(new THREE.DodecahedronGeometry(.31, 0), glow, .06, .04, .72, false);
-        const knuckles = part(new THREE.BoxGeometry(.52, .13, .19), identity, .06, .1, .88, false);
-        pistonGroup.add(piston, fist, knuckles);
+        tube(.19, .21, .34, dark, .06, .04, .15);
+        ring(.21, .035, steel, .06, .04, .32);
+        tube(.1, .13, .55, steel, .06, .04, .35, pistonGroup);
+        armor(.45, .32, .3, dark, .06, .04, .72, pistonGroup);
+        armor(.38, .12, .26, paint, .06, .24, .72, pistonGroup);
+        for (const x of [-.12, 0, .12, .24]) box(.085, .19, .1, steel, x, .1, .91, pistonGroup);
+        box(.14, .18, .25, rubber, -.2, -.1, .7, pistonGroup);
         this.weaponGroup.add(pistonGroup);
         this.weaponPiston = pistonGroup;
         this.weaponMuzzleDistance = 1.05;
       } else if (weapon.id === "chainsaw") {
-        const body = part(new THREE.BoxGeometry(.34, .34, .55), dark, .06, .04, .37);
-        const blade = part(new THREE.CapsuleGeometry(.09, .98, 3, 7), glow, .06, .04, 1.1, false);
-        blade.rotation.x = Math.PI / 2;
-        const teeth = part(new THREE.TorusGeometry(.19, .045, 4, 18), identity, .06, .04, 1.58, false);
-        teeth.rotation.x = Math.PI / 2;
-        teeth.scale.set(1, 1, 2.35);
-        this.weaponGroup.add(body, blade, teeth);
+        armor(.34, .32, .55, dark, .06, .04, .37);
+        box(.045, .25, .41, paint, .253, .055, .37);
+        box(.05, .19, 1.06, steel, .06, .04, 1.12);
+        box(.065, .12, 1, dark, .06, .04, 1.12);
+        for (let i = 0; i < 8; i++) for (const side of [-1, 1]) {
+          const tooth = part(new THREE.ConeGeometry(.04, .07, 4), steel, .06, .04 + side * .125, .69 + i * .125);
+          tooth.scale.x = .65; tooth.rotation.z = side < 0 ? Math.PI : 0;
+          this.weaponGroup.add(tooth);
+        }
+        const teeth = ring(.105, .022, steel, .06, .04, 1.66);
+        box(.08, .31, .07, steel, -.18, .015, .22);
+        box(.3, .075, .075, rubber, -.06, .2, .22);
+        vents(.278, .05, .25);
         this.weaponSpinner = teeth;
         this.weaponMuzzleDistance = 1.88;
       } else if (weapon.id === "spear") {
-        const shaft = part(new THREE.CylinderGeometry(.045, .065, 1.9 * reachScale, 8), dark, .06, .04, .78);
-        shaft.rotation.x = Math.PI / 2;
-        const blade = part(new THREE.ConeGeometry(.16, .62, 5), glow, .06, .04, 1.76 * reachScale, false);
+        tube(.045, .065, 1.9 * reachScale, steel, .06, .04, .78);
+        tube(.075, .075, .48, rubber, .06, .04, .63);
+        const blade = part(new THREE.ConeGeometry(.16, .62, 4), steel, .06, .04, 1.76 * reachScale);
         blade.rotation.x = Math.PI / 2;
-        this.weaponGroup.add(shaft, blade);
+        blade.scale.x = .28;
+        this.weaponGroup.add(blade);
+        tube(.085, .065, .16, dark, .06, .04, 1.76 * reachScale - .36);
+        ring(.085, .018, paint, .06, .04, 1.76 * reachScale - .38);
         this.weaponMuzzleDistance = 2.05 * reachScale;
       } else {
         const bladeLength = (weapon.id === "knife" ? .62 : weapon.id === "shock_baton" ? .92 : 1.12) * reachScale;
-        const bladeGeometry = weapon.id === "knife"
-          ? new THREE.ConeGeometry(.12, bladeLength, 5)
-          : weapon.id === "shock_baton"
-            ? new THREE.CylinderGeometry(.055, .075, bladeLength, 8)
-            : new THREE.CapsuleGeometry(.055, Math.max(.16, bladeLength - .12), 3, 7);
-        const blade = part(bladeGeometry, glow, .06, .04, .43 + bladeLength * .35, false);
-        blade.rotation.x = Math.PI / 2;
-        const guard = part(new THREE.BoxGeometry(.38, .09, .1), identity, .06, .04, .18, false);
-        this.weaponGroup.add(blade, guard);
+        box(weapon.id === "knife" ? .22 : .34, weapon.id === "knife" ? .06 : .08, .12, weapon.id === "knife" ? paint : steel, .06, .04, .18);
+        if (weapon.id === "knife") {
+          tube(.035, .045, .18, steel, .06, .04, .29);
+          const blade = part(new THREE.ConeGeometry(.115, bladeLength, 4), steel, .06, .04, .43 + bladeLength * .35);
+          blade.rotation.x = Math.PI / 2; blade.scale.x = .19;
+          this.weaponGroup.add(blade);
+          box(.008, .035, bladeLength * .6, dark, .082, .04, .46);
+        } else if (weapon.id === "shock_baton") {
+          tube(.065, .08, bladeLength, dark, .06, .04, .43 + bladeLength * .35);
+          for (let i = 0; i < 3; i++) {
+            ring(.083, .018, steel, .06, .04, .41 + i * .2);
+            ring(.069, .01, glow, .06, .04, .445 + i * .2);
+          }
+          box(.15, .13, .19, paint, .06, .04, .27);
+        } else {
+          const blade = part(new THREE.ConeGeometry(.14, bladeLength, 4), glow, .06, .04, .43 + bladeLength * .35);
+          blade.rotation.x = Math.PI / 2; blade.scale.x = .22;
+          this.weaponGroup.add(blade);
+          box(.025, .035, bladeLength * .7, steel, .06, .01, .41 + bladeLength * .27);
+          armor(.08, .16, .18, paint, .06, .04, .25);
+          for (const x of [-.095, .215]) box(.07, .12, .26, dark, x, .04, .23);
+        }
         this.weaponMuzzleDistance = .55 + bladeLength;
       }
       finish();
       return;
     }
     if (presentation.delivery === "disc") {
-      const bracer = part(new THREE.CylinderGeometry(.18, .24, .54, 8), dark, .05, -.04, .25);
-      bracer.rotation.x = Math.PI / 2;
-      const blade = part(new THREE.TorusGeometry(.34, .085, 5, 18), glow, .05, .11, .72, false);
+      tube(.18, .24, .54, dark, .05, -.04, .25);
+      armor(.29, .1, .35, paint, .05, .16, .25);
+      const blade = ring(.29, .026, steel, .05, .11, .72);
       blade.rotation.x = Math.PI / 2;
-      const rim = part(new THREE.TorusGeometry(.43, .035, 4, 24), identity, .05, .11, .72, false);
-      rim.rotation.x = Math.PI / 2;
-      const hub = part(new THREE.OctahedronGeometry(.13, 0), identity, .05, .11, .72, false);
-      const grip = part(new THREE.BoxGeometry(.18, .22, .45), rubber, .05, -.08, .48);
-      this.weaponGroup.add(bracer, blade, rim, hub, grip);
+      for (let i = 0; i < 3; i++) {
+        const angle = i * Math.PI * 2 / 3;
+        const edge = part(new THREE.ConeGeometry(.16, .45, 3), steel, Math.sin(angle) * .22, Math.cos(angle) * .22, 0);
+        edge.scale.z = .16; edge.rotation.z = -angle;
+        blade.add(edge);
+      }
+      mergeRigidMeshes(blade);
+      tube(.09, .11, .14, dark, .05, .105, .72).rotation.x = 0;
+      box(.05, .012, .08, glow, .05, .19, .72);
+      box(.18, .22, .45, rubber, .05, -.08, .48);
       this.weaponSpinner = blade;
       this.weaponMuzzleDistance = 1.18;
       finish();
       return;
     }
     const heavy = ["rocket", "plasma", "grenade"].includes(weapon.type);
-    const receiver = part(new THREE.BoxGeometry(heavy ? .34 : .27, .3, heavy ? .66 : .5), dark, .05, .02, .26);
-    const grip = part(new THREE.BoxGeometry(.18, .38, .2), rubber, .05, -.2, .11);
+    const width = heavy ? .38 : .3;
+    armor(width, .3, heavy ? .66 : .5, dark, .05, .02, .26);
+    const grip = armor(.18, .38, .2, rubber, .05, -.2, .11);
     grip.rotation.x = -.18;
-    const ownerBand = part(new THREE.BoxGeometry(heavy ? .4 : .32, .07, .14), identity, .05, .12, .22, false);
-    this.weaponGroup.add(receiver, grip, ownerBand);
+    for (const side of [-1, 1]) {
+      const x = .05 + side * (width / 2 + .012);
+      box(.035, .22, .36, paint, x, .035, .24);
+      for (const z of [.1, .38]) {
+        const bolt = tube(.017, .017, .045, steel, x + side * .021, .11, z);
+        bolt.rotation.set(0, 0, Math.PI / 2);
+      }
+      vents(x + side * .021, -.025, .18);
+    }
+    box(.035, .022, .07, glow, .05 - width / 2 - .031, .12, .3);
+    box(.16, .05, .18, steel, .05, .185, .16);
 
     if (weapon.type === "rocket") {
-      const tube = part(new THREE.CylinderGeometry(.17, .2, .92, 10), glow, .05, .06, .72);
-      tube.rotation.x = Math.PI / 2;
-      const muzzle = part(new THREE.TorusGeometry(.23, .055, 5, 12), identity, .05, .06, 1.17, false);
-      const sight = part(new THREE.BoxGeometry(.12, .16, .46), identity, -.17, .2, .61, false);
-      const fin = part(new THREE.BoxGeometry(.42, .08, .28), dark, .05, -.09, .72);
-      this.weaponGroup.add(tube, muzzle, sight, fin);
+      tube(.205, .23, .91, steel, .05, .06, .72, this.weaponGroup, true);
+      ring(.225, .045, dark, .05, .06, 1.18);
+      tube(.165, .165, .14, rubber, .05, .06, 1.105, this.weaponGroup, true);
+      ring(.235, .035, dark, .05, .06, .49);
+      armor(.42, .09, .46, dark, .05, -.13, .65);
+      box(.07, .09, .57, steel, .05, .3, .67);
+      armor(.09, .065, .12, dark, .05, .345, .88);
+      if (weapon.id === "drill_missile") {
+        const bit = part(new THREE.ConeGeometry(.145, .26, 6), steel, .05, .06, 1.04);
+        bit.rotation.x = Math.PI / 2;
+        this.weaponGroup.add(bit);
+        for (const z of [.9, .98, 1.06]) ring(.15 - (z - .9) * .45, .025, dark, .05, .06, z);
+      } else if (weapon.id === "napalm_launcher") {
+        tube(.1, .1, .47, paint, -.24, -.055, .57);
+        ring(.245, .018, paint, .05, .06, .92);
+        box(.035, .06, .58, rubber, -.24, -.17, .7);
+      } else {
+        box(.045, .15, .36, paint, .287, .055, .61);
+        armor(.09, .06, .12, rubber, .05, .345, .43);
+      }
       this.weaponMuzzleDistance = 1.28;
     } else if (weapon.type === "plasma") {
-      const chamber = part(new THREE.IcosahedronGeometry(.24, 1), glow, .05, .07, .58, false);
-      const cageMaterial = identity.clone();
-      cageMaterial.wireframe = true;
-      const cage = part(new THREE.IcosahedronGeometry(.3, 1), cageMaterial, .05, .07, .58, false);
-      const barrel = part(new THREE.CylinderGeometry(.08, .13, .55, 8), dark, .05, .07, .92);
-      barrel.rotation.x = Math.PI / 2;
-      const prongA = part(new THREE.BoxGeometry(.07, .08, .5), identity, -.15, .08, .94, false);
-      const prongB = part(new THREE.BoxGeometry(.07, .08, .5), identity, .25, .08, .94, false);
-      this.weaponGroup.add(chamber, cage, barrel, prongA, prongB);
+      tube(.12, .14, .42, glow, .05, .07, .58);
+      ring(.165, .045, steel, .05, .07, .4);
+      ring(.17, .045, steel, .05, .07, .77);
+      for (const side of [-1, 1]) {
+        const x = .05 + side * .24;
+        armor(.13, .3, .24, dark, x, .07, .43);
+        armor(.13, .25, .27, dark, x, .07, .9);
+        box(.065, .045, .49, steel, x, .21, .66);
+        box(.065, .04, .49, steel, x, -.075, .66);
+        box(.016, .065, .16, glow, x, .09, .655);
+        vents(x + side * .065, .065, .835, 3);
+      }
+      armor(.33, .09, .48, paint, .05, .27, .55);
+      armor(.35, .075, .64, steel, .05, -.13, .66);
+      if (weapon.id === "black_hole_generator") {
+        ring(.245, .05, dark, .05, .07, 1.07);
+        ring(.175, .02, glow, .05, .07, 1.045);
+        tube(.14, .19, .28, rubber, .05, .07, .93, this.weaponGroup, true);
+        armor(.42, .09, .28, steel, .05, .275, .93);
+        for (const z of [.45, .64, .83]) ring(.17, .027, dark, .05, .07, z);
+      } else if (weapon.id === "tornado_generator") {
+        tube(.21, .24, .31, steel, .05, .07, .99, this.weaponGroup, true);
+        ring(.21, .033, dark, .05, .07, 1.145);
+        for (let i = 0; i < 3; i++) {
+          const angle = i * Math.PI * 2 / 3;
+          const vane = box(.12, .035, .13, steel, .05 + Math.cos(angle) * .1, .07 + Math.sin(angle) * .1, 1.02);
+          vane.rotation.z = angle; vane.rotation.y = .5;
+        }
+      } else if (weapon.id === "grapple_disrupting_pulse") {
+        tube(.21, .17, .29, dark, .05, .07, .98, this.weaponGroup, true);
+        ring(.19, .025, steel, .05, .07, 1.135);
+        ring(.14, .015, glow, .05, .07, 1.105);
+        for (const x of [-.17, .27]) box(.06, .14, .2, steel, x, .07, 1.05);
+      } else {
+        tube(.135, .18, .33, steel, .05, .07, .995, this.weaponGroup, true);
+        ring(.145, .04, dark, .05, .07, 1.145);
+        if (weapon.id === "pulse_cannon") {
+          for (const x of [-.12, .22]) tube(.055, .055, .42, dark, x, .24, .65);
+          armor(.42, .08, .26, steel, .05, .24, 1.02);
+        } else {
+          for (const x of [-.21, .31]) box(.05, .13, .34, steel, x, .07, 1.01);
+        }
+      }
       this.weaponMuzzleDistance = 1.21;
     } else if (weapon.type === "rail") {
-      const railA = part(new THREE.BoxGeometry(.08, .1, 1.18), glow, -.055, .08, .78, false);
-      const railB = part(new THREE.BoxGeometry(.08, .1, 1.18), glow, .155, .08, .78, false);
-      const bridge = part(new THREE.BoxGeometry(.31, .08, .16), identity, .05, .08, 1.19, false);
-      const capacitor = part(new THREE.CylinderGeometry(.17, .17, .38, 10), identity, .05, .19, .46, false);
-      capacitor.rotation.z = Math.PI / 2;
-      const stock = part(new THREE.BoxGeometry(.28, .22, .42), dark, .05, .01, -.14);
-      this.weaponGroup.add(railA, railB, bridge, capacitor, stock);
+      for (const x of [-.065, .165]) {
+        box(.08, .12, 1.18, steel, x, .08, .78);
+        box(.025, .045, .86, glow, x + (x < .05 ? .048 : -.048), .08, .78);
+      }
+      for (const z of [.43, .84, 1.26]) box(.36, .19, .075, dark, .05, .08, z);
+      tube(.105, .105, .4, dark, .05, .23, .5);
+      for (const z of [.34, .5, .66]) ring(.113, .018, steel, .05, .23, z);
+      box(.28, .22, .42, dark, .05, .01, -.14);
+      box(.3, .27, .065, rubber, .05, .01, -.35);
+      if (weapon.id === "charged_energy_rifle") {
+        for (const x of [-.22, .32]) tube(.085, .085, .46, paint, x, .025, .38);
+        box(.1, .06, .55, dark, .05, .37, .44);
+      } else {
+        tube(.055, .055, .3, dark, .05, .365, .46);
+        ring(.06, .017, steel, .05, .365, .605);
+      }
       this.weaponMuzzleDistance = 1.42;
     } else if (weapon.type === "beam" || weapon.type === "chain") {
-      const emitter = part(new THREE.CylinderGeometry(.1, .16, .92, 8), dark, .05, .06, .69);
-      emitter.rotation.x = Math.PI / 2;
-      const coil = part(new THREE.TorusGeometry(.21, .065, 5, 12), glow, .05, .06, .61, false);
-      const forkA = part(new THREE.BoxGeometry(.07, .08, .62), identity, -.13, .07, .93, false);
-      const forkB = part(new THREE.BoxGeometry(.07, .08, .62), identity, .23, .07, .93, false);
+      tube(.11, .16, .89, dark, .05, .06, .69, this.weaponGroup, true);
+      tube(.135, .135, .3, glow, .05, .06, .57);
+      for (const z of [.43, .56, .69]) ring(.16, .024, steel, .05, .06, z);
+      const forkA = box(.075, .11, .62, steel, -.13, .07, .93);
+      const forkB = box(.075, .11, .62, steel, .23, .07, .93);
       if (weapon.type === "chain") {
         forkA.rotation.y = -.15;
         forkB.rotation.y = .15;
+        for (const x of [-.18, .28]) tube(.045, .065, .18, glow, x, .07, 1.08);
+        armor(.36, .08, .23, paint, .05, .24, .49);
+        for (const x of [-.07, .17]) tube(.032, .05, .25, dark, x, .07, 1.16, this.weaponGroup, true);
+      } else if (weapon.id === "gravity_beam") {
+        ring(.24, .045, dark, .05, .06, 1.17);
+        ring(.18, .018, glow, .05, .06, 1.145);
+        box(.43, .06, .54, steel, .05, -.14, .82);
+      } else if (weapon.id === "disintegration_weapon") {
+        box(.09, .075, .73, steel, .05, .235, .87);
+        box(.09, .075, .73, steel, .05, -.115, .87);
+        armor(.34, .34, .1, dark, .05, .06, 1.185);
+        tube(.035, .09, .16, glow, .05, .06, 1.19);
+      } else {
+        tube(.055, .11, .29, steel, .05, .06, 1.09, this.weaponGroup, true);
+        ring(.063, .018, dark, .05, .06, 1.225);
+        tube(.05, .05, .28, dark, .05, .31, .4);
       }
-      this.weaponGroup.add(emitter, coil, forkA, forkB);
       this.weaponMuzzleDistance = 1.31;
     } else if (weapon.type === "spread") {
-      const barrelA = part(new THREE.CylinderGeometry(.08, .11, .82, 8), glow, -.07, .08, .74);
-      const barrelB = part(new THREE.CylinderGeometry(.08, .11, .82, 8), glow, .17, .08, .74);
-      barrelA.rotation.x = barrelB.rotation.x = Math.PI / 2;
-      const shroud = part(new THREE.BoxGeometry(.42, .17, .62), dark, .05, .04, .61);
-      const pump = part(new THREE.BoxGeometry(.46, .11, .3), identity, .05, -.07, .63, false);
-      this.weaponGroup.add(shroud, barrelA, barrelB, pump);
+      for (const x of [-.065, .165]) {
+        tube(.085, .105, .82, steel, x, .08, .74, this.weaponGroup, true);
+        ring(.09, .022, dark, x, .08, 1.145);
+      }
+      armor(.43, .12, .48, dark, .05, .075, .56);
+      armor(.42, .15, .3, rubber, .05, -.06, .68);
+      for (const z of [.58, .66, .74]) box(.44, .035, .03, steel, .05, -.06, z);
+      tube(.045, .045, .53, paint, .05, -.125, .86);
+      box(.28, .19, .31, dark, .05, .015, -.12);
       this.weaponMuzzleDistance = 1.19;
     } else if (weapon.id === "submachine_gun") {
-      const shortBody = part(new THREE.BoxGeometry(.34, .28, .54), dark, .05, .02, .38);
-      const vent = part(new THREE.BoxGeometry(.39, .08, .32), glow, .05, .15, .42, false);
-      const barrel = part(new THREE.CylinderGeometry(.055, .08, .48, 7), glow, .05, .05, .82);
-      barrel.rotation.x = Math.PI / 2;
-      const stickMagazine = part(new THREE.BoxGeometry(.15, .42, .18), identity, .05, -.27, .31, false);
+      armor(.34, .26, .5, dark, .05, .02, .38);
+      box(.15, .045, .38, steel, .05, .185, .39);
+      tube(.055, .08, .42, steel, .05, .05, .81, this.weaponGroup, true);
+      const stickMagazine = box(.15, .42, .18, dark, .05, -.27, .31);
       stickMagazine.rotation.x = -.16;
-      const compactStock = part(new THREE.BoxGeometry(.28, .08, .35), identity, .05, .04, -.13, false);
-      const muzzle = part(new THREE.TorusGeometry(.1, .028, 4, 9), identity, .05, .05, 1.05, false);
-      this.weaponGroup.add(shortBody, vent, barrel, stickMagazine, compactStock, muzzle);
+      box(.07, .08, .35, steel, -.035, .04, -.13);
+      box(.07, .08, .35, steel, .135, .04, -.13);
+      box(.24, .2, .07, rubber, .05, -.005, -.31);
+      ring(.075, .025, dark, .05, .05, 1.015);
+      vents(.228, .07, .49, 2);
       this.weaponMagazine = stickMagazine;
       this.weaponMuzzleDistance = 1.08;
     } else if (weapon.id === "mortar") {
-      const tube = part(new THREE.CylinderGeometry(.2, .29, 1.08, 10), dark, .05, .08, .72);
-      tube.rotation.x = Math.PI / 2;
-      const muzzle = part(new THREE.TorusGeometry(.29, .065, 5, 12), glow, .05, .08, 1.25, false);
-      const breech = part(new THREE.CylinderGeometry(.25, .25, .32, 10), identity, .05, .08, .18, false);
+      tube(.24, .27, 1.08, steel, .05, .08, .72, this.weaponGroup, true);
+      ring(.265, .045, dark, .05, .08, 1.25);
+      const breech = tube(.25, .25, .32, paint, .05, .08, .18);
+      breech.rotation.x = 0;
       breech.rotation.z = Math.PI / 2;
-      const rangeSight = part(new THREE.TorusGeometry(.16, .025, 4, 12, Math.PI), identity, -.22, .25, .68, false);
-      rangeSight.rotation.y = Math.PI / 2;
-      const shoulderBrace = part(new THREE.BoxGeometry(.38, .16, .45), dark, .05, -.08, -.08);
-      this.weaponGroup.add(tube, muzzle, breech, rangeSight, shoulderBrace);
+      box(.07, .28, .13, steel, -.25, .25, .6);
+      box(.065, .09, .28, dark, -.25, .42, .63);
+      box(.39, .16, .45, dark, .05, -.08, -.08);
+      for (const z of [.47, .98]) ring(.27, .035, dark, .05, .08, z);
+      box(.045, .045, .6, steel, .05, .37, .75);
       this.weaponMuzzleDistance = 1.38;
     } else if (weapon.id === "minigun" || weapon.id === "machine_gun") {
-      const barrelCount = weapon.id === "minigun" ? 4 : 2;
+      const rotary = weapon.id === "minigun";
+      const barrelCount = rotary ? 6 : 1;
       const barrelCluster = new THREE.Group();
+      if (rotary) barrelCluster.position.set(.05, .06, 0);
       for (let index = 0; index < barrelCount; index++) {
         const angle = index / barrelCount * Math.PI * 2;
-        const barrel = part(new THREE.CylinderGeometry(.045, .06, .86, 6), glow, .05 + Math.cos(angle) * .11, .06 + Math.sin(angle) * .11, .72, false);
-        barrel.rotation.x = Math.PI / 2;
-        barrelCluster.add(barrel);
+        const x = rotary ? Math.cos(angle) * .125 : .05, y = rotary ? Math.sin(angle) * .125 : .06;
+        tube(rotary ? .037 : .065, rotary ? .045 : .085, .86, steel, x, y, .72, barrelCluster, true);
+        ring(rotary ? .041 : .069, .015, dark, x, y, 1.15, barrelCluster);
       }
-      const drum = part(new THREE.CylinderGeometry(.2, .2, .32, 10), identity, .05, -.11, .34, false);
+      if (rotary) {
+        for (const z of [.4, .94]) ring(.175, .037, dark, 0, 0, z, barrelCluster);
+        tube(.028, .028, .83, dark, 0, 0, .7, barrelCluster);
+        armor(.43, .11, .35, paint, .05, .23, .31);
+        vents(.263, .23, .22);
+      } else {
+        for (const x of [-.065, .165]) box(.055, .12, .54, dark, x, .065, .63);
+        box(.28, .045, .52, steel, .05, .16, .59);
+        box(.28, .19, .31, dark, .05, .015, -.13);
+        vents(.201, .055, .52, 4);
+      }
+      const drum = tube(rotary ? .25 : .2, rotary ? .25 : .2, .34, dark, .05, -.11, .34);
+      drum.rotation.x = 0;
       drum.rotation.z = Math.PI / 2;
-      this.weaponGroup.add(barrelCluster, drum);
+      this.weaponGroup.add(barrelCluster);
       this.weaponMagazine = drum;
-      if (weapon.id === "minigun") this.weaponSpinner = barrelCluster;
+      if (rotary) this.weaponSpinner = barrelCluster;
       this.weaponMuzzleDistance = 1.17;
     } else {
-      const scale = weapon.type === "grenade" ? 1.15 : .82;
-      const barrel = part(new THREE.CylinderGeometry(.095 * scale, .135 * scale, .76 * scale, 9, 1, true), dark, .05, .06, .69);
-      barrel.rotation.x = Math.PI / 2;
-      const muzzleHousing = part(new THREE.TorusGeometry(.14 * scale, .037, 5, 12), dark, .05, .06, .98);
-      const muzzle = part(new THREE.TorusGeometry(.103 * scale, .012, 4, 12), identity, .05, .06, .994, false);
-      const emitter = part(new THREE.CircleGeometry(.082 * scale, 12), glow, .05, .06, .957, false);
-      this.weaponGroup.add(barrel, muzzleHousing, muzzle, emitter);
-      if (weapon.type === "grenade") {
-        const drum = part(new THREE.CylinderGeometry(.22, .22, .36, 10), dark, .05, -.12, .39);
+      const grenade = weapon.type === "grenade";
+      const radius = grenade ? .15 : weapon.id === "needle_launcher" ? .055 : .095;
+      tube(radius, radius * 1.2, .65, steel, .05, .06, .67, this.weaponGroup, true);
+      ring(radius + .015, .035, dark, .05, .06, .98);
+      ring(radius, .014, steel, .05, .06, .994);
+      const bore = part(new THREE.CircleGeometry(radius * .8, 12), presentation.energy ? glow : rubber, .05, .06, .94);
+      this.weaponGroup.add(bore);
+      if (weapon.id === "blaster") box(.29, .08, .42, dark, .05, .18, .61);
+      else armor(grenade ? .41 : .29, .08, .42, dark, .05, .18, .61);
+      if (grenade) {
+        const drum = tube(.22, .22, .36, dark, .05, -.12, .39);
+        drum.rotation.x = 0;
         drum.rotation.z = Math.PI / 2;
-        this.weaponGroup.add(drum);
         this.weaponMagazine = drum;
+        if (weapon.id === "cluster_grenade") {
+          for (const x of [-.16, .26]) tube(.062, .062, .37, paint, x, .12, .59);
+          box(.42, .06, .2, steel, .05, .245, .58);
+        } else if (weapon.id === "sticky_launcher") {
+          tube(.085, .085, .45, paint, -.2, -.015, .52);
+          for (const x of [-.12, .22]) box(.055, .13, .16, dark, x, .06, .9);
+        } else if (weapon.id === "implosion_bomb" || weapon.id === "gravity_grenade") {
+          ring(.2, .035, dark, .05, .06, .76);
+          ring(.155, .02, glow, .05, .06, .72);
+          box(.42, .055, weapon.id === "gravity_grenade" ? .34 : .2, paint, .05, .27, .54);
+        } else if (weapon.id === "bouncing_bomb") {
+          for (const z of [.52, .7, .88]) ring(.18, .025, rubber, .05, .06, z);
+          box(.4, .06, .1, steel, .05, .24, .7);
+        } else {
+          box(.14, .05, .18, steel, .05, .285, .55);
+          box(.065, .06, .065, rubber, .05, .335, .55);
+        }
       } else if (weapon.id === "needle_launcher") {
-        const needle = part(new THREE.ConeGeometry(.08, .52, 5), identity, .05, .06, 1.16, false);
-        needle.rotation.x = Math.PI / 2;
-        this.weaponGroup.add(needle);
+        for (const x of [-.07, .17]) box(.04, .09, .55, dark, x, .06, .65);
+        box(.2, .24, .27, paint, .05, -.12, .37);
+        tube(.04, .04, .28, dark, .05, .27, .53);
+      } else if (weapon.id === "burst_rifle") {
+        box(.27, .2, .31, dark, .05, .015, -.13);
+        box(.14, .27, .17, paint, .05, -.2, .35);
+        for (const z of [.45, .6, .75]) box(.31, .045, .035, steel, .05, .2, z);
+      } else if (weapon.id === "freeze_gun") {
+        for (const x of [-.17, .27]) tube(.09, .09, .44, paint, x, .03, .47);
+        for (const z of [.56, .69, .82]) ring(.12, .025, steel, .05, .06, z);
+        box(.34, .09, .2, dark, .05, .27, .44);
+      } else if (weapon.id === "plasma_repeater" || weapon.id === "blaster") {
+        tube(.1, .1, .27, glow, .05, .06, .56);
+        for (const x of [-.095, .195]) box(.045, .16, .34, dark, x, .06, .6);
+        for (const z of [.43, .7]) ring(.125, .026, steel, .05, .06, z);
+        box(.22, weapon.id === "plasma_repeater" ? .25 : .14, .2, paint, .05, -.18, .35);
+      } else if (weapon.id === "ricochet_cannon") {
+        for (const z of [.48, .68, .86]) ring(.14, .03, steel, .05, .06, z);
+        for (const x of [-.115, .215]) box(.055, .15, .41, dark, x, .06, .65);
+        box(.25, .18, .27, paint, .05, -.14, .36);
+      } else if (weapon.id === "temporary_wall") {
+        for (const x of [-.145, .245]) box(.1, .29, .36, paint, x, .06, .77);
+        box(.42, .065, .2, steel, .05, .25, .84);
+        box(.2, .12, .32, dark, .05, -.17, .57);
+      } else if (weapon.id === "decoy_launcher") {
+        box(.26, .2, .29, dark, .05, .25, .56);
+        tube(.065, .075, .19, glow, .05, .25, .66);
+        for (const x of [-.12, .22]) box(.045, .15, .26, steel, x, .25, .58);
+        box(.16, .25, .22, paint, .05, -.18, .38);
+      } else if (weapon.id === "teleport_projectile") {
+        for (const z of [.47, .7, .9]) ring(.14, .023, steel, .05, .06, z);
+        for (const x of [-.12, .22]) box(.055, .12, .53, dark, x, .06, .68);
+        box(.22, .2, .26, glow, .05, .025, .48);
+        box(.23, .045, .3, paint, .05, .23, .47);
+      } else if (weapon.id === "weapon_stealing_projectile") {
+        for (const side of [-1, 1]) {
+          const jaw = box(.055, .12, .3, steel, .05 + side * .16, .06, .84);
+          jaw.rotation.y = side * -.25;
+          box(.07, .12, .08, dark, .05 + side * .125, .06, .98);
+        }
+        box(.25, .14, .25, paint, .05, -.13, .39);
       }
       this.weaponMuzzleDistance = 1.08;
     }
