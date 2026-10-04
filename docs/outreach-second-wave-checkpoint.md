@@ -20,15 +20,17 @@ The playable game remains hosted only at masterblaster.se.
   User has edited optional creator/tool/prompt fields. Creator-name confirmation
   is pending; preserve those edits and do not publish personal creator details
   without resolving the existing brand-only preference. No submit clicked yet.
-- Three.js forum: brand email verified and user completed account setup.
-  User requested a starting draft and will finish it. Opened the actual Showcase
-  New Topic composer and inserted title, starting prose, tagged play/guide links
-  and the four approved screenshot references. Final wording must be rewritten
-  by the user under section 2's machine-generated content exclusion. Draft stays
-  unpublished; Create Topic was not clicked. Showcase requires moderator review.
-  User has begun rewriting the prose in the live editor; preserve those edits.
-  Their latest version removed the AI-disclosure sentence; reminded them to
-  retain a brief truthful disclosure in their own words before publication.
+- Three.js forum: brand account masterblastergame completed. User requested a
+  starting draft, rewrote it in the actual Showcase editor and manually submitted.
+  Brand activity/pending explicitly shows Pending (1), title "Master Blaster —
+  browser arena shooter with grappling and destructible towers", category Showcase.
+  No public topic permalink yet. Before submission, preview rendered both tagged
+  anchors and all four screenshots. Final body is not exposed in the pending list.
+  Human finalization respected section 2's machine-generated content exclusion;
+  agent did not click Create Topic. Reminded user to retain a truthful AI-assisted
+  development disclosure after their rewrite omitted it; final wording unverified.
+  Queue: https://discourse.threejs.org/u/masterblastergame/activity/pending
+  Do not resubmit or alter the user's submitted text; monitor moderator approval.
 - Gamedev.js Weekly: sent to contact@gamedevjsweekly.com at 19:42 CEST.
 - Alpha Beta Gamer: sent to Admin@alphabetagamer.com at 19:42 CEST.
 - Indie Games Plus: sent to editors@indiegamesplus.com at 19:43 CEST.
@@ -52,14 +54,15 @@ The playable game remains hosted only at masterblaster.se.
   Play Games addresses; never duplicate submissions after an uncertain result.
 - Updated the existing ACTIVE master-blaster-seo-follow-up heartbeat through the
   app tool. Same original thread and daily 09:00 Europe/Stockholm schedule; added
-  second-wave listing/mail checks, no-duplicate rules and both manual/input holds.
+  second-wave listing/mail/Three.js moderation checks and no-duplicate rules.
+  Resources creator-name choice remains held; no further forum draft to publish.
 - Independent documentation review passed on pending/sent/unpublished state and
   README facts. Applied its two recovery-wording corrections. Documentation-only
   validation is git diff --check; no application build required.
 
 ## Next unfinished step
 
-Preserve the prepared Showcase editor for the user's rewrite/publication.
+Monitor the existing Three.js Showcase queued entry for moderator approval.
 Resolve the Three.js Resources creator field and submit once, then verify its
 receipt. Existing register and daily monitor now include the second wave.
 Documentation review and git diff --check passed; the request's repository

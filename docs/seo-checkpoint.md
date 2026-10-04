@@ -554,18 +554,19 @@
   capture and AI disclosure, free placement only. User edited optional fields;
   creator-name choice pending under existing brand-only preference. Do not send
   personal creator information until resolved.
-- Three.js forum brand signup completed; actual Showcase composer contains the
-  starting draft, tagged anchors and four screenshot references. User requested
-  a draft to finish. Terms exclude machine-generated content: leave publication
-  to the user's own rewrite. Create Topic not clicked by the agent; eventual
-  posts also need moderator review. Preserve the handoff tab.
+- Three.js forum brand signup completed as masterblastergame. User requested a
+  starting draft, rewrote it in the Showcase composer and manually submitted.
+  Brand activity/pending explicitly shows Pending (1) with the Master Blaster
+  title/category. No public topic URL yet. Prior preview rendered tagged anchors
+  and four images; final body not exposed in pending list. Agent did not click
+  Create Topic. Monitor this entry for approval; never resubmit it.
 - The existing ACTIVE daily 09:00 Europe/Stockholm heartbeat was updated through
   the app tool, same thread/schedule. It checks the second-wave listings/mail and
-  preserves both holds, earlier moderation states and failed email routes.
+  preserves the Resources creator-choice hold, moderation states and failed routes.
 - Changed files: docs/community-outreach-targets.md, this checkpoint and
   docs/outreach-second-wave-checkpoint.md. Independent documentation review passed;
   minor wording corrections applied and git diff --check passed.
   No application code or build/performance measurements changed. Preserve and
   exclude unrelated untracked %SystemDrive% directory. Next unfinished work:
-  Resources creator choice/submission, user's forum rewrite/publication, and
+  Resources creator choice/submission, Three.js moderator approval, and
   external review/replies tracked in the new recovery record and existing register.
