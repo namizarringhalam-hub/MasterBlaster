@@ -55,7 +55,7 @@ game.botDifficulty = "veteran";
 game.timeLimitMinutes = 5;
 game.settings.botCount = 12;
 game.settings.matchSettings.training.botsStandStill = true;
-assert.match(game.matchSummary(), /12 bots · veteran · 5 min/);
+assert.ok(game.matchSummary().includes(formatText(TEXT.setup.matchSummary, { bots: 12, difficulty: TEXT.setup.difficulties.veteran, minutes: 5 })));
 assert.ok(game.matchSummary().includes(`${TEXT.trainingControls.botsStandStill}: ${TEXT.trainingControls.on}`));
 
 let sent = 0;
@@ -98,5 +98,5 @@ assert.match(roomUi.innerHTML, /Your weapons/);
 assert.match(roomUi.innerHTML, /data-weapon-picker hidden/);
 assert.match(roomUi.innerHTML, /Random at zero/);
 assert.match(roomUi.innerHTML, /data-preset-select/);
-assert.equal(roomNodes.get("[data-global-rules]").textContent, "2 bots · normal · 3 min");
+assert.equal(roomNodes.get("[data-global-rules]").textContent, formatText(TEXT.setup.matchSummary, { bots: 2, difficulty: TEXT.setup.difficulties.normal, minutes: 3 }));
 console.log("Global creation and waiting-room rendering preserve collapsed settings, shared picker, presets and optional random slots.");
