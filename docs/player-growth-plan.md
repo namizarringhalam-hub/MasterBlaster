@@ -1,8 +1,10 @@
 # Master Blaster: first player-growth experiment
 
 Prepared 20 September 2026. Default: organic promotion, no advertising spend.
-Revised 4 October 2026. Status: the user accepted the community target list;
-the generic post and its assets below await content review before outreach.
+Revised 4 October 2026. Status: the user approved the community targets, generic
+feedback post and four new screenshots with "These look great! Let's go!"
+Brand-account outreach is authorized; actual access/submission status is recorded
+in community-outreach-targets.md.
 Existing approved directory work is recorded in seo-checkpoint.md. Use brand
 accounts only. See [the current target list and post register](community-outreach-targets.md).
 
@@ -51,7 +53,7 @@ Master Blaster is a free browser arena shooter with destructible towers and
 
 Play: https://masterblaster.se/
 
-### Generic feedback post — awaiting user review
+### Generic feedback post — approved 4 October 2026
 
 Title: Master Blaster — free browser arena shooter with grappling and destructible towers
 
@@ -112,7 +114,7 @@ no new performance claims are made. The new assets are also covered by the final
 build/hosting and live checks recorded in seo-checkpoint.md.
 
 This is brand-account copy, without personal names/details or creator information.
-Do not publish it until the user has reviewed it. After approval, adapt title,
+The user approved it on 4 October 2026. Adapt title,
 flair, length and attachment placement to each community's rules. r/WebGames may
 require the direct game-link submission with allowed contextual comments instead
 of this full body. AI-builder communities need specific verified workflow detail;
@@ -132,10 +134,11 @@ Use actual captured gameplay. These are shot lists, not completed video assets.
 
 ## Distribution priorities and constraints
 
-1. The user accepted [the community list](community-outreach-targets.md) and
-   requested the generic post for review. Publication and other new outreach
-   remain pending content review. Recheck each target's eligibility and current
-   rules before acting. Use brand accounts and truthful affiliation.
+1. The user approved [the community list](community-outreach-targets.md), generic
+   feedback post and screenshots. Publication and necessary free brand-account
+   creation are authorized. Recheck each target's eligibility and current rules
+   before acting; human verification must be handled by the user. Use brand
+   accounts and truthful affiliation.
 2. Consider itch.io as the first portal experiment. It supports uploaded HTML5
    games, but requires relative asset paths. This project currently uses
    root-relative assets and same-origin multiplayer endpoints, so the production
@@ -178,7 +181,9 @@ with a completed match. Compare source quality before choosing paid promotion.
 
 ## Next unfinished step
 
-Have the user review the generic feedback post and exact asset/link package above.
-Keep new outreach pending that review, then apply approved wording under each
-eligible community's rules and record each successful publication for daily checks.
-No spending or use of personal accounts is authorized.
+Resume the retained human-verification/account tabs after the user handles their
+security checks. The HTML5 submission with all four screenshots is saved but not
+public; finish that account flow without reposting. Apply approved wording under
+each eligible community's rules and record successful publication for daily checks.
+No spending or use of personal accounts is authorized. The ACTIVE 09:00 daily
+follow-up reflects content approval and monitors pending submissions as well.

@@ -392,3 +392,41 @@
 - Next step: user reviews the four new screenshots alongside the generic feedback
   post and optional existing overview. Use approved assets only where community
   rules allow, retain honest staged-capture captions and record publication URLs.
+
+## Approved outreach execution — 4 October 2026
+
+- User approved the generic feedback post and four screenshots: "These look
+  great! Let's go!" Existing authorization covers publication, required free
+  forum accounts and brand-only identity. No further content approval needed.
+- Rechecked current primary community rules. r/playmygame's still-pinned newcomer
+  guidance asks new accounts to participate normally before promotion; do not
+  manufacture karma/activity. r/IndieDev's newcomer megathread and r/Codex's
+  current weekly showcase are eligible comment routes once brand access works.
+- HTML5 Game Devs guest showcase form accepted the approved [WIP] topic, feedback
+  questions, truthful AI-assisted Three.js/WebGL context, play/guide URLs and all
+  four inline hosted screenshots. Preview verified all four loaded. Clicking
+  Submit Topic returned "Thanks for your submission!" followed by required
+  account creation. Draft reference 76464 is saved, not a verified public post.
+  Publication still requires account completion and moderator approval.
+- Prepared MasterBlasterGame account fields with the brand mailbox, a unique
+  password protected locally with Windows DPAPI in ignored .wrangler/tmp/seo,
+  news opt-in disabled and standard terms selected. Left the site's explicit
+  anti-bot security question untouched for the user; did not create the account.
+- Reddit navigation is blocked at "Prove your humanity" before account/posting
+  access. ESReality registration requires reCAPTCHA and email validation; brand
+  mailbox is filled, registration not submitted. User input requested for all
+  three human checks. No challenges solved or bypassed; no personal accounts used.
+- Retained in-app browser tabs: 16 Reddit challenge, 17 HTML5 account continuation,
+  18 ESReality registration. Existing Airtable receipt tab 6 preserved. Do not
+  navigate away from the HTML5 continuation or repeat the saved submission.
+- Updated ACTIVE master-blaster-seo-follow-up through the app tool, preserving
+  daily 09:00 Europe/Stockholm schedule and reporting notifications. Prompt now
+  reflects approval, pending submission/account checks, no duplicate posting,
+  no personal accounts, newcomer eligibility and user-only human verification.
+  It continues daily monitoring of every verified published post and pending
+  moderation/submission status. Local app/computer must be running.
+- Updated community register/growth plan; no public community post or backlink
+  confirmed yet. No new runtime code, build or performance measurement involved.
+- Next: user completes retained human checks; finish HTML5 account/email flow,
+  verify moderation status/permalink, then eligible Reddit and ESReality posts.
+  Record every successful publication for daily activity/engagement summaries.
