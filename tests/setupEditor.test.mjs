@@ -21,7 +21,7 @@ const filters = ["all", ...data.WEAPON_GROUPS.map(group => group.id)].map(id => 
 const choices = categories.flatMap(group => group.choices);
 const saveButtons = Array.from({ length: 3 }, () => ({}));
 const ui = { querySelector: selector => nodes.get(selector) || null, querySelectorAll: selector => selector === "[data-weapon-category]" ? categories : selector === "[data-weapon-filter]" ? filters : selector === "[data-weapon-choice]" ? choices : selector === "[data-preset-save]" ? saveButtons : [] };
-const bindings = { ...data, TEXT, formatText, ui, setJourney, clampBotCount, MENU_ACCENTS: { quick: "#ef3f58", private: "#52e9ff", training: "#b86cff" }, menuAtmosphereMarkup: () => "", escapeHtml: value => String(value).replaceAll('"', '&quot;').replaceAll('<', '&lt;'), WEAPON_CATEGORY_BY_ID: Object.fromEntries(data.WEAPON_GROUPS.flatMap(group => group.ids.map(id => [id, group]))), WEAPON_INDEX_BY_ID: {}, weaponPreviewVariables: () => "" };
+const bindings = { ...data, TEXT, formatText, ui, setJourney, clampBotCount, resourceURL: path => path, MENU_ACCENTS: { quick: "#ef3f58", private: "#52e9ff", training: "#b86cff" }, menuAtmosphereMarkup: () => "", escapeHtml: value => String(value).replaceAll('"', '&quot;').replaceAll('<', '&lt;'), WEAPON_CATEGORY_BY_ID: Object.fromEntries(data.WEAPON_GROUPS.flatMap(group => group.ids.map(id => [id, group]))) };
 const Game = new Function(...Object.keys(bindings), `return ${controller}`)(...Object.values(bindings));
 const storage = new Map();
 globalThis.localStorage = { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
@@ -53,6 +53,21 @@ assert.match(markup, /Favorite &lt;set>/, "preset labels are escaped");
 assert.equal((markup.match(/data-loadout-edit=/g) || []).length, 5);
 assert.equal(game.activeLoadoutSlot, 0, "the first slot is ready to edit on arrival");
 assert.equal(game.previewWeaponId, "railgun", "the first equipped weapon is previewed on arrival");
+const libraryImages = [...game.weaponCategoriesMarkup().matchAll(/<img\b[^>]*>/g)].map(([tag]) => tag);
+assert.equal(libraryImages.length, Object.keys(data.WEAPONS).length, "every weapon card has one rendered game-model image");
+for (const id of Object.keys(data.WEAPONS)) {
+  const image = libraryImages.find(tag => tag.includes(`src="/weapons/${id}.webp"`));
+  assert.ok(image, `${id} uses its own rendered game-model asset`);
+  assert.match(image, /class="weapon-render"/);
+  assert.match(image, /loading="lazy"/, "library images defer loading until needed");
+  assert.match(image, /width="512" height="320"/, "image dimensions reserve stable layout space");
+  assert.match(image, /alt=""/, "adjacent weapon names provide the accessible label");
+  game.previewWeaponId = id;
+  const preview = game.weaponPreviewMarkup();
+  assert.ok(preview.includes(`src="/weapons/${id}.webp"`), "the large preview uses the same weapon render as its card");
+  assert.doesNotMatch(preview, /loading="lazy"/, "the current large preview loads immediately");
+}
+game.previewWeaponId = "railgun";
 
 const click = dataset => ui.onclick({ target: { closest: () => ({ dataset, hasAttribute: name => name === "data-loadout-equip" && "loadoutEquip" in dataset || name === "data-loadout-recommended" && "loadoutRecommended" in dataset, setAttribute() {}, classList: { toggle() {} }, querySelector: () => ({}) }) } });
 game.bindUi();

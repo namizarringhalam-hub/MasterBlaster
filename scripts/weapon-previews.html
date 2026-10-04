@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Master Blaster weapon preview exporter</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: #091725; color: #dce9f3; font: 15px/1.5 system-ui, sans-serif; }
+  h1 { margin: 0 0 10px; font-size: 26px; }
+  button { padding: 12px 18px; border: 1px solid #75def5; border-radius: 4px; background: #124253; color: white; font: inherit; cursor: pointer; }
+  button:disabled { opacity: .55; cursor: wait; }
+  #status { min-height: 24px; }
+  canvas { display: block; width: min(512px, 100%); border: 1px solid #294052; }
+  #previews { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; margin-top: 24px; }
+  figure { margin: 0; border: 1px solid #294052; background: #102230; }
+  figure img { display: block; width: 100%; height: auto; aspect-ratio: 8 / 5; }
+  figcaption { padding: 10px 12px; font-size: 13px; }
+</style>
+<h1>Weapon previews from the actual game models</h1>
+<p>One studio render per weapon, with transparent backgrounds. The button saves 512 × 320 WebP images to this project’s public/weapons folder.</p>
+<button id="render" disabled>Render all 47 weapon previews</button>
+<p id="status" role="status">Loading the game’s weapon models…</p>
+<canvas id="canvas" width="512" height="320" aria-label="Current weapon render"></canvas>
+<div id="previews"></div>
+<script type="module">
+  import * as THREE from "three";
+  import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+  import { Fighter } from "/src/player.js";
+  import { WEAPONS } from "/src/gameData.js";
+  import { prepareSurfaceTextures } from "/src/surfaceTextures.js";
+
+  const button = document.querySelector("#render"), status = document.querySelector("#status"), previews = document.querySelector("#previews");
+  const canvas = document.querySelector("#canvas"), ids = Object.keys(WEAPONS);
+  const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
+  const imageURLs = [];
+  let renderer;
+
+  function frameWeapon(camera, group) {
+    group.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(group, true), center = box.getCenter(new THREE.Vector3());
+    camera.position.copy(center).add(new THREE.Vector3(-4.5, 1.7, 2.4).normalize().multiplyScalar(8));
+    camera.lookAt(center); camera.updateMatrixWorld(true);
+    const bounds = new THREE.Box2(), point = new THREE.Vector3();
+    // ponytail: offline framing uses the actual vertices so empty box corners don't shrink narrow weapons.
+    group.traverse(mesh => {
+      const positions = mesh.geometry?.attributes.position;
+      if (!positions) return;
+      for (let index = 0; index < positions.count; index++) {
+        point.fromBufferAttribute(positions, index).applyMatrix4(mesh.matrixWorld).applyMatrix4(camera.matrixWorldInverse);
+        bounds.expandByPoint(new THREE.Vector2(point.x, point.y));
+      }
+    });
+    const size = bounds.getSize(new THREE.Vector2()), middle = bounds.getCenter(new THREE.Vector2());
+    const height = Math.max(size.y / 2, size.x / 2 / (512 / 320)) * 1.1;
+    if (!Number.isFinite(height) || height <= 0) throw Error("Weapon has no renderable geometry.");
+    Object.assign(camera, { left: middle.x - height * 512 / 320, right: middle.x + height * 512 / 320, top: middle.y + height, bottom: middle.y - height });
+    camera.updateProjectionMatrix();
+  }
+
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    status.dataset.complete = "false";
+    previews.replaceChildren();
+    for (const url of imageURLs.splice(0)) URL.revokeObjectURL(url);
+    let fighter, environment;
+    try {
+      status.textContent = "Preparing the game’s material textures…";
+      await nextFrame();
+      await prepareSurfaceTextures([]);
+      renderer ||= new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, preserveDrawingBuffer: true, powerPreference: "high-performance" });
+      renderer.setSize(512, 320, false);
+      renderer.setPixelRatio(1);
+      renderer.setClearColor(0x000000, 0);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.2;
+      const scene = new THREE.Scene();
+      const room = new RoomEnvironment(), generator = new THREE.PMREMGenerator(renderer);
+      environment = generator.fromScene(room, .04);
+      scene.environment = environment.texture;
+      scene.environmentIntensity = .9;
+      room.dispose(); generator.dispose();
+      for (const [color, intensity, position] of [[0xfff5e8, 3, [-3, 4, 5]], [0xb8d9ff, 1.5, [4, 2, 2]], [0x71ddff, 2, [0, 3, -4]]]) {
+        const light = new THREE.DirectionalLight(color, intensity);
+        light.position.set(...position); scene.add(light);
+      }
+      fighter = new Fighter(scene, { id: "armory-preview", name: "Armory", color: 0x536777, accent: 0xc5d5df }, ids, new THREE.Vector3());
+      fighter.group.visible = false;
+      scene.add(fighter.weaponGroup);
+      fighter.weaponGroup.position.set(0, 0, 0);
+      fighter.weaponGroup.rotation.set(0, 0, 0);
+      fighter.weaponGroup.scale.set(1, 1, 1);
+      const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, .1, 100);
+      let totalBytes = 0;
+      for (let index = 0; index < ids.length; index++) {
+        const id = ids[index];
+        status.textContent = `Rendering ${index + 1}/${ids.length}: ${WEAPONS[id].name}`;
+        await nextFrame();
+        fighter.switchSlot(index);
+        frameWeapon(camera, fighter.weaponGroup);
+        renderer.render(scene, camera);
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/webp", .94));
+        if (!blob || blob.type !== "image/webp") throw Error("The browser could not encode WebP.");
+        const response = await fetch(`/__save-weapon-preview/${id}`, { method: "POST", headers: { "content-type": "image/webp" }, body: blob });
+        if (!response.ok) throw Error(`${id}: ${await response.text()}`);
+        const result = await response.json(); totalBytes += result.bytes;
+        const image = new Image(), figure = document.createElement("figure"), caption = document.createElement("figcaption");
+        image.src = URL.createObjectURL(blob); imageURLs.push(image.src);
+        image.alt = WEAPONS[id].name; image.width = 512; image.height = 320;
+        caption.textContent = `${index + 1}. ${WEAPONS[id].name} · ${Math.round(result.bytes / 1024)} KiB`;
+        figure.dataset.weapon = id; figure.append(image, caption); previews.append(figure);
+      }
+      status.textContent = `Complete: ${ids.length} weapon previews saved. Total ${(totalBytes / 1024).toFixed(0)} KiB.`;
+      status.dataset.complete = "true";
+    } catch (error) {
+      status.textContent = `Failed: ${error.message}`;
+      status.dataset.complete = "false";
+      console.error(error);
+    } finally {
+      if (fighter) { fighter.rig.add(fighter.weaponGroup); fighter.dispose(); }
+      environment?.dispose();
+      button.disabled = false;
+    }
+  });
+  button.disabled = false;
+  status.textContent = "Ready to render.";
+</script>
+</html>

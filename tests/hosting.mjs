@@ -8,6 +8,7 @@ import { resourceBuild } from "../scripts/resource-build.mjs";
 const resources = await resourceBuild();
 import { MUSIC_SAMPLE_MANIFEST } from "../src/musicScore.js";
 import { PLAYER_TEXT } from "../PLAYER_TEXT.js";
+import { WEAPONS } from "../src/gameData.js";
 
 const types = {
   ".css": "text/css",
@@ -98,6 +99,13 @@ for (const [file, type, content] of [
 const assetNames = await readdir("dist/client/assets");
 const jsAssets = assetNames.filter((name) => name.endsWith(".js"));
 const cssAssets = assetNames.filter((name) => name.endsWith(".css"));
+const deployedJs = (await Promise.all(jsAssets.map(name => readFile(join("dist/client/assets", name), "utf8")))).join("\n");
+for (const id of Object.keys(WEAPONS)) {
+  const weaponURL = resources.urls[`/weapons/${id}.webp`];
+  assert.match(weaponURL || "", new RegExp(`^/resources/[a-f0-9]{64}/${id}\\.webp$`), `${id} has a fingerprinted weapon render URL`);
+  assert.ok(release.entries.some(entry => entry.url === weaponURL), `${id} is included in the offline release manifest`);
+  assert.ok(deployedJs.includes(weaponURL), `${id} is addressed by its fingerprinted URL in the deployed engine`);
+}
 assert.ok(jsAssets.length >= 2, "the tiny boot module is split from the Three.js game engine");
 const entryPath = deployedHtml.match(/src="(\/assets\/[^"]+\.js)"/)?.[1];
 assert.ok(entryPath, "the production shell references its hashed boot module");

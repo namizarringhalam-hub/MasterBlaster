@@ -24,6 +24,7 @@ import { aimedHeadContact, headContact, headshotDamage, projectileHitRadius } fr
 import { prepareSurfaceTextures, sharedSurfaceTextures, surfaceMaps } from "./surfaceTextures.js";
 import { GameplayPreparation, gameplayPreparationKey, prepareFighterWeapons, warmFighterWeapons, disposeGameplaySamples } from "./gameplayPreparation.js";
 import { backgroundYield } from "./resourceVersion.js";
+import { resourceURL } from "./resourceURLs.js";
 import { preparationProgress } from "./resourceProgress.js";
 import { setJourney } from "./journeys.js";
 
@@ -33,7 +34,6 @@ const matchLoading = document.querySelector("#match-loading");
 const MATCH_SESSION_KEY = "blaster-pending-match";
 const clamp = THREE.MathUtils.clamp;
 const WEAPON_CATEGORY_BY_ID = Object.fromEntries(WEAPON_GROUPS.flatMap((group) => group.ids.map((id) => [id, group])));
-const WEAPON_INDEX_BY_ID = Object.fromEntries(Object.keys(WEAPONS).map((id, index) => [id, index]));
 const WEAPON_CATEGORY_SLUG_BY_ID = Object.fromEntries(Object.values(WEAPONS).map((weapon) => [weapon.id, weapon.category.toLowerCase().replaceAll(" ", "-")]));
 const WEAPON_CSS_COLOR_BY_ID = Object.fromEntries(Object.values(WEAPONS).map((weapon) => [weapon.id, `#${weapon.color.toString(16).padStart(6, "0")}`]));
 const MENU_ACCENTS = Object.freeze({ quick: "#ef3f58", private: "#52e9ff", training: "#b86cff" });
@@ -79,14 +79,6 @@ function setText(node, value) {
 
 function setStyle(node, property, value) {
   if (node.style.getPropertyValue(property) !== value) node.style.setProperty(property, value);
-}
-
-function weaponPreviewVariables(weapon, index) {
-  const length = 27 + index % 7 * 1.35;
-  const height = 8 + index % 5 * 1.1;
-  const angle = -8 + index * .36;
-  const offset = index % 4 * .75;
-  return `--preview-length:${length}px;--preview-height:${height}px;--preview-angle:${angle}deg;--preview-offset:${offset}px`;
 }
 
 const PLAYER_COLORS = [
@@ -757,8 +749,8 @@ class BlasterBattle {
         ${group.ids.map((id) => {
           const weapon = WEAPONS[id];
           const slot = loadout.indexOf(id);
-          return `<button class="weapon-choice ${slot >= 0 ? "selected" : ""} ${id === this.previewWeaponId ? "previewing" : ""}" aria-pressed="${id === this.previewWeaponId}" aria-label="${formatText(TEXT.setup.loadout.previewAria, { weapon: escapeHtml(weapon.name) })}" data-weapon-choice="${id}" data-weapon="${id}" data-category="${group.id}" data-shape="${weapon.type}" data-slot="${slot >= 0 ? slot + 1 : ""}" style="--weapon:#${weapon.color.toString(16).padStart(6, "0")};--category:${group.color};${weaponPreviewVariables(weapon, WEAPON_INDEX_BY_ID[id])}">
-            <i></i><span class="weapon-preview" aria-hidden="true"></span>
+          return `<button class="weapon-choice ${slot >= 0 ? "selected" : ""} ${id === this.previewWeaponId ? "previewing" : ""}" aria-pressed="${id === this.previewWeaponId}" aria-label="${formatText(TEXT.setup.loadout.previewAria, { weapon: escapeHtml(weapon.name) })}" data-weapon-choice="${id}" data-weapon="${id}" data-category="${group.id}" data-slot="${slot >= 0 ? slot + 1 : ""}" style="--category:${group.color}">
+            <i></i><img class="weapon-render" src="${resourceURL(`/weapons/${id}.webp`)}" alt="" width="512" height="320" loading="lazy" decoding="async">
             <b>${weapon.name}</b><small>${TEXT.setup.loadout.weaponRoles[id]}</small><span class="armory-equipped-label" data-equipped-label ${slot >= 0 ? "" : "hidden"}>${slot >= 0 ? formatText(TEXT.setup.loadout.equippedLabel, { slot: slot + 1 }) : ""}</span>
           </button>`;
         }).join("")}
@@ -852,8 +844,7 @@ class BlasterBattle {
     const slot = this.activeLoadoutSlot ?? 0;
     const equipped = loadout.indexOf(weapon.id);
     const buttonText = formatText(equipped === slot ? TEXT.setup.loadout.equippedSlot : equipped >= 0 ? TEXT.setup.loadout.swapSlot : TEXT.setup.loadout.equipSlot, { slot: (equipped >= 0 ? equipped : slot) + 1 });
-    const group = WEAPON_CATEGORY_BY_ID[weapon.id];
-    return `<div class="armory-preview-art weapon-choice" data-weapon="${weapon.id}" data-shape="${weapon.type}" style="--weapon:#${weapon.color.toString(16).padStart(6, "0")};--category:${group.color};${weaponPreviewVariables(weapon, WEAPON_INDEX_BY_ID[weapon.id])}" aria-hidden="true"><span class="weapon-preview"></span></div>
+    return `<div class="armory-preview-art" aria-hidden="true"><img class="weapon-render" src="${resourceURL(`/weapons/${weapon.id}.webp`)}" alt="" width="512" height="320" decoding="async"></div>
       <div class="armory-preview-copy"><small data-picker-title>${formatText(TEXT.setup.loadout.previewSlot, { slot: slot + 1 })}</small><h3>${weapon.name}</h3><p class="armory-role">${TEXT.setup.loadout.weaponRoles[weapon.id]}</p><p>${weapon.description}</p>
         <details class="armory-stats"><summary>${TEXT.setup.loadout.statsLabel}</summary><p><span title="${formatText(TEXT.setup.loadout.directHitDamageTitle, { damage: weapon.damage })}">${formatText(TEXT.setup.loadout.directHitDamage, { damage: weapon.damage })}</span> · ${weaponUsesAmmo(weapon) ? formatText(TEXT.setup.loadout.magazineAndReload, { ammo: weapon.ammo, seconds: weapon.reload.toFixed(1) }) : TEXT.setup.loadout.noReload}</p></details>
         <button class="primary" data-loadout-equip ${equipped === slot ? "disabled" : ""}>${buttonText}</button>

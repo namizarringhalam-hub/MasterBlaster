@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import * as THREE from "three/webgpu";
 import { chooseBotSlot, botFireChance, botWeaponPolicy, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
 import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
@@ -389,8 +390,40 @@ const fireballVisual = createProjectileVisual(WEAPONS.fireball, visualOwner, WEA
 assert.ok(fireballVisual.children.filter((child) => child.geometry?.type === "ConeGeometry").length >= 4, "the Fireball projectile has multiple tapered flame tongues and a wake");
 assert.equal(fireballVisual.children.filter((child) => child.geometry?.type === "TorusGeometry").length, 0, "the Fireball projectile no longer reads as an orbiting plasma device");
 assert.equal(presentationSignatures.size, 47, "all 47 weapons retain distinct audiovisual signatures");
-assert.match(mainSource, /data-weapon="\$\{id\}"[\s\S]*?weaponPreviewVariables\(weapon, WEAPON_INDEX_BY_ID\[id\]\)/, "every categorized menu card retains weapon-specific procedural preview variables");
-assert.ok(["boomerang_blade", "fireball", "plasma_cannon", "temporary_wall", "decoy_launcher", "black_hole_generator", "tornado_generator"].every((id) => armoryStylesSource.includes(`data-weapon="${id}"`)), "signature and unusual weapons receive authored menu silhouettes beyond their generic type");
+assert.doesNotMatch(mainSource, /weaponPreviewVariables|WEAPON_INDEX_BY_ID/, "menu artwork uses rendered game models instead of procedural CSS silhouettes");
+const weaponImages = await Promise.all(Object.keys(WEAPONS).map(async id => ({ id, bytes: await readFile(new URL(`../public/weapons/${id}.webp`, import.meta.url)) })));
+const weaponImageHashes = new Set();
+for (const { id, bytes } of weaponImages) {
+  assert.ok(bytes.length >= 30, `${id} has a nonempty WebP image`);
+  assert.equal(bytes.toString("ascii", 0, 4), "RIFF");
+  assert.equal(bytes.toString("ascii", 8, 12), "WEBP");
+  assert.equal(bytes.readUInt32LE(4) + 8, bytes.length, `${id} has a complete RIFF container`);
+  const type = bytes.toString("ascii", 12, 16);
+  let width, height, alpha;
+  // WebP's VP8X/VP8L headers encode dimensions and alpha without a decoder dependency.
+  // https://developers.google.com/speed/webp/docs/riff_container
+  if (type === "VP8X") {
+    width = bytes.readUIntLE(24, 3) + 1; height = bytes.readUIntLE(27, 3) + 1; alpha = Boolean(bytes[20] & 0x10);
+  } else {
+    assert.equal(type, "VP8L", `${id} has an alpha-capable WebP header`);
+    assert.equal(bytes[20], 0x2f);
+    const dimensions = bytes.readUInt32LE(21);
+    width = (dimensions & 0x3fff) + 1; height = ((dimensions >>> 14) & 0x3fff) + 1; alpha = Boolean(dimensions & 0x10000000);
+  }
+  assert.deepEqual([width, height, alpha], [512, 320, true], `${id} retains the expected render dimensions and transparency`);
+  let offset = 12, pixels = false, alphaPayload = false;
+  while (offset + 8 <= bytes.length) {
+    const chunk = bytes.toString("ascii", offset, offset + 4), length = bytes.readUInt32LE(offset + 4);
+    assert.ok(offset + 8 + length <= bytes.length, `${id} has complete ${chunk} data`);
+    if (["VP8 ", "VP8L"].includes(chunk)) pixels ||= length > 5;
+    if (chunk === "ALPH" || chunk === "VP8L") alphaPayload ||= length > 1;
+    offset += 8 + length + (length & 1);
+  }
+  assert.equal(offset, bytes.length);
+  assert.ok(pixels && alphaPayload, `${id} has image and transparency payloads`);
+  weaponImageHashes.add(createHash("sha256").update(bytes).digest("hex"));
+}
+assert.equal(weaponImageHashes.size, weaponImages.length, "all 47 weapon renders have distinct image bytes");
 assert.ok(presentationVisuals.tracers.length <= 128 && presentationVisuals.sparks.length <= 512 && presentationVisuals.rings.length === 128, "the complete 47-weapon effects matrix preserves every core impact in a 112-hit sixteen-player volley");
 const meleeTraceCounts = { hammer: 2, energy_sword: 2, chainsaw: 2, spear: 1, punch_glove: 2, shock_baton: 4, knife: 1 };
 for (const [id, expectedSegments] of Object.entries(meleeTraceCounts)) {
