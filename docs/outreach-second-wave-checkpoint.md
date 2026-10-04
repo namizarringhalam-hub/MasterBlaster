@@ -15,11 +15,13 @@ The playable game remains hosted only at masterblaster.se.
 - iogames.fun: after the user completed CAPTCHA, the prepared form showed a
   receipt explicitly saying "IO Game Submitted" and successful submission.
   Awaiting publication; do not resubmit.
-- Three.js Resources: anonymous Games > Detailed form filled; AI assistance on,
-  paid featured placement off, action-rockets.png selected (1,123,262 bytes).
-  User has edited optional creator/tool/prompt fields. Creator-name confirmation
-  is pending; preserve those edits and do not publish personal creator details
-  without resolving the existing brand-only preference. No submit clicked yet.
+- Three.js Resources: user confirmed "Use Master Blaster for 7". Set creator credit
+  to Master Blaster, preserving other user-edited tool/prompt fields. Submitted
+  the anonymous Games > Detailed form once; success verified at 19:54 CEST:
+  "Submitted successfully!" / "Your website will be reviewed and published soon."
+  AI assistance on, paid featured placement off, approved action-rockets.png
+  (1,123,262 bytes). Pending editorial review/publication; no public listing yet.
+  Page advertises review within 7 days. Do not resubmit.
 - Three.js forum: brand account masterblastergame completed. User requested a
   starting draft, rewrote it in the actual Showcase editor and manually submitted.
   Brand activity/pending explicitly shows Pending (1), title "Master Blaster —
@@ -55,7 +57,8 @@ The playable game remains hosted only at masterblaster.se.
 - Updated the existing ACTIVE master-blaster-seo-follow-up heartbeat through the
   app tool. Same original thread and daily 09:00 Europe/Stockholm schedule; added
   second-wave listing/mail/Three.js moderation checks and no-duplicate rules.
-  Resources creator-name choice remains held; no further forum draft to publish.
+  Resources creator choice is now resolved and its submission is accepted for
+  review; no further submission or forum draft to publish.
 - Independent documentation review passed on pending/sent/unpublished state and
   README facts. Applied its two recovery-wording corrections. Documentation-only
   validation is git diff --check; no application build required.
@@ -63,8 +66,9 @@ The playable game remains hosted only at masterblaster.se.
 ## Next unfinished step
 
 Monitor the existing Three.js Showcase queued entry for moderator approval.
-Resolve the Three.js Resources creator field and submit once, then verify its
-receipt. Existing register and daily monitor now include the second wave.
+Monitor the existing Three.js Resources submission for editorial publication and
+the other directory/mail outcomes. All seven approved outreach actions are now
+submitted or sent. Existing register and daily monitor include the second wave.
 Documentation review and git diff --check passed; the request's repository
 record consists of this checkpoint, community-outreach-targets.md and
 seo-checkpoint.md. An unrelated untracked %SystemDrive% directory

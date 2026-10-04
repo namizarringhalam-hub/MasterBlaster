@@ -550,10 +550,10 @@
   brand Sent at 19:42 CEST; Indie Games Plus at 19:43. No new bounce visible in
   the immediate inbox check. Sent/receipt evidence does not prove publication,
   delivery or backlinks; do not duplicate submissions or emails.
-- Three.js Resources anonymous Games form is prepared with the approved rocket
-  capture and AI disclosure, free placement only. User edited optional fields;
-  creator-name choice pending under existing brand-only preference. Do not send
-  personal creator information until resolved.
+- Three.js Resources anonymous Games form submitted once after user confirmed
+  creator credit Master Blaster. Success receipt verified at 19:54 CEST, pending
+  review/publication; advertised review within 7 days. Approved rocket capture
+  and AI disclosure, free placement only; other edited tool/prompt fields preserved.
 - Three.js forum brand signup completed as masterblastergame. User requested a
   starting draft, rewrote it in the Showcase composer and manually submitted.
   Brand activity/pending explicitly shows Pending (1) with the Master Blaster
@@ -562,11 +562,11 @@
   Create Topic. Monitor this entry for approval; never resubmit it.
 - The existing ACTIVE daily 09:00 Europe/Stockholm heartbeat was updated through
   the app tool, same thread/schedule. It checks the second-wave listings/mail and
-  preserves the Resources creator-choice hold, moderation states and failed routes.
+  records the accepted Resources submission, moderation states and failed routes.
 - Changed files: docs/community-outreach-targets.md, this checkpoint and
   docs/outreach-second-wave-checkpoint.md. Independent documentation review passed;
   minor wording corrections applied and git diff --check passed.
   No application code or build/performance measurements changed. Preserve and
   exclude unrelated untracked %SystemDrive% directory. Next unfinished work:
-  Resources creator choice/submission, Three.js moderator approval, and
+  Resources editorial publication, Three.js moderator approval, and
   external review/replies tracked in the new recovery record and existing register.
