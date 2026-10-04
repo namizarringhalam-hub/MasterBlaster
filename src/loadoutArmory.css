@@ -98,3 +98,12 @@
   .weapon-filters button, .armory-slot-actions button, .armory-stats summary { min-height: 44px; }
   .loadout-armory input, .loadout-armory select { font-size: 16px; }
 }
+
+/* Keep the tall editor static while preserving the arena artwork. */
+.dialog:has(.loadout-armory) { background: linear-gradient(145deg, #0d1b2c, #08121e); backdrop-filter: none; }
+.menu-scene:has(.loadout-armory) .menu-atmosphere { --menu-energy: .28; --menu-accent: #52e9ff; }
+.menu-scene:has(.loadout-armory) .menu-atmosphere > span,
+.menu-scene:has(.loadout-armory) .menu-atmosphere > span::before,
+.menu-scene:has(.loadout-armory) .menu-atmosphere > span::after { animation: none; transition: none; filter: none; will-change: auto; }
+.menu-scene:has(.loadout-armory) .arena-towers { opacity: .5; transform: none; }
+.menu-scene:has(.loadout-armory) :is(.arena-rings, .grapple-arc, .arena-streaks) { display: none; }

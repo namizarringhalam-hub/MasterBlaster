@@ -10,17 +10,17 @@ const controller = source.slice(source.indexOf("class BlasterBattle"), source.in
 const nodes = new Map();
 const categories = data.WEAPON_GROUPS.map(group => {
   const choices = group.ids.map(id => {
-    const classes = new Set(), attributes = new Map(), label = {};
-    return { dataset: { weaponChoice: id }, classes, attributes, label,
-      classList: { toggle: (name, enabled) => enabled ? classes.add(name) : classes.delete(name) },
-      setAttribute: (name, value) => attributes.set(name, value), querySelector: () => label };
+    const classes = new Set(), attributes = new Map(), label = {}, image = {}, mutations = [];
+    return { dataset: { weaponChoice: id }, classes, attributes, label, image, mutations,
+      classList: { toggle: (name, enabled) => { mutations.push(name); return enabled ? classes.add(name) : classes.delete(name); } },
+      setAttribute: (name, value) => { mutations.push(name); attributes.set(name, value); }, querySelector: selector => selector === "img" ? image : label };
   }), summary = {};
   return { dataset: { weaponCategory: group.id }, choices, querySelector: () => summary, querySelectorAll: () => choices };
 });
 const filters = ["all", ...data.WEAPON_GROUPS.map(group => group.id)].map(id => ({ dataset: { weaponFilter: id }, setAttribute() {} }));
 const choices = categories.flatMap(group => group.choices);
 const saveButtons = Array.from({ length: 3 }, () => ({}));
-const ui = { querySelector: selector => nodes.get(selector) || null, querySelectorAll: selector => selector === "[data-weapon-category]" ? categories : selector === "[data-weapon-filter]" ? filters : selector === "[data-weapon-choice]" ? choices : selector === "[data-preset-save]" ? saveButtons : [] };
+const ui = { querySelector: selector => nodes.get(selector) || choices.find(choice => selector === `[data-weapon-choice="${choice.dataset.weaponChoice}"]`) || null, querySelectorAll: selector => selector === "[data-weapon-category]" ? categories : selector === "[data-weapon-filter]" ? filters : selector === "[data-weapon-choice]" ? choices : selector === "[data-preset-save]" ? saveButtons : [] };
 const bindings = { ...data, TEXT, formatText, ui, setJourney, clampBotCount, resourceURL: path => path, MENU_ACCENTS: { quick: "#ef3f58", private: "#52e9ff", training: "#b86cff" }, menuAtmosphereMarkup: () => "", escapeHtml: value => String(value).replaceAll('"', '&quot;').replaceAll('<', '&lt;'), WEAPON_CATEGORY_BY_ID: Object.fromEntries(data.WEAPON_GROUPS.flatMap(group => group.ids.map(id => [id, group]))) };
 const Game = new Function(...Object.keys(bindings), `return ${controller}`)(...Object.values(bindings));
 const storage = new Map();
@@ -53,6 +53,7 @@ assert.match(markup, /Favorite &lt;set>/, "preset labels are escaped");
 assert.equal((markup.match(/data-loadout-edit=/g) || []).length, 5);
 assert.equal(game.activeLoadoutSlot, 0, "the first slot is ready to edit on arrival");
 assert.equal(game.previewWeaponId, "railgun", "the first equipped weapon is previewed on arrival");
+assert.match(markup, /data-weapon-preview="railgun:0:0"/, "the initial preview records its weapon and slot state on its DOM node");
 const libraryImages = [...game.weaponCategoriesMarkup().matchAll(/<img\b[^>]*>/g)].map(([tag]) => tag);
 assert.equal(libraryImages.length, Object.keys(data.WEAPONS).length, "every weapon card has one rendered game-model image");
 for (const id of Object.keys(data.WEAPONS)) {
@@ -68,6 +69,17 @@ for (const id of Object.keys(data.WEAPONS)) {
   assert.doesNotMatch(preview, /loading="lazy"/, "the current large preview loads immediately");
 }
 game.previewWeaponId = "railgun";
+const watchedRegions = new Map();
+for (const selector of ["[data-preset-select]", "[data-loadout-order]", "[data-loadout-actions]", "[data-weapon-preview]", "[data-loadout-presets]"]) {
+  const region = { dataset: {}, writes: 0, firstChild: {}, html: "", get innerHTML() { return this.html; }, set innerHTML(value) { this.html = value; this.writes++; this.firstChild = {}; } };
+  nodes.set(selector, region); watchedRegions.set(selector, region);
+}
+game.updateLoadoutUi();
+for (const region of watchedRegions.values()) region.writes = 0;
+for (const choice of choices) choice.mutations.length = 0;
+const retainedChildren = new Map([...watchedRegions].map(([selector, region]) => [selector, region.firstChild]));
+const retainedImages = choices.map(choice => choice.querySelector("img"));
+watchedRegions.get("[data-loadout-presets]").firstChild.value = "Unfinished name";
 
 const click = dataset => ui.onclick({ target: { closest: () => ({ dataset, hasAttribute: name => name === "data-loadout-equip" && "loadoutEquip" in dataset || name === "data-loadout-recommended" && "loadoutRecommended" in dataset, setAttribute() {}, classList: { toggle() {} }, querySelector: () => ({}) }) } });
 game.bindUi();
@@ -82,6 +94,24 @@ assert.equal(previewed.attributes.get("aria-pressed"), "true", "pressed state id
 assert.equal(previewed.label.hidden, true, "an unequipped preview is not labeled equipped");
 assert.equal(equipped.attributes.get("aria-pressed"), "false", "equipped weapons do not masquerade as the selected preview");
 assert.equal(equipped.label.hidden, false, "equipped labels remain visible while browsing other weapons");
+assert.deepEqual(choices.filter(choice => choice.mutations.length).map(choice => choice.dataset.weaponChoice).sort(), ["railgun", "rocket_launcher"], "browsing touches only the old and new preview cards");
+for (const [selector, region] of watchedRegions) {
+  if (selector === "[data-weapon-preview]") continue;
+  assert.equal(region.writes, 0, "browsing does not rebuild equipped slots, actions or preset controls");
+  assert.equal(region.firstChild, retainedChildren.get(selector), "unrelated control nodes keep their identity");
+}
+assert.equal(watchedRegions.get("[data-loadout-presets]").firstChild.value, "Unfinished name", "browsing preserves a preset name draft");
+for (let index = 0; index < choices.length; index++) assert.equal(choices[index].querySelector("img"), retainedImages[index], "browsing keeps every card image node");
+const hero = watchedRegions.get("[data-weapon-preview]"), heroImage = hero.firstChild;
+assert.equal(hero.writes, 1, "a changed weapon updates the large preview once");
+for (const choice of choices) choice.mutations.length = 0;
+click({ weaponChoice: "rocket_launcher" });
+assert.equal(hero.writes, 1, "clicking the same weapon does not rebuild its static preview");
+assert.equal(hero.firstChild, heroImage, "repeated previews retain the hero image and open details");
+assert.ok(choices.every(choice => choice.mutations.length === 0), "clicking the same preview performs no card writes");
+game.updateLoadoutUi("", false);
+assert.equal(hero.writes, 1, "unchanged full or lobby refreshes keep the current preview");
+assert.equal(hero.firstChild, heroImage, "unchanged room updates retain the hero image and details nodes");
 nodes.get("[data-weapon-search]").value = "long range";
 game.filterWeaponPicker();
 assert.equal(equipped.hidden, false, "search finds weapons by their plain-language role");
@@ -91,6 +121,7 @@ assert.equal(nodes.get("[data-weapon-search]").value, "", "choosing a category c
 assert.equal(game.activeLoadoutSlot, 0, "category changes keep the selected slot");
 assert.equal(game.previewWeaponId, "rocket_launcher", "category changes preserve the preview until another weapon is chosen");
 assert.deepEqual(game.settings.loadout, beforePreview, "search and filters do not commit the preview");
+assert.equal(hero.firstChild, heroImage, "search and category changes retain the static hero image");
 click({ loadoutEquip: "" });
 assert.equal(game.settings.loadout[0], "rocket_launcher", "the equip action commits the previewed weapon");
 assert.equal(previewed.label.hidden, false, "equipping updates the weapon's equipped label");
@@ -98,6 +129,18 @@ assert.equal(equipped.label.hidden, true, "replacing a weapon clears its equippe
 assert.equal(game.activeLoadoutSlot, 0, "equipping leaves the active slot selected");
 assert.equal(game.focusedSlot, 0, "equipping restores keyboard focus to the enabled slot button");
 assert.deepEqual(data.loadSettings().loadout, game.settings.loadout, "equipping persists the loadout");
+assert.equal(hero.writes, 2, "equipping updates the preview action when its equipped slot changes");
+const equippedHero = hero.firstChild;
+game.updateLoadoutUi("", false);
+assert.equal(hero.firstChild, equippedHero, "a repeated equip acknowledgement keeps the refreshed preview node");
+game.editLoadoutSlot(1);
+assert.equal(hero.writes, 3, "choosing another slot refreshes its weapon preview");
+game.previewLoadoutWeapon("rocket_launcher");
+const otherSlotHero = hero.firstChild;
+game.activeLoadoutSlot = 2;
+game.updateLoadoutUi("", false);
+assert.notEqual(hero.firstChild, otherSlotHero, "changing the destination slot updates the preview even when its weapon is unchanged");
+for (const selector of watchedRegions.keys()) nodes.delete(selector);
 game.settings.loadout = [...beforePreview];
 
 game.activeLoadoutSlot = 0;

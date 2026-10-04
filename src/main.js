@@ -797,7 +797,7 @@ class BlasterBattle {
           <div class="armory-slot-actions" data-loadout-actions>${this.loadoutActionsMarkup(loadout)}</div>
         </aside>
         <section class="armory-library weapon-picker" data-weapon-picker aria-label="${TEXT.setup.loadout.picker}">
-          <div class="armory-preview" data-weapon-preview>${this.weaponPreviewMarkup(loadout)}</div>
+          <div class="armory-preview" data-weapon-preview="${this.previewWeaponId}:${this.activeLoadoutSlot}:${loadout.indexOf(this.previewWeaponId)}">${this.weaponPreviewMarkup(loadout)}</div>
           <label>${TEXT.setup.loadout.search}<input type="search" data-weapon-search></label>
           <div class="weapon-filters" role="group" aria-label="${TEXT.setup.loadout.categories}">${WEAPON_GROUPS.map(group => `<button data-weapon-filter="${group.id}" aria-pressed="${group.id === this.weaponFilter}">${group.name}</button>`).join("")}</div>
           <p data-weapon-empty hidden role="status">${TEXT.setup.loadout.noResults}</p>
@@ -852,9 +852,25 @@ class BlasterBattle {
   }
 
   previewLoadoutWeapon(id) {
-    if (!WEAPONS[id]) return;
+    if (!WEAPONS[id] || id === this.previewWeaponId) return;
+    const previous = this.previewWeaponId;
     this.previewWeaponId = id;
-    this.updateLoadoutUi();
+    for (const weaponId of [previous, id]) {
+      const button = ui.querySelector(`[data-weapon-choice="${weaponId}"]`);
+      if (!button) continue;
+      button.classList.toggle("previewing", weaponId === id);
+      button.setAttribute("aria-pressed", String(weaponId === id));
+    }
+    this.updateWeaponPreview();
+  }
+
+  updateWeaponPreview(loadout = this.menuLoadout()) {
+    const preview = ui.querySelector("[data-weapon-preview]");
+    if (!preview) return;
+    const key = `${this.previewWeaponId}:${this.activeLoadoutSlot ?? 0}:${loadout.indexOf(this.previewWeaponId)}`;
+    if (preview.dataset.weaponPreview === key) return;
+    preview.innerHTML = this.weaponPreviewMarkup(loadout);
+    preview.dataset.weaponPreview = key;
   }
 
   applyRecommendedLoadout() {
@@ -1303,8 +1319,7 @@ class BlasterBattle {
     if (order) order.innerHTML = this.loadoutOrderMarkup(loadout);
     const actions = ui.querySelector("[data-loadout-actions]");
     if (actions) actions.innerHTML = this.loadoutActionsMarkup(loadout);
-    const preview = ui.querySelector("[data-weapon-preview]");
-    if (preview) preview.innerHTML = this.weaponPreviewMarkup(loadout);
+    this.updateWeaponPreview(loadout);
     const presets = ui.querySelector("[data-loadout-presets]");
     if (presets && refreshPresets) presets.innerHTML = this.loadoutPresetsMarkup();
     for (const button of ui.querySelectorAll("[data-preset-save]")) button.disabled = loadout.filter(Boolean).length !== 5;
