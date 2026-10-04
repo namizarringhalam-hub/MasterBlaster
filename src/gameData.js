@@ -78,13 +78,13 @@ function weapon(categoryId, id, type, color, stats = {}) {
 }
 
 export const WEAPON_GROUPS = [
-  { id: "rapid", name: TEXT.weaponGroups.rapid, color: "#5ff0a4", ids: ["burst_rifle", "machine_gun", "minigun", "needle_launcher", "plasma_repeater", "submachine_gun"] },
-  { id: "explosive", name: TEXT.weaponGroups.explosive, color: "#ff9b4a", ids: ["bouncing_bomb", "cluster_grenade", "grenade_launcher", "implosion_bomb", "mine", "mortar", "napalm_launcher", "remote_explosive", "rocket_launcher", "sticky_launcher"] },
-  { id: "energy", name: TEXT.weaponGroups.energy, color: "#51dcff", ids: ["arc_lightning", "blaster", "gravity_beam", "plasma_cannon", "pulse_cannon"] },
-  { id: "precision", name: TEXT.weaponGroups.precision, color: "#9fb7ff", ids: ["charged_energy_rifle", "disintegration_weapon", "laser_beam", "railgun"] },
-  { id: "close", name: TEXT.weaponGroups.close, color: "#ffd166", ids: ["flamethrower", "shotgun"] },
-  { id: "unusual", name: TEXT.weaponGroups.unusual, color: "#d978ff", ids: ["black_hole_generator", "boomerang_blade", "decoy_launcher", "drill_missile", "fireball", "freeze_gun", "grapple_disrupting_pulse", "gravity_grenade", "ricochet_cannon", "teleport_projectile", "temporary_wall", "tornado_generator", "weapon_stealing_projectile"] },
-  { id: "melee", name: TEXT.weaponGroups.melee, color: "#ff607d", ids: ["chainsaw", "energy_sword", "hammer", "knife", "punch_glove", "shock_baton", "spear"] }
+  { id: "rapid", name: TEXT.weaponGroups.rapid, color: "#39ff8c", ids: ["burst_rifle", "machine_gun", "minigun", "needle_launcher", "plasma_repeater", "submachine_gun"] },
+  { id: "explosive", name: TEXT.weaponGroups.explosive, color: "#ff6a00", ids: ["bouncing_bomb", "cluster_grenade", "grenade_launcher", "implosion_bomb", "mine", "mortar", "napalm_launcher", "remote_explosive", "rocket_launcher", "sticky_launcher"] },
+  { id: "energy", name: TEXT.weaponGroups.energy, color: "#00dfff", ids: ["arc_lightning", "blaster", "gravity_beam", "plasma_cannon", "pulse_cannon"] },
+  { id: "precision", name: TEXT.weaponGroups.precision, color: "#6084ff", ids: ["charged_energy_rifle", "disintegration_weapon", "laser_beam", "railgun"] },
+  { id: "close", name: TEXT.weaponGroups.close, color: "#ffbf00", ids: ["flamethrower", "shotgun"] },
+  { id: "unusual", name: TEXT.weaponGroups.unusual, color: "#b640ff", ids: ["black_hole_generator", "boomerang_blade", "decoy_launcher", "drill_missile", "fireball", "freeze_gun", "grapple_disrupting_pulse", "gravity_grenade", "ricochet_cannon", "teleport_projectile", "temporary_wall", "tornado_generator", "weapon_stealing_projectile"] },
+  { id: "melee", name: TEXT.weaponGroups.melee, color: "#ff305c", ids: ["chainsaw", "energy_sword", "hammer", "knife", "punch_glove", "shock_baton", "spear"] }
 ];
 
 const weaponList = [

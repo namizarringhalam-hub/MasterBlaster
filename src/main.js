@@ -749,9 +749,9 @@ class BlasterBattle {
         ${group.ids.map((id) => {
           const weapon = WEAPONS[id];
           const slot = loadout.indexOf(id);
-          return `<button class="weapon-choice ${slot >= 0 ? "selected" : ""} ${id === this.previewWeaponId ? "previewing" : ""}" aria-pressed="${id === this.previewWeaponId}" aria-label="${formatText(TEXT.setup.loadout.previewAria, { weapon: escapeHtml(weapon.name) })}" data-weapon-choice="${id}" data-weapon="${id}" data-category="${group.id}" data-slot="${slot >= 0 ? slot + 1 : ""}" style="--category:${group.color}">
+          return `<button class="weapon-choice ${slot >= 0 ? "selected" : ""} ${id === this.previewWeaponId ? "previewing" : ""}" aria-pressed="${id === this.previewWeaponId}" aria-label="${formatText(TEXT.setup.loadout.previewAria, { weapon: escapeHtml(weapon.name) })}" data-weapon-choice="${id}" data-weapon="${id}" data-category="${group.id}" data-slot="${slot >= 0 ? slot + 1 : ""}" style="--category:${group.color};--weapon:#${weapon.color.toString(16).padStart(6, "0")}">
             <i></i><img class="weapon-render" src="${resourceURL(`/weapons/${id}.webp`)}" alt="" width="512" height="320" loading="lazy" decoding="async">
-            <b>${weapon.name}</b><small>${TEXT.setup.loadout.weaponRoles[id]}</small><span class="armory-equipped-label" data-equipped-label ${slot >= 0 ? "" : "hidden"}>${slot >= 0 ? formatText(TEXT.setup.loadout.equippedLabel, { slot: slot + 1 }) : ""}</span>
+            <b>${weapon.name}</b><small class="armory-role">${TEXT.setup.loadout.weaponRoles[id]}</small><small class="weapon-description">${weapon.description}</small>${this.weaponStatsMarkup(weapon)}<span class="armory-equipped-label" data-equipped-label ${slot >= 0 ? "" : "hidden"}>${slot >= 0 ? formatText(TEXT.setup.loadout.equippedLabel, { slot: slot + 1 }) : ""}</span>
           </button>`;
         }).join("")}
       </div>
@@ -799,7 +799,7 @@ class BlasterBattle {
         <section class="armory-library weapon-picker" data-weapon-picker aria-label="${TEXT.setup.loadout.picker}">
           <div class="armory-preview" data-weapon-preview="${this.previewWeaponId}:${this.activeLoadoutSlot}:${loadout.indexOf(this.previewWeaponId)}">${this.weaponPreviewMarkup(loadout)}</div>
           <label>${TEXT.setup.loadout.search}<input type="search" data-weapon-search></label>
-          <div class="weapon-filters" role="group" aria-label="${TEXT.setup.loadout.categories}">${WEAPON_GROUPS.map(group => `<button data-weapon-filter="${group.id}" aria-pressed="${group.id === this.weaponFilter}">${group.name}</button>`).join("")}</div>
+          <div class="weapon-filters" role="group" aria-label="${TEXT.setup.loadout.categories}">${WEAPON_GROUPS.map(group => `<button data-weapon-filter="${group.id}" style="--category:${group.color}" aria-pressed="${group.id === this.weaponFilter}">${group.name}</button>`).join("")}</div>
           <p data-weapon-empty hidden role="status">${TEXT.setup.loadout.noResults}</p>
           <div class="weapon-categories">${this.weaponCategoriesMarkup(loadout)}</div>
         </section>
@@ -816,7 +816,7 @@ class BlasterBattle {
       const weapon = WEAPONS[loadout[index]];
       const name = weapon?.name || (this.mode === "global" ? TEXT.globalLobby.emptySlot : TEXT.setup.loadout.emptySlot);
       const active = index === this.activeLoadoutSlot;
-      return `<div class="loadout-slot ${weapon ? "" : "empty"} ${active ? "active" : ""}" draggable="${Boolean(weapon)}" data-loadout-drag="${index}" style="--category:${weapon ? WEAPON_CATEGORY_BY_ID[weapon.id].color : "#617b8d"}">
+      return `<div class="loadout-slot ${weapon ? "" : "empty"} ${active ? "active" : ""}" draggable="${Boolean(weapon)}" data-loadout-drag="${index}" style="--category:${weapon ? WEAPON_CATEGORY_BY_ID[weapon.id].color : "#617b8d"};--weapon:${weapon ? `#${weapon.color.toString(16).padStart(6, "0")}` : "#617b8d"}">
         <button class="slot-select" data-loadout-edit="${index}" aria-pressed="${active}" aria-label="${formatText(TEXT.setup.loadout.editSlot, { slot: index + 1, weapon: escapeHtml(name) })}"><span>${index + 1}</span><b>${escapeHtml(name)}</b><small>${weapon ? TEXT.setup.loadout.weaponRoles[weapon.id] : ""}</small></button>
       </div>`;
     }).join("");
@@ -838,15 +838,23 @@ class BlasterBattle {
     return `<button data-loadout-move="${index}" data-direction="-1" ${!weapon || index === 0 ? "disabled" : ""}>${TEXT.setup.loadout.moveUp}</button><button data-loadout-move="${index}" data-direction="1" ${!weapon || index >= loadout.length - 1 ? "disabled" : ""}>${TEXT.setup.loadout.moveDown}</button><button data-loadout-remove="${index}" ${weapon ? "" : "disabled"}>${TEXT.setup.loadout.removeWeapon}</button>`;
   }
 
+  weaponStatsMarkup(weapon) {
+    const damageLabel = weapon.pellets ? TEXT.setup.loadout.pelletDamageLabel : weapon.chargeTime ? TEXT.setup.loadout.maxDamageLabel : TEXT.setup.loadout.damageLabel;
+    return `<div class="weapon-stats"><span title="${formatText(TEXT.setup.loadout.directHitDamageTitle, { damage: weapon.damage })}"><span class="stat-label">${damageLabel}</span><strong>${weapon.damage}</strong></span>${weaponUsesAmmo(weapon)
+      ? `<span><span class="stat-label">${TEXT.setup.loadout.magazineLabel}</span><strong>${weapon.ammo}</strong></span><span><span class="stat-label">${TEXT.setup.loadout.reloadLabel}</span><strong>${formatText(TEXT.setup.loadout.reloadSeconds, { seconds: weapon.reload.toFixed(1) })}</strong></span>`
+      : `<span class="stat-no-reload">${TEXT.setup.loadout.noReload}</span>`}</div>`;
+  }
+
   weaponPreviewMarkup(loadout = this.menuLoadout()) {
     const weapon = WEAPONS[this.previewWeaponId];
     if (!weapon) return "";
     const slot = this.activeLoadoutSlot ?? 0;
     const equipped = loadout.indexOf(weapon.id);
     const buttonText = formatText(equipped === slot ? TEXT.setup.loadout.equippedSlot : equipped >= 0 ? TEXT.setup.loadout.swapSlot : TEXT.setup.loadout.equipSlot, { slot: (equipped >= 0 ? equipped : slot) + 1 });
-    return `<div class="armory-preview-art" aria-hidden="true"><img class="weapon-render" src="${resourceURL(`/weapons/${weapon.id}.webp`)}" alt="" width="512" height="320" decoding="async"></div>
-      <div class="armory-preview-copy"><small data-picker-title>${formatText(TEXT.setup.loadout.previewSlot, { slot: slot + 1 })}</small><h3>${weapon.name}</h3><p class="armory-role">${TEXT.setup.loadout.weaponRoles[weapon.id]}</p><p>${weapon.description}</p>
-        <details class="armory-stats"><summary>${TEXT.setup.loadout.statsLabel}</summary><p><span title="${formatText(TEXT.setup.loadout.directHitDamageTitle, { damage: weapon.damage })}">${formatText(TEXT.setup.loadout.directHitDamage, { damage: weapon.damage })}</span> · ${weaponUsesAmmo(weapon) ? formatText(TEXT.setup.loadout.magazineAndReload, { ammo: weapon.ammo, seconds: weapon.reload.toFixed(1) }) : TEXT.setup.loadout.noReload}</p></details>
+    const accent = `--category:${WEAPON_CATEGORY_BY_ID[weapon.id].color};--weapon:#${weapon.color.toString(16).padStart(6, "0")}`;
+    return `<div class="armory-preview-art" style="${accent}" aria-hidden="true"><img class="weapon-render" src="${resourceURL(`/weapons/${weapon.id}.webp`)}" alt="" width="512" height="320" decoding="async"></div>
+      <div class="armory-preview-copy" style="${accent}"><small data-picker-title>${formatText(TEXT.setup.loadout.previewSlot, { slot: slot + 1 })}</small><h3>${weapon.name}</h3><p class="armory-role">${TEXT.setup.loadout.weaponRoles[weapon.id]}</p><p>${weapon.description}</p>
+        ${this.weaponStatsMarkup(weapon)}
         <button class="primary" data-loadout-equip ${equipped === slot ? "disabled" : ""}>${buttonText}</button>
       </div>`;
   }

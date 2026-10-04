@@ -310,7 +310,7 @@ assert.ok(WEAPON_GROUPS.every((group) => group.ids.every((id) => WEAPONS[id].cat
 assert.ok(WEAPON_GROUPS.every((group) => /^#[0-9a-f]{6}$/i.test(group.color)), "every weapon category has a stable menu color");
 assert.ok(WEAPON_GROUPS.every((group) => group.ids.map((id) => WEAPONS[id].name).every((name, index, names) => !index || names[index - 1].localeCompare(name) <= 0)), "weapons are alphabetized inside every category");
 assert.match(mainSource, /loadoutEditorMarkup\(\)[\s\S]*?weaponCategoriesMarkup\(loadout\)/, "Quick Play, Private Room, and Training share the categorized weapon selector");
-assert.match(mainSource, /class="armory-stats"[\s\S]*?TEXT\.setup\.loadout\.directHitDamage[\s\S]*?TEXT\.setup\.loadout\.magazineAndReload/, "weapon previews keep damage and capacity available inside optional stats");
+assert.match(mainSource, /weaponStatsMarkup\(weapon\) \{[\s\S]*?class="weapon-stats"[\s\S]*?TEXT\.setup\.loadout\.magazineLabel[\s\S]*?TEXT\.setup\.loadout\.reloadLabel/, "shared weapon stats keep damage, magazine and reload information visible");
 assert.match(mainSource, /weaponUsesAmmo\(player\.weapon\) && fireHeld && player\.ammo\[player\.weapon\.id\] <= 0/, "holding fire automatically begins a reload only for weapons with magazines");
 assert.match(mainSource, /new MultiplayerClient\(\)[\s\S]*?mode: this\.mode[\s\S]*?roomCode: this\.seed/, "online match modes connect through the multiplayer room client");
 assert.ok(Object.values(WEAPONS).every((weapon) => weapon.name && weapon.description && weapon.category), "every weapon has complete menu metadata");

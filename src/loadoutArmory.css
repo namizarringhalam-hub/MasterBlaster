@@ -4,30 +4,37 @@
 .loadout-builder [data-loadout-count] { color: #4fe9ff; font-size: 12px; font-weight: 700; }
 .loadout-help { margin: 7px 0 0; }
 .loadout-order { display: grid; }
-.loadout-slot { min-width: 0; border: 1px solid #294052; border-radius: 5px; background: rgba(9, 23, 37, .75); }
-.loadout-slot .slot-select { width: 100%; text-align: left; border: 0; background: transparent; }
+.loadout-slot { min-width: 0; border: 1px solid var(--accent); border-radius: 5px; background: linear-gradient(110deg, color-mix(in srgb, var(--accent) 24%, #080f1c), #080f1c); }
+.loadout-slot .slot-select, .loadout-slot .slot-select:hover { width: 100%; text-align: left; border: 0; background: transparent; }
 .slot-select span { font: 900 20px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; }
 .slot-select b { color: #eaf7ff; font: 800 17px/1.15 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
 .loadout-slot.empty { border-style: dashed; }
 .loadout-slot.empty b { color: #8fa7b8; }
-.weapon-category > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid color-mix(in srgb, var(--category) 38%, transparent); }
+.weapon-category > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 2px solid var(--category); }
 .weapon-category > header h3 { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--category); font: 900 18px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; letter-spacing: .06em; text-transform: uppercase; }
-.weapon-category > header h3 i { width: 9px; height: 9px; background: var(--category); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); box-shadow: 0 0 10px var(--category); }
-.weapon-category > header span { color: color-mix(in srgb, var(--category) 62%, #8da5b5); font-size: 8px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.weapon-category > header h3 i { width: 9px; height: 9px; background: var(--category); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+.weapon-category > header span { color: #d6e9f6; font-size: 11px; font-weight: 600; letter-spacing: 0; }
 .weapon-grid { display: grid; }
 .weapon-choice { min-width: 0; text-align: left; }
-.weapon-choice i { position: absolute; inset: 0 auto 0 0; width: 2px; background: var(--category); opacity: .35; }
+.weapon-choice i { position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--accent); }
 .weapon-choice b, .weapon-choice small { display: block; }
-.weapon-choice b { font: 800 17px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
-.weapon-choice.selected i { width: 4px; opacity: 1; }
+.weapon-choice b { color: color-mix(in srgb, var(--accent) 65%, white); font: 800 20px/1.1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
 .weapon-choice small { letter-spacing: 0; }
 .weapon-filters { display: flex; }
-.weapon-filters button { flex: 0 0 auto; color: #92adbe; background: transparent; border-color: #294052; }
-.weapon-filters button[aria-pressed="true"] { color: #dffaff; border-color: #52e9ff; background: #123040; }
+.weapon-filters button, .weapon-filters button:hover { flex: 0 0 auto; color: color-mix(in srgb, var(--category) 75%, white); background: color-mix(in srgb, var(--category) 18%, #080f1c); border-color: var(--category); }
+.weapon-filters button[aria-pressed="true"] { color: #070d1c; border-color: var(--category); background: var(--category); }
+.weapon-filters button:focus-visible { outline-color: var(--category); }
+.weapon-grid .weapon-choice:focus-visible, .loadout-slot .slot-select:focus-visible { outline-color: var(--accent); }
 
 /* The armory keeps equipped slots beside the preview and browsable library. */
 .loadout-builder.loadout-armory { margin-top: 22px; min-width: 0; }
-.loadout-help { color: #9ab0c0; font-size: 12px; line-height: 1.5; }
+.loadout-armory { font-family: Inter, "Inter Fallback", system-ui, sans-serif; }
+.loadout-slot, .weapon-choice, .armory-preview-art, .armory-preview-copy { --accent: var(--weapon, var(--category, #00dfff)); }
+.loadout-armory button { transition: none; letter-spacing: 0; }
+.loadout-armory button, .loadout-armory button:hover { box-shadow: none; }
+.loadout-armory button:hover { transform: none; }
+.loadout-armory button::before { content: none; }
+.loadout-help { color: #c4d8e8; font-size: 13px; line-height: 1.5; }
 .armory-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0; }
 .armory-toolbar > button { padding: 9px 14px; font-size: 11px; }
 .armory-toolbar label { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -37,35 +44,43 @@
 .armory-equipped { position: sticky; top: 16px; }
 .armory-equipped > h3 { margin: 0 0 10px; font: 800 18px/1.1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
 .loadout-armory .loadout-order { grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 0; touch-action: pan-y; }
-.loadout-slot { padding: 3px; border-left: 3px solid var(--category, #294052); }
-.loadout-slot.active { border-color: #52e9ff; background: #102b3c; }
+.loadout-slot { padding: 3px; border-left: 5px solid var(--accent); }
+.loadout-slot.active { border-color: #fff; background: color-mix(in srgb, var(--accent) 34%, #080f1c); }
 .loadout-slot .slot-select { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 4px 10px; align-content: center; min-height: 66px; padding: 9px; box-shadow: none; }
 .slot-select > span { grid-row: 1 / 3; align-self: center; text-align: center; }
 .slot-select b { overflow-wrap: anywhere; }
-.slot-select small { grid-column: 2; color: #9ab0c0; font-size: 10px; font-weight: 500; line-height: 1.35; letter-spacing: 0; text-transform: none; overflow-wrap: anywhere; }
+.slot-select small { grid-column: 2; color: #d6e9f6; font-size: 11px; font-weight: 500; line-height: 1.4; letter-spacing: 0; text-transform: none; overflow-wrap: anywhere; }
 .armory-slot-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
 .armory-slot-actions button { flex: 1 1 auto; padding: 7px 8px; font-size: 10px; }
 
 .armory-preview { display: grid; grid-template-columns: 240px minmax(0, 1fr); align-items: center; gap: 16px; padding: 16px; border: 1px solid #294052; background: #091725; }
-.armory-preview-art { min-width: 0; }
+.armory-preview-art { min-width: 0; border-bottom: 3px solid var(--accent); background: radial-gradient(ellipse, color-mix(in srgb, var(--accent) 28%, transparent), transparent 72%); }
 .weapon-render { display: block; width: 100%; height: auto; aspect-ratio: 8 / 5; object-fit: contain; }
-.armory-preview-copy h3 { margin: 6px 0; font: 800 27px/1.05 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; overflow-wrap: anywhere; }
-.armory-preview-copy > p { margin: 7px 0; color: #9ab0c0; font-size: 12px; line-height: 1.5; }
+.armory-preview-copy h3 { margin: 6px 0; color: color-mix(in srgb, var(--accent) 70%, white); font: 800 30px/1.05 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; overflow-wrap: anywhere; }
+.armory-preview-copy > p { margin: 7px 0; color: #d6e9f6; font-size: 14px; line-height: 1.5; }
+.armory-preview-copy > small, .armory-preview-copy > .armory-role, .armory-role { color: color-mix(in srgb, var(--accent) 55%, white); font-weight: 700; }
 [data-loadout-equip] { min-height: 42px; max-width: 100%; padding: 10px 16px; margin-top: 9px; font-size: 11px; }
 .weapon-picker label { display: block; margin-top: 12px; }
 [data-weapon-search] { margin-top: 6px; padding: 10px 12px; }
 .weapon-filters { flex-wrap: wrap; gap: 5px; margin-top: 10px; }
-.weapon-filters button { min-height: 34px; padding: 7px 9px; font-size: 10px; letter-spacing: 0; }
+.weapon-filters button { min-height: 38px; padding: 8px 10px; font-size: 12px; }
 .weapon-category { min-width: 0; padding: 10px 0 0; }
 .weapon-category > header { margin: 0; padding-bottom: 8px; }
 .weapon-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-top: 9px; }
-.weapon-grid .weapon-choice { padding: 12px 12px 30px; border-color: #294052; background: #091725; }
+.weapon-grid .weapon-choice, .weapon-grid .weapon-choice:hover { padding: 12px 12px 34px; border-color: var(--accent); background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 30%, #080f1c), #080f1c 75%); }
 .weapon-grid .weapon-render { height: 100px; margin-bottom: 10px; }
-.weapon-grid .weapon-choice b { min-height: 32px; overflow-wrap: anywhere; }
-.weapon-grid .weapon-choice small { margin-top: 5px; color: #9ab0c0; font-size: 10px; line-height: 1.4; }
-.weapon-grid .weapon-choice.selected { border-color: #476b70; background: #10252c; }
-.weapon-grid .weapon-choice.previewing { border-color: #52e9ff; background: #123040; }
-.armory-equipped-label { position: absolute; bottom: 8px; left: 12px; right: 10px; color: #9bdbc8; font-size: 9px; letter-spacing: 0; }
+.weapon-grid .weapon-choice b { min-height: 36px; overflow-wrap: anywhere; }
+.weapon-grid .weapon-choice small { margin-top: 6px; font-size: 12px; line-height: 1.5; font-weight: 500; text-transform: none; }
+.weapon-grid .weapon-choice .armory-role { font-weight: 700; }
+.weapon-description { color: #d6e9f6; }
+.weapon-grid .weapon-choice.selected { border-width: 2px; background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 45%, #080f1c), #080f1c 75%); }
+.weapon-grid .weapon-choice.previewing { border-color: #fff; box-shadow: inset 0 0 0 1px var(--accent); }
+.weapon-stats { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; color: #f2f8ff; font: 600 12px/1.4 Inter, "Inter Fallback", system-ui, sans-serif; letter-spacing: 0; text-transform: none; }
+.weapon-stats > span { flex: 1 1 64px; min-width: min-content; padding: 6px; border: 1px solid color-mix(in srgb, var(--accent) 55%, #080f1c); background: #080f1c; }
+.weapon-stats .stat-label { display: block; color: #c4d8e8; font-size: 11px; font-weight: 500; }
+.weapon-stats strong { display: block; color: color-mix(in srgb, var(--accent) 55%, white); font-size: 16px; font-variant-numeric: tabular-nums; }
+.weapon-stats .stat-no-reload { align-content: center; flex-basis: 90px; }
+.armory-equipped-label { position: absolute; bottom: 8px; left: 12px; right: 10px; color: #f2f8ff; font-size: 11px; font-weight: 700; letter-spacing: 0; }
 .setup-launch { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #294052; }
 .setup-launch p { margin: 0; color: #9ab0c0; font-size: 12px; line-height: 1.5; }
 .setup-launch .launch { width: auto; margin: 0; }
@@ -95,7 +110,7 @@
 }
 
 @media (pointer: coarse) {
-  .weapon-filters button, .armory-slot-actions button, .armory-stats summary { min-height: 44px; }
+  .weapon-filters button, .armory-slot-actions button { min-height: 44px; }
   .loadout-armory input, .loadout-armory select { font-size: 16px; }
 }
 

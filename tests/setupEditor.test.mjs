@@ -56,7 +56,9 @@ assert.equal((markup.match(/data-loadout-edit=/g) || []).length, 5);
 assert.equal(game.activeLoadoutSlot, 0, "the first slot is ready to edit on arrival");
 assert.equal(game.previewWeaponId, "railgun", "the first equipped weapon is previewed on arrival");
 assert.match(markup, /data-weapon-preview="railgun:0:0"/, "the initial preview records its weapon and slot state on its DOM node");
-const libraryImages = [...game.weaponCategoriesMarkup().matchAll(/<img\b[^>]*>/g)].map(([tag]) => tag);
+const libraryMarkup = game.weaponCategoriesMarkup();
+const libraryImages = [...libraryMarkup.matchAll(/<img\b[^>]*>/g)].map(([tag]) => tag);
+const libraryCards = new Map([...libraryMarkup.matchAll(/<button\b[^>]*data-weapon-choice="([^"]+)"[^>]*>[\s\S]*?<\/button>/g)].map(([card, id]) => [id, card]));
 assert.equal(libraryImages.length, Object.keys(data.WEAPONS).length, "every weapon card has one rendered game-model image");
 for (const id of Object.keys(data.WEAPONS)) {
   const image = libraryImages.find(tag => tag.includes(`src="/weapons/${id}.webp"`));
@@ -69,6 +71,25 @@ for (const id of Object.keys(data.WEAPONS)) {
   const preview = game.weaponPreviewMarkup();
   assert.ok(preview.includes(`src="/weapons/${id}.webp"`), "the large preview uses the same weapon render as its card");
   assert.doesNotMatch(preview, /loading="lazy"/, "the current large preview loads immediately");
+  const weapon = data.WEAPONS[id], card = libraryCards.get(id);
+  const stats = card.match(/<div class="weapon-stats">[\s\S]*?<\/div>/)?.[0];
+  assert.ok(stats && preview.includes(stats), `${id} shares the same permanent stats in its card and preview`);
+  assert.doesNotMatch(stats, /\bhidden\b/, "weapon stats are visible without opening a disclosure");
+  for (const html of [card, preview]) {
+    assert.ok(html.includes(weapon.description), `${id} restores its original description beside the stats`);
+    assert.doesNotMatch(html, /<(?:details|summary)\b/, "weapon information has no disclosure controls");
+  }
+  assert.ok(stats.includes(`<strong>${weapon.damage}</strong>`), `${id} preserves its unrounded base damage`);
+  if (data.weaponUsesAmmo(weapon)) {
+    assert.ok(stats.includes(`<span class="stat-label">${TEXT.setup.loadout.magazineLabel}</span><strong>${weapon.ammo}</strong>`));
+    assert.ok(stats.includes(`<span class="stat-label">${TEXT.setup.loadout.reloadLabel}</span><strong>${formatText(TEXT.setup.loadout.reloadSeconds, { seconds: weapon.reload.toFixed(1) })}</strong>`));
+  } else {
+    assert.ok(stats.includes(TEXT.setup.loadout.noReload), `${id} attacks without ammunition or reloading`);
+    for (const label of [TEXT.setup.loadout.magazineLabel, TEXT.setup.loadout.reloadLabel]) assert.ok(!stats.includes(`<span class="stat-label">${label}</span>`), "ammo-free weapons omit magazine and reload values");
+  }
+}
+for (const [id, label, damage] of [["shotgun", TEXT.setup.loadout.pelletDamageLabel, 8], ["charged_energy_rifle", TEXT.setup.loadout.maxDamageLabel, 76], ["gravity_beam", TEXT.setup.loadout.damageLabel, 3.5]]) {
+  assert.ok(libraryCards.get(id).includes(`<span class="stat-label">${label}</span><strong>${damage}</strong>`), `${id} labels per-pellet, maximum or fractional damage accurately`);
 }
 game.previewWeaponId = "railgun";
 const watchedRegions = new Map();
@@ -109,11 +130,11 @@ assert.equal(hero.writes, 1, "a changed weapon updates the large preview once");
 for (const choice of choices) choice.mutations.length = 0;
 click({ weaponChoice: "rocket_launcher" });
 assert.equal(hero.writes, 1, "clicking the same weapon does not rebuild its static preview");
-assert.equal(hero.firstChild, heroImage, "repeated previews retain the hero image and open details");
+assert.equal(hero.firstChild, heroImage, "repeated previews retain the hero image and visible weapon information");
 assert.ok(choices.every(choice => choice.mutations.length === 0), "clicking the same preview performs no card writes");
 game.updateLoadoutUi("", false);
 assert.equal(hero.writes, 1, "unchanged full or lobby refreshes keep the current preview");
-assert.equal(hero.firstChild, heroImage, "unchanged room updates retain the hero image and details nodes");
+assert.equal(hero.firstChild, heroImage, "unchanged room updates retain the hero image and weapon information nodes");
 nodes.get("[data-weapon-search]").value = "long range";
 game.filterWeaponPicker();
 assert.equal(equipped.hidden, false, "search finds weapons by their plain-language role");
