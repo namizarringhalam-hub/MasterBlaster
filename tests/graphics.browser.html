@@ -28,6 +28,7 @@
 <button id="inspect-surface">Inspect footing material</button>
 <button id="thruster-sort">Toggle thruster sort control</button><button id="thruster-dust">Overlap structural dust</button>
 <button id="stress">Run 16-fighter stress</button><button id="reset">Reset scene</button>
+<button id="press-action" title="Staged starting positions; real AI movement, weapons and explosions">Capture 15-bot action</button>
 <button id="reset-ten">Test ten resets</button>
 <button id="surface-runtime">Test surface burst runtime</button>
 <button id="reset-decoys">Test ten decoy resets</button>
@@ -116,6 +117,7 @@ import * as THREE from "three/webgpu";
 import { materialOpacity, mrt, normalView, normalViewGeometry, output, positionViewDirection, time as shaderTime, uniform, vec3, vec4 } from "three/tsl";
 import { WEAPONS, MAP_THEMES, seedFromText } from "../src/gameData.js";
 import { Fighter } from "../src/player.js";
+import { prepareFighterWeapons } from "../src/gameplayPreparation.js";
 import { shoulderChamferGeometry } from "./shoulderChamferGeometry.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { ankleReliefGeometry } from "./ankleReliefGeometry.js";
@@ -536,6 +538,7 @@ let cameraOffset = 0;
 let renderedFrames = 0;
 let captureCanvas = false;
 let canvasCapture = null, ropeRenders = 0;
+let pressAction = null;
 let thrusterSortControl = null, thrusterRenderOrder = [];
 function clearThrusterSortControl() {
   if (!thrusterSortControl) return;
@@ -801,6 +804,7 @@ function setView() {
   game.updateCamera();
 }
 async function reset() {
+  pressAction = null;
   explosionReview = false;
   resetPhase = "starting";
   captureCanvas = false; canvasCapture = null;
@@ -2027,6 +2031,51 @@ select("stress").onclick = () => {
   game.setTrainingBotOption("botsStandStill", !stress); game.setTrainingBotOption("botsDontAttack", !stress);
   game.players[0].rig.visible = true; resetSamples();
 };
+select("press-action").onclick = async () => {
+  if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
+  const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
+  for (const [control] of controls) control.disabled = true;
+  try {
+    select("pose").value = "aim";
+    if (select("view").value !== "player-camera") select("view").value = "effects";
+    await reset();
+    const serial = sceneSerial, hero = game.players[0];
+    await waitForReviewFrame(serial, () => !game.hideMatchLoadingAfterFrame && !game.preparingMatch);
+    if (game.players.length !== 16 || game.players.filter(player => player.isBot).length !== 15) throw Error("Action capture requires exactly 15 bots");
+    // ponytail: stage only starting positions/loadouts; production AI owns every combat effect.
+    hero.position.set(-16, 15.01, 18); hero.velocity.set(0, 0, 0);
+    hero.aim.set(0, 16.2, 8).sub(hero.position).normalize();
+    game.cameraYaw = Math.atan2(hero.aim.x, hero.aim.z); game.cameraPitch = Math.asin(hero.aim.y);
+    const weapons = ["rocket_launcher", "grenade_launcher", "plasma_cannon", "mortar", "cluster_grenade"];
+    for (const [index, bot] of game.players.slice(1).entries()) {
+      bot.position.set(-15 + index % 5 * 8, 15.01, 5 + Math.floor(index / 5) * 4);
+      bot.velocity.set(0, 0, 0); bot.grounded = true;
+      if (game.world.surfaceHeightAt(bot.position, 15.1) !== 15) throw Error("Staged bot has no central-platform support");
+      bot.loadout = [...weapons.slice(index % 5), ...weapons.slice(0, index % 5)];
+      bot.slotIndex = 0; bot.ammo = Object.fromEntries(bot.loadout.map(id => [id, WEAPONS[id].ammo]));
+      await prepareFighterWeapons(bot, () => sceneSerial === serial);
+    }
+    game.setTrainingBotOption("botsStandStill", false); game.setTrainingBotOption("botsDontAttack", false);
+    if (select("view").value === "effects") game.updateCamera = () => {
+      hero.rig.visible = true;
+      game.camera.position.set(-22, 20, 27); game.camera.lookAt(-1, 16.2, 8);
+      game.camera.fov = 62; game.camera.updateProjectionMatrix();
+    };
+    game.updateCamera(); game.scene.updateMatrixWorld(true);
+    game.matchStartDelay = 0; game.audioCountdown = false; game.awaitingAudioGesture = false;
+    pressAction = { status: "running", stagedSetup: "Central-platform starting positions and explosive loadouts; production AI movement and combat", injectedExplosions: false,
+      fighters: 16, bots: 15, weapon: hero.weapon.id, view: select("view").value, frames: 0, durationMs: 0, started: performance.now(), initialErrors: errorCount };
+    stress = true; game.paused = false; game.sound.resume(); game.sound.setPaused(false); resetSamples(0);
+    await waitForReviewFrame(serial, () => pressAction?.status !== "running", 8000);
+    if (pressAction?.status !== "captured") throw Error(pressAction?.error || "Action capture interrupted");
+  } catch (error) {
+    pressAction = { ...pressAction, status: "error", error: String(error), errors: errorCount };
+    metrics.textContent = JSON.stringify({ pressAction });
+  } finally {
+    stress = false; game.paused = true; explosionReview = true; game.sound.setPaused(true);
+    for (const [control, disabled] of controls) control.disabled = disabled;
+  }
+};
 const frame = game.frame.bind(game);
 game.frame = time => {
   const now = performance.now(), interval = now - previous; previous = now;
@@ -2058,11 +2107,26 @@ game.frame = time => {
     if (startupTrace.length === 3) startupIdentityRecorder?.close();
   }
   renderedFrames++;
+  if (pressAction?.status === "running") {
+    pressAction.frames++; pressAction.durationMs = Math.round(performance.now() - pressAction.started);
+    const inView = point => { const clip = point.clone().project(game.camera); return clip.z > -1 && clip.z < 1 && Math.abs(clip.x) < .88 && Math.abs(clip.y) < .8; };
+    const visibleBots = game.players.slice(1).filter(player => player.alive && inView(player.position.clone().add(new THREE.Vector3(0, 1.3, 0)))).length;
+    const hero = game.players[0];
+    const shell = game.combatVisuals.explosions.layers.find(layer => layer.kind === "shell").particles.find(particle =>
+      particle.life > 0 && particle.maxLife - particle.life >= .08 && particle.maxLife - particle.life <= .2 && particle.size >= 2 && inView(particle.position));
+    if (errorCount !== pressAction.initialErrors || game.renderPipeline.direct) {
+      pressAction.status = "error"; pressAction.error = "Renderer error interrupted action capture";
+    } else if (shell && hero.alive && hero.rig.visible && visibleBots >= 4 && inView(hero.position.clone().add(new THREE.Vector3(0, 1.3, 0)))) {
+      Object.assign(pressAction, { status: "captured", visibleBots, errors: errorCount,
+        explosion: { position: shell.position.toArray(), age: shell.maxLife - shell.life, size: shell.size } });
+      stress = false; game.paused = true; explosionReview = true; captureCanvas = true;
+    }
+  }
   if (captureCanvas && resetPhase === "ready") {
     captureCanvas = false;
     const grapple = game.players[0]?.grapple;
     const hero = game.players[0];
-    canvasCapture = { renderedFrames, sceneSerial, view: select("view").value,
+    canvasCapture = { renderedFrames, sceneSerial, view: select("view").value, pressAction: pressAction ? structuredClone(pressAction) : null,
       tier: game.settings?.graphics ?? null, profile: game.renderPipeline.profile ?? null, pose: { ...poseReview },
       camera: game.camera ? { gameplay: select("view").value === "player-camera", matrix: game.camera.matrixWorld.toArray(), projection: game.camera.projectionMatrix.toArray(), fov: game.camera.fov,
         firstPerson: game.cameraFirstPerson, clearance: { ...game.cameraClearance } } : null,
@@ -2092,6 +2156,7 @@ game.frame = time => {
       errorCount, directFallback: game.renderPipeline.direct };
     const link = select("canvas-capture");
     link.href = document.querySelector("#game-canvas").toDataURL("image/png");
+    link.dataset.review = JSON.stringify(canvasCapture);
     link.hidden = false;
   }
   if (traceFrames) previousCpu = { ...cpu, totalMs: performance.now() - now,
@@ -2123,7 +2188,7 @@ game.frame = time => {
     recoverAONormals, singleSampleAO, emulateCompatibilityAO, aoSceneSamples: game.renderPipeline.scenePass?.renderTarget.samples ?? null,
     aoRecoveryApplied: Boolean(game.renderPipeline.aoPass && game.renderPipeline.aoPass.normalNode !== null &&
       game.renderPipeline.aoPass.normalNode !== game.renderPipeline.scenePass.getTextureNode("normal")),
-    ropeShader, ropeRender, canvasCapture,
+    ropeShader, ropeRender, canvasCapture, pressAction,
     grapple: game.players[0]?.grapple ? { anchor: game.players[0].grapple.anchor.toArray(), blending: game.players[0].grapple.line?.material.blending ?? null } : null,
     aoGeometryApplied: game.renderPipeline.scenePass?.getMRT()?.outputNodes.normal === normalViewGeometry,
     aoDepthNormalsApplied: Boolean(game.renderPipeline.aoPass && game.renderPipeline.aoPass.normalNode === null),

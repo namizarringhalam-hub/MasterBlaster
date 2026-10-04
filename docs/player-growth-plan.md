@@ -59,8 +59,8 @@ We're working on Master Blaster, a free browser arena shooter where you can
 grapple across the map, blast towers apart and choose a five-weapon loadout from
 47 weapons. It's being built with AI-assisted coding.
 
-Try Quick Play or Training against bots, invite friends through a Private Room,
-or find/create a game in Global Multiplayer. No download is needed.
+Try Quick Play or Training against up to 15 bots, invite friends through a
+Private Room, or find/create a game in Global Multiplayer. No download is needed.
 
 **Play:** https://masterblaster.se/
 **Controls and game modes:** https://masterblaster.se/how-to-play/
@@ -78,19 +78,38 @@ what happened, and which game mode you tried. Thanks for giving it a go!
 
 - Playable game: https://masterblaster.se/ (canonical URL, no tracking parameters).
 - Controls/game-mode guide: https://masterblaster.se/how-to-play/.
-- One image attachment: public/press/gameplay.png, available at
+- Existing arena overview: public/press/gameplay.png, available at
   https://masterblaster.se/press/gameplay.png. This is the user's chosen 191559.png
   unchanged: 960 × 540 PNG, 804,703 bytes, SHA-256
   b6643b10fcf5a4bc91cedf626478863809ebe8e4e308309cbbf87cea5f1e91a6.
-- Caption: "Master Blaster's neon arena."
-- Alt text: "Master Blaster arena with tall towers and platforms outlined in
+- Overview caption: "Master Blaster's neon arena."
+- Overview alt text: "Master Blaster arena with tall towers and platforms outlined in
   yellow, cyan and magenta beneath a dark sky."
-- No video or additional image is part of this review package. The screenshot
-  shows an arena view; do not label it as an explosion, grapple or headshot scene.
+- Four new screenshots expand the review package:
 
-All three public URLs returned HTTP 200 on 4 October 2026; the image returned
-image/png with the expected 804,703-byte length. Gameplay/mode claims were checked
-against current PLAYER_TEXT.js and README.md; no new performance claims are made.
+| Asset / direct attachment URL | Caption | Alt text |
+| --- | --- | --- |
+| [action-rockets.png](https://masterblaster.se/press/action-rockets.png) | Rocket Launcher equipped in a staged 15-bot engine scene; real bot combat and explosions. | A blue fighter holds a rocket launcher in a neon arena while colourful bot fighters fire and a large red explosion lights the platform. |
+| [action-grenades.png](https://masterblaster.se/press/action-grenades.png) | Grenade Launcher equipped, captured from the player camera in a staged 15-bot engine scene. | A fight viewed from behind the player, with armed bot fighters, bright purple explosions and a cyan hit effect on the foreground fighter. |
+| [home-menu.jpg](https://masterblaster.se/press/home-menu.jpg) | Master Blaster home menu. | Master Blaster home menu with Quick Play, Private Room, Global Multiplayer and Training choices beneath Swing wild. Break everything. |
+| [quick-play.jpg](https://masterblaster.se/press/quick-play.jpg) | Quick Play setup: 15 veteran bots and a five-weapon loadout. | Quick Play menu showing 15 veteran bots and Rocket Launcher, Grenade Launcher, Decoy Launcher, Ricochet Cannon and Chainsaw weapon slots. |
+
+The home and Quick Play images are unchanged 1280 × 720 JPEG browser captures.
+The action images are unchanged 1068 × 735 PNG canvas exports from the current production
+engine's development-only review view. Initial positions/loadouts were staged;
+production AI movement, weapon fire and resulting explosions ran normally.
+Both capture proofs record 15 bots, 16 fighters, no injected explosions, zero
+renderer errors and no direct-render fallback. The first uses a free review
+camera; the second uses the actual player camera. Label staged captures accurately
+and do not imply an earned headshot, a player-fired blast or a 16-human lobby.
+Use the two action images first where an image gallery is allowed, then the menus;
+retain the chosen overview as an optional fifth image. No video is included.
+
+The playable game, guide and original overview returned HTTP 200 on 4 October
+2026; the overview returned image/png with the expected 804,703-byte length.
+Gameplay/mode claims were checked against current PLAYER_TEXT.js and README.md;
+no new performance claims are made. The new assets are also covered by the final
+build/hosting and live checks recorded in seo-checkpoint.md.
 
 This is brand-account copy, without personal names/details or creator information.
 Do not publish it until the user has reviewed it. After approval, adapt title,

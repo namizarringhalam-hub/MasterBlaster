@@ -338,3 +338,46 @@
   changes or new speed claims; no build/application tests needed for these docs.
 - Next: user reviews the draft and exact asset package, then permitted approved
   adaptations can proceed and publication URLs must enter the daily-check register.
+
+## Expanded post assets — in progress, 4 October 2026
+
+- User requested the home menu, Quick Play menu and two action-filled 15-bot
+  screenshots with weapons/explosions for the pending post review. Content/outreach
+  approval is still pending; no forum accounts, joins, messages or posts made.
+- Captured current production home/Quick Play at the normal 1280 × 720 browser
+  viewport. Quick Play shows 15 veteran bots and the five-weapon loadout including
+  Rocket Launcher/Grenade Launcher. Brand display name only. Added unedited JPEG
+  candidates public/press/home-menu.jpg and public/press/quick-play.jpg.
+- Production match HUD verified 16 fighters (player plus 15 bots). Desktop mouse
+  pointer lock was unavailable in this browser, and early bot combat screenshots
+  were not clear enough for publication. Do not claim successful aimed shots.
+- Owned local Vite server is running on 127.0.0.1:52220 (exec session 28641).
+  Existing graphics review uses production engine/rendering. Team helper is adding
+  a minimal visible development-only capture control to tests/graphics.browser.html
+  to freeze bot-generated combat explosions in a staged 15-bot setup. Label these
+  accurately as staged in-engine captures; no generated/composited image effects.
+- Next: visually validate two action captures, update draft asset/link package,
+  build once and check hosting/offline copies, commit only request files and push
+  origin/main. Then verify live assets and show images here for user review. Close
+  temporary capture tabs and stop the owned server before completion.
+
+- Captured and visually reviewed two successful staged bot-combat PNG exports:
+  public/press/action-rockets.png (Rocket Launcher, free review camera) and
+  public/press/action-grenades.png (Grenade Launcher, actual player camera).
+  Each proof records status captured, 15 bots/16 fighters, 15 bots within the camera
+  frustum, no injected explosions, zero errors and no direct-render fallback.
+  Initial positions and explosive loadouts are staged; combat effects come from
+  normal production AI weapon fire. No headshot/player-fired blast claim.
+- Minimal capture control added only to tests/graphics.browser.html; it waits for
+  a visible real combat explosion, freezes the existing export path and records
+  proof, with an eight-second combat timeout. Source module syntax and diff checks
+  pass, and both weapon/camera runs were validated through its visible UI.
+- Updated docs/player-growth-plan.md with the full five-image option, links,
+  captions and alt text. Original user-selected overview remains unchanged.
+  Production build is running; next verify completion, hosting copies/offline
+  exclusion, commit/push the related request files and verify deployed image URLs.
+- Production build completed with hosting assertions passing. All four new assets
+  match their source SHA-256 hashes in dist/press and dist/client/press; neither
+  mandatory resource manifest contains press images. Module syntax/diff checks and
+  the two actual capture runs pass. Action exports are 1068 × 735; menu JPEGs
+  remain 1280 × 720. Original 191559.png overview remains untouched.
