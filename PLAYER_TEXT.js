@@ -116,7 +116,7 @@ export const PLAYER_TEXT = {
       botCount: "Number of bots",
       timeLimit: "Time limit (minutes)"
     },
-    difficulties: { rookie: "ROOKIE", normal: "NORMAL", veteran: "VETERAN" },
+    difficulties: { rookie: "rookie", normal: "normal", veteran: "veteran" },
     loadout: {
       title: "Choose five weapons",
       selected: "{count}/5 selected",
