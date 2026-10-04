@@ -16,4 +16,4 @@ Browser: all 47 studio WebGL renders reviewed; WebGPU mecha aiming/firing/reload
 
 Preservation: initial unrelated Armory changes were separately published during work as 75e772e/e053043; final validation refreshed from that HEAD. Untracked %SystemDrive%/ directory untouched. No Sites deployment.
 
-Next: commit/push only these request files to origin/main, verify canonical masterblaster.se release, record publication. One pre-existing audio assertion remains outside this request.
+Publication complete: implementation 42a79949d7cbd94e3d4d1aa77c4a381d1d690afc pushed to origin/main. Canonical masterblaster.se returns HTTP 200 and serves release ef043fb3ef5ebf111d088034f63da8f5d1b48a7a780a2aa50b349a9a6fb79c8d, matching all 174 staged Git inputs. Live minigun, knife and plasma picture bytes and main-CYaBAPkf.js verify against their manifest SHA256 hashes. Temporary review tabs and root-owned preview/exporter sessions closed. No unfinished weapon implementation or publication step remains; the pre-existing audio assertion is outside this request.
