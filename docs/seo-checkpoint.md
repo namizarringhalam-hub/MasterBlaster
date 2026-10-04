@@ -541,3 +541,31 @@
   or new PageSpeed measurement. Remaining technical step is heading-font/paint
   evidence for the 2.9-second mobile LCP; external steps are moderation outcomes,
   working directory contact/publication, and justified eligible outreach.
+
+### Second outreach wave — 4 October 2026, evening
+
+- User authorized additional-list options 1, 2, 3, 4, 5, 7 and 8. BrowserGames.gg
+  and iogames.fun now have successful submission receipts, awaiting review/listing.
+  Individual pitches to Gamedev.js Weekly and Alpha Beta Gamer are confirmed in
+  brand Sent at 19:42 CEST; Indie Games Plus at 19:43. No new bounce visible in
+  the immediate inbox check. Sent/receipt evidence does not prove publication,
+  delivery or backlinks; do not duplicate submissions or emails.
+- Three.js Resources anonymous Games form is prepared with the approved rocket
+  capture and AI disclosure, free placement only. User edited optional fields;
+  creator-name choice pending under existing brand-only preference. Do not send
+  personal creator information until resolved.
+- Three.js forum brand signup completed; actual Showcase composer contains the
+  starting draft, tagged anchors and four screenshot references. User requested
+  a draft to finish. Terms exclude machine-generated content: leave publication
+  to the user's own rewrite. Create Topic not clicked by the agent; eventual
+  posts also need moderator review. Preserve the handoff tab.
+- The existing ACTIVE daily 09:00 Europe/Stockholm heartbeat was updated through
+  the app tool, same thread/schedule. It checks the second-wave listings/mail and
+  preserves both holds, earlier moderation states and failed email routes.
+- Changed files: docs/community-outreach-targets.md, this checkpoint and
+  docs/outreach-second-wave-checkpoint.md. Independent documentation review passed;
+  minor wording corrections applied and git diff --check passed.
+  No application code or build/performance measurements changed. Preserve and
+  exclude unrelated untracked %SystemDrive% directory. Next unfinished work:
+  Resources creator choice/submission, user's forum rewrite/publication, and
+  external review/replies tracked in the new recovery record and existing register.

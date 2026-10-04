@@ -166,6 +166,43 @@ Monitoring continues until the user pauses or cancels it, including after the
 technical SEO/directory tasks finish. The computer and local app must be running
 for these checks; offline/stopped operation cannot provide immediate monitoring.
 
+## Second outreach wave — 4 October 2026
+
+The user authorized shortlist options **1, 2, 3, 4, 5, 7 and 8** with
+"Let's do nr 1,2,3,4,5,7,8". These numbers refer to the additional-target
+shortlist, not the earlier recommended-target IDs above. All links lead to
+masterblaster.se; no mirror, paid placement or personal account is involved.
+The recovery record is [outreach-second-wave-checkpoint.md](outreach-second-wave-checkpoint.md).
+
+| Shortlist option | Destination / official route | Verified action and status | Next check |
+| --- | --- | --- | --- |
+| 1 | [BrowserGames.gg](https://browsergames.gg/submit) | Submitted once. Receipt: "Successfully submitted, we will review it in a few hours or days." Shooter category, 1–16 fighters including bots, canonical OG image, AI-assisted coding disclosure and brand email. **Pending review; no public listing verified.** | Check brand mail and public listing; do not resubmit. |
+| 2 | [iogames.fun](https://iogames.fun/submit) | Prepared tagged playable URL, brand email and factual notes. After the user completed CAPTCHA, the form showed "IO Game Submitted" and successful submission. **Pending publication; no public listing verified.** | Check its public listing; do not resubmit. Optional reciprocal badge was not added. |
+| 3 | [Gamedev.js Weekly](https://gamedevjsweekly.com/about) | Individual first-person pitch sent from masterblastergame@proton.me to contact@gamedevjsweekly.com at **19:42 CEST**; verified in Sent. Subject: `Master Blaster — a playable Three.js arena shooter for Gamedev.js Weekly`. AI assistance disclosed; six rendered clickable links cover play, guide and the four approved screenshots. **Sent; delivery and coverage unconfirmed.** | Check brand mailbox for replies/bounces and newsletter coverage; do not resend. |
+| 4 | [Three.js forum Showcase](https://discourse.threejs.org/c/showcase/7) | Brand email verified; user completed account setup. Opened New Topic in Showcase and entered a starting draft, tagged play/guide links and four screenshot references. **Unpublished manual draft.** [Terms section 2](https://discourse.threejs.org/tos) excludes machine-generated content; user requested a draft and will rewrite/finalize it. Showcase posts also require moderator approval. | Preserve the editor. User must rewrite the prose in their own voice and publish. Then record its exact topic URL and moderation state; never autonomously publish this generated starting draft. |
+| 5 | [Alpha Beta Gamer](https://www.alphabetagamer.com/contact-us/) | Individual first-person WIP/playtest pitch sent to Admin@alphabetagamer.com at **19:42 CEST**; verified in Sent. Subject: `Free browser WIP submission: Master Blaster — grappling and destructible towers`. Same brand sender, truthful AI disclosure, tagged play/guide anchors and four screenshot links. **Sent; delivery and coverage unconfirmed.** | Check brand mail for replies/bounces and coverage; do not resend. |
+| 7 | [Three.js Resources](https://threejsresources.com/submit?tab=games) | Anonymous Games > Detailed form prepared with tagged playable URL, description, brand email, Games/Game categorization, Three.js technology and approved action-rockets.png (1,123,262 bytes). AI assistance enabled; $25/mo featured placement disabled. User edited optional creator/tool/prompt fields. **Not submitted: creator-name choice pending under the existing brand-only preference.** | Resolve creator field, submit once and verify receipt. Publication is separate from submission. |
+| 8 | [Indie Games Plus](https://indiegamesplus.com/contact-2/) | Individual first-person editorial pitch sent to editors@indiegamesplus.com at **19:43 CEST**; verified in Sent. Subject: `Master Blaster — free browser arena shooter with grappling and destructible towers`. Same brand sender, truthful AI disclosure, tagged play/guide anchors and four screenshot links. **Sent; delivery and coverage unconfirmed.** | Check brand mail for replies/bounces and coverage; do not resend. |
+
+| Destination | Tagged playable link | Tagged guide link |
+| --- | --- | --- |
+| BrowserGames.gg | [Play](https://masterblaster.se/?ref=browsergames&utm_source=browsergames&utm_medium=directory&utm_campaign=first_players&utm_content=listing) | — |
+| iogames.fun | [Play](https://masterblaster.se/?ref=iogamesfun&utm_source=iogamesfun&utm_medium=directory&utm_campaign=first_players&utm_content=listing) | [Guide](https://masterblaster.se/how-to-play/?ref=iogamesfun&utm_source=iogamesfun&utm_medium=directory&utm_campaign=first_players&utm_content=guide) |
+| Gamedev.js Weekly | [Play](https://masterblaster.se/?ref=gamedevjsweekly&utm_source=gamedevjsweekly&utm_medium=newsletter&utm_campaign=first_players&utm_content=showcase) | [Guide](https://masterblaster.se/how-to-play/?ref=gamedevjsweekly&utm_source=gamedevjsweekly&utm_medium=newsletter&utm_campaign=first_players&utm_content=guide) |
+| Three.js forum draft | [Play](https://masterblaster.se/?ref=threejsforum&utm_source=threejsforum&utm_medium=community&utm_campaign=first_players&utm_content=showcase) | [Guide](https://masterblaster.se/how-to-play/?ref=threejsforum&utm_source=threejsforum&utm_medium=community&utm_campaign=first_players&utm_content=guide) |
+| Alpha Beta Gamer | [Play](https://masterblaster.se/?ref=alphabetagamer&utm_source=alphabetagamer&utm_medium=editorial&utm_campaign=first_players&utm_content=showcase) | [Guide](https://masterblaster.se/how-to-play/?ref=alphabetagamer&utm_source=alphabetagamer&utm_medium=editorial&utm_campaign=first_players&utm_content=guide) |
+| Three.js Resources draft | [Play](https://masterblaster.se/?ref=threejsresources&utm_source=threejsresources&utm_medium=directory&utm_campaign=first_players&utm_content=listing) | [Guide](https://masterblaster.se/how-to-play/?ref=threejsresources&utm_source=threejsresources&utm_medium=directory&utm_campaign=first_players&utm_content=guide) |
+| Indie Games Plus | [Play](https://masterblaster.se/?ref=indiegamesplus&utm_source=indiegamesplus&utm_medium=editorial&utm_campaign=first_players&utm_content=showcase) | [Guide](https://masterblaster.se/how-to-play/?ref=indiegamesplus&utm_source=indiegamesplus&utm_medium=editorial&utm_campaign=first_players&utm_content=guide) |
+
+Composer checks verified first-person copy, recipients and all six anchors before
+each email was sent. Action-image staging was disclosed in all three pitches.
+The immediate mailbox recheck showed only the two prior Free Play Games delivery
+failures; no new bounce or editorial reply was visible. This is a point-in-time
+check, not proof of delivery. Receipt screenshots are retained locally in ignored
+`.wrangler/tmp/seo/outreach-v2-*.png` files. No new public backlink is established.
+The existing daily follow-up must cover these pending listings and sent pitches,
+along with the earlier submissions; preserve the manual forum hold.
+
 ## Next step
 
 Monitor HTML5 topic 76464 and ESReality submission 2975313 for public approval;
@@ -178,3 +215,7 @@ Content and free brand-account approval are already given. Record exact public
 permalinks only after verified publication and monitor both pending submissions
 and published posts in the existing daily follow-up.
 Continue existing approved directory checks and independent performance work.
+Monitor the second-wave directory receipts and three sent editorial pitches as
+well. Resolve the Three.js Resources creator-name choice before its first
+submission. Preserve the Three.js Showcase draft for the user's own rewrite and
+manual publication; record its exact topic URL and moderation status afterward.
