@@ -450,24 +450,6 @@ input, select {
   text-transform: none;
 }
 
-.loadout-builder { margin-top: 32px; }
-.loadout-builder > div:first-child { display: flex; align-items: end; justify-content: space-between; }
-.loadout-builder h2 { margin: 0; font: 800 25px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
-.loadout-builder [data-loadout-count] { color: #4fe9ff; font-size: 12px; font-weight: 700; }
-.loadout-help { margin: 7px 0 0; color: #728b9c; font-size: 10px; line-height: 1.4; }
-.loadout-order { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; margin-top: 14px; }
-.loadout-slot { min-width: 0; padding: 7px; border: 1px solid #294052; border-top: 2px solid var(--category); border-radius: 5px; background: rgba(9, 23, 37, .75); }
-.loadout-slot.active { border-color: var(--category); background: color-mix(in srgb, var(--category) 8%, #091725); }
-.loadout-slot .slot-select { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 58px; padding: 5px; text-align: left; border: 0; background: transparent; }
-.slot-select span { color: var(--category); font: 900 20px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; }
-.slot-select b { color: #eaf7ff; font: 800 15px/1.1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
-.loadout-slot .slot-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 5px; }
-.slot-actions button { min-height: 36px; padding: 2px; color: #9db7c8; }
-.loadout-slot.empty { border-style: dashed; }
-.loadout-slot.empty b { color: #8fa7b8; }
-.preset-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-top: 22px; }
-.preset-heading h3 { margin: 0; font: 800 19px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
-.preset-heading span { color: #728b9c; font-size: 9px; text-align: right; text-transform: uppercase; }
 .loadout-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 8px 0 18px; }
 .loadout-preset { min-width: 0; padding: 10px; border: 1px solid #294a62; border-radius: 5px; background: rgba(8, 22, 36, .8); }
 .loadout-preset.default { border-color: #ffd166; box-shadow: inset 0 0 0 1px rgba(255, 209, 102, .18); }
@@ -483,52 +465,8 @@ input, select {
 .loadout-preset footer button { min-width: 0; min-height: 34px; padding: 5px; font-size: 8px; }
 .loadout-preset footer button:last-child { color: #ff8496; }
 .loadout-status { min-height: 16px; margin: -8px 0 8px; color: #74eaff; font-size: 10px; font-weight: 700; }
-.weapon-categories { display: grid; gap: 18px; margin-top: 14px; }
-.weapon-category { padding: 12px 0; border: 0; }
-.weapon-category > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 1px 2px 10px; border-bottom: 1px solid color-mix(in srgb, var(--category) 38%, transparent); }
-.weapon-category > header h3 { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--category); font: 900 18px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; letter-spacing: .06em; text-transform: uppercase; }
-.weapon-category > header h3 i { width: 9px; height: 9px; background: var(--category); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); box-shadow: 0 0 10px var(--category); }
-.weapon-category > header span { color: color-mix(in srgb, var(--category) 62%, #8da5b5); font-size: 8px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
-.weapon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; margin-top: 11px; }
-.weapon-choice { min-width: 0; min-height: 126px; padding: 12px 68px 30px 16px; text-align: left; border-color: #294052; background: rgba(9, 23, 37, .8); }
-.weapon-choice i { position: absolute; inset: 0 auto 0 0; width: 2px; background: var(--category); opacity: .35; }
-.weapon-preview { position: absolute; right: 12px; top: 15px; width: 45px; height: 25px; opacity: .7; filter: drop-shadow(0 0 7px color-mix(in srgb, var(--weapon) 52%, transparent)); transform: translateY(var(--preview-offset, 0)) rotate(var(--preview-angle, -5deg)); }
-.weapon-preview::before { content: ""; position: absolute; left: 1px; top: 8px; width: var(--preview-length, 30px); height: var(--preview-height, 12px); border: 1px solid color-mix(in srgb, var(--weapon) 80%, #fff); background: linear-gradient(135deg, color-mix(in srgb, var(--weapon) 28%, #0a1726), #09131e); clip-path: polygon(0 16%, 72% 0, 100% 38%, 85% 100%, 18% 88%); }
-.weapon-preview::after { content: ""; position: absolute; right: 0; top: 10px; width: 18px; height: 4px; border: 1px solid var(--weapon); background: #0a1622; box-shadow: -23px 11px 0 -1px color-mix(in srgb, var(--weapon) 55%, #0a1622); }
-.weapon-choice:is([data-shape="beam"],[data-shape="rail"],[data-shape="chain"]) .weapon-preview::before { width: 34px; height: 8px; top: 9px; clip-path: polygon(0 25%, 82% 0, 100% 50%, 82% 100%, 0 75%); }
-.weapon-choice:is([data-shape="beam"],[data-shape="rail"],[data-shape="chain"]) .weapon-preview::after { width: 24px; height: 2px; top: 11px; }
-.weapon-choice:is([data-shape="mine"],[data-shape="remote"],[data-shape="grenade"]) .weapon-preview::before { left: 12px; top: 4px; width: 22px; height: 22px; border-radius: 50%; clip-path: none; box-shadow: inset 0 0 0 4px #0a1622, 0 0 10px color-mix(in srgb, var(--weapon) 35%, transparent); }
-.weapon-choice:is([data-shape="mine"],[data-shape="remote"],[data-shape="grenade"]) .weapon-preview::after { right: 10px; top: 1px; width: 6px; height: 7px; }
-.weapon-choice[data-shape="melee"] .weapon-preview { transform: rotate(-36deg); }
-.weapon-choice[data-shape="melee"] .weapon-preview::before { left: 8px; top: 10px; width: 35px; height: 5px; clip-path: polygon(0 25%, 82% 0, 100% 50%, 82% 100%, 0 75%); background: var(--weapon); }
-.weapon-choice[data-shape="melee"] .weapon-preview::after { left: 2px; top: 8px; width: 8px; height: 9px; }
-.weapon-choice[data-shape="flame"] .weapon-preview::before { left: 0; top: 6px; width: 22px; height: 17px; border-radius: 45%; clip-path: none; }
-.weapon-choice[data-shape="flame"] .weapon-preview::after { width: 29px; top: 11px; }
-.weapon-choice[data-weapon="boomerang_blade"] .weapon-preview::before { left: 9px; top: 2px; width: 24px; height: 24px; border-width: 4px; border-radius: 50%; background: radial-gradient(circle, transparent 0 35%, var(--weapon) 38% 48%, #081421 51%); clip-path: polygon(50% 0, 67% 32%, 100% 50%, 67% 68%, 50% 100%, 33% 68%, 0 50%, 33% 32%); }
-.weapon-choice[data-weapon="boomerang_blade"] .weapon-preview::after { left: 18px; top: 10px; width: 7px; height: 7px; border-radius: 50%; box-shadow: none; }
-.weapon-choice[data-weapon="fireball"] .weapon-preview::before { left: 14px; top: 4px; width: 18px; height: 18px; border-radius: 50%; clip-path: none; background: radial-gradient(circle at 38% 32%, #fff 0 9%, #ffd166 18%, var(--weapon) 48%, #7b1205 76%); box-shadow: 0 0 13px var(--weapon); }
-.weapon-choice[data-weapon="fireball"] .weapon-preview::after { left: 4px; top: 8px; width: 20px; height: 12px; border: 0; clip-path: polygon(0 50%, 58% 0, 100% 50%, 58% 100%); background: linear-gradient(90deg, transparent, var(--weapon)); box-shadow: none; }
-.weapon-choice[data-weapon="plasma_cannon"] .weapon-preview::before { left: 6px; top: 4px; width: 21px; height: 21px; clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); background: radial-gradient(circle, #fff, var(--weapon) 42%, #07131f 46%); }
-.weapon-choice[data-weapon="plasma_cannon"] .weapon-preview::after { right: 0; top: 5px; width: 22px; height: 14px; border-width: 1px 1px 1px 0; clip-path: polygon(0 0, 100% 18%, 100% 36%, 0 30%, 0 70%, 100% 64%, 100% 82%, 0 100%); box-shadow: none; }
-.weapon-choice[data-weapon="temporary_wall"] .weapon-preview::before { left: 8px; top: 1px; width: 29px; height: 24px; clip-path: polygon(8% 10%, 92% 0, 100% 90%, 0 100%); background: repeating-linear-gradient(90deg, transparent 0 6px, color-mix(in srgb, var(--weapon) 68%, transparent) 7px 8px), repeating-linear-gradient(0deg, rgba(7,20,32,.72) 0 5px, var(--weapon) 6px 7px); }
-.weapon-choice[data-weapon="temporary_wall"] .weapon-preview::after { display: none; }
-.weapon-choice[data-weapon="decoy_launcher"] .weapon-preview::before { left: 15px; top: 1px; width: 15px; height: 23px; clip-path: polygon(35% 0, 65% 0, 75% 25%, 100% 47%, 75% 55%, 68% 100%, 53% 100%, 50% 62%, 47% 100%, 32% 100%, 25% 55%, 0 47%, 25% 25%); background: color-mix(in srgb, var(--weapon) 65%, transparent); box-shadow: 0 0 9px var(--weapon); }
-.weapon-choice[data-weapon="decoy_launcher"] .weapon-preview::after { left: 10px; top: 22px; width: 25px; height: 3px; border-radius: 50%; box-shadow: none; }
-.weapon-choice[data-weapon="black_hole_generator"] .weapon-preview::before { left: 9px; top: 1px; width: 25px; height: 25px; border-radius: 50%; clip-path: none; background: radial-gradient(circle, #000 0 27%, var(--weapon) 31% 37%, transparent 40% 53%, var(--weapon) 56% 62%, transparent 65%); }
-.weapon-choice[data-weapon="tornado_generator"] .weapon-preview::before { left: 9px; top: 0; width: 28px; height: 25px; border: 0; clip-path: polygon(0 0, 100% 0, 74% 22%, 92% 35%, 57% 52%, 69% 65%, 42% 80%, 50% 100%, 24% 81%, 35% 63%, 8% 48%, 31% 30%); background: repeating-linear-gradient(0deg, var(--weapon) 0 2px, transparent 3px 5px); }
-.weapon-choice[data-weapon="drill_missile"] .weapon-preview::after { width: 23px; height: 14px; top: 5px; clip-path: polygon(0 25%, 20% 0, 40% 25%, 60% 0, 80% 25%, 100% 50%, 80% 75%, 60% 100%, 40% 75%, 20% 100%, 0 75%); background: var(--weapon); box-shadow: none; }
-.weapon-choice:is([data-weapon="freeze_gun"],[data-weapon="teleport_projectile"],[data-weapon="weapon_stealing_projectile"]) .weapon-preview::before { border-radius: 50%; clip-path: polygon(50% 0, 62% 34%, 100% 50%, 62% 66%, 50% 100%, 38% 66%, 0 50%, 38% 34%); background: radial-gradient(circle, #fff 0 8%, var(--weapon) 12% 28%, #07131f 32%); }
-.weapon-choice:is([data-weapon="ricochet_cannon"],[data-weapon="gravity_grenade"],[data-weapon="grapple_disrupting_pulse"]) .weapon-preview::before { border-radius: 50%; clip-path: none; background: repeating-radial-gradient(circle, transparent 0 3px, var(--weapon) 4px 5px); }
-.weapon-choice b, .weapon-choice em, .weapon-choice small { display: block; }
-.weapon-choice b { font: 800 17px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
-.weapon-choice em { margin-top: 5px; color: var(--category); font-size: 8px; font-style: normal; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
-.weapon-choice.selected i { width: 4px; opacity: 1; }
-.weapon-choice .weapon-capacity { position: absolute; left: 16px; right: 10px; bottom: 9px; color: var(--category); font-size: 8px; font-style: normal; font-weight: 800; line-height: 1.2; letter-spacing: .03em; text-align: right; text-transform: uppercase; }
-.weapon-choice small { margin-top: 10px; color: #94aabb; font-size: 10px; line-height: 1.35; letter-spacing: 0; }
 .network-error { padding: 10px 12px; border: 1px solid #ff607d; color: #ffdce4; background: rgba(92,13,37,.48); font-size: 11px; letter-spacing: .04em; }
 .network-reconnecting { position: absolute; top: 88px; left: 50%; z-index: 80; padding: 8px 13px; color: #d9fbff; border: 1px solid rgba(82,233,255,.65); background: rgba(4,17,28,.9); box-shadow: 0 0 24px rgba(82,233,255,.2); font: 800 9px/1 Inter, "Inter Fallback", sans-serif; letter-spacing: .12em; pointer-events: none; text-transform: uppercase; transform: translateX(-50%); }
-.weapon-choice.selected { border-color: var(--category, #4fe9ff); background: linear-gradient(145deg, color-mix(in srgb, var(--category) 16%, #172d42), #0b1b2b); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--weapon) 68%, #fff), inset 0 -28px 60px color-mix(in srgb, var(--category) 10%, transparent), 0 8px 24px rgba(0,0,0,.2); }
-.weapon-choice.selected::after { content: attr(data-slot); position: absolute; right: 9px; top: 7px; display: grid; place-items: center; width: 21px; height: 21px; color: #07111d; background: var(--category, #4fe9ff); border-radius: 50%; box-shadow: 0 0 8px color-mix(in srgb, var(--category, #4fe9ff) 45%, transparent); font: 900 12px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; }
 .launch { width: 100%; margin-top: 22px; min-height: 58px; }
 .prototype-note { margin: 14px 0 0; text-align: center; color: #6e8698; font-size: 10px; letter-spacing: .06em; }
 
@@ -821,8 +759,6 @@ dialog.overlay { width: 100%; height: 100%; max-width: none; max-height: none; m
 .setup-dialog > header { margin-bottom: 10px; }
 .setup-dialog > h1 { font-size: clamp(40px, 5vw, 56px); }
 .setup-dialog > .dialog-lead { margin: 8px 0 16px; }
-.setup-dialog > .launch { margin-top: 6px; min-height: 50px; }
-.setup-dialog .loadout-builder { margin-top: 24px; }
 [hidden] { display: none !important; }
 .setup-identity { display: flex; flex-wrap: wrap; gap: 18px; margin: 22px 0 16px; }
 .setup-identity label { flex: 0 1 220px; }
@@ -835,33 +771,14 @@ summary:focus-visible { outline: 2px solid #52e9ff; outline-offset: 4px; }
 .setup-options[open] > summary { color: #52e9ff; }
 .setup-options .setup-form { margin: 8px 0 20px; }
 .setup-options .settings-grid { margin: 16px 0; }
-.preset-toolbar { margin: 18px 0 8px; }
-.preset-toolbar label { display: flex; align-items: center; gap: 12px; }
-.preset-toolbar select { width: min(300px, 100%); margin: 0; }
-.preset-manager { margin: 0 0 18px; }
 .preset-manager > summary, .loadout-instructions > summary { width: fit-content; min-height: 28px; padding: 5px 0; font-size: 11px; }
 .loadout-instructions { color: #91a8b8; font-size: 12px; line-height: 1.6; }
 .loadout-instructions > p { max-width: 650px; }
 .loadout-status:empty { display: none; }
 .loadout-builder > .loadout-status { margin: 10px 0; }
-.weapon-picker { margin-top: 18px; padding-top: 18px; border-top: 1px solid #294052; }
-.picker-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
-.picker-heading h3 { margin: 0; font: 800 22px/1.1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
-.picker-heading button { min-height: 40px; padding: 7px 18px; }
-.weapon-filters { scrollbar-width: thin; scrollbar-color: #294a62 transparent; display: flex; gap: 6px; overflow-x: auto; margin: 6px -6px 0; padding: 6px; }
-.weapon-filters button { flex: 0 0 auto; min-height: 40px; padding: 8px 12px; color: #92adbe; background: transparent; border-color: #294052; font-size: 11px; }
-.weapon-filters button[aria-pressed="true"] { color: #dffaff; border-color: #52e9ff; background: #123040; }
-.weapon-picker .weapon-choice em { display: none; }
-.weapon-picker .weapon-categories { display: grid; overflow: visible; }
-.weapon-picker .weapon-category { min-width: 0; }
 @media (max-width: 600px) {
-  .loadout-builder .loadout-order { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; }
-  .weapon-picker .weapon-grid { grid-template-columns: 1fr; }
   .setup-identity label { flex: 1 1 150px; }
-  .preset-toolbar label { flex-wrap: wrap; }
-  .preset-toolbar select { width: 100%; }
   .setup-options > summary { flex-direction: column; }
-  .weapon-filters button { min-height: 44px; }
 }
 
 @media (max-width: 900px) {
@@ -876,22 +793,14 @@ summary:focus-visible { outline: 2px solid #52e9ff; outline-offset: 4px; }
   .overlay { padding: 12px; place-items: start center; }
   .dialog { margin: 12px 0; padding: 22px; }
   .setup-form { grid-template-columns: 1fr; }
-  .loadout-order { grid-template-columns: repeat(5, minmax(160px, 1fr)); overflow-x: auto; padding-bottom: 5px; scroll-snap-type: x mandatory; scrollbar-width: none; touch-action: pan-x; }
-  .loadout-order::-webkit-scrollbar, .weapon-categories::-webkit-scrollbar { display: none; }
-  .loadout-slot { scroll-snap-align: start; }
-  .loadout-slot button, .loadout-preset header button, .loadout-preset footer button { min-height: 44px; }
+  .loadout-preset header button, .loadout-preset footer button { min-height: 44px; }
   .loadout-preset input { height: 44px; }
-  .loadout-preset footer button, .preset-summary span, .preset-heading span { font-size: 10px; }
-  .preset-heading { align-items: start; }
+  .loadout-preset footer button, .preset-summary span { font-size: 10px; }
   .loadout-presets { grid-template-columns: 1fr; }
   .lobby-code { grid-template-columns: 1fr auto; }
   .lobby-code span { grid-column: 1 / -1; }
   .lobby-roster { grid-template-columns: 1fr; }
   .preset-summary { min-height: 0; }
-  .loadout-builder, .loadout-order, .weapon-categories, .weapon-grid { min-width: 0; max-width: 100%; }
-  .weapon-categories { display: flex; align-items: flex-start; gap: 10px; overflow-x: auto; overflow-y: hidden; padding-bottom: 5px; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-inline: contain; }
-  .weapon-category { flex: 0 0 min(86vw, 560px); scroll-snap-align: start; }
-  .weapon-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .combatant { width: 38vw; top: 10px; padding: 9px; }
   .combatant.left { left: 10px; }
   .combatant.right { right: 10px; }

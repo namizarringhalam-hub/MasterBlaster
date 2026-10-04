@@ -103,6 +103,8 @@ const entryPath = deployedHtml.match(/src="(\/assets\/[^"]+\.js)"/)?.[1];
 assert.ok(entryPath, "the production shell references its hashed boot module");
 const entryBytes = await readFile(join("dist/client", entryPath));
 assert.ok(gzipSync(entryBytes).length < 12 * 1024, "the interactive boot module stays below a 12 KiB compressed budget");
+assert.ok(entryBytes.includes(Buffer.from(PLAYER_TEXT.boot.loading)), "the startup module retains editable loading copy");
+assert.ok(!entryBytes.includes(Buffer.from(PLAYER_TEXT.setup.loadout.weaponRoles.blaster)), "armory weapon roles remain deferred outside the startup module");
 const jsGzipSizes = await Promise.all(jsAssets.map(async (name) => gzipSync(await readFile(join("dist/client/assets", name))).length));
 assert.ok(Math.max(...jsGzipSizes) < 380 * 1024, "the deferred engine stays below a 380 KiB compressed budget");
 const cssGzipSizes = await Promise.all(cssAssets.map(async (name) => gzipSync(await readFile(join("dist/client/assets", name))).length));

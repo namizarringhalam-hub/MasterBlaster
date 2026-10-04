@@ -176,6 +176,7 @@ export function excessOwnedProjectiles(projectiles, owner, weaponId, limit) {
 }
 
 export const DEFAULT_LOADOUT = LOADOUT_SLOTS.map((slot) => slot.defaultWeapon);
+export const RECOMMENDED_LOADOUT = ["blaster", "shotgun", "machine_gun", "rocket_launcher", "railgun"];
 export function graphicsProfile(level = "high", coarsePointer = false, deviceScale = 1, options) {
   const resolved = graphicsLevel(level), profile = normalizeGraphicsOptions(options, resolved);
   return { level: resolved, ...profile,
@@ -347,7 +348,7 @@ function defaults() {
     botCount: 1,
     matchSettingsVersion: MATCH_SETTINGS_VERSION,
     matchSettings: structuredClone(MATCH_SETTINGS_DEFAULTS),
-    loadout: [...DEFAULT_LOADOUT],
+    loadout: [...RECOMMENDED_LOADOUT],
     loadoutPresets: Array(LOADOUT_PRESET_COUNT).fill(null),
     defaultLoadoutPreset: null
   };
@@ -359,7 +360,7 @@ export function loadSettings() {
     const legacy = current == null ? LEGACY_SAVE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean) : null;
     const saved = JSON.parse(current ?? legacy ?? "{}");
     if (current == null && legacy) localStorage.setItem(SAVE_KEY, JSON.stringify(saved));
-    const loadout = validLoadout(saved.loadout);
+    const loadout = validLoadout(saved.loadout ?? RECOMMENDED_LOADOUT);
     for (const id of DEFAULT_LOADOUT) if (loadout.length < LOADOUT_SLOTS.length && !loadout.includes(id)) loadout.push(id);
     const loadoutPresets = Array.from({ length: LOADOUT_PRESET_COUNT }, (_, index) => {
       const preset = saved.loadoutPresets?.[index];

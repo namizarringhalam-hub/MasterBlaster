@@ -1,0 +1,16 @@
+# Loadout Armory checkpoint
+
+User chose the Armory mockup and authorized implementation. Canonical checkout: main; working tree clean at start. Commit only request files and push to origin/main after validation.
+
+Target: five persistent slots, visible weapon preview and explicit Equip action, searchable/category library, role-first descriptions, recommended kit, and Start below the editor. Keep preset/default persistence and global lobby empty-slot random fill.
+
+Changed files: PLAYER_TEXT.js, src/gameData.js, src/main.js, src/globalMultiplayer.js, src/styles.css, src/loadoutArmory.css, src/globalMultiplayer.css, vite.config.js; tests/setupEditor.test.mjs, tests/playerText.test.mjs, tests/globalMultiplayer.test.mjs, tests/smoke.mjs, tests/hosting.mjs; this checkpoint.
+
+Completed: shared Armory implemented with explicit preview/equip, role descriptions for all 47 weapons, five persistent slots, common reorder/remove actions, recommended first-time kit, stable Quick Play choices, preset management and footer Start. Saved/default loadouts and global random holes retained. Review fixes preserve draft preset names on passive lobby updates, synchronize both summaries, focus the active slot after Equip and keep the preset dropdown accurate after global slot changes.
+
+Next: commit only these request files and push to origin/main. All implementation and validation work complete; no code blockers.
+
+Validation: focused setupEditor/playerText/globalMultiplayer/smoke checks pass, including preset-selection regression. Browser verified preview leaves slots unchanged, explicit equip, duplicate swap, focus on confirmed slot, incomplete-kit Start guard, mobile search and no horizontal overflow at 390px. Start launched a 3-minute Quick Play match with the five recommended weapons in its HUD. Startup JS budget restored by deriving boot-only editable copy in Vite (13.11 to 3.19 kB gzip); independent review confirmed all current startup text accesses are covered.
+Final validation: npm run build including hosting checks passes. Exact combined CSS gzip 15,347 bytes under the unchanged 15,360-byte limit; both sheets under 14 KiB. Fresh smoke/playerText and focused setup/global regressions pass. Final live browser check rendered a running match with all five selected weapons, then paused and returned to the menu; Training shares the Armory. Final mobile check at 390px: no Armory or page horizontal overflow. Temporary viewport restored. Screenshot saved outside repository at C:/Users/namir/.codex/visualizations/2026/10/04/01a105e7-5c56-7cb2-8f86-28970431af75/armory-implemented.png. Original saved Set 1/default retained.
+Independent review: no remaining actionable findings. All 27 existing silhouette rules moved verbatim, only obsolete loadout styles pruned, saved-set cards and general HUD/settings/global-room rules preserved. Core review confirmed boot transform and fixed the multiplayer preset selection issue.
+Full-suite evidence: normal runner passed its first 11 checks, then stopped in unchanged graphics.test.mjs:859 (pressAction is not defined). Remaining 21 Node checks and Vitest were run independently with the same 120s/1024MiB bounds: 21/22 passed, only audioQuality.test.mjs:317 failed a stale renderMain() regex. Both failures confirmed against HEAD; no fixture edits, timeouts or lost sessions. All remaining checks passed.

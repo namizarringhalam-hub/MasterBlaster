@@ -10,7 +10,7 @@ import { CombatVisuals } from "./combatVisuals.js";
 import { ArenaWorld } from "./world.js";
 import { Fighter, PROJECTILE_SPAWN_OFFSET, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraCollisionFirstPerson, cameraRelative, damageIndicatorAngle, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reconcileRemotePosition, reticleAim } from "./player.js";
 import { InputManager, clearTouchActions, deliberateTouchTap, updateOrbit } from "./input.js";
-import { activePresetLoadout, clampMatchMinutes, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, swapStolenWeapon, topScoreIndices, weaponFireMode, weaponUsesAmmo, WEAPON_GROUPS, WEAPONS } from "./gameData.js";
+import { activePresetLoadout, clampMatchMinutes, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, RECOMMENDED_LOADOUT, saveSettings, swapStolenWeapon, topScoreIndices, weaponFireMode, weaponUsesAmmo, WEAPON_GROUPS, WEAPONS } from "./gameData.js";
 import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, clampBotCount, safestSpawn, shouldBotPlaceWall } from "./botBrain.js";
 import { NeonRenderPipeline } from "./renderPipeline.js";
 import { combatMusicIntensity } from "./musicScore.js";
@@ -19,6 +19,7 @@ import { advanceRespawnRetry, respawnDisposition, serverRemainingSeconds, unique
 import { createGrappleRopeGeometry, updateGrappleRopeGeometry } from "./grappleRope.js";
 import TEXT, { formatText } from "./playerText.js";
 import { GlobalMultiplayer } from "./globalMultiplayer.js";
+import "./loadoutArmory.css";
 import { aimedHeadContact, headContact, headshotDamage, projectileHitRadius } from "./headshots.js";
 import { prepareSurfaceTextures, sharedSurfaceTextures, surfaceMaps } from "./surfaceTextures.js";
 import { GameplayPreparation, gameplayPreparationKey, prepareFighterWeapons, warmFighterWeapons, disposeGameplaySamples } from "./gameplayPreparation.js";
@@ -643,10 +644,11 @@ class BlasterBattle {
     }
     this.setJourney({ quick: "/quick-play", private: "/private-match", training: "/training" }[mode]);
     this.mode = mode;
-    this.activeLoadoutSlot = null;
+    this.activeLoadoutSlot = 0;
     const savedDefault = activePresetLoadout(this.settings);
     if (savedDefault) this.settings.loadout = [...savedDefault];
-    if (mode === "quick" && !savedDefault) this.settings.loadout = randomLoadout();
+    this.previewWeaponId = this.settings.loadout[0] || RECOMMENDED_LOADOUT[0];
+    this.weaponFilter = WEAPON_CATEGORY_BY_ID[this.previewWeaponId].id;
     const remembered = this.settings.matchSettings[mode];
     this.settings.botCount = remembered.botCount;
     this.botDifficulty = remembered.botDifficulty;
@@ -661,7 +663,6 @@ class BlasterBattle {
           <header><button class="back" data-screen="main">${TEXT.setup.back}</button></header>
           <h1>${modeText.title}</h1>
           <p class="dialog-lead">${modeText.description}</p>
-          <button class="launch primary" data-action="start">${TEXT.setup.start}</button>
           <div class="setup-identity">
             <label>${TEXT.setup.labels.displayName}<input id="display-name" maxlength="18" value="${escapeHtml(this.settings.displayName)}"></label>
             ${mode === "private" ? `<label>${TEXT.setup.labels.roomCode}<input id="map-seed" maxlength="12" value="${escapeHtml(this.seed)}"></label>` : ""}
@@ -681,6 +682,7 @@ class BlasterBattle {
           ${this.trainingControlsMarkup()}
           </details>
           ${this.loadoutEditorMarkup()}
+          <div class="setup-launch"><p data-launch-summary>${this.matchSummary()}</p><button class="launch primary" data-action="start" ${this.settings.loadout.length === 5 ? "" : "disabled"}>${TEXT.setup.start}</button></div>
           <p class="prototype-note">${TEXT.setup.onlineNote}</p>
         </section>
       </main>`;
@@ -749,15 +751,15 @@ class BlasterBattle {
   }
 
   weaponCategoriesMarkup(loadout = this.settings.loadout) {
-    return WEAPON_GROUPS.map((group) => `<section class="weapon-category" data-weapon-category="${group.id}" style="--category:${group.color}" aria-labelledby="weapon-category-${group.id}">
+    return WEAPON_GROUPS.map((group) => `<section class="weapon-category" data-weapon-category="${group.id}" ${group.id === this.weaponFilter ? "" : "hidden"} style="--category:${group.color}" aria-labelledby="weapon-category-${group.id}">
       <header><h3 id="weapon-category-${group.id}"><i></i>${group.name}</h3><span>${formatText(TEXT.setup.loadout.categorySummary, { count: group.ids.length })}</span></header>
       <div class="weapon-grid">
         ${group.ids.map((id) => {
           const weapon = WEAPONS[id];
           const slot = loadout.indexOf(id);
-          return `<button class="weapon-choice ${slot >= 0 ? "selected" : ""}" aria-pressed="${slot >= 0}" data-weapon-choice="${id}" data-weapon="${id}" data-category="${group.id}" data-shape="${weapon.type}" data-slot="${slot >= 0 ? slot + 1 : ""}" style="--weapon:#${weapon.color.toString(16).padStart(6, "0")};--category:${group.color};${weaponPreviewVariables(weapon, WEAPON_INDEX_BY_ID[id])}">
+          return `<button class="weapon-choice ${slot >= 0 ? "selected" : ""} ${id === this.previewWeaponId ? "previewing" : ""}" aria-pressed="${id === this.previewWeaponId}" aria-label="${formatText(TEXT.setup.loadout.previewAria, { weapon: escapeHtml(weapon.name) })}" data-weapon-choice="${id}" data-weapon="${id}" data-category="${group.id}" data-shape="${weapon.type}" data-slot="${slot >= 0 ? slot + 1 : ""}" style="--weapon:#${weapon.color.toString(16).padStart(6, "0")};--category:${group.color};${weaponPreviewVariables(weapon, WEAPON_INDEX_BY_ID[id])}">
             <i></i><span class="weapon-preview" aria-hidden="true"></span>
-            <b>${weapon.name}</b><em>${group.name}</em><small>${weapon.description}</small><span class="weapon-capacity"><span title="${formatText(TEXT.setup.loadout.directHitDamageTitle, { damage: weapon.damage })}">${formatText(TEXT.setup.loadout.directHitDamage, { damage: weapon.damage })}</span> · ${weaponUsesAmmo(weapon) ? formatText(TEXT.setup.loadout.magazineAndReload, { ammo: weapon.ammo, seconds: weapon.reload.toFixed(1) }) : TEXT.setup.loadout.noReload}</span>
+            <b>${weapon.name}</b><small>${TEXT.setup.loadout.weaponRoles[id]}</small><span class="armory-equipped-label" data-equipped-label ${slot >= 0 ? "" : "hidden"}>${slot >= 0 ? formatText(TEXT.setup.loadout.equippedLabel, { slot: slot + 1 }) : ""}</span>
           </button>`;
         }).join("")}
       </div>
@@ -768,6 +770,13 @@ class BlasterBattle {
     const base = formatText(TEXT.setup.matchSummary, { bots: this.settings.botCount, difficulty: TEXT.setup.difficulties[this.botDifficulty], minutes: this.timeLimitMinutes });
     const training = this.settings.matchSettings.training;
     return base + (this.mode === "training" ? ` · ${TEXT.trainingControls.botsStandStill}: ${training.botsStandStill ? TEXT.trainingControls.on : TEXT.trainingControls.off} · ${TEXT.trainingControls.botsDontAttack}: ${training.botsDontAttack ? TEXT.trainingControls.on : TEXT.trainingControls.off}` : "");
+  }
+
+  updateMatchSummary() {
+    for (const selector of ["[data-match-summary]", "[data-launch-summary]"]) {
+      const summary = ui.querySelector(selector);
+      if (summary) summary.textContent = this.matchSummary();
+    }
   }
 
   menuLoadout() {
@@ -782,25 +791,31 @@ class BlasterBattle {
 
   loadoutEditorMarkup(global = false) {
     const loadout = global ? this.globalMultiplayer.slots : this.settings.loadout;
-    return `<section class="loadout-builder">
+    if (!Number.isInteger(this.activeLoadoutSlot) || this.activeLoadoutSlot < 0 || this.activeLoadoutSlot > 4) this.activeLoadoutSlot = 0;
+    this.previewWeaponId = WEAPONS[this.previewWeaponId] ? this.previewWeaponId : loadout[this.activeLoadoutSlot] || RECOMMENDED_LOADOUT[0];
+    if (!WEAPON_GROUPS.some(group => group.id === this.weaponFilter)) this.weaponFilter = WEAPON_CATEGORY_BY_ID[this.previewWeaponId].id;
+    return `<section class="loadout-builder loadout-armory">
       <div class="loadout-heading"><h2>${global ? TEXT.globalLobby.weapons : TEXT.setup.loadout.title}</h2><span ${global ? "data-global-selected" : "data-loadout-count"}>${formatText(TEXT.setup.loadout.selected, { count: loadout.filter(Boolean).length })}</span></div>
-      <div class="preset-toolbar"><label>${TEXT.setup.loadout.preset}<select data-preset-select>${this.presetOptionsMarkup()}</select></label></div>
-      <details class="preset-manager"><summary>${TEXT.setup.loadout.manageSets}</summary>
-        <p class="loadout-help">${TEXT.setup.loadout.savedSetsDescription}</p>
-        <section class="loadout-presets" aria-label="${TEXT.setup.loadout.savedSetsAria}" data-loadout-presets>${this.loadoutPresetsMarkup()}</section>
-      </details>
       <p class="loadout-help">${TEXT.setup.loadout.help}</p>
-      <details class="loadout-instructions"><summary>${TEXT.setup.loadout.controlsHelp}</summary><p>${TEXT.setup.loadout.detailedHelp}</p></details>
-      <div class="loadout-order" ${global ? "data-global-slots" : "data-loadout-order"}>${this.loadoutOrderMarkup(loadout)}</div>
+      <div class="armory-toolbar"><button data-loadout-recommended>${TEXT.setup.loadout.recommended}</button><label>${TEXT.setup.loadout.preset}<select data-preset-select>${this.presetOptionsMarkup()}</select></label></div>
+      <div class="armory-layout">
+        <aside class="armory-equipped"><h3>${TEXT.setup.loadout.equippedWeapons}</h3>
+          <div class="loadout-order" ${global ? "data-global-slots" : "data-loadout-order"}>${this.loadoutOrderMarkup(loadout)}</div>
+          <p class="loadout-help">${TEXT.setup.loadout.slotHelp}</p>
+          <div class="armory-slot-actions" data-loadout-actions>${this.loadoutActionsMarkup(loadout)}</div>
+        </aside>
+        <section class="armory-library weapon-picker" data-weapon-picker aria-label="${TEXT.setup.loadout.picker}">
+          <div class="armory-preview" data-weapon-preview>${this.weaponPreviewMarkup(loadout)}</div>
+          <label>${TEXT.setup.loadout.search}<input type="search" data-weapon-search></label>
+          <div class="weapon-filters" role="group" aria-label="${TEXT.setup.loadout.categories}">${WEAPON_GROUPS.map(group => `<button data-weapon-filter="${group.id}" aria-pressed="${group.id === this.weaponFilter}">${group.name}</button>`).join("")}</div>
+          <p data-weapon-empty hidden role="status">${TEXT.setup.loadout.noResults}</p>
+          <div class="weapon-categories">${this.weaponCategoriesMarkup(loadout)}</div>
+        </section>
+      </div>
       ${global ? `<p class="global-loadout-note">${TEXT.globalLobby.randomHelp}</p><p class="loadout-status" data-global-save role="status"></p><div class="global-room-start" data-global-start></div>` : ""}
       <p class="loadout-status" data-loadout-status aria-live="polite"></p>
-      <section class="weapon-picker" data-weapon-picker hidden aria-label="${TEXT.setup.loadout.picker}">
-        <div class="picker-heading"><h3 data-picker-title></h3><button data-picker-close>${TEXT.setup.loadout.done}</button></div>
-        <label>${TEXT.setup.loadout.search}<input type="search" data-weapon-search></label>
-        <div class="weapon-filters" role="group" aria-label="${TEXT.setup.loadout.categories}">${WEAPON_GROUPS.map((group,index) => `<button data-weapon-filter="${group.id}" aria-pressed="${index === 0}">${group.name}</button>`).join("")}</div>
-        <p data-weapon-empty hidden role="status">${TEXT.setup.loadout.noResults}</p>
-        <div class="weapon-categories">${this.weaponCategoriesMarkup(loadout)}</div>
-      </section>
+      <details class="preset-manager"><summary>${TEXT.setup.loadout.manageSets}</summary><p class="loadout-help">${TEXT.setup.loadout.savedSetsDescription}</p><section class="loadout-presets" aria-label="${TEXT.setup.loadout.savedSetsAria}" data-loadout-presets>${this.loadoutPresetsMarkup()}</section></details>
+      <details class="loadout-instructions"><summary>${TEXT.setup.loadout.controlsHelp}</summary><p>${TEXT.setup.loadout.detailedHelp}</p></details>
     </section>`;
   }
 
@@ -810,34 +825,61 @@ class BlasterBattle {
       const name = weapon?.name || (this.mode === "global" ? TEXT.globalLobby.emptySlot : TEXT.setup.loadout.emptySlot);
       const active = index === this.activeLoadoutSlot;
       return `<div class="loadout-slot ${weapon ? "" : "empty"} ${active ? "active" : ""}" draggable="${Boolean(weapon)}" data-loadout-drag="${index}" style="--category:${weapon ? WEAPON_CATEGORY_BY_ID[weapon.id].color : "#617b8d"}">
-        <button class="slot-select" data-loadout-edit="${index}" aria-expanded="${active}" aria-label="${formatText(TEXT.setup.loadout.editSlot, { slot: index + 1, weapon: escapeHtml(name) })}"><span>${index + 1}</span><b>${escapeHtml(name)}</b></button>
-        <div class="slot-actions" ${active && weapon ? "" : "hidden"}>
-          <button data-loadout-move="${index}" data-direction="-1" aria-label="${formatText(TEXT.setup.loadout.moveLeftAria, { weapon: escapeHtml(name) })}" ${index === 0 ? "disabled" : ""}>${TEXT.setup.loadout.moveLeft}</button>
-          <button data-loadout-move="${index}" data-direction="1" aria-label="${formatText(TEXT.setup.loadout.moveRightAria, { weapon: escapeHtml(name) })}" ${index >= loadout.length - 1 ? "disabled" : ""}>${TEXT.setup.loadout.moveRight}</button>
-          <button data-loadout-remove="${index}" aria-label="${formatText(TEXT.setup.loadout.removeAria, { weapon: escapeHtml(name) })}">${TEXT.setup.loadout.remove}</button>
-        </div>
+        <button class="slot-select" data-loadout-edit="${index}" aria-pressed="${active}" aria-label="${formatText(TEXT.setup.loadout.editSlot, { slot: index + 1, weapon: escapeHtml(name) })}"><span>${index + 1}</span><b>${escapeHtml(name)}</b><small>${weapon ? TEXT.setup.loadout.weaponRoles[weapon.id] : ""}</small></button>
       </div>`;
     }).join("");
   }
 
   editLoadoutSlot(index) {
+    if (!Number.isInteger(index) || index < 0 || index > 4) return;
     this.activeLoadoutSlot = Math.min(index, this.menuLoadout().length);
-    const picker = ui.querySelector("[data-weapon-picker]");
-    picker.hidden = false;
-    const weapon = this.menuLoadout()[this.activeLoadoutSlot];
-    this.weaponFilter = weapon ? WEAPON_CATEGORY_BY_ID[weapon].id : WEAPON_GROUPS[0].id;
+    this.previewWeaponId = this.menuLoadout()[this.activeLoadoutSlot] || RECOMMENDED_LOADOUT[0];
+    this.weaponFilter = WEAPON_CATEGORY_BY_ID[this.previewWeaponId].id;
     ui.querySelector("[data-weapon-search]").value = "";
-    this.updateLoadoutUi();
+    this.updateLoadoutUi(`[data-loadout-edit="${this.activeLoadoutSlot}"]`);
     this.filterWeaponPicker();
-    ui.querySelector("[data-weapon-search]").focus({ preventScroll: true });
-    picker.scrollIntoView({ block: "nearest" });
   }
 
-  closeWeaponPicker() {
-    const index = this.activeLoadoutSlot;
-    this.activeLoadoutSlot = null;
-    ui.querySelector("[data-weapon-picker]").hidden = true;
-    this.updateLoadoutUi(`[data-loadout-edit="${index}"]`);
+  loadoutActionsMarkup(loadout = this.menuLoadout()) {
+    const index = this.activeLoadoutSlot ?? 0;
+    const weapon = WEAPONS[loadout[index]];
+    return `<button data-loadout-move="${index}" data-direction="-1" ${!weapon || index === 0 ? "disabled" : ""}>${TEXT.setup.loadout.moveUp}</button><button data-loadout-move="${index}" data-direction="1" ${!weapon || index >= loadout.length - 1 ? "disabled" : ""}>${TEXT.setup.loadout.moveDown}</button><button data-loadout-remove="${index}" ${weapon ? "" : "disabled"}>${TEXT.setup.loadout.removeWeapon}</button>`;
+  }
+
+  weaponPreviewMarkup(loadout = this.menuLoadout()) {
+    const weapon = WEAPONS[this.previewWeaponId];
+    if (!weapon) return "";
+    const slot = this.activeLoadoutSlot ?? 0;
+    const equipped = loadout.indexOf(weapon.id);
+    const buttonText = formatText(equipped === slot ? TEXT.setup.loadout.equippedSlot : equipped >= 0 ? TEXT.setup.loadout.swapSlot : TEXT.setup.loadout.equipSlot, { slot: (equipped >= 0 ? equipped : slot) + 1 });
+    const group = WEAPON_CATEGORY_BY_ID[weapon.id];
+    return `<div class="armory-preview-art weapon-choice" data-weapon="${weapon.id}" data-shape="${weapon.type}" style="--weapon:#${weapon.color.toString(16).padStart(6, "0")};--category:${group.color};${weaponPreviewVariables(weapon, WEAPON_INDEX_BY_ID[weapon.id])}" aria-hidden="true"><span class="weapon-preview"></span></div>
+      <div class="armory-preview-copy"><small data-picker-title>${formatText(TEXT.setup.loadout.previewSlot, { slot: slot + 1 })}</small><h3>${weapon.name}</h3><p class="armory-role">${TEXT.setup.loadout.weaponRoles[weapon.id]}</p><p>${weapon.description}</p>
+        <details class="armory-stats"><summary>${TEXT.setup.loadout.statsLabel}</summary><p><span title="${formatText(TEXT.setup.loadout.directHitDamageTitle, { damage: weapon.damage })}">${formatText(TEXT.setup.loadout.directHitDamage, { damage: weapon.damage })}</span> · ${weaponUsesAmmo(weapon) ? formatText(TEXT.setup.loadout.magazineAndReload, { ammo: weapon.ammo, seconds: weapon.reload.toFixed(1) }) : TEXT.setup.loadout.noReload}</p></details>
+        <button class="primary" data-loadout-equip ${equipped === slot ? "disabled" : ""}>${buttonText}</button>
+      </div>`;
+  }
+
+  previewLoadoutWeapon(id) {
+    if (!WEAPONS[id]) return;
+    this.previewWeaponId = id;
+    this.updateLoadoutUi();
+  }
+
+  applyRecommendedLoadout() {
+    this.settings.loadout = [...RECOMMENDED_LOADOUT];
+    if (this.mode === "global" && this.state === "lobby") {
+      this.globalMultiplayer.slots = [...RECOMMENDED_LOADOUT];
+      this.globalMultiplayer.sendSlots();
+    }
+    saveSettings(this.settings);
+    this.activeLoadoutSlot = 0;
+    this.previewWeaponId = RECOMMENDED_LOADOUT[0];
+    this.weaponFilter = WEAPON_CATEGORY_BY_ID[this.previewWeaponId].id;
+    ui.querySelector("[data-weapon-search]").value = "";
+    this.updateLoadoutUi("[data-loadout-recommended]");
+    this.filterWeaponPicker();
+    this.announceLoadout(TEXT.setup.loadout.recommendedLoaded);
   }
 
   filterWeaponPicker() {
@@ -847,7 +889,7 @@ class BlasterBattle {
       let matches = 0;
       for (const button of group.querySelectorAll("[data-weapon-choice]")) {
         const weapon = WEAPONS[button.dataset.weaponChoice];
-        button.hidden = !(query ? `${weapon.name} ${weapon.description} ${weapon.category}`.toLowerCase().includes(query) : group.dataset.weaponCategory === this.weaponFilter);
+        button.hidden = !(query ? `${weapon.name} ${weapon.description} ${weapon.category} ${TEXT.setup.loadout.weaponRoles[weapon.id]}`.toLowerCase().includes(query) : group.dataset.weaponCategory === this.weaponFilter);
         if (!button.hidden) matches++;
       }
       group.hidden = matches === 0;
@@ -861,14 +903,18 @@ class BlasterBattle {
   equipLoadoutSlot(id) {
     if (!WEAPONS[id] || !Number.isInteger(this.activeLoadoutSlot)) return;
     const current = this.menuLoadout();
-    const slot = Math.min(this.activeLoadoutSlot, current.length);
+    const slot = Math.min(this.activeLoadoutSlot, current.length, 4);
     const previous = current.indexOf(id);
+    if (previous === slot) return;
     if (previous >= 0) [current[previous], current[slot]] = [current[slot] || null, id];
     else current[slot] = id;
-    if (this.mode === "global" && this.state === "lobby") this.globalMultiplayer.sendSlots();
-    else { this.settings.loadout = current.filter(Boolean); saveSettings(this.settings); }
-    this.closeWeaponPicker();
-    this.announceLoadout(formatText(TEXT.setup.loadout.added, { weapon: WEAPONS[id].name, slot: slot + 1 }));
+    const global = this.mode === "global" && this.state === "lobby";
+    if (!global) { this.settings.loadout = current.filter(Boolean); saveSettings(this.settings); }
+    this.activeLoadoutSlot = this.menuLoadout().indexOf(id);
+    this.previewWeaponId = id;
+    if (global) this.globalMultiplayer.sendSlots();
+    this.updateLoadoutUi(`[data-loadout-edit="${this.activeLoadoutSlot}"]`);
+    this.announceLoadout(formatText(previous >= 0 ? TEXT.setup.loadout.swapped : TEXT.setup.loadout.added, { weapon: WEAPONS[id].name, slot: this.activeLoadoutSlot + 1 }));
   }
 
   loadoutPresetsMarkup() {
@@ -995,13 +1041,14 @@ class BlasterBattle {
       this.pulseMenuEnergy(menuLevel, this.menuAccent(button), button.dataset.action === "start" ? 2400 : 2300);
       if (this.state !== "play") this.sound.accentMenuAction(menuLevel, button.dataset.action === "start");
       if (button.dataset.loadoutEdit !== undefined) return this.editLoadoutSlot(Number(button.dataset.loadoutEdit));
-      if (button.hasAttribute("data-picker-close")) return this.closeWeaponPicker();
+      if (button.hasAttribute("data-loadout-recommended")) return this.applyRecommendedLoadout();
+      if (button.hasAttribute("data-loadout-equip")) return this.equipLoadoutSlot(this.previewWeaponId);
       if (button.dataset.weaponFilter) {
         this.weaponFilter = button.dataset.weaponFilter;
         ui.querySelector("[data-weapon-search]").value = "";
         return this.filterWeaponPicker();
       }
-      if (button.dataset.weaponChoice && Number.isInteger(this.activeLoadoutSlot)) return this.equipLoadoutSlot(button.dataset.weaponChoice);
+      if (button.dataset.weaponChoice) return this.previewLoadoutWeapon(button.dataset.weaponChoice);
       if (this.globalMultiplayer?.handleClick(button)) return;
       if (button.dataset.screen === "main") {
         this.renderMain();
@@ -1011,7 +1058,6 @@ class BlasterBattle {
       if (button.dataset.screen === "settings") return this.renderSettings();
       if (button.dataset.screen === "credits") return this.renderCredits();
       if (button.dataset.mode) return this.renderSetup(button.dataset.mode);
-      if (button.dataset.weaponChoice) return this.toggleLoadout(button.dataset.weaponChoice);
       if (button.dataset.loadoutMove) return this.moveLoadout(Number(button.dataset.loadoutMove), Number(button.dataset.direction));
       if (button.dataset.loadoutRemove) return this.removeLoadout(Number(button.dataset.loadoutRemove));
       if (button.dataset.presetLoad) return this.loadPreset(Number(button.dataset.presetLoad));
@@ -1026,8 +1072,7 @@ class BlasterBattle {
         button.setAttribute("aria-pressed", String(enabled));
         button.classList.toggle("primary", enabled);
         button.querySelector("[data-toggle-state]").textContent = enabled ? TEXT.trainingControls.on : TEXT.trainingControls.off;
-        const summary = ui.querySelector("[data-match-summary]");
-        if (summary) summary.textContent = this.matchSummary();
+        this.updateMatchSummary();
         return;
       }
       if (button.dataset.action === "copy-room") {
@@ -1069,9 +1114,6 @@ class BlasterBattle {
       if (button.dataset.action === "close-controls") return this.closeModal(button.closest("dialog"));
       if (button.dataset.action === "rematch") return this.queueRematch();
       if (button.dataset.action === "save-settings") return this.saveSettingsForm();
-    };
-    ui.onkeydown = (event) => {
-      if (event.key === "Escape" && Number.isInteger(this.activeLoadoutSlot) && ui.querySelector("[data-weapon-picker]")) { event.preventDefault(); this.closeWeaponPicker(); }
     };
     ui.onchange = (event) => {
       if (this.changeGraphicsPreference(event.target)) return;
@@ -1132,18 +1174,7 @@ class BlasterBattle {
       if (this.mode === "global" && this.state === "lobby") return this.globalMultiplayer.moveSlot(Number(event.dataTransfer.getData("text/plain")), Number(slot.dataset.loadoutDrag));
       this.moveLoadoutTo(Number(event.dataTransfer.getData("text/plain")), Number(slot.dataset.loadoutDrag));
     };
-  }
-
-  toggleLoadout(id) {
-    const current = [...this.settings.loadout];
-    const index = current.indexOf(id);
-    if (index >= 0) current.splice(index, 1);
-    else if (current.length < 5) current.push(id);
-    else return this.announceLoadout(TEXT.setup.loadout.full);
-    this.settings.loadout = current;
-    saveSettings(this.settings);
-    this.updateLoadoutUi();
-    this.announceLoadout(formatText(index >= 0 ? TEXT.setup.loadout.removed : TEXT.setup.loadout.added, { weapon: WEAPONS[id].name, slot: current.length }));
+    if (ui.querySelector("[data-weapon-picker]")) this.filterWeaponPicker();
   }
 
   moveLoadout(index, direction) {
@@ -1173,6 +1204,7 @@ class BlasterBattle {
     const [weapon] = this.settings.loadout.splice(index, 1);
     saveSettings(this.settings);
     this.activeLoadoutSlot = this.settings.loadout.length;
+    this.previewWeaponId = weapon;
     this.updateLoadoutUi(`[data-loadout-edit="${this.activeLoadoutSlot}"]`);
     this.announceLoadout(formatText(TEXT.setup.loadout.removed, { weapon: WEAPONS[weapon].name }));
   }
@@ -1181,6 +1213,7 @@ class BlasterBattle {
     const preset = this.settings.loadoutPresets[index];
     if (!preset) return;
     this.settings.loadout = [...preset.weaponIds];
+    this.previewWeaponId = this.settings.loadout[this.activeLoadoutSlot ?? 0];
     if (this.mode === "global" && this.state === "lobby") { this.globalMultiplayer.slots = [...preset.weaponIds]; this.globalMultiplayer.sendSlots(); }
     saveSettings(this.settings);
     this.updateLoadoutUi(`[data-preset-load="${index}"]`);
@@ -1228,6 +1261,7 @@ class BlasterBattle {
     else {
       this.settings.defaultLoadoutPreset = index;
       this.settings.loadout = [...this.settings.loadoutPresets[index].weaponIds];
+      this.previewWeaponId = this.settings.loadout[this.activeLoadoutSlot ?? 0];
       if (this.mode === "global" && this.state === "lobby") { this.globalMultiplayer.slots = [...this.settings.loadout]; this.globalMultiplayer.sendSlots(); }
     }
     saveSettings(this.settings);
@@ -1248,25 +1282,43 @@ class BlasterBattle {
     this.announceLoadout(formatText(TEXT.setup.loadout.presetCleared, { name: preset.name }));
   }
 
-  updateLoadoutUi(focusSelector = "") {
+  updateLoadoutUi(focusSelector = "", refreshPresets = true) {
     const loadout = this.menuLoadout();
-    if (this.mode === "global" && this.state === "lobby") this.globalMultiplayer.updateSlots();
-    const pickerTitle = ui.querySelector("[data-picker-title]");
-    if (pickerTitle) pickerTitle.textContent = formatText(TEXT.setup.loadout.pickSlot, { slot: (this.activeLoadoutSlot ?? 0) + 1 });
+    const global = this.mode === "global" && this.state === "lobby";
+    this.activeLoadoutSlot = Math.min(this.activeLoadoutSlot ?? 0, loadout.length, 4);
+    if (!WEAPONS[this.previewWeaponId]) this.previewWeaponId = loadout[this.activeLoadoutSlot] || RECOMMENDED_LOADOUT[0];
     const selector = ui.querySelector("[data-preset-select]");
-    if (selector) selector.innerHTML = this.presetOptionsMarkup();
+    if (selector) {
+      if (refreshPresets) selector.innerHTML = this.presetOptionsMarkup();
+      else {
+        const matched = this.settings.loadoutPresets.findIndex(preset => preset && preset.weaponIds.every((id, index) => id === loadout[index]));
+        selector.value = matched < 0 ? "" : String(matched);
+      }
+    }
     for (const button of ui.querySelectorAll("[data-weapon-choice]")) {
       const index = loadout.indexOf(button.dataset.weaponChoice);
+      const preview = button.dataset.weaponChoice === this.previewWeaponId;
       button.classList.toggle("selected", index >= 0);
-      button.setAttribute("aria-pressed", String(index >= 0));
+      button.classList.toggle("previewing", preview);
+      button.setAttribute("aria-pressed", String(preview));
       button.dataset.slot = index >= 0 ? index + 1 : "";
+      const label = button.querySelector("[data-equipped-label]");
+      if (label) {
+        label.hidden = index < 0;
+        label.textContent = index >= 0 ? formatText(TEXT.setup.loadout.equippedLabel, { slot: index + 1 }) : "";
+      }
     }
-    const order = ui.querySelector("[data-loadout-order]");
-    if (order) order.innerHTML = this.loadoutOrderMarkup();
+    const order = ui.querySelector(global ? "[data-global-slots]" : "[data-loadout-order]");
+    if (order) order.innerHTML = this.loadoutOrderMarkup(loadout);
+    const actions = ui.querySelector("[data-loadout-actions]");
+    if (actions) actions.innerHTML = this.loadoutActionsMarkup(loadout);
+    const preview = ui.querySelector("[data-weapon-preview]");
+    if (preview) preview.innerHTML = this.weaponPreviewMarkup(loadout);
     const presets = ui.querySelector("[data-loadout-presets]");
-    if (presets) presets.innerHTML = this.loadoutPresetsMarkup();
-    const count = ui.querySelector("[data-loadout-count]");
-    if (count) count.textContent = formatText(TEXT.setup.loadout.selected, { count: this.settings.loadout.length });
+    if (presets && refreshPresets) presets.innerHTML = this.loadoutPresetsMarkup();
+    for (const button of ui.querySelectorAll("[data-preset-save]")) button.disabled = loadout.filter(Boolean).length !== 5;
+    const count = ui.querySelector(global ? "[data-global-selected]" : "[data-loadout-count]");
+    if (count) count.textContent = formatText(global ? TEXT.globalLobby.selected : TEXT.setup.loadout.selected, { count: loadout.filter(Boolean).length });
     const launch = ui.querySelector('[data-action="start"]');
     if (launch) launch.disabled = this.settings.loadout.length !== 5;
     if (focusSelector) ui.querySelector(focusSelector)?.focus({ preventScroll: true });
@@ -1307,8 +1359,7 @@ class BlasterBattle {
       timeLimitMinutes: this.timeLimitMinutes
     };
     saveSettings(this.settings);
-    const summary = ui.querySelector("[data-match-summary]");
-    if (summary) summary.textContent = this.matchSummary();
+    this.updateMatchSummary();
     this.queueGameplayPreparation(this.seed);
   }
 

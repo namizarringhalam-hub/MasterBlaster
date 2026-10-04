@@ -11,7 +11,7 @@ import { createGrappleRopeGeometry, MAX_GRAPPLE_SEGMENTS, updateGrappleRopeGeome
 import { ArenaWorld } from "../src/world.js";
 import { weaponPresentation } from "../src/weaponPresentation.js";
 
-const [mainSource, bootSource, renderPipelineSource, worldSource, serviceWorkerSource, stylesSource, indexSource, multiplayerWorkerSource, multiplayerClientSource] = await Promise.all([
+const [mainSource, bootSource, renderPipelineSource, worldSource, serviceWorkerSource, stylesSource, indexSource, multiplayerWorkerSource, multiplayerClientSource, armoryStylesSource] = await Promise.all([
   readFile(new URL("../src/main.js", import.meta.url), "utf8"),
   readFile(new URL("../src/boot.js", import.meta.url), "utf8"),
   readFile(new URL("../src/renderPipeline.js", import.meta.url), "utf8"),
@@ -20,14 +20,15 @@ const [mainSource, bootSource, renderPipelineSource, worldSource, serviceWorkerS
   readFile(new URL("../src/styles.css", import.meta.url), "utf8"),
   readFile(new URL("../index.html", import.meta.url), "utf8"),
   readFile(new URL("../multiplayer/worker.js", import.meta.url), "utf8"),
-  readFile(new URL("../src/multiplayer.js", import.meta.url), "utf8")
+  readFile(new URL("../src/multiplayer.js", import.meta.url), "utf8"),
+  readFile(new URL("../src/loadoutArmory.css", import.meta.url), "utf8")
 ]);
 assert.doesNotMatch(mainSource, /serviceWorker\.register/, "the renderer does not own service-worker startup");
 assert.match(bootSource, /serviceWorker\.register\("\/sw\.js"/, "the lightweight shell starts immutable caching without waiting for the engine");
 assert.match(bootSource, /"serviceWorker" in navigator && window\.isSecureContext/, "immutable caching runs on secure production and loopback test origins only");
 assert.deepEqual(topScoreIndices([2, 7, 7, 4, 9]), [4, 1, 2], "the HUD ranks the top three scores with stable tie ordering");
 assert.match(mainSource, /\[0, 1, 2\]\.map[\s\S]*data-leader-row/, "the top-right HUD renders three leaderboard rows");
-assert.match(mainSource, /dialog-lead[^]*?<button class="launch primary" data-action="start">\$\{TEXT\.setup\.start\}<\/button>[^]*?<div class="setup-form">/, "every setup sheet puts one editable start action above its controls");
+assert.match(mainSource, /\$\{this\.loadoutEditorMarkup\(\)\}[^]*?<div class="setup-launch">[^]*?<button class="launch primary" data-action="start"/, "setup sheets finish with a match summary and start action after the armory");
 assert.doesNotMatch(mainSource, /FIND MATCH|CREATE ROOM|START TRAINING/, "setup actions no longer change labels by mode");
 assert.match(mainSource, /reticleAim\(player, this\.camera\.position, this\.camera\.getWorldDirection/, "weapons fire through the visible camera's exact center ray");
 assert.match(mainSource, /remembered = this\.settings\.matchSettings\[mode\][\s\S]*?botCount = remembered\.botCount[\s\S]*?botDifficulty = remembered\.botDifficulty/, "each setup mode restores its own saved bot settings");
@@ -120,12 +121,13 @@ assert.match(mainSource, /pulseMenuEnergy\(\.48, MENU_ACCENTS\[mode\], 2300\)/, 
 assert.match(stylesSource, /\.menu-atmosphere[\s\S]*?transform[\s\S]*?opacity/, "the menu atmosphere is implemented with compositor-friendly transform and opacity motion");
 assert.match(stylesSource, /\.arena-towers[\s\S]*?url\("\/menu-arena-v2\.webp"\)[\s\S]*?arena-camera-drift[\s\S]*?infinite alternate/, "the menu uses a cinematic arena plate with reversible parallax instead of chart-like procedural columns");
 assert.match(stylesSource, /\.menu-shell \{[\s\S]*?width: 100%;[\s\S]*?height: 100%;[\s\S]*?max-height: none;[\s\S]*?\.menu-shell::before \{[\s\S]*?position: fixed;[\s\S]*?width: min\(1480px, calc\(100% - 48px\)\)/, "the arena fills every viewport while the glass UI frame scales independently above it");
-assert.match(stylesSource, /@media \(max-height: 520px\) and \(min-width: 600px\)[\s\S]*?grid-template-columns: minmax\(0, 720px\)[\s\S]*?\.primary-actions \{ grid-template-columns: 1\.25fr 1fr 1fr[\s\S]*?\.secondary-actions button \{ min-height: 44px/, "short landscape screens keep all menu actions visible without falling back to the portrait stack or undersized touch targets");
+assert.match(stylesSource, /@media \(max-height: 520px\) and \(min-width: 600px\)[\s\S]*?grid-template-columns: minmax\(0, 720px\)[\s\S]*?\.primary-actions \{ grid-template-columns: 1\.25fr 1fr 1fr[\s\S]*?\.secondary-actions :is\(button, \.how-to-play-link\) \{ min-height: 44px/, "short landscape screens keep all menu actions visible without falling back to the portrait stack or undersized touch targets");
 assert.match(stylesSource, /-webkit-text-size-adjust: 100%; text-size-adjust: 100%[\s\S]*?@media \(max-width: 600px\) and \(max-height: 700px\) and \(orientation: portrait\)[\s\S]*?\.primary-actions button \{ min-height: 58px[\s\S]*?\.capabilities \{ display: none/, "short portrait phones render the core menu at device scale without Safari text inflation or requiring an initial zoom-out");
 assert.doesNotMatch(stylesSource, /arena-grid-drift|repeating-linear-gradient\(117deg/, "no translating grid or repeating streak texture can expose a visible loop reset");
 assert.match(stylesSource, /@keyframes projectile-sweep[\s\S]*?0%, 12% \{ opacity: 0[\s\S]*?82%, 100% \{ opacity: 0/, "projectile sweeps reset only while fully invisible");
 assert.match(stylesSource, /@media \(pointer: coarse\)[\s\S]*?\.menu-scene \.grapple-arc[\s\S]*?arena-ring-mobile[\s\S]*?filter: none/, "every coarse-pointer quality tier keeps motion but removes sustained animated filters");
-assert.match(stylesSource, /weapon-categories[\s\S]*?scroll-snap-type: x mandatory[\s\S]*?scrollbar-width: none/, "mobile weapon categories use compact touch snapping without a desktop scrollbar");
+assert.match(armoryStylesSource, /\.weapon-filters \{ flex-wrap: wrap/, "armory categories wrap on narrow screens");
+assert.doesNotMatch(armoryStylesSource, /overflow-x:\s*auto|scroll-snap-type/, "the armory uses ordinary vertical scrolling instead of horizontal catalog pages");
 assert.match(indexSource, /Number\.isFinite\(queuedAt\)[\s\S]*?age >= 0 && age <= 30000[\s\S]*?sessionStorage\.removeItem\("blaster-pending-match"\)/, "only a fresh, valid match can reveal the bootstrap loader");
 assert.match(mainSource, /queueMatchStart\(sameSeed = false\)[\s\S]*?setMatchLoading\(true[\s\S]*?requestAnimationFrame\(\(\) => requestAnimationFrame/, "the loading screen receives a paint before every match navigation");
 assert.match(mainSource, /this\.state = "play";[\s\S]*?this\.renderHud\(\);[\s\S]*?await warmFighterWeapons[\s\S]*?this\.hideMatchLoadingAfterFrame = true/, "the loader is armed for dismissal only after the arena, HUD and GPU warmup are ready");
@@ -275,15 +277,15 @@ assert.match(multiplayerWorkerSource, /reservedPlayerIds\(\)[\s\S]*?new Set[\s\S
 assert.match(multiplayerWorkerSource, /pendingStates[\s\S]*?queueStateBroadcast\(changed\)[\s\S]*?NETWORK_TICK_MS/, "same-tick player states are coalesced before room fan-out");
 assert.match(mainSource, /closest\?\.\("\.setup-form"\)\) this\.captureSetupPreferences\(\)/, "committed setup changes persist even when the player returns to another menu");
 assert.match(mainSource, /event\.target\.id === "display-name"[\s\S]*?saveSettings\(this\.settings\)/, "display-name edits persist locally without requiring a match start");
-assert.match(mainSource, /toggleLoadout\(id\)[\s\S]*?this\.settings\.loadout = current;[\s\S]*?saveSettings\(this\.settings\)/, "weapon selection changes persist locally as they are made");
+assert.match(mainSource, /equipLoadoutSlot\(id\)[\s\S]*?saveSettings\(this\.settings\)/, "explicit weapon equips persist locally as they are made");
 assert.match(mainSource, /closest\?\.\("\.settings-grid"\)\) this\.captureSettingsPreferences\(\)/, "graphics, accessibility, audio, and effects preferences persist when changed");
 assert.match(mainSource, /savedDefault = activePresetLoadout\(this\.settings\)[\s\S]*?if \(savedDefault\) this\.settings\.loadout = \[\.\.\.savedDefault\]/, "saved defaults apply to every setup mode");
-assert.match(mainSource, /mode === "quick" && !savedDefault\) this\.settings\.loadout = randomLoadout\(\)/, "Quick Play randomizes only when no default preset exists");
+assert.doesNotMatch(mainSource, /this\.settings\.loadout = randomLoadout\(\)/, "Quick Play preserves the current loadout when no saved default exists");
 assert.match(mainSource, /confirm\(formatText\(TEXT\.setup\.loadout\.replaceConfirm/, "overwriting a saved preset requires editable confirmation copy");
 assert.match(mainSource, /confirm\(formatText\(TEXT\.setup\.loadout\.clearConfirm/, "clearing a saved preset requires editable confirmation copy");
 assert.match(mainSource, /aria-live="polite"/, "loadout changes are announced to assistive technology");
 assert.match(mainSource, /aria-pressed="\$\{isDefault\}"/, "default preset controls expose their active state");
-assert.match(stylesSource, /minmax\(160px, 1fr\)[\s\S]*?min-height: 44px/, "mobile reorder controls retain reliable touch dimensions");
+assert.match(armoryStylesSource, /@media \(pointer: coarse\)[\s\S]*?\.armory-slot-actions button[^}]*min-height: 44px/, "armory reorder controls retain reliable touch dimensions");
 const visualOwner = { accent: 0x44eeff };
 for (const id of ["machine_gun", "railgun", "rocket_launcher", "grenade_launcher", "plasma_cannon"]) {
   const projectileVisual = createProjectileVisual(WEAPONS[id], visualOwner, WEAPONS[id].projectileRadius || .11);
@@ -291,9 +293,9 @@ for (const id of ["machine_gun", "railgun", "rocket_launcher", "grenade_launcher
   assert.ok(projectileVisual.children.every((part) => !part.material?.isShaderMaterial), `${id} uses camera-safe world-space projectile trails`);
 }
 const quickLoadout = randomLoadout(() => 0);
-assert.equal(quickLoadout.length, 5, "Quick Play selects five random weapons");
-assert.equal(new Set(quickLoadout).size, 5, "Quick Play never selects the same weapon twice");
-assert.ok(quickLoadout.every((id) => WEAPONS[id]), "Quick Play only selects valid weapons");
+assert.equal(quickLoadout.length, 5, "random loadouts contain five weapons");
+assert.equal(new Set(quickLoadout).size, 5, "random loadouts never select the same weapon twice");
+assert.ok(quickLoadout.every((id) => WEAPONS[id]), "random loadouts only select valid weapons");
 assert.deepEqual(
   Object.keys(WEAPONS).sort(),
   documentedWeaponIds,
@@ -307,8 +309,7 @@ assert.ok(WEAPON_GROUPS.every((group) => group.ids.every((id) => WEAPONS[id].cat
 assert.ok(WEAPON_GROUPS.every((group) => /^#[0-9a-f]{6}$/i.test(group.color)), "every weapon category has a stable menu color");
 assert.ok(WEAPON_GROUPS.every((group) => group.ids.map((id) => WEAPONS[id].name).every((name, index, names) => !index || names[index - 1].localeCompare(name) <= 0)), "weapons are alphabetized inside every category");
 assert.match(mainSource, /loadoutEditorMarkup\(\)[\s\S]*?weaponCategoriesMarkup\(loadout\)/, "Quick Play, Private Room, and Training share the categorized weapon selector");
-assert.match(mainSource, /<small>\$\{weapon\.description\}<\/small><span class="weapon-capacity">[\s\S]*?\$\{weaponUsesAmmo/, "weapon cards place capacity metadata after their description for bottom alignment");
-assert.match(stylesSource, /\.weapon-choice \.weapon-capacity \{ position: absolute;[\s\S]*?right: 10px; bottom: 9px;[\s\S]*?font-size: 8px;[\s\S]*?text-align: right/, "weapon capacity is a readable bottom-right classification-style label");
+assert.match(mainSource, /class="armory-stats"[\s\S]*?TEXT\.setup\.loadout\.directHitDamage[\s\S]*?TEXT\.setup\.loadout\.magazineAndReload/, "weapon previews keep damage and capacity available inside optional stats");
 assert.match(mainSource, /weaponUsesAmmo\(player\.weapon\) && fireHeld && player\.ammo\[player\.weapon\.id\] <= 0/, "holding fire automatically begins a reload only for weapons with magazines");
 assert.match(mainSource, /new MultiplayerClient\(\)[\s\S]*?mode: this\.mode[\s\S]*?roomCode: this\.seed/, "online match modes connect through the multiplayer room client");
 assert.ok(Object.values(WEAPONS).every((weapon) => weapon.name && weapon.description && weapon.category), "every weapon has complete menu metadata");
@@ -389,7 +390,7 @@ assert.ok(fireballVisual.children.filter((child) => child.geometry?.type === "Co
 assert.equal(fireballVisual.children.filter((child) => child.geometry?.type === "TorusGeometry").length, 0, "the Fireball projectile no longer reads as an orbiting plasma device");
 assert.equal(presentationSignatures.size, 47, "all 47 weapons retain distinct audiovisual signatures");
 assert.match(mainSource, /data-weapon="\$\{id\}"[\s\S]*?weaponPreviewVariables\(weapon, WEAPON_INDEX_BY_ID\[id\]\)/, "every categorized menu card retains weapon-specific procedural preview variables");
-assert.ok(["boomerang_blade", "fireball", "plasma_cannon", "temporary_wall", "decoy_launcher", "black_hole_generator", "tornado_generator"].every((id) => stylesSource.includes(`data-weapon="${id}"`)), "signature and unusual weapons receive authored menu silhouettes beyond their generic type");
+assert.ok(["boomerang_blade", "fireball", "plasma_cannon", "temporary_wall", "decoy_launcher", "black_hole_generator", "tornado_generator"].every((id) => armoryStylesSource.includes(`data-weapon="${id}"`)), "signature and unusual weapons receive authored menu silhouettes beyond their generic type");
 assert.ok(presentationVisuals.tracers.length <= 128 && presentationVisuals.sparks.length <= 512 && presentationVisuals.rings.length === 128, "the complete 47-weapon effects matrix preserves every core impact in a 112-hit sixteen-player volley");
 const meleeTraceCounts = { hammer: 2, energy_sword: 2, chainsaw: 2, spear: 1, punch_glove: 2, shock_baton: 4, knife: 1 };
 for (const [id, expectedSegments] of Object.entries(meleeTraceCounts)) {

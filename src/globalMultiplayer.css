@@ -37,19 +37,14 @@
 .global-countdown strong { font: 900 70px/.9 "Barlow Condensed", sans-serif; color: #52e9ff; min-width: 40px; text-align: center; }
 .global-countdown h2 { font: 900 25px/1 "Barlow Condensed", sans-serif; text-transform: uppercase; margin: 0; }
 .global-countdown p { color: #aebfcb; font-size: 12px; }
-.global-dialog .loadout-slot > small { font-size: 10px; line-height: 1.4; }
-.global-dialog .loadout-slot > b { min-height: 36px; font-size: 16px; }
 @media (max-width: 760px) {
   .global-columns { grid-template-columns: minmax(0, 1fr); }
   .global-roster { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .global-create-form { grid-template-columns: minmax(0, 1fr); }
-  .global-dialog .loadout-order { grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }
-  .global-dialog .loadout-slot { min-width: 0; }
-  .global-dialog .loadout-slot > b { overflow-wrap: anywhere; }
 }
 @media (max-width: 440px) {
   .global-dialog { padding: 18px; }
-  .global-roster, .global-dialog .loadout-order { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .global-roster { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .global-room-start button { width: 100%; min-width: 0; }
   .global-person { grid-template-columns: 32px minmax(0, 1fr); }
   .global-person > button:last-child:not(.global-star) { grid-column: 2; justify-self: start; }

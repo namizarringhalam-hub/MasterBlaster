@@ -9,14 +9,23 @@ const Controller = new Function("MultiplayerClient", "sanitizeLoadoutSlots", "sa
 const sent = [], status = {};
 const game = { mode: "global", state: "lobby", multiplayer: { send: (type, payload) => { sent.push({ type, payload }); return true; } } };
 const controller = new Controller(game, { querySelector: () => status }, () => "");
+const previousDocument = globalThis.document;
+try {
+  globalThis.document = { activeElement: { closest: () => null, hasAttribute: () => false } };
+  game.updateLoadoutUi = (...args) => { game.refreshArguments = args; };
+  controller.updateSlots();
+  assert.deepEqual(game.refreshArguments, ["", false], "passive waiting-room refreshes preserve preset inputs");
+} finally {
+  if (previousDocument === undefined) delete globalThis.document; else globalThis.document = previousDocument;
+}
 controller.updateSlots = () => {};
 controller.slots = ["rocket_launcher", "shotgun", "railgun", null, null];
 controller.handleClick({ dataset: { loadoutRemove: "1" } });
 assert.deepEqual(controller.slots, ["rocket_launcher", null, "railgun", null, null]);
-controller.handleClick({ dataset: { weaponChoice: "mine" } });
-assert.deepEqual(controller.slots, ["rocket_launcher", "mine", "railgun", null, null]);
+assert.equal(controller.handleClick({ dataset: { weaponChoice: "mine" } }), false, "weapon browsing is handled by the shared preview action");
+assert.deepEqual(controller.slots, ["rocket_launcher", null, "railgun", null, null], "browsing never changes waiting-room weapons");
 controller.moveSlot(0, 4);
-assert.deepEqual(controller.slots, [null, "mine", "railgun", null, "rocket_launcher"]);
+assert.deepEqual(controller.slots, [null, null, "railgun", null, "rocket_launcher"]);
 assert.equal(sent.at(-1).type, "lobby_loadout");
 assert.deepEqual(sent.at(-1).payload.loadout, controller.slots);
 const before = [...controller.slots]; controller.moveSlot(1, 8); assert.deepEqual(controller.slots, before);

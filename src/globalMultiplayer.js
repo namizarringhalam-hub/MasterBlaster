@@ -153,7 +153,9 @@ export class GlobalMultiplayer {
     if (message.type === "welcome" && local?.pendingLoadout) this.slots = [...local.pendingLoadout];
     const lobby = game.privateLobby, host = lobby.hostId === game.multiplayer?.playerId, countdown = lobby.phase === "countdown";
     if (!this.ui.querySelector("[data-global-waiting]")) {
-      game.activeLoadoutSlot = null;
+      game.activeLoadoutSlot = 0;
+      game.previewWeaponId = null;
+      game.weaponFilter = null;
       this.ui.innerHTML = this.shell(`<div data-global-waiting><header><button class="back" data-global="leave">${copy.back}</button></header><h1>${esc(lobby.roomName)}</h1><p class="dialog-lead" data-global-room-heading></p><div data-global-countdown role="status"></div><div class="lobby-heading"><h2>${TEXT.privateLobby.roster}</h2><span data-global-round-count></span></div><div class="lobby-roster global-roster" data-global-roster></div><details class="setup-options"><summary>${TEXT.setup.editSettings}<span data-global-rules></span></summary><div class="global-room-settings" data-global-room-settings></div></details>${game.loadoutEditorMarkup(true)}</div>`);
       game.bindUi();
     }
@@ -183,24 +185,11 @@ export class GlobalMultiplayer {
   updateSlots() {
     const order = this.ui.querySelector("[data-global-slots]");
     if (!order) return;
-    for (const button of this.ui.querySelectorAll("[data-preset-save]")) button.disabled = this.slots.filter(Boolean).length !== 5;
     const focused = document.activeElement;
     const focusedSlot = focused?.closest?.("[data-loadout-drag]");
-    const focusAttribute = ["data-loadout-edit", "data-loadout-move", "data-loadout-remove"].find(name => focused?.hasAttribute?.(name));
-    const focusSelector = focusedSlot && focusAttribute ? `[${focusAttribute}="${focused.getAttribute(focusAttribute)}"]${focused.hasAttribute("data-direction") ? `[data-direction="${focused.dataset.direction}"]` : ""}` : "";
-    const selector = this.ui.querySelector("[data-preset-select]");
-    if (selector) selector.innerHTML = this.game.presetOptionsMarkup();
-    const title = this.ui.querySelector("[data-picker-title]");
-    if (title) title.textContent = formatText(TEXT.setup.loadout.pickSlot, { slot: (this.game.activeLoadoutSlot ?? 0) + 1 });
-    order.innerHTML = this.game.loadoutOrderMarkup(this.slots).replaceAll(TEXT.setup.loadout.emptySlot, copy.emptySlot);
-    if (focusSelector) this.ui.querySelector(!this.slots[Number(focusedSlot.dataset.loadoutDrag)] ? `[data-loadout-edit="${focusedSlot.dataset.loadoutDrag}"]` : focusSelector)?.focus({ preventScroll: true });
-    this.ui.querySelector("[data-global-selected]").textContent = formatText(copy.selected, { count: this.slots.filter(Boolean).length });
-    for (const button of this.ui.querySelectorAll("[data-weapon-choice]")) {
-      const index = this.slots.indexOf(button.dataset.weaponChoice);
-      button.classList.toggle("selected", index >= 0);
-      button.dataset.slot = index >= 0 ? String(index + 1) : "";
-      button.setAttribute("aria-pressed", String(index >= 0));
-    }
+    const focusAttribute = ["data-loadout-edit", "data-loadout-move", "data-loadout-remove", "data-loadout-equip", "data-preset-save", "data-preset-load", "data-preset-clear", "data-preset-default"].find(name => focused?.hasAttribute?.(name));
+    const focusSelector = focusAttribute ? `[${focusAttribute}="${focused.getAttribute(focusAttribute)}"]${focused.hasAttribute("data-direction") ? `[data-direction="${focused.dataset.direction}"]` : ""}` : "";
+    this.game.updateLoadoutUi(focusedSlot && !this.slots[Number(focusedSlot.dataset.loadoutDrag)] ? `[data-loadout-edit="${focusedSlot.dataset.loadoutDrag}"]` : focusSelector, false);
   }
 
   sendSlots() {
@@ -229,11 +218,6 @@ export class GlobalMultiplayer {
       return true;
     }
     if (this.game.mode !== "global" || this.game.state !== "lobby") return false;
-    if (button.dataset.weaponChoice) {
-      const id = button.dataset.weaponChoice, current = this.slots.indexOf(id), empty = this.slots.indexOf(null);
-      if (current >= 0) this.slots[current] = null; else if (empty >= 0) this.slots[empty] = id;
-      this.sendSlots(); return true;
-    }
     if (button.dataset.loadoutRemove !== undefined) { this.slots[Number(button.dataset.loadoutRemove)] = null; this.sendSlots(); return true; }
     if (button.dataset.loadoutMove !== undefined) {
       const from = Number(button.dataset.loadoutMove), to = from + Number(button.dataset.direction);

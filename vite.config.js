@@ -72,6 +72,10 @@ export default defineConfig({
     enforce: "pre",
     transform(code, id) {
       if (process.env.NODE_ENV === "production" && id.endsWith(".css")) return resources.rewrite(code);
+      // ponytail: derive the small boot copy here; the full arsenal text loads with the engine.
+      if (/[\\/]src[\\/](boot|resourceProgress)\.js$/.test(id)) {
+        return code.replace('import TEXT from "./playerText.js";', `const TEXT = ${JSON.stringify({ boot: PLAYER_TEXT.boot })};`);
+      }
     },
     transformIndexHtml: { order: "pre", handler: renderPlayerText },
     configureServer(server) {
