@@ -430,3 +430,114 @@
 - Next: user completes retained human checks; finish HTML5 account/email flow,
   verify moderation status/permalink, then eligible Reddit and ESReality posts.
   Record every successful publication for daily activity/engagement summaries.
+
+## Account recovery, post corrections and daily follow-up — 4 October 2026
+
+- Reopened HTML5, Reddit and ESReality as native app browser tabs after the prior
+  temporary tabs disappeared. User confirmed desktop access and completed HTML5's
+  security question. Finished the brand account without optional creator/profile
+  details. Existing topic 76464 / comment 375862 is explicitly Pending Approval:
+  https://www.html5gamedevs.com/topic/76464-wip-master-blaster-%E2%80%94-free-browser-arena-shooter-with-grappling-and-destructible-towers/
+- User requested clickable links with source tags and singular first-person copy.
+  Edited and saved that existing topic: "I'm working on", "I'd love feedback",
+  native rich-text play/guide anchors with `ref=html5gamedevs` and matching UTM
+  source. Verified actual saved DOM anchors and all four images loaded; preserved
+  feedback questions, staged-capture disclosure and original screenshot bytes.
+  Both tagged destinations returned HTTP 200 with their canonical tags unchanged.
+- ESReality's reCAPTCHA was checked after user interaction. Finished brand email
+  validation, created/logged into MasterBlasterGame (48133), and submitted the
+  corrected approved General Gaming thread once at 09:21 CEST. Markdown preview
+  verified tagged `ref=esreality` play/guide anchors and four loaded images.
+  Submission redirected to https://www.esreality.com/?a=post&id=2975313 but its
+  body/title are absent in signed-in and anonymous views/public forum index.
+  Official FAQ/hierarchy requires admin approval for New User threads/replies;
+  pending approval is an inference, not an explicit queue receipt. No rejection
+  shown; never duplicate this submission. Activity cannot yet be read.
+- Reddit brand email verification completed; signup stalled at Continue despite
+  valid prepared fields. User replied "I fixed it for you"; confirmed signed-in
+  session is u/MasterBlasterGame. Protected password saved before the user's fix
+  remains a candidate until its use is verified; never inspect browser password
+  stores or use personal accounts. Current native typing/blur works for composer.
+- Rechecked r/WebGames rules and its internal title/domain duplicate search.
+  The sole title match is an unrelated ezzal.com truck game posted 16 years ago.
+  Prepared approved first-person feedback copy with Three.js/WebGL context,
+  all three questions, canonical direct playable link, clickable canonical guide
+  and four screenshot references. Used [SH] flair and Brand Affiliate disclosure;
+  no referral tags because this community prohibits them. Submitted once:
+  https://www.reddit.com/r/WebGames/comments/1wx9qyu/master_blaster_free_browser_arena_shooter_with/
+  Brand and anonymous views explicitly show removed by Reddit's filters. Brand
+  view has 0 comments; body/game links are absent anonymously. Record submitted /
+  filter-removed, not public publication or a backlink. No cause beyond the
+  displayed notice is established. Do not duplicate/repost to bypass filtering.
+- Daily directory checks: iogames.party and Something Big public indexes and
+  Free Play Games homepage/new/hot/relevant categories have no verified game
+  listing. Public title/domain searches also found none; this is unconfirmed
+  publication, not rejection. Prior accepted submissions were not repeated.
+- Brand mailbox inspection found the 3 October Free Play Games suggestion to
+  info@freeplaygames.com failed: recipient server `550 relay not permitted`.
+  Official contact.htm form targets contact@freeplaygames.com instead. Sent one
+  replacement brand suggestion there at 09:26 CEST, confirmed in Sent, with
+  first-person wording, listing/feedback request and clickable source-tagged
+  play/guide links. No attachments. Final mailbox check confirms this replacement
+  also bounced at 09:36 CEST with the same 550 relay-not-permitted rejection.
+  Neither official address delivered the suggestion; do not repeat those emails.
+  No unrelated mail accessed.
+- Read the existing 3 October mobile PSI report (no new measurement): performance
+  94, SEO/accessibility/best practices 100, LCP 2.9 s, CLS 0. Its breakdown names
+  the static hero H1 and 1,360 ms element render delay. Critical-tree font at
+  274 ms is Inter 700, not the two Barlow 900 heading fonts; their arrival timing
+  remains unknown. Read-only source review found no H1 rewrite, opacity gate or
+  entry animation, and engine import already waits for fonts and two paints.
+  Later audio dependencies do not establish an H1 LCP cause. No evidence-based
+  code change justified yet. Next performance evidence: heading-font waterfall
+  and paint trace before altering priorities; preserve gameplay and visuals.
+- Updated outreach register/growth copy with actual account/submission state,
+  first-person/link preference and daily-check evidence. Existing ACTIVE daily
+  09:00 Europe/Stockholm heartbeat reads these docs; keep monitoring pending and
+  published posts, replies and moderation until user pauses/cancels. No public
+  community backlink or new user feedback verified at this milestone; HTML5
+  brand view has 0 replies, ESReality body inaccessible. No replies published.
+- Validation: live post/preview DOM, image loading, tagged destination/canonical
+  checks, official community rules, public forum/directory visibility and brand
+  mailbox delivery evidence. Only documentation changed in the repository; no
+  application build or new performance run needed. Next: monitor existing forum
+  submissions and exact removed Reddit URLs; hold further automated Reddit
+  promotion, keep the manual Codex draft ready, and commit/push only related docs
+  with brand identity after review.
+
+- Reddit newcomer follow-up: submitted the approved r/IndieDev introduction once
+  to its currently pinned September 27 newcomer thread after checking rules and
+  a no-result in-thread duplicate search. Exact comment:
+  https://www.reddit.com/r/IndieDev/comments/1wrwzhw/comment/pdrm7lf/
+  Brand view verifies first-person copy, all feedback questions/disclosures,
+  clickable `ref=indiedev` play/guide links and four screenshot references, with
+  no replies displayed at submission. Anonymous exact-permalink check at roughly
+  09:50 CEST shows [deleted] and "Comment removed by moderator"; body/author/game
+  links are absent publicly. No gameplay replies visible. Hold further automated
+  Reddit promotion, with no duplicates or manufactured activity. The brand
+  notification page shows no removal explanation; no specific cause established.
+- r/Codex's latest browser highlight remains weekly showcase 1wngv35, but its
+  current Rule 9 explicitly says "Don't use bots" and links BotBouncer guidance.
+  Hold autonomous publication there; prepare the verified Codex-workflow version
+  for manual brand-account posting. This is a participation-rule restriction,
+  not a ban on AI-assisted game development. No comment or moderator message sent.
+- Final brand mailbox check: the replacement to contact@freeplaygames.com also
+  bounced at 09:36 CEST, `550 relay not permitted` from mbox.freehostia.com.
+  Both official addresses failed delivery. No successful submission/reply through
+  either email route; hold repeated email pending a working official route.
+- Final forum rechecks: HTML5 still explicitly Pending Approval with corrected
+  first-person text/tagged anchors saved; ESReality still has no submitted body.
+  No publicly verified community post/backlink and no actionable gameplay replies
+  this run. Exact submission URLs and last successful checks are in the register.
+- Updated the existing heartbeat through the app tool: ACTIVE, same thread and
+  daily 09:00 Europe/Stockholm schedule preserved. It now retains Reddit removal /
+  no-bots holds, both email delivery failures, and first-person/clickable-link
+  preferences. Other paused automations/work remain untouched. Temporary owned
+  mailbox/PSI research tabs can be closed; native forum tabs/receipt are retained.
+- Independent documentation review found two superseded interim next-step/mail
+  statements; corrected both to final removal/failed-delivery states. Diff check
+  passes. Related files: docs/community-outreach-targets.md,
+  docs/player-growth-plan.md, docs/seo-checkpoint.md. No application source change
+  or new PageSpeed measurement. Remaining technical step is heading-font/paint
+  evidence for the 2.9-second mobile LCP; external steps are moderation outcomes,
+  working directory contact/publication, and justified eligible outreach.

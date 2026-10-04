@@ -51,23 +51,24 @@ Grapple across the arena. Bring the towers down.
 Master Blaster is a free browser arena shooter with destructible towers and
 47 weapons. Play online or bring friends into a private room.
 
-Play: https://masterblaster.se/
+Play: [Play Master Blaster](https://masterblaster.se/?ref=social&utm_source=social&utm_medium=community&utm_campaign=first_players&utm_content=caption)
 
 ### Generic feedback post — approved 4 October 2026
 
 Title: Master Blaster — free browser arena shooter with grappling and destructible towers
 
-We're working on Master Blaster, a free browser arena shooter where you can
+I'm working on Master Blaster, a free browser arena shooter where you can
 grapple across the map, blast towers apart and choose a five-weapon loadout from
 47 weapons. It's being built with AI-assisted coding.
 
 Try Quick Play or Training against up to 15 bots, invite friends through a
 Private Room, or find/create a game in Global Multiplayer. No download is needed.
 
-**Play:** https://masterblaster.se/
-**Controls and game modes:** https://masterblaster.se/how-to-play/
+**Play:** [Play Master Blaster](https://masterblaster.se/?ref=community&utm_source=community&utm_medium=community&utm_campaign=first_players&utm_content=showcase)
 
-We'd love feedback, especially on:
+**Controls and game modes:** [How to play](https://masterblaster.se/how-to-play/?ref=community&utm_source=community&utm_medium=community&utm_campaign=first_players&utm_content=guide)
+
+I'd love feedback, especially on:
 
 - Does the grappling hook feel intuitive, and can you build up speed comfortably?
 - Are opponents, weapon effects and destructible cover easy to read during a fight?
@@ -78,8 +79,15 @@ what happened, and which game mode you tried. Thanks for giving it a go!
 
 ### Exact assets and links for this draft
 
-- Playable game: https://masterblaster.se/ (canonical URL, no tracking parameters).
-- Controls/game-mode guide: https://masterblaster.se/how-to-play/.
+- Canonical playable game: [Play Master Blaster](https://masterblaster.se/).
+- Canonical guide: [Controls and game modes](https://masterblaster.se/how-to-play/).
+- User correction on 4 October: use first-person copy ("I'm working on", "I'd
+  love feedback") and real clickable links, with source tags wherever permitted.
+  Replace the generic `community` or `social` value in both `ref` and `utm_source`
+  with the actual platform/community before posting. Use the rich-text link tool
+  or Markdown/BBCode supported by the site; verify rendered anchors after saving.
+  Where rules prohibit referral links, including r/WebGames, use the canonical
+  URL as a clickable link. Keep the screenshot URLs unchanged.
 - Existing arena overview: public/press/gameplay.png, available at
   https://masterblaster.se/press/gameplay.png. This is the user's chosen 191559.png
   unchanged: 960 × 540 PNG, 804,703 bytes, SHA-256
@@ -166,11 +174,11 @@ Read and summarize replies; do not publish responses without user authorization.
 Local checks require the computer on and app running; missed access is not proof
 that a post has no activity.
 
-Optional tagged link for a social post:
+Tagged links for social/community posts where permitted:
 
-https://masterblaster.se/?utm_source=social&utm_medium=organic&utm_campaign=first_players&utm_content=grapple
+[Play Master Blaster](https://masterblaster.se/?ref=social&utm_source=social&utm_medium=community&utm_campaign=first_players&utm_content=grapple)
 
-Replace source with the actual platform and content with the clip name. These
+Replace `ref` and source with the actual platform and content with the clip name. These
 parameters do not collect data by themselves: verify the analytics tool reports
 them before relying on campaign attribution.
 
@@ -181,9 +189,67 @@ with a completed match. Compare source quality before choosing paid promotion.
 
 ## Next unfinished step
 
-Resume the retained human-verification/account tabs after the user handles their
-security checks. The HTML5 submission with all four screenshots is saved but not
-public; finish that account flow without reposting. Apply approved wording under
-each eligible community's rules and record successful publication for daily checks.
+Monitor HTML5 topic 76464 (explicitly pending moderator approval) and ESReality
+submission 2975313 (not publicly visible; new-user approval required). Both use
+first-person feedback copy, clickable source-tagged play/guide links and four
+screenshots. Do not resubmit either. User resolved Reddit signup; brand session is
+u/MasterBlasterGame. r/WebGames submission 1wx9qyu was removed by Reddit's filters;
+its game links are not publicly visible. Do not repost to bypass filtering.
+The r/IndieDev newcomer introduction pdrm7lf was also publicly removed by a
+moderator. Hold further automated Reddit promotion while the removal causes remain
+unresolved; no duplicates or manufactured participation. r/Codex's current Rule 9
+prohibits bots, so its prepared showcase below is for manual brand-account posting.
+Apply approved wording under each eligible community's rules and record successful
+publication for daily checks. Exact URLs/status are in the community register.
 No spending or use of personal accounts is authorized. The ACTIVE 09:00 daily
 follow-up reflects content approval and monitors pending submissions as well.
+
+### r/Codex manual showcase copy
+
+Prepared 4 October 2026 for the user to post through u/MasterBlasterGame. The
+[current showcase](https://www.reddit.com/r/codex/comments/1wngv35/show_us_all_what_youve_been_building_with_codex/)
+is still highlighted, but [Rule 9](https://www.reddit.com/r/codex/about/) prohibits
+bots. No comment has been submitted. Recheck the current pin and resolve the
+brand account's Reddit moderation issues before further publication; this draft
+is not permission to repost removed content or manufacture account activity.
+
+---
+
+I'm working on **Master Blaster**, a free browser arena shooter built with
+AI-assisted coding using Three.js/WebGL. You can grapple across the map, blast
+towers apart and pick a five-weapon loadout from 47 weapons.
+
+Recent Codex work included separating the first menu paint from the engine boot,
+checking heading-font readiness before engine import, and validating the
+production build and deployed assets. It also helped prepare the captures below
+using the game's real bot combat and explosions. The useful lesson has been to
+check the rendered game and live files as well as the code: a passing build alone
+doesn't tell you whether startup looks right or a screenshot matches its claim.
+
+Try Quick Play or Training against up to 15 bots, invite friends through a Private
+Room, or find/create a game in Global Multiplayer. No download is needed.
+
+[Play Master Blaster — free in your browser](https://masterblaster.se/?ref=codex&utm_source=codex&utm_medium=community&utm_campaign=first_players&utm_content=showcase)
+
+[Controls and game modes](https://masterblaster.se/how-to-play/?ref=codex&utm_source=codex&utm_medium=community&utm_campaign=first_players&utm_content=guide)
+
+I'd love feedback, especially on:
+
+- Does the grappling hook feel intuitive, and can you build up speed comfortably?
+- Are opponents, weapon effects and destructible cover easy to read during a fight?
+- What would you change first to make you want another match?
+
+If something breaks or runs poorly, please include your device and browser, what
+happened, and which game mode you tried. Feedback on browser-game testing workflows
+with Codex would also be useful.
+
+The two action shots use staged starting positions/loadouts in 15-bot engine
+scenes, with real bot combat and explosions. The menu shots show the home menu
+and Quick Play setup with 15 veteran bots.
+
+- [Rocket action — staged 15-bot scene](https://masterblaster.se/press/action-rockets.png)
+- [Grenade action — staged 15-bot player camera](https://masterblaster.se/press/action-grenades.png)
+- [Home menu](https://masterblaster.se/press/home-menu.jpg)
+- [Quick Play setup — 15 veteran bots](https://masterblaster.se/press/quick-play.jpg)
+
+Thanks for giving it a go!

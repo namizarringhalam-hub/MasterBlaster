@@ -18,8 +18,8 @@ audience-fit recommendations, not guarantees of acceptance or SEO ranking gains.
 | 1 | [r/WebGames](https://www.reddit.com/r/WebGames/) | Direct access to players looking for browser games. Link to the canonical playable game; title starts with Master Blaster and briefly mentions grappling/destruction. | Browser play without signup, direct link to one game, no referrals, search for duplicates and wait three months between reposts. No AI restriction appears in the listed rules; a highlighted [AI-policy discussion](https://www.reddit.com/r/WebGames/comments/1ryldz4/looking_for_opinions_on_ai_made_web_games/) means eligibility should be rechecked before posting. Do not claim an explicit AI permission. |
 | 2 | [r/playmygame](https://www.reddit.com/r/playmygame/) | Free playable game with a focused request for movement, first-match and weapon feedback. Use its post template and [PC] (Web) flair for desktop-browser play, following the [flair guide](https://www.reddit.com/r/playmygame/wiki/flairs/). | Direct playable link, brief description, truthful development-role disclosure and one post per month. The [current moderator AI policy](https://www.reddit.com/r/playmygame/comments/1vyc5xp/decisions_have_been_madeour_new_ai_policy/) explicitly allows AI-built games; old bans are superseded. The [still-pinned newcomer guidance](https://www.reddit.com/r/playmygame/comments/1j80ve7/if_you_are_brand_new_to_reddit_and_want_to_post/) asks brand-new accounts to participate normally before promoting a game. Hold a new brand account's post; do not manufacture activity/karma. No fixed numerical threshold verified. |
 | 3 | [ESReality: General Gaming](https://www.esreality.com/?a=post&forum=29) | Strong Quake/arena-shooter fit. Ask experienced players for grapple, weapons and multiplayer feedback, with a playable link and footage. | [Posting guide](https://www.esreality.com/?a=longpost&id=9324&page=3) prohibits advertising/spam and allows useful external links. A [2 October 2026 browser-shooter developer feedback post](https://www.esreality.com/post/2975303/looking-beta-testers-dinoblast-defrag-in-your-browser/) is relevant precedent, including disclosed generated assets. Suitability is an inference, not moderator preapproval for Master Blaster. |
-| 4 | [HTML5 Game Devs: Game Showcase](https://www.html5gamedevs.com/forum/8-game-showcase/) | Very close technical fit for this Three.js browser game. Share the four approved screenshots, playable link and technical/feedback description. | [Pinned guidelines](https://www.html5gamedevs.com/topic/873-guidelines-for-posting-in-this-board/) request screenshots, description and game link; label unfinished games WIP. Only web-game/relevant HTML5 work belongs here. No AI-specific restriction found in reviewed guidelines/terms. Guest submission saved, then requires account creation with an anti-bot security question; moderator approval follows. Not published yet. |
-| 5 | [r/Codex: weekly showcase](https://www.reddit.com/r/codex/) | Best verified AI-builder channel. Share the playable game with concrete development/testing lessons and evidence of what Codex helped build. | Its [pinned showcase](https://www.reddit.com/r/codex/comments/1wngv35/show_us_all_what_youve_been_building_with_codex/) expressly invites Codex-built projects. Use the latest pinned thread when approved, not a stale weekly URL. Community rules prioritize useful detail; this is mainly a builder audience. |
+| 4 | [HTML5 Game Devs: Game Showcase](https://www.html5gamedevs.com/forum/8-game-showcase/) | Very close technical fit for this Three.js browser game. Share the four approved screenshots, playable link and technical/feedback description. | [Pinned guidelines](https://www.html5gamedevs.com/topic/873-guidelines-for-posting-in-this-board/) request screenshots, description and game link; label unfinished games WIP. Only web-game/relevant HTML5 work belongs here. No AI-specific restriction found in reviewed guidelines/terms. Brand account created after the user completed its security question. Topic 76464 explicitly pending moderator approval; do not repost. |
+| 5 | [r/Codex: weekly showcase](https://www.reddit.com/r/codex/) | Relevant AI-builder channel. Share the playable game with concrete development/testing lessons and evidence of what Codex helped build. | Its [current highlighted showcase](https://www.reddit.com/r/codex/comments/1wngv35/show_us_all_what_youve_been_building_with_codex/) invites Codex-built projects, but [current Rule 9](https://www.reddit.com/r/codex/about/) explicitly prohibits bots. Hold autonomous posting; prepared copy is for manual brand-account submission. This is a participation restriction, not an AI-game ban. |
 | 6 | [r/IndieDev: pinned megathread](https://www.reddit.com/r/IndieDev/) | Developer feedback on grappling, destruction and readability. Start in the current pinned introduction/showcase megathread. | [Guidelines](https://www.reddit.com/r/IndieDev/wiki/guidelines/) allow new users to comment in the megathread; standalone submissions require an account at least seven days old and 20 comment karma. No AI-specific prohibition found in the reviewed rules/wiki; recheck before posting. Do not manufacture participation to bypass requirements. |
 
 ## Relevant targets requiring an extra check
@@ -61,15 +61,18 @@ review as verified publication. Add exact permalinks after success:
 
 | Target / community | Published URL | Published date | Brand account | Content version | Status | Last successful check |
 | --- | --- | --- | --- | --- | --- | --- |
-| None yet | — | — | — | Approved; submissions in progress | Access/account checks pending | — |
+| None yet | — | — | — | Approved; submissions in progress | Forum moderation pending; both Reddit submissions publicly removed | — |
 
 ### Submission and access log — 4 October 2026
 
 | Target | Verified action / state | Next step |
 | --- | --- | --- |
-| HTML5 Game Devs | Submitted `[WIP] Master Blaster — free browser arena shooter with grappling and destructible towers`, approved feedback copy with Three.js/WebGL context, play/guide URLs and four inline screenshot URLs. Editor preview verified all four images loaded. Site replied "Thanks for your submission!" and requires an account before content is seen. Draft reference 76464 is not a verified public permalink. | User answers the anti-bot question in the retained registration tab; ordinary MasterBlasterGame brand account fields prepared, news opt-in disabled. Then finish account/email verification and await moderator approval. Do not duplicate the saved submission. |
-| Reddit | Selected browser navigation to r/playmygame stops at "Prove your humanity". No Reddit account created, login attempted or post submitted. | User completes the human challenge in the retained tab. Use only a brand account; inspect its eligibility before posting. Priority accessible routes: r/WebGames direct link, r/Codex current showcase, r/IndieDev newcomer thread. |
-| ESReality | Registration page requires email verification and reCAPTCHA. Brand mailbox filled in, no registration submitted. New-user threads and attachments require moderator approval. | User completes reCAPTCHA in the retained registration tab; then request email verification, create brand account and submit the approved General Gaming feedback thread. |
+| HTML5 Game Devs | User completed the security question; MasterBlasterGame account created. [Topic 76464](https://www.html5gamedevs.com/topic/76464-wip-master-blaster-%E2%80%94-free-browser-arena-shooter-with-grappling-and-destructible-towers/) / comment 375862 is visible to the brand account and explicitly **Pending Approval**. Saved the user's corrections: "I'm working on", "I'd love feedback", real clickable tagged play/guide links and the original four images, all loaded. 0 replies at the successful brand-view check on 4 Oct at 09:26 CEST. Public publication/backlink remains unconfirmed. | Check this existing topic daily for moderator approval and subsequent replies; do not resubmit. |
+| Reddit account | User resolved the signup blocker; confirmed signed-in brand identity **u/MasterBlasterGame**. No personal account used. Notifications checked on 4 October; no explanation/notice for either removal displayed. | Hold further automated Reddit promotion after the two removals; no account-age/karma, AI or other specific cause is established. Do not manufacture activity or use another account to evade filtering. |
+| r/WebGames | Submitted the approved first-person post once on 4 October: [post 1wx9qyu](https://www.reddit.com/r/WebGames/comments/1wx9qyu/master_blaster_free_browser_arena_shooter_with/), title `Master Blaster — free browser arena shooter with grappling and destructible towers; feedback wanted`, account u/MasterBlasterGame, [SH] flair, Brand Affiliate disclosure. Canonical clickable play/guide URLs and all four clickable screenshot references; no referral parameters under its rules. Brand and anonymous views explicitly say **removed by Reddit's filters**. Brand view shows 0 comments; the body/game links are absent anonymously. | Record as submitted/removed, not publicly published or a confirmed backlink. Do not duplicate or repost to bypass filtering. Continue checking this exact permalink for moderation changes. Cause beyond the displayed filter notice is unknown. |
+| r/IndieDev newcomer megathread | Submitted one top-level introduction on 4 October to the still-pinned September 27 thread: [comment pdrm7lf](https://www.reddit.com/r/IndieDev/comments/1wrwzhw/comment/pdrm7lf/), u/MasterBlasterGame. Current thread explicitly welcomes newcomers and game showcases; its own comment search found no `Master Blaster` match before posting. Brand view displays the approved first-person copy, questions/disclosures, clickable game/guide links with `ref=indiedev`/matching UTM source, and four clickable screenshot references. Anonymous check at approximately 09:50 CEST explicitly shows `[deleted]` and **Comment removed by moderator**; body/author/game links are absent. No replies to this comment visible. | Submitted/publicly removed, not a live post or confirmed backlink. Check this exact comment for moderation changes; do not duplicate it in newer megathreads. No removal explanation established; no other users' comments answered. |
+| r/Codex weekly showcase | Confirmed 1wngv35 remains in current browser community highlights. Current [About rules](https://www.reddit.com/r/codex/about/) include Rule 9, `Don't use bots. Read up on BotBouncer`. Its linked [BotBouncer scope](https://www.reddit.com/r/BotBouncer/wiki/index/) targets automated participation. This does not prohibit AI-assisted games, but the explicit no-bots rule prevents treating autonomous account posting as cleared. | Source-tagged showcase copy with verified Codex workflow detail is prepared in [the growth plan](player-growth-plan.md#rcodex-manual-showcase-copy) for manual brand-account posting, after moderation issues are resolved. No showcase comment submitted. |
+| ESReality | User-completed reCAPTCHA was checked; completed email validation and created/logged into MasterBlasterGame (user 48133). Submitted `Master Blaster: free browser arena shooter, feedback wanted` once at 09:21 CEST using first-person feedback copy, Markdown tagged links and four images; preview verified links and all images. Site redirected to [submission 2975313](https://www.esreality.com/?a=post&id=2975313), but its body/title are absent in brand and anonymous views and the public forum index. No rejection shown. | Apparently awaiting administrator approval: the current [FAQ](https://www.esreality.com/?a=faq) links its [new-user hierarchy rule](https://www.esreality.com/post/653359/site-hierarchy-table/) requiring approval before initial threads/replies become public. Queue status is inferred from that rule and visibility, not an explicit submission receipt. Check this exact ID daily without duplicating it. Activity is unobservable until the body becomes accessible. |
 
 The site's human-verification challenges must be completed by the user. No
 challenge was solved or bypassed. Account credentials are stored only in ignored
@@ -77,6 +80,69 @@ local temporary files with Windows DPAPI protection; no passwords or registratio
 tokens belong in this register. Domain searches found no prior indexed Master
 Blaster post on Reddit/ESReality/HTML5 Game Devs, but this does not replace each
 site's own duplicate search once accessible.
+
+### Saved content and link corrections
+
+Both forum submissions use the approved generic feedback copy with the verified
+Three.js/WebGL context, first-person opening/feedback request, all three feedback
+questions and honest staged 15-bot capture disclosure. Assets remain
+`action-rockets.png`, `action-grenades.png`, `home-menu.jpg`, `quick-play.jpg` under
+https://masterblaster.se/press/. No creator information was added.
+
+| Submission | Clickable play link | Clickable guide link |
+| --- | --- | --- |
+| HTML5 topic 76464 | [Play Master Blaster](https://masterblaster.se/?ref=html5gamedevs&utm_source=html5gamedevs&utm_medium=community&utm_campaign=first_players&utm_content=showcase) | [Controls and game modes](https://masterblaster.se/how-to-play/?ref=html5gamedevs&utm_source=html5gamedevs&utm_medium=community&utm_campaign=first_players&utm_content=guide) |
+| ESReality 2975313 | [Play Master Blaster](https://masterblaster.se/?ref=esreality&utm_source=esreality&utm_medium=community&utm_campaign=first_players&utm_content=showcase) | [How to play](https://masterblaster.se/how-to-play/?ref=esreality&utm_source=esreality&utm_medium=community&utm_campaign=first_players&utm_content=guide) |
+
+Use native rich-text anchors or supported Markdown/BBCode in future posts and
+verify rendered links after saving. Add per-community `ref` and UTM parameters
+where permitted; r/WebGames forbids referral links, so use its canonical direct
+game URL. Tags are attribution labels; click/visit measurement is not yet verified.
+
+### Last successful status checks — 4 October 2026
+
+| Existing submission | Check result | New feedback / stable reply identifiers |
+| --- | --- | --- |
+| HTML5 topic 76464 / comment 375862 | Final brand-view recheck still explicitly Pending Approval; corrected first-person text and tagged anchors remain saved. | 0 replies in the successfully read topic; no new feedback identifiers. |
+| ESReality 2975313 | Final brand-view recheck still has no submitted title/body; prior anonymous/index check also lacked it. Administrator queue remains inferred. | Activity cannot be read; no claim of no activity. |
+| r/WebGames 1wx9qyu | Brand and anonymous views explicitly show Reddit filter removal. | 0 comments displayed in brand view; no gameplay feedback visible. |
+| r/IndieDev pdrm7lf | Anonymous selected-comment view explicitly shows moderator removal; final brand view still contains the saved text. | No replies to this comment visible; no new feedback identifiers. |
+
+These status changes have been reported in this chat. Subsequent daily summaries
+should report new approval/removal changes or new replies, not present today's
+known removals as newly received gameplay feedback.
+
+### Directory and mailbox check — 4 October 2026
+
+- iogames.party homepage and Something Big games index contain no verified Master
+  Blaster listing. Previous submissions remain pending; no duplicate submissions.
+- Free Play Games homepage, New Games, Hot Games and relevant category pages have
+  no verified listing. The brand mailbox contains a delivery failure for the
+  3 October message to `info@freeplaygames.com`: recipient server rejected it with
+  `550 relay not permitted`. It was not a successful delivered submission.
+- Its official [Contact Us page](https://www.freeplaygames.com/contact.htm) form
+  targets `contact@freeplaygames.com` instead. Sent one replacement suggestion to
+  that address from the brand mailbox at 09:26 CEST on 4 October; verified in Sent.
+  First-person copy asks for listing consideration/feedback and includes clickable
+  play/guide links with `ref=freeplaygames`, `utm_source=freeplaygames`,
+  `utm_medium=directory`, `utm_campaign=first_players`, and `utm_content=listing`
+  or `guide`. No attachments. The final mailbox check found this replacement also
+  **failed delivery at 09:36 CEST**, with the same `550 relay not permitted` from
+  `mbox.freehostia.com`. Both official contact addresses have failed; no successful
+  delivery or editorial reply is confirmed. Hold repeated email until a working
+  official submission/contact route is identified.
+
+No gameplay feedback needs user engagement yet: HTML5 has 0 replies in the
+successful pending-topic check; ESReality activity cannot be read while its body
+is unavailable; both Reddit submissions are publicly removed, with no gameplay
+replies visible. If the user wants moderation review, the
+[r/WebGames moderator contact](https://www.reddit.com/message/compose?to=r/WebGames)
+and [r/IndieDev moderator contact](https://www.reddit.com/message/compose?to=r/IndieDev)
+can reference the existing post/comment and ask which requirement needs addressing.
+No moderator message has been sent. There are no verified public community
+backlinks. Native app tabs were opened for the user after the earlier temporary
+challenge tabs disappeared; preserve HTML5, Reddit and ESReality tabs and the
+existing directory receipt. Temporary research/mail tabs are separate.
 
 Current Reddit highlight routes, rechecked before any future comment:
 
@@ -102,9 +168,13 @@ for these checks; offline/stopped operation cannot provide immediate monitoring.
 
 ## Next step
 
-Resume the retained account/challenge tabs after the user completes human checks.
-Content and free brand-account approval are already given. Finish the saved HTML5
-submission without duplication, then proceed through eligible Reddit/ESReality
-routes. Record exact public permalinks only after verified publication and monitor
-both pending submissions and published posts in the existing daily follow-up.
+Monitor HTML5 topic 76464 and ESReality submission 2975313 for public approval;
+preserve their corrected copy/assets and never resubmit them. Reddit brand signup
+is complete; r/WebGames post 1wx9qyu is filter-removed and r/IndieDev comment
+pdrm7lf is publicly removed by a moderator. Hold further automated Reddit
+promotion while those outcomes remain unresolved. r/Codex requires manual
+submission under its no-bots rule; prepared copy is in the growth plan.
+Content and free brand-account approval are already given. Record exact public
+permalinks only after verified publication and monitor both pending submissions
+and published posts in the existing daily follow-up.
 Continue existing approved directory checks and independent performance work.
