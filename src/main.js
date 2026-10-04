@@ -22,7 +22,7 @@ import { GlobalMultiplayer } from "./globalMultiplayer.js";
 import "./loadoutArmory.css";
 import { aimedHeadContact, headContact, headshotDamage, projectileHitRadius } from "./headshots.js";
 import { prepareSurfaceTextures, sharedSurfaceTextures, surfaceMaps } from "./surfaceTextures.js";
-import { GameplayPreparation, gameplayPreparationKey, prepareFighterWeapons, warmFighterWeapons, disposeGameplaySamples } from "./gameplayPreparation.js";
+import { GameplayPreparation, prepareFighterWeapons, warmFighterWeapons, disposeGameplaySamples } from "./gameplayPreparation.js";
 import { backgroundYield } from "./resourceVersion.js";
 import { resourceURL } from "./resourceURLs.js";
 import { preparationProgress } from "./resourceProgress.js";
@@ -680,7 +680,6 @@ class BlasterBattle {
       </main>`;
     this.bindUi();
     queueMicrotask(() => this.pulseMenuEnergy(.48, MENU_ACCENTS[mode], 2300));
-    this.queueGameplayPreparation(this.seed);
   }
 
   renderPrivateLobby(message) {
@@ -695,7 +694,6 @@ class BlasterBattle {
     this.privateLobby = { ...(this.privateLobby || {}), ...message };
     this.onlineWelcome = { ...(this.onlineWelcome || {}), ...message };
     this.seed = this.privateLobby.roomCode || this.seed;
-    this.queueGameplayPreparation(this.seed);
     this.networkEndsAt = 0;
     if (this.multiplayer && this.privateLobby.botHostId) this.multiplayer.botHostId = this.privateLobby.botHostId;
     this.setMatchLoading(false);
@@ -1366,7 +1364,6 @@ class BlasterBattle {
     };
     saveSettings(this.settings);
     this.updateMatchSummary();
-    this.queueGameplayPreparation(this.seed);
   }
 
   captureSettingsPreferences() {
@@ -1696,7 +1693,6 @@ class BlasterBattle {
     this.renderPipeline.setHighLoadMode(fighterCount >= 13);
     const prepared = this.gameplayPreparation?.take(this.seed);
     if (!prepared) this.gameplayPreparation?.cancel();
-    this.menuPreparationSeed = null;
     this.matchPreparation = prepared;
     this.world = prepared?.world || new ArenaWorld(this.scene, this.seed);
     fitArenaShadow(this.keyLight, this.world);
@@ -2298,10 +2294,6 @@ class BlasterBattle {
   frame(time) {
     if (this.preparingGraphics || this.preparingMatch) return;
     this.commitResize();
-    if (this.menuPreparationSeed != null && this.state !== "play" && this.state !== "loading") {
-      const key = gameplayPreparationKey(this, this.menuPreparationSeed);
-      if (key !== this.menuPreparationKey || this.menuPreparationPipeline !== this.renderPipeline) this.queueGameplayPreparation(this.menuPreparationSeed);
-    }
     this.timer.update(time);
     const rawDt = Math.min(.25, this.timer.getDelta());
     const dt = Math.min(.033, rawDt);
@@ -4019,18 +4011,7 @@ class BlasterBattle {
     return this.gameplayPreparation.request(seed);
   }
 
-  queueGameplayPreparation(seed) {
-    this.menuPreparationSeed = seed;
-    this.menuPreparationKey = gameplayPreparationKey(this, seed);
-    this.menuPreparationPipeline = this.renderPipeline;
-    this.prepareGameplayResources(seed).catch(error => {
-      console.warn("Background gameplay preparation incomplete", error);
-      preparationProgress("failed", 0, 0, error.message);
-    });
-  }
-
   stopGameplayPreparation() {
-    this.menuPreparationSeed = null;
     this.gameplayPreparation?.cancel();
   }
 

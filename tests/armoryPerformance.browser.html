@@ -1,0 +1,99 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Armory entry performance checks</title><link rel="stylesheet" href="/src/styles.css">
+<div id="app"><canvas id="game-canvas"></canvas><div id="ui-root"></div></div>
+<div id="match-loading" hidden><span data-match-seed></span><span data-match-kind></span></div>
+<aside style="position:fixed;z-index:999;bottom:0;max-height:35vh;overflow:auto;background:#09131df2;color:white;padding:8px;font:12px monospace">
+<button id="profile" disabled>Profile Armory entry</button><button id="launch" disabled>Verify launch readiness</button><pre id="metrics">Loading engine</pre></aside>
+<script type="module">
+// Real UI and renderer, with DOM-visible diagnostics for desktop/mobile review.
+performance.mark('blaster-shell-visible');
+const metrics = document.querySelector('#metrics'), profile = document.querySelector('#profile'), launch = document.querySelector('#launch');
+const errors = [], samples = [];
+addEventListener('error', event => errors.push(event.message));
+addEventListener('unhandledrejection', event => errors.push(String(event.reason)));
+const { gameReady } = await import('../src/main.js');
+const game = await gameReady;
+await game.prepareResources();
+let phase = 'Ready', current = null;
+const report = () => metrics.textContent = JSON.stringify({ phase, backend: game.renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL',
+  quality: game.settings.graphics, viewport: `${innerWidth}x${innerHeight}`, longTasksSupported, errors, samples }, null, 2);
+const longTasksSupported = globalThis.PerformanceObserver?.supportedEntryTypes?.includes('longtask') || false;
+const observer = longTasksSupported ? new PerformanceObserver(list => {
+  for (const entry of list.getEntries()) {
+    if (current && entry.startTime >= current.started) current.longTasks.push(Math.round(entry.duration));
+  }
+}) : null;
+observer?.observe({ type: 'longtask' });
+const render = game.renderPipeline.render.bind(game.renderPipeline);
+game.renderPipeline.render = () => {
+  const started = performance.now();
+  try { return render(); } finally {
+    if (current) {
+      current.renderCalls++;
+      current.longestRenderMs = Math.max(current.longestRenderMs, Math.round(performance.now() - started));
+    }
+  }
+};
+const prepareScene = game.renderPipeline.prepareScene.bind(game.renderPipeline);
+game.renderPipeline.prepareScene = async (...args) => {
+  const sample = current, started = performance.now();
+  if (sample) sample.compileCalls++;
+  try { return await prepareScene(...args); } finally {
+    if (sample) sample.compileMs += Math.round(performance.now() - started);
+  }
+};
+const wait = predicate => new Promise((resolve, reject) => {
+  let frame;
+  const timeout = setTimeout(() => { cancelAnimationFrame(frame); reject(Error('Readiness check exceeded 120 seconds')); }, 120000);
+  const poll = () => { if (predicate()) { clearTimeout(timeout); resolve(); } else frame = requestAnimationFrame(poll); };
+  poll();
+});
+profile.disabled = false; report();
+profile.onclick = async () => {
+  profile.disabled = true; launch.disabled = true;
+  const sample = current = { started: performance.now(), renderCalls: 0, compileCalls: 0, compileMs: 0, longestRenderMs: 0, maxFrameGapMs: 0, longTasks: [] };
+  let frame, last = sample.started;
+  const tick = time => { sample.maxFrameGapMs = Math.max(sample.maxFrameGapMs, Math.round(time - last)); last = time; frame = requestAnimationFrame(tick); };
+  frame = requestAnimationFrame(tick);
+  const mode = new URLSearchParams(location.search).get('mode') || 'quick';
+  const started = performance.now();
+  game.renderSetup(mode);
+  sample.entryJsMs = Math.round(performance.now() - started);
+  phase = 'Sampling entry for 8 seconds'; report();
+  await new Promise(resolve => setTimeout(resolve, 8000));
+  cancelAnimationFrame(frame);
+  // Flush observer deliveries before ending the sample.
+  for (const entry of observer?.takeRecords() || []) if (entry.startTime >= sample.started) sample.longTasks.push(Math.round(entry.duration));
+  sample.windowMs = Math.round(performance.now() - sample.started);
+  sample.preparedWeapons = game.gameplayPreparation?.ready?.fighters.reduce((sum, fighter) => sum + fighter.weaponModels.size, 0) || 0;
+  sample.preparationPending = Boolean(game.gameplayPreparation?.pending);
+  sample.sceneMeshes = 0;
+  game.scene.traverse(object => { if (object.isMesh) sample.sceneMeshes++; });
+  sample.loadedImages = [...document.querySelectorAll('.loadout-armory img')].filter(image => image.complete && image.naturalWidth).length;
+  sample.totalLongTaskMs = longTasksSupported ? sample.longTasks.reduce((sum, duration) => sum + duration, 0) : null;
+  delete sample.started; current = null; samples.push(sample);
+  phase = 'Entry sampled'; launch.disabled = false; report();
+};
+launch.onclick = async () => {
+  launch.disabled = true;
+  let earlyCountdowns = 0, loaderBeforePreparation = false;
+  const countdown = game.startMatchCountdown.bind(game), prepare = game.prepareGameplayResources.bind(game);
+  game.startMatchCountdown = () => { if (!game.matchFrameReady) earlyCountdowns++; countdown(); };
+  game.prepareGameplayResources = (...args) => { loaderBeforePreparation = !document.querySelector('#match-loading').hidden; return prepare(...args); };
+  const started = performance.now();
+  phase = 'Loading match'; report();
+  try {
+    game.queueMatchStart();
+    await wait(() => game.state === 'play' && game.matchFrameReady && !game.preparingMatch && !game.hideMatchLoadingAfterFrame && !game.matchStartQueued);
+    const sample = { launchMs: Math.round(performance.now() - started), loaderBeforePreparation, earlyCountdowns,
+      matchFrameReady: game.matchFrameReady, matchTime: game.matchTime, players: game.players.length,
+      allWeaponsPrepared: game.players.every(player => player.weaponModels.size === new Set(player.loadout).size) };
+    samples.push(sample);
+    if (!loaderBeforePreparation || earlyCountdowns || !sample.allWeaponsPrepared) throw Error('Launch readiness gate failed');
+    if (errors.length) throw Error('Browser reported errors');
+    game.togglePause(); phase = 'PASS';
+  } catch (error) { errors.push(String(error)); phase = 'FAIL'; }
+  game.startMatchCountdown = countdown; game.prepareGameplayResources = prepare;
+  report();
+};
+</script></html>

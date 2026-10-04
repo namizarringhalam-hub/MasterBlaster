@@ -206,7 +206,7 @@ export class NeonRenderPipeline {
 
   async prepareScene(roots, valid = () => true) {
     // WebGL drivers can block for seconds when first-use linking happens in a
-    // draw. Use Three's parallel compilation for the menu-owned scene, retaining
+    // draw. Use Three's parallel compilation behind the loading screen, retaining
     // its resources until this promise settles, before submitting real draws.
     if (this.nativeWebGPU) return;
     const renderer = this.renderer;

@@ -229,13 +229,18 @@ const main = await readFile("src/main.js", "utf8");
 const controller = main.slice(main.indexOf("class BlasterBattle"), main.indexOf("\nconst game = new BlasterBattle")).replaceAll("import.meta.url", '"test"');
 const Game = new Function("prepareSurfaceTextures", "preparationProgress", "clampBotCount", "console", `return ${controller}`)(
   async () => {}, () => {}, value => value, { warn() {} });
-let resolvePreparation, rejectPreparation, builds = 0, menus = 0;
+let resolvePreparation, rejectPreparation, resolveGameplay, rejectGameplay, builds = 0, menus = 0, gameplayRequests = 0;
 const launch = Object.assign(Object.create(Game.prototype), {
-  mode: "training", settings: { botCount: 1 }, sound: {}, timeLimitMinutes: 3,
+  mode: "training", seed: "START", settings: { botCount: 1 }, sound: {}, timeLimitMinutes: 3,
   clearMatch() { this.resourceLaunchToken = null; }, setMatchLoading() {},
   renderMain() { menus++; },
   prepareResources: () => new Promise((resolve, reject) => { resolvePreparation = resolve; rejectPreparation = reject; }),
-  prepareGameplayResources: async () => {},
+  prepareGameplayResources(seed) {
+    assert.equal(this.state, "loading", "gameplay construction and GPU warmup run behind the match loader");
+    assert.equal(seed, "START", "launch prepares the selected arena seed");
+    gameplayRequests++;
+    return new Promise((resolve, reject) => { resolveGameplay = resolve; rejectGameplay = reject; });
+  },
   renderPipeline: { setHighLoadMode() { builds++; throw Error("arena reached"); } }
 });
 const cancelled = launch.startMatch(null, true);
@@ -243,12 +248,29 @@ assert.equal(builds, 0, "launch waits for shared resource preparation");
 launch.resourceLaunchToken = null;
 resolvePreparation(); await cancelled;
 assert.equal(builds, 0, "leaving setup during preparation cancels the queued match");
+assert.equal(gameplayRequests, 0, "a cancelled launch never begins gameplay construction or GPU warmup");
 const failed = launch.startMatch(null, true);
 rejectPreparation(Error("missing resource")); await failed;
 assert.equal(menus, 1); assert.equal(builds, 0, "failed preparation cannot enter gameplay");
+assert.equal(gameplayRequests, 0, "failed common resource preparation never starts gameplay preparation");
+const cancelledGameplay = launch.startMatch(null, true);
+resolvePreparation(); await new Promise(setImmediate);
+assert.equal(gameplayRequests, 1, "explicit launch still prepares the full gameplay resources");
+assert.equal(builds, 0, "launch awaits gameplay preparation before entering play");
+assert.equal(launch.state, "loading");
+launch.resourceLaunchToken = null;
+resolveGameplay(); await cancelledGameplay;
+assert.equal(builds, 0, "leaving during gameplay warmup cannot construct a playable match");
+const failedGameplay = launch.startMatch(null, true);
+resolvePreparation(); await new Promise(setImmediate);
+rejectGameplay(Error("GPU warmup failed")); await failedGameplay;
+assert.equal(menus, 2); assert.equal(builds, 0, "failed gameplay warmup returns to the menu without entering play");
 const readyLaunch = launch.startMatch(null, true);
-resolvePreparation(); await assert.rejects(readyLaunch, /arena reached/);
+resolvePreparation(); await new Promise(setImmediate);
+assert.equal(builds, 0, "the loader remains active until gameplay preparation completes");
+resolveGameplay(); await assert.rejects(readyLaunch, /arena reached/);
 assert.equal(builds, 1);
+assert.equal(gameplayRequests, 3, "each explicit launch prepares gameplay once");
 launch.seed = "OLD";
 launch.renderPrivateLobby = () => launch.seed;
 assert.equal(await launch.startMatch({ phase: "lobby", seed: "SERVER-SEED" }), "SERVER-SEED", "server seed changes replace the menu's prepared seed");

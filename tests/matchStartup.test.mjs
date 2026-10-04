@@ -41,6 +41,23 @@ const scene = Object.assign(Object.create(Game.prototype), {
 });
 assert.equal(scene.renderScene(), false, "the hidden game canvas does not consume GPU frames behind menus");
 assert.equal(submittedFrames, 0);
+let menuResizes = 0, menuSimulationUpdates = 0;
+Object.assign(scene, {
+  renderSize: { width: 800, height: 600, pixelRatio: 1 },
+  commitResize() { menuResizes++; this.renderSize.width += 40; this.renderSize.height += 20; },
+  timer: { update() {}, getDelta: () => 1 / 60 }, input: { endFrame() {} },
+  update() { menuSimulationUpdates++; },
+  queueGameplayPreparation() { assert.fail("menu resize frames must not restart arena construction or GPU warmup"); },
+  prepareGameplayResources() { assert.fail("gameplay resources prepare only after an explicit match launch"); }
+});
+for (const [mode, state] of [["quick", "menu"], ["training", "menu"], ["private", "lobby"], ["global", "global"], ["global", "lobby"]]) {
+  Object.assign(scene, { mode, state });
+  scene.frame(menuResizes * 16);
+  scene.frame(menuResizes * 16);
+}
+assert.equal(menuResizes, 10, "menu and lobby frames still apply viewport changes");
+assert.equal(submittedFrames, 0, "resizing local or public loadout menus submits no gameplay GPU work");
+assert.equal(menuSimulationUpdates, 0, "menu resize frames do not simulate gameplay");
 scene.world = { updatePresentation() {} };
 scene.state = "play"; scene.paused = true;
 assert.equal(scene.renderScene(), true, "paused matches keep their visible arena background");

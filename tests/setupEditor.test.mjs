@@ -26,7 +26,7 @@ const Game = new Function(...Object.keys(bindings), `return ${controller}`)(...O
 const storage = new Map();
 globalThis.localStorage = { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
 const game = Object.create(Game.prototype);
-game.queueGameplayPreparation = () => {};
+game.queueGameplayPreparation = game.prepareGameplayResources = () => assert.fail("interactive setup and lobby changes must not construct or warm gameplay resources");
 game.settings = data.loadSettings();
 assert.deepEqual(game.settings.loadout, data.RECOMMENDED_LOADOUT, "new players arrive with the complete recommended kit");
 game.mode = "training";
@@ -175,6 +175,11 @@ const custom = [...game.settings.loadout];
 game.renderSetup("quick");
 game.renderSetup("quick");
 assert.deepEqual(game.settings.loadout, custom, "returning to Quick Play keeps the current custom loadout");
+for (const mode of ["training", "private", "quick"]) {
+  game.renderSetup(mode);
+  assert.equal(game.mode, mode);
+  assert.deepEqual(game.settings.loadout, custom, "changing setup mode does not replace a custom kit or start gameplay preparation");
+}
 game.settings.defaultLoadoutPreset = 0;
 game.settings.loadout = [...data.DEFAULT_LOADOUT];
 game.renderSetup("quick");
@@ -272,4 +277,15 @@ assert.match(roomUi.innerHTML, new RegExp(TEXT.globalLobby.emptySlot));
 assert.equal(game.activeLoadoutSlot, 0, "waiting rooms open with the first armory slot selected");
 assert.match(roomUi.innerHTML, /data-preset-select/);
 assert.equal(roomNodes.get("[data-global-rules]").textContent, formatText(TEXT.setup.matchSummary, { bots: 2, difficulty: TEXT.setup.difficulties.normal, minutes: 3 }));
-console.log("Global creation and waiting-room rendering preserve collapsed settings, the visible armory, presets and optional random slots.");
+room.renderRoom({ type: "lobby", configuredBotCount: 3 });
+assert.equal(roomNodes.get("[data-global-rules]").textContent, formatText(TEXT.setup.matchSummary, { bots: 3, difficulty: TEXT.setup.difficulties.normal, minutes: 3 }), "passive room updates refresh rules without gameplay preparation");
+game.clearMatch = () => {};
+game.multiplayer.send = () => {};
+room.directory = { connected: true };
+await room.open();
+assert.equal(game.state, "global", "opening a connected public directory stays in the menu");
+game.mode = "private";
+game.renderPrivateLobby({ phase: "lobby", roomCode: "WAITING", hostId: "local", configuredBotCount: 2, difficulty: "normal", timeLimitMinutes: 3, players: [{ id: "local", name: "Tester" }] });
+assert.equal(game.state, "lobby");
+assert.equal(game.seed, "WAITING", "private waiting rooms update their seed without building the arena");
+console.log("Setup entry, preference capture and private/public waiting-room updates stay free of gameplay construction and GPU warmup; armory settings and slots remain available.");
