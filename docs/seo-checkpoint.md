@@ -381,3 +381,14 @@
   mandatory resource manifest contains press images. Module syntax/diff checks and
   the two actual capture runs pass. Action exports are 1068 × 735; menu JPEGs
   remain 1280 × 720. Original 191559.png overview remains untouched.
+- Published request commit adc9102 to origin/main, preserving the unrelated
+  difficulty-label commits. All four direct live image URLs now return HTTP 200
+  with correct image/jpeg or image/png types; downloaded live bytes match each
+  source SHA-256 hash exactly. Assets are ready for the user's expanded review.
+- Temporary capture tabs closed; owned Vite process stopped and no listener
+  remains on port 52220. No viewport override used. Forum publication remains
+  pending content/asset approval; daily activity monitoring remains ACTIVE at
+  09:00 Europe/Stockholm and will cover every verified published permalink.
+- Next step: user reviews the four new screenshots alongside the generic feedback
+  post and optional existing overview. Use approved assets only where community
+  rules allow, retain honest staged-capture captions and record publication URLs.
