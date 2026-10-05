@@ -3,8 +3,13 @@
 Started 4 October 2026. The user approved options 1, 2, 3, 4, 5, 7 and 8 from
 the additional-target shortlist: BrowserGames.gg, iogames.fun, Gamedev.js Weekly,
 Three.js forum Showcase, Alpha Beta Gamer, Three.js Resources and Indie Games Plus.
-Use Master Blaster brand accounts and masterblastergame@proton.me, first-person
-copy, accurate AI-assisted coding disclosure and approved screenshots only.
+Use Master Blaster brand accounts and masterblastergame@proton.me, the latest
+General feedback post from the editable Page, accurate AI-assisted coding
+disclosure and the Page's current screenshots. On 5 October the user approved
+their father-and-son wording as the default for future emails/posts and allowed
+recipient/context adaptations. Earlier sent copy below remains historical;
+do not resend it. The current source and snapshot are linked in
+docs/community-post-drafts.md. Add no account-derived personal details.
 The playable game remains hosted only at masterblaster.se.
 
 ## Status

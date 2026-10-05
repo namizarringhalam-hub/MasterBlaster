@@ -6,9 +6,19 @@ with "These look great! Let's go!" Publication through brand accounts and requir
 free account creation are authorized. Current submission/access status is recorded
 below; community eligibility checks and human verification still apply.
 
+For future emails and posts, use the latest General feedback post on the
+[editable Page](https://chatgpt.com/space/page_6f014dc1bbfc81919de2edf967cf18bf)
+as the default, authorized on 5 October. Read it before preparing outreach;
+greetings, recipient references, subject/title, length, format and tags may be
+adapted. Preserve the user-supplied father-and-son story and feedback request;
+this supersedes the older generic and separate Codex drafts. The current Page
+also replaces the Quick Play image; use its native attachment, not the older
+public screenshot by default. docs/community-post-drafts.md is a snapshot only.
+
 Use the Master Blaster brand identity and mailbox only. State our involvement
-honestly, describe AI assistance accurately and avoid personal details or creator
-bios. Lead with real playable gameplay and specific feedback questions. These are
+honestly, describe AI assistance accurately and add no personal details or creator
+bios beyond the story the user explicitly supplied. Lead with real playable
+gameplay and specific feedback questions. These are
 audience-fit recommendations, not guarantees of acceptance or SEO ranking gains.
 
 ## Recommended starting targets

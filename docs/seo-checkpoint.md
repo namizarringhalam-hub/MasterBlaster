@@ -638,3 +638,28 @@
 - Changed files for this request: docs/community-post-drafts.md and this checkpoint.
   Next: use the Page for requested revisions; continue existing daily monitoring
   from the community register. No Word document was created.
+
+## User approved revised outreach source — 5 October 2026
+
+- Read the user's edited Page, page_6f014dc1bbfc81919de2edf967cf18bf. Its General
+  feedback post now uses the supplied father-and-son story, AI-assisted coding
+  disclosure, revised feedback questions and clickable tagged play/guide links.
+  The old Codex/revision sections were removed by the user; do not restore them.
+- User explicitly chose this general post as the default for all future emails
+  and posts, permitting recipient/context adaptations without new approval.
+  Read the latest Page before preparation. This supersedes earlier opening and
+  separate Codex wording; preserve brand-only accounts and other posting holds.
+  The supplied story is authorized; do not add personal names, account-derived
+  details or additional creator information. Verify feature claims when adapting.
+- The Page now has a replacement Quick Play image with the latest loadout/weapon
+  preview. Keep its native attachment; a public/exported replacement URL is not
+  verified. Three other screenshot sources and staged-action captions remain.
+- Updated the local snapshot, growth plan and both outreach records to follow
+  this policy. No Page text/image, existing public post or sent email changed.
+- Updated the existing ACTIVE daily automation through the app tool to read the
+  latest Page and apply the new default; schedule and target chat are unchanged.
+  Exact general-post text matches the Page read in both local copy snapshots;
+  existing image paths and saved automation fields verified, diff check passed.
+  No new outreach was sent; do not resend prior pitches or bypass moderation.
+  Next: apply the latest Page copy to eligible future outreach and continue
+  existing daily monitoring; preserve all paused work and access blockers.

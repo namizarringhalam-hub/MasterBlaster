@@ -53,41 +53,47 @@ Master Blaster is a free browser arena shooter with destructible towers and
 
 Play: [Play Master Blaster](https://masterblaster.se/?ref=social&utm_source=social&utm_medium=community&utm_campaign=first_players&utm_content=caption)
 
-### Generic feedback post — approved 4 October 2026
+### Generic feedback post approved 5 October 2026
 
-Title: Master Blaster — free browser arena shooter with grappling and destructible towers
+Use the latest General feedback post on the [editable Page](https://chatgpt.com/space/page_6f014dc1bbfc81919de2edf967cf18bf)
+as the default for all future outreach emails and posts. Read the Page before
+preparing new copy; recipient, subject/title, length, format and source-tag
+adaptations are authorized. The following is the current snapshot.
 
-I'm working on Master Blaster, a free browser arena shooter where you can
-grapple across the map, blast towers apart and choose a five-weapon loadout from
-47 weapons. It's being built with AI-assisted coding.
+**Title:** Master Blaster — free browser arena shooter with grappling and destructible towers
 
-Try Quick Play or Training against up to 15 bots, invite friends through a
-Private Room, or find/create a game in Global Multiplayer. No download is needed.
+My son who’s 8 years old is working on Master Blaster, a free browser arena shooter where you can grapple/swing across the map, blast players and the environment of towers using any of the 47 available weapons. He’s building it with AI-assisted coding and my job as his dad has been to help him set up the needed accounts and to help him with marketing :)
+
+Please check the game out, you can do Quick Play or Training against up to 15 bots, invite friends to a Private Room, or find/create a game in Global Multiplayer. No downloads and no chats make the game child friendly.
 
 **Play:** [Play Master Blaster](https://masterblaster.se/?ref=community&utm_source=community&utm_medium=community&utm_campaign=first_players&utm_content=showcase)
 
 **Controls and game modes:** [How to play](https://masterblaster.se/how-to-play/?ref=community&utm_source=community&utm_medium=community&utm_campaign=first_players&utm_content=guide)
 
-I'd love feedback, especially on:
+We'd love feedback, especially on:
 
-- Does the grappling hook feel intuitive, and can you build up speed comfortably?
-- Are opponents, weapon effects and destructible cover easy to read during a fight?
-- What would you change first to make you want another match?
+- Does the game mechanics feel right?
 
-If something breaks or runs poorly, please include your device and browser,
-what happened, and which game mode you tried. Thanks for giving it a go!
+- Is the game fun?
+
+- What would you change first to make you want to play more matches?
+
+If something breaks or runs poorly, please let us know.
+
+Thanks for giving it a go!
 
 ### Exact assets and links for this draft
 
 - Canonical playable game: [Play Master Blaster](https://masterblaster.se/).
 - Canonical guide: [Controls and game modes](https://masterblaster.se/how-to-play/).
-- User correction on 4 October: use first-person copy ("I'm working on", "I'd
+- Historical user correction on 4 October: use first-person copy ("I'm working on", "I'd
   love feedback") and real clickable links, with source tags wherever permitted.
   Replace the generic `community` or `social` value in both `ref` and `utm_source`
   with the actual platform/community before posting. Use the rich-text link tool
   or Markdown/BBCode supported by the site; verify rendered anchors after saving.
   Where rules prohibit referral links, including r/WebGames, use the canonical
-  URL as a clickable link. Keep the screenshot URLs unchanged.
+  URL as a clickable link. Keep the screenshot URLs unchanged. The 5 October
+  Page rewrite supersedes the earlier opening and feedback wording.
 - Existing arena overview: public/press/gameplay.png, available at
   https://masterblaster.se/press/gameplay.png. This is the user's chosen 191559.png
   unchanged: 960 × 540 PNG, 804,703 bytes, SHA-256
@@ -102,9 +108,11 @@ what happened, and which game mode you tried. Thanks for giving it a go!
 | [action-rockets.png](https://masterblaster.se/press/action-rockets.png) | Rocket Launcher equipped in a staged 15-bot engine scene; real bot combat and explosions. | A blue fighter holds a rocket launcher in a neon arena while colourful bot fighters fire and a large red explosion lights the platform. |
 | [action-grenades.png](https://masterblaster.se/press/action-grenades.png) | Grenade Launcher equipped, captured from the player camera in a staged 15-bot engine scene. | A fight viewed from behind the player, with armed bot fighters, bright purple explosions and a cyan hit effect on the foreground fighter. |
 | [home-menu.jpg](https://masterblaster.se/press/home-menu.jpg) | Master Blaster home menu. | Master Blaster home menu with Quick Play, Private Room, Global Multiplayer and Training choices beneath Swing wild. Break everything. |
-| [quick-play.jpg](https://masterblaster.se/press/quick-play.jpg) | Quick Play setup: 15 veteran bots and a five-weapon loadout. | Quick Play menu showing 15 veteran bots and Rocket Launcher, Grenade Launcher, Decoy Launcher, Ricochet Cannon and Chainsaw weapon slots. |
+| [Latest Quick Play image on the Page](https://chatgpt.com/space/page_6f014dc1bbfc81919de2edf967cf18bf) | Quick Play setup with 15 veteran bots, five equipped weapons and the current weapon preview. | Latest Quick Play menu and weapon preview. Native Page attachment replaces the earlier public quick-play.jpg; no public/exported replacement URL verified. |
 
-The home and Quick Play images are unchanged 1280 × 720 JPEG browser captures.
+The 4 October home and original Quick Play images were 1280 × 720 JPEG browser
+captures. Use the replacement Quick Play attachment from the current Page for
+future outreach; its exported/public URL is not yet verified.
 The action images are unchanged 1068 × 735 PNG canvas exports from the current production
 engine's development-only review view. Initial positions/loadouts were staged;
 production AI movement, weapon fire and resulting explosions ran normally.
@@ -121,8 +129,10 @@ Gameplay/mode claims were checked against current PLAYER_TEXT.js and README.md;
 no new performance claims are made. The new assets are also covered by the final
 build/hosting and live checks recorded in seo-checkpoint.md.
 
-This is brand-account copy, without personal names/details or creator information.
-The user approved it on 4 October 2026. Adapt title,
+Use brand accounts and only the father-and-son story the user supplied in the
+5 October Page rewrite; do not add names, account-derived details or creator bios.
+The user approved the rewritten general post as the future default and authorized
+recipient/context adaptations. Adapt title,
 flair, length and attachment placement to each community's rules. r/WebGames may
 require the direct game-link submission with allowed contextual comments instead
 of this full body. AI-builder communities need specific verified workflow detail;
@@ -207,9 +217,11 @@ publication for daily checks. Exact URLs/status are in the community register.
 No spending or use of personal accounts is authorized. The ACTIVE 09:00 daily
 follow-up reflects content approval and monitors pending submissions as well.
 
-### r/Codex manual showcase copy
+### Historical Codex showcase copy
 
-Prepared 4 October 2026 for the user to post through u/MasterBlasterGame. The
+Prepared 4 October 2026; superseded by the user's 5 October general post. Do not
+use this older variant as the default or restore it to the Page. Any future Codex
+version should adapt the current general post for manual brand-account posting. The
 [current showcase](https://www.reddit.com/r/codex/comments/1wngv35/show_us_all_what_youve_been_building_with_codex/)
 is still highlighted, but [Rule 9](https://www.reddit.com/r/codex/about/) prohibits
 bots. No comment has been submitted. Recheck the current pin and resolve the
