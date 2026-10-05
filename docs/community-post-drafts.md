@@ -94,4 +94,3 @@ The Codex version is for manual brand-account posting under its no-bots rule. Re
 - [ ] Choose the images and their order
 - [ ] Add comments for the next revision
 - [ ] Select the destination and adapt its links
-
