@@ -687,3 +687,19 @@
 - Related files: new shortlist, community-outreach-targets.md and this checkpoint.
   Next: user's review of this concrete new target list, then destination checks
   and eligible outreach using the approved copy. Continue existing daily checks.
+
+## Approved third wave started — 5 October 2026
+
+- User selected options 1, 2, 3, 5 and 7: IndieDB, PaperCroft, SlowDen,
+  Rando.gg and GameDev.net. Options 4, 6 and 8 remain unselected.
+- Reread the authoritative Page's general feedback post and current images.
+  Exported the replacement Quick Play JPEG unchanged to
+  public/press/quick-play-loadout-2026-10-05.jpg (1280x720, 89874 bytes).
+  Updated local draft image links; native Page remains unchanged.
+- IndieDB brand signup is prepared but requires user-entered birth date;
+  no date invented. Credentials saved only in ignored task-local storage.
+- PaperCroft verified the tagged playable link and scraped existing game art;
+  no submission sent yet. SlowDen and Rando public forms inspected.
+- Next: verify deployed new image, submit eligible approved targets, test
+  iframe gameplay, record exact outcomes and prepare GameDev.net manual route.
+  Preserve existing campaign holds and unrelated untracked %SystemDrive%/.

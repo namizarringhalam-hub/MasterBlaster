@@ -56,10 +56,10 @@ Master Blaster home menu.
 
 ### Quick Play with 15 bots
 
-[View the updated Quick Play screenshot on the editable Page](https://chatgpt.com/space/page_6f014dc1bbfc81919de2edf967cf18bf)
+![Updated Quick Play loadout](../public/press/quick-play-loadout-2026-10-05.jpg)
 
 Quick Play setup with 15 veteran bots, five equipped weapons and the current weapon preview.
 
-[Updated Quick Play attachment on the Page](https://chatgpt.com/space/page_6f014dc1bbfc81919de2edf967cf18bf)
+[Download updated Quick Play screenshot](https://masterblaster.se/press/quick-play-loadout-2026-10-05.jpg)
 
-The latest Quick Play image is a new native Page attachment, replacing the earlier screenshot. No public URL or local exported copy is verified for it; use the Page attachment when preparing future assets. The three other images retain their existing public attachment links. Keep staged 15-bot scene captions with action images.
+The latest Quick Play image was exported unchanged from the user's native Page attachment on 5 October 2026 (SHA-256 2a981e0141f9335b9956fb740fdc277d747070f49eaa12c64b65d4c1c14294c3). Its public link is usable after Cloudflare deploys the related main commit; verify before attaching. The earlier screenshot remains for historical posts. Keep staged 15-bot scene captions with action images.
