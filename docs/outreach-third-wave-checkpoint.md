@@ -14,7 +14,7 @@ a receipt or uncertain result. Options 4, 6 and 8 remain unselected.
 | 2 | PaperCroft / Xander Develops | Submitted once without an account, 11:13 CEST, title `Master Blaster — browser arena shooter with grappling and destructible towers`, developer Master Blaster, private brand email. Public queue independently reopened and title found at 11:15. Queue count 144→145, no review score/stream date. | Daily check exact title in public queue/leaderboard and brand mail for review/feedback. No item permalink exposed by UI; use https://www.papercroft.com/livestream and stable title/domain identity. |
 | 3 | SlowDen | General-game form submitted once around 11:14 CEST. Receipt initially claimed live publication before search exposed it. Actual public listing https://slowden.com/games/master-blaster-m8pf4/ verified at 11:32 CEST in home community/new rows and game page. Master Blaster handle, brand email, tagged clickable developer-site link, rocket-action cover, short adapted story/AI disclosure/feedback request. Honest form-process rating 4/5; comment disclosed assistant involvement and described actual form experience. | Monitor this exact listing, moderation and brand mail daily. Page exposes no written gameplay replies at baseline; no human review/feature or game rating claimed. Never resend. |
 | 5 | Rando.gg | Live embed inspected: no sandbox, allow `autoplay; encrypted-media; gyroscope; picture-in-picture;`, no allowfullscreen. Temporary localhost harness rendered production menu, but repeated UI activation did not reach setup. Direct top-level Quick Play succeeded. Root cause unconfirmed; no keyboard/pointer/audio/multiplayer pass claimed. Form is prepared with truthful pending-check notes but not submitted. User asked to test real gameplay at http://127.0.0.1:8796/. | Complete actual iframe verification with user help, then adapt compatibility notes to evidence and submit once if eligible. Harness helper is task exec session 38186, loopback only; leave running for user handoff. |
-| 7 | GameDev.net | User reported manual completion and supplied https://gamedev.net/manage/projects/460/. This management URL is inaccessible to the public web checker; public permalink, published/draft status, final account/copy/media are not yet independently verified. No automated signup/post or edit. Current approved source package below. | User was asked for public View/Preview project URL, publishing first if status is Draft. Record and monitor exact public page once verified; do not duplicate or autonomously alter their manual final text. |
+| 7 | GameDev.net | User manually submitted project 460 and supplied https://gamedev.net/projects/460-master-blaster/ plus a screenshot on 5 October showing the official notification: Master Blaster is pending moderator review. Submission confirmed by user-provided evidence; public publication/backlink remains unconfirmed. Final account/copy/media not independently verified; no automated signup/post/edit. | Daily check existing project URL and brand mail for moderator approval, then new comments. No further public-link/upload help required. Do not republish, recreate or autonomously alter the user's manual final text. |
 
 ## PaperCroft submitted content
 
@@ -85,13 +85,20 @@ https://masterblaster.se/press/action-rockets.png. No game copy uploaded.
 
 ## Recovery
 
-Latest GameDev.net handoff: user reported completion and supplied management
-project 460. Web tool returned inaccessible; no independent public URL/state
-yet. Asked for public View/Preview link and to publish if Draft. Preserve user
-manual text and do not submit again. Registration guidance below is historical,
-not a reason to ask for another account. Current brand identity remains
-unverified until the public post is accessible. Daily automation updated with
-this reported submission and IndieDB Go Live/gallery outcome.
+Latest GameDev.net handoff: user provided public-form project link
+https://gamedev.net/projects/460-master-blaster/ (their share link also has
+utm_source=copy_link, utm_medium=share and utm_campaign=2026_usershare_project_next).
+Their attached screenshot shows the official notification that Master Blaster
+is pending moderator review. Treat as a confirmed manual submission awaiting
+approval, not Draft or confirmed public publication. Do not ask them to publish
+again, recreate an account or provide this same link again. Preserve their
+manual final text. Screenshot evidence does not independently verify final
+account identity, full content/media or anonymous public access. Daily automation
+updated to check this exact queued project and brand mail for approval/replies.
+
+5 Oct 12:14 CEST public web check of the supplied project URL returned
+inaccessible. Record as failed public check, not no activity; no stable reply
+IDs or full-content validation yet. Moderator messages/replies not authorized.
 
 Latest outcome, 5 Oct around 12:07 CEST: the user selected all five gallery
 files in new user-owned tab 23 (binding indieActualGalleryTab), not prepared

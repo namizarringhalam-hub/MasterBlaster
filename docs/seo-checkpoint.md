@@ -809,3 +809,11 @@
   Draft. No automated account/post/edit performed. Daily automation updated to
   monitor existing IndieDB profile/gallery outcome and recover GameDev.net
   public URL when supplied, preserving all prior holds and schedule.
+
+- GameDev.net resolved handoff: user supplied exact project permalink
+  https://gamedev.net/projects/460-master-blaster/ and screenshot of official
+  pending moderator review notification on 5 October. This confirms manual
+  submission awaiting review; do not treat as Draft or ask to publish again.
+  Full content/account/media and anonymous visibility remain unverified.
+  Daily monitoring now targets this exact queued page plus brand mail for
+  approval, then feedback. No duplicate/edit/account creation or reply sent.

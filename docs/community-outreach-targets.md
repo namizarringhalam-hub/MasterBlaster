@@ -104,13 +104,23 @@ the user has been asked to test the temporary local harness. GameDev.net has a
 complete manual post/image package under its automated-access restriction.
 No new content/account approval required. Preserve all earlier moderation holds.
 
-GameDev.net update: user reported manual completion and provided management URL
-https://gamedev.net/manage/projects/460/. Public web reader returned inaccessible;
-this is not a verified public permalink or proof of Published state. Asked user
-for public View/Preview URL, publishing first if Draft. Final posted text/media
-and brand identity have not been independently checked. Do not recreate account,
-duplicate project or autonomously edit their manual final text. Daily monitor
-will add exact public URL once supplied and verified.
+GameDev.net update: user manually submitted project 460 and supplied
+https://gamedev.net/projects/460-master-blaster/ on 5 October. Their screenshot
+shows the official notification that Master Blaster is pending moderator review.
+Record confirmed manual submission awaiting approval, not Draft or confirmed
+public publication/backlink. Monitor this exact existing URL and brand mail
+daily for approval, then comments. Full final text/media and brand identity
+have not been independently checked. No user action needed for the review
+queue; do not ask to publish again, recreate account, duplicate project or
+autonomously edit their manual final text. Their copy-link sharing UTM values
+are not evidence about referral tags in the posted game links.
+
+GameDev.net check baseline, 5 Oct 12:14 CEST: submission/moderation state from
+user-provided screenshot; anonymous public web check of the exact project URL
+returned inaccessible. No successful public content/activity check or reply
+identifiers yet. This failure is not evidence of zero comments. Report approval
+or removed/access-blocked outcomes explicitly; do not message moderators or
+publish replies without separate user authorization.
 
 ### Submission and access log — 4 October 2026
 
