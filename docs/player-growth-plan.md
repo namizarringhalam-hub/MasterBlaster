@@ -189,10 +189,13 @@ with a completed match. Compare source quality before choosing paid promotion.
 
 ## Next unfinished step
 
-Monitor HTML5 topic 76464 (explicitly pending moderator approval) and ESReality
-submission 2975313 (not publicly visible; new-user approval required). Both use
+HTML5 topic 76464 and user-submitted Three.js topic 95005 were publicly verified
+on 5 October; monitor their replies/moderation daily. ESReality submission 2975313
+is still not publicly visible; new-user approval appears pending. Forum posts use
 first-person feedback copy, clickable source-tagged play/guide links and four
-screenshots. Do not resubmit either. User resolved Reddit signup; brand session is
+screenshots. Preserve the Three.js user's final text; its missing AI-assisted
+coding disclosure is a manual engagement suggestion, not an authorized agent edit.
+Do not resubmit any existing topic. User resolved Reddit signup; brand session is
 u/MasterBlasterGame. r/WebGames submission 1wx9qyu was removed by Reddit's filters;
 its game links are not publicly visible. Do not repost to bypass filtering.
 The r/IndieDev newcomer introduction pdrm7lf was also publicly removed by a

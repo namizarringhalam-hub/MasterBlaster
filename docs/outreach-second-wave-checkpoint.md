@@ -33,6 +33,8 @@ The playable game remains hosted only at masterblaster.se.
   development disclosure after their rewrite omitted it; final wording unverified.
   Queue: https://discourse.threejs.org/u/masterblastergame/activity/pending
   Do not resubmit or alter the user's submitted text; monitor moderator approval.
+  **5 October update:** public topic 95005 and brand approval notice verified;
+  pending-only status above is historical. See the current outcome below.
 - Gamedev.js Weekly: sent to contact@gamedevjsweekly.com at 19:42 CEST.
 - Alpha Beta Gamer: sent to Admin@alphabetagamer.com at 19:42 CEST.
 - Indie Games Plus: sent to editors@indiegamesplus.com at 19:43 CEST.
@@ -65,7 +67,18 @@ The playable game remains hosted only at masterblaster.se.
 
 ## Next unfinished step
 
-Monitor the existing Three.js Showcase queued entry for moderator approval.
+Three.js Showcase is now publicly visible: first anonymous verification on
+5 October 2026 at approximately 09:04 CEST, [topic 95005](https://discourse.threejs.org/t/master-blaster-browser-arena-shooter-with-grappling-and-destructible-towers/95005).
+It displays a 4 October 20:22 CEST post date. Brand mail confirms approval,
+dated 4 October 20:32 CEST; the brand pending page is now empty.
+Tagged play/guide anchors and all four screenshots are present; 0 replies,
+1 like, and 15 views in the Showcase index at this check. The like by Chaser_Code
+is dated 4 October 20:41 in brand notifications and first observed today.
+Final human-written
+body contains no explicit AI-assisted coding disclosure. Preserve it unchanged;
+the user can decide whether to add that disclosure manually. Public URL and
+activity check are recorded in the published-post register. Monitor this topic's
+replies daily; its previous pending-only state is superseded.
 Monitor the existing Three.js Resources submission for editorial publication and
 the other directory/mail outcomes. All seven approved outreach actions are now
 submitted or sent. Existing register and daily monitor include the second wave.
@@ -73,3 +86,16 @@ Documentation review and git diff --check passed; the request's repository
 record consists of this checkpoint, community-outreach-targets.md and
 seo-checkpoint.md. An unrelated untracked %SystemDrive% directory
 appeared during the task; preserve it and exclude it from this request's commit.
+
+## Daily check — 5 October 2026
+
+- BrowserGames.gg home/Shooter category, iogames.fun home and Three.js Resources
+  Games were successfully checked publicly: no game listing verified. No resubmits.
+- Gamedev.js Weekly latest issue 665 (2 October) predates the sent pitch; public
+  coverage searches for it, Alpha Beta Gamer and Indie Games Plus found none.
+- Brand Inbox/All mail/Spam/Trash checked: no editorial/directory reply or new
+  delivery failure. The Three.js approval message is the new campaign outcome.
+  The three sent pitches remain delivery/coverage unconfirmed; no resends.
+- Monitor the exact Three.js public topic and existing directory/mail outcomes
+  daily. No reply was posted and no user-submitted prose was changed. Canonical
+  hosting remains masterblaster.se through Cloudflare Pages from origin/main.

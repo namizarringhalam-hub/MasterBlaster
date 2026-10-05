@@ -570,3 +570,49 @@
   exclude unrelated untracked %SystemDrive% directory. Next unfinished work:
   Resources editorial publication, Three.js moderator approval, and
   external review/replies tracked in the new recovery record and existing register.
+
+## Daily SEO and community follow-up — 5 October 2026
+
+- New public publications verified anonymously: HTML5 Game Devs topic 76464 /
+  comment 375862 and Three.js Showcase topic 95005. Both display 4 October dates;
+  exact moderator-approval time is unknown. Entered exact public permalinks,
+  accounts/content and first successful daily check in the published-post register.
+  Both have tagged clickable play/guide anchors and all four approved images.
+- At approximately 09:04 CEST, HTML5 has 0 replies; Three.js has 0 replies,
+  1 like and 15 views in its public Showcase index. No feedback/reply identifiers
+  to report yet. Three.js final user-rewritten body omits explicit AI-assisted
+  coding disclosure; do not claim it contains one or edit it autonomously.
+- Public ESReality submission 2975313 still returns an empty forum wrapper;
+  activity remains unreadable and administrator approval inferred, not confirmed.
+- Brand Three.js pending queue is empty; approval mail dated 4 October 20:32 CEST
+  links exact topic 95005/post 1 (post ID 235794). Forum notifications date its
+  like by Chaser_Code to 4 October 20:41, newly observed and reported today.
+  No replies. User may manually add the truthful AI-coding disclosure omitted
+  from their final post; no generated edit or reply was published. Public game /
+  guide anchors have nofollow ugc, so no search-ranking benefit is claimed.
+- Fresh public Reddit views still show WebGames filter removal and IndieDev
+  moderator removal; no new visible replies/reason. All existing promotion,
+  human-finalization and excluded-target holds remain in effect.
+- Successfully read brand Inbox/All mail/Spam/Trash: no editorial/directory reply
+  or new delivery failure. All six directory indexes checked without a verified
+  game listing. Three editorial public coverage checks found none; Gamedev.js
+  Weekly issue 665 predates the pitch. No duplicate posts/submissions/emails.
+- Performance source/evidence audit: no stored heading-font waterfall, HAR or
+  paint trace, and existing tests measure combat/match startup instead of landing
+  LCP. Read the existing 3 October PSI report without Analyze: 2.9 s LCP remains
+  the last verified mobile baseline. Its observed UI has no JSON/trace export;
+  selected browser APIs expose no native performance-recording capability.
+  Missing heading-font/paint evidence remains the next technical step; no
+  justified source change, unchanged build/tests or new PSI run this cycle.
+- Initial browser selection timed out and reset its session. Read the supported
+  recovery guidance, inspected available browser connections once and connected
+  to the in-app browser successfully. Cause of the timeout is unconfirmed; no
+  unrelated processes were stopped and no protected browser stores were read.
+- Changed records: docs/community-outreach-targets.md,
+  docs/outreach-second-wave-checkpoint.md, docs/player-growth-plan.md and this
+  checkpoint. Preserve unrelated untracked %SystemDrive%/. Canonical game hosting
+  stays masterblaster.se/Cloudflare Pages/origin/main; no alternate host created.
+  Independent documentation review found stale pending-topic wording, now fixed;
+  git diff --check passed. This run's record is limited to the four documents
+  above. Next unfinished work: daily reply/moderation/listing/mail checks and
+  obtaining the heading-font/paint evidence for justified LCP changes.
