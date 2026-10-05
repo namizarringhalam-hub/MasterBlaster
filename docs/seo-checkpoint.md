@@ -817,3 +817,24 @@
   Full content/account/media and anonymous visibility remain unverified.
   Daily monitoring now targets this exact queued page plus brand mail for
   approval, then feedback. No duplicate/edit/account creation or reply sent.
+
+## User facing outreach tracker — 5 October 2026
+
+- User requested a Page to see attempted sites and approval status. Searched
+  accessible Pages: only the post drafts existed for this game. Created private
+  editable Page Master Blaster outreach and approval tracker at
+  https://chatgpt.com/space/page_d0265fd1ed8881919479f34806b71fe6, no sharing changes.
+- Readback verified native content: four tables covering 18 attempted destinations
+  (4 public placements, 8 pending/unconfirmed external outcomes, 3 editorial
+  pitches, 2 removed Reddit entries and 1 failed-mail destination). Also includes
+  Rando's unsubmitted status, user actions, feedback baseline, five IndieDB
+  gallery links and daily schedule. Uses actual historical checks; no new checks
+  of every external post claimed. Public queue presence is not a streamer review.
+- Updated existing ACTIVE heartbeat to maintain this exact Page from daily
+  evidence, preserving concurrent user edits and existing pauses, account/privacy
+  restrictions and no-duplicate rules. Same 09:00 Stockholm schedule/chat; no
+  additional automation. App open request returned queued, so no claim of visible
+  preview; native content/readback verified, visual layout not inspected.
+- Linked tracker from community register. Documentation-only validation:
+  git diff --check; no game code/build/performance changes. Commit only these two
+  changed docs and push main; preserve unrelated untracked %SystemDrive%/.

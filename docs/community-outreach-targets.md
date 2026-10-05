@@ -1,5 +1,14 @@
 # Master Blaster: community outreach targets
 
+User-facing editable status Page:
+[Master Blaster outreach and approval tracker](https://chatgpt.com/space/page_d0265fd1ed8881919479f34806b71fe6).
+Created 5 October 2026 from verified records below; covers all 18 attempted
+destinations, precise approval/publication states, links, check baselines and
+user actions. Rando is explicitly not submitted. The daily follow-up maintains
+this Page alongside the repository evidence; preserve user edits and avoid
+overwriting the separate community-post drafts Page. An inaccessible check is
+not evidence of no activity, and a submitted/sent/queued item is not publication.
+
 Researched 4 October 2026. The user accepted this target list and approved the
 [generic feedback post and expanded four-screenshot package](player-growth-plan.md)
 with "These look great! Let's go!" Publication through brand accounts and required
