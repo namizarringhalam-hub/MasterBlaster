@@ -10,11 +10,11 @@ a receipt or uncertain result. Options 4, 6 and 8 remain unselected.
 
 | Option | Destination | Actual state | Next step |
 | --- | --- | --- | --- |
-| 1 | IndieDB | User completed required birth date in their signup tab; brand MasterBlasterGame account created at 11:24 CEST and confirmed through brand email. Game creation form prepared with Web-only platform, HTML5 engine (Three.js detailed in text/tags), TBD full release, sci-fi, third-person shooter with first-person switching, single/multiplayer, tagged homepage, summary and full general feedback post with rendered play/guide links and four inline images. Required icon/logo files remain unattached; upload control click exposed no controllable OS chooser. Credentials protected with Windows DPAPI in ignored task storage; no birth date recorded. No game submitted yet. | User attaches Icon home-menu.jpg and Logo action-rockets.png from public/press, then assistant verifies fields and saves once. Current user-completed tab 15; initial tab 5 is stale. Draft HTML preserved in ignored .wrangler/tmp/seo/indiedb-profile-draft.html. |
+| 1 | IndieDB | Brand MasterBlasterGame profile https://www.indiedb.com/games/master-blaster1, ID 93095, saved around 12:04 CEST. Five gallery images uploaded once from user tab 23; Go Live completed around 12:07. Full profile and gallery visible to brand account, all four inline images loaded and both tagged links verified. Anonymous web reader failed; independent public visibility/backlink unconfirmed. Details and exact gallery IDs below. | Daily check existing profile and all five gallery comment areas, plus public visibility and brand mail. No more upload help required, no duplicate/recreation. |
 | 2 | PaperCroft / Xander Develops | Submitted once without an account, 11:13 CEST, title `Master Blaster — browser arena shooter with grappling and destructible towers`, developer Master Blaster, private brand email. Public queue independently reopened and title found at 11:15. Queue count 144→145, no review score/stream date. | Daily check exact title in public queue/leaderboard and brand mail for review/feedback. No item permalink exposed by UI; use https://www.papercroft.com/livestream and stable title/domain identity. |
 | 3 | SlowDen | General-game form submitted once around 11:14 CEST. Receipt initially claimed live publication before search exposed it. Actual public listing https://slowden.com/games/master-blaster-m8pf4/ verified at 11:32 CEST in home community/new rows and game page. Master Blaster handle, brand email, tagged clickable developer-site link, rocket-action cover, short adapted story/AI disclosure/feedback request. Honest form-process rating 4/5; comment disclosed assistant involvement and described actual form experience. | Monitor this exact listing, moderation and brand mail daily. Page exposes no written gameplay replies at baseline; no human review/feature or game rating claimed. Never resend. |
 | 5 | Rando.gg | Live embed inspected: no sandbox, allow `autoplay; encrypted-media; gyroscope; picture-in-picture;`, no allowfullscreen. Temporary localhost harness rendered production menu, but repeated UI activation did not reach setup. Direct top-level Quick Play succeeded. Root cause unconfirmed; no keyboard/pointer/audio/multiplayer pass claimed. Form is prepared with truthful pending-check notes but not submitted. User asked to test real gameplay at http://127.0.0.1:8796/. | Complete actual iframe verification with user help, then adapt compatibility notes to evidence and submit once if eligible. Harness helper is task exec session 38186, loopback only; leave running for user handoff. |
-| 7 | GameDev.net | Approved manual route. Terms section 3 restricts automated access beyond published machine-readable permissions; account/trust requirements not yet known. Complete current general-post/four-image package prepared below and rendered locally at http://127.0.0.1:8797/. No automated signup/post. | User manually signs up/posts through brand identity under site rules; preserve exact public URL when provided and monitor it. Draft includes tagged clickable play/guide links, four inline images, AI-coding and copy-assistance disclosure. |
+| 7 | GameDev.net | User reported manual completion and supplied https://gamedev.net/manage/projects/460/. This management URL is inaccessible to the public web checker; public permalink, published/draft status, final account/copy/media are not yet independently verified. No automated signup/post or edit. Current approved source package below. | User was asked for public View/Preview project URL, publishing first if status is Draft. Record and monitor exact public page once verified; do not duplicate or autonomously alter their manual final text. |
 
 ## PaperCroft submitted content
 
@@ -85,13 +85,57 @@ https://masterblaster.se/press/action-rockets.png. No game copy uploaded.
 
 ## Recovery
 
-User handoff update, 5 October: user reported attaching home-menu and that the
-chooser accepts one file at a time. Readback of the prepared IndieDB tab 15
-still showed zero files in all four upload inputs and no icon/logo preview
-source; no reload or submission was performed. The reported selection has not
-persisted in this form. Attach files separately: Icon → home-menu.jpg, Logo →
-action-rockets.png, both under public/press. Preserve the prepared form and
-verify both required input files before Save game.
+Latest GameDev.net handoff: user reported completion and supplied management
+project 460. Web tool returned inaccessible; no independent public URL/state
+yet. Asked for public View/Preview link and to publish if Draft. Preserve user
+manual text and do not submit again. Registration guidance below is historical,
+not a reason to ask for another account. Current brand identity remains
+unverified until the public post is accessible. Daily automation updated with
+this reported submission and IndieDB Go Live/gallery outcome.
+
+Latest outcome, 5 Oct around 12:07 CEST: the user selected all five gallery
+files in new user-owned tab 23 (binding indieActualGalleryTab), not prepared
+tab 21. A save in the empty prepared tab returned missing filedata0 and created
+no media; recovered user's actual tab via listing and saved its five selected
+files once with prepared tags and truthful caption (arena overview wording
+contains no assistant implementation details). Saved five media pages/IDs:
+
+| Capture | Exact image page suffix after /games/master-blaster1/images/ | Media ID |
+| --- | --- | --- |
+| Home menu | master-blaster-gameplay-and-menus | 2995101 |
+| Original arena overview | master-blaster-gameplay-and-menus1 | 2995102 |
+| Current Quick Play | master-blaster-gameplay-and-menus2 | 2995103 |
+| Grenade action | master-blaster-gameplay-and-menus3 | 2995104 |
+| Rocket action | master-blaster-gameplay-and-menus4 | 2995105 |
+
+Go Live succeeded; Setup Steps disappeared and full profile now renders at
+https://www.indiedb.com/games/master-blaster1. Readback verified two correct
+tagged description anchors and all four inline images loaded. At 12:09 CEST,
+profile and all five media pages were visible to brand account; no comments/
+reply IDs. Anonymous web reader returned inaccessible for profile/gallery,
+including trailing-slash profile retry. Record submission/brand visibility;
+independent public visibility/backlink unconfirmed until a successful check.
+Do not resubmit or ask for uploads again. Add profile and five media comment
+areas to daily monitoring. All prior upload blocks below are historical.
+
+Earlier user handoff readback showed zero file inputs and no previews, and was
+incorrectly interpreted as selection not persisting. After the user's second
+completion, server save confirmed both actual files saved. Do not repeat the
+icon/logo handoff or infer file absence from that readback alone. Our profile
+now exists at /games/master-blaster1, ID 93095. Profile details were saved and
+description readback confirmed both correct shorter tagged anchors and four
+inline images. It remains in setup, not publicly published.
+
+IndieDB requires five uploaded gallery images before Go Live. Form prepared in
+tab 21, binding indieMediaUploadTab; file input mediafiledata supports multiple.
+User asked to select action-rockets.png, action-grenades.png, home-menu.jpg,
+quick-play-loadout-2026-10-05.jpg and gameplay.png from public/press, leaving Save
+media for assistant. The fifth is the explicitly user-selected original
+191559.png arena overview, unchanged. Name Master Blaster — gameplay and menus;
+tags Browser, WebGL, Gameplay, Menus, Bots. Summary describes the five captures,
+staged positions/loadouts with real bot combat, AI assistance and feedback
+request. After upload/save, verify actual gallery/captions, finish required
+setup and Go Live, then verify public visibility before claiming publication.
 
 User could not log in to GameDev.net. No brand account has been created there.
 Verified official registration https://gamedev.net/signup/ accepts username,

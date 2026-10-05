@@ -754,3 +754,58 @@
   verified HTTP 200 image/jpeg, 89873 bytes. Game/SEO source unchanged, no PSI
   rerun. Preserve unrelated untracked %SystemDrive%/. Next: required attachments,
   user iframe check, manual GameDev.net publication and daily outcome monitoring.
+
+## IndieDB profile created; gallery handoff — 5 October 2026
+
+- User completed required icon/logo uploads. Initial input readback incorrectly
+  suggested neither file persisted, but the server save round trip confirmed
+  both home-menu.jpg and action-rockets.png saved successfully. Do not ask for
+  those two profile files again or infer absence solely from empty file inputs.
+- Corrected rejected Three.js tag to Three js. Validation round trip damaged
+  long description hrefs; restored approved HTML with shorter ref=indiedb,
+  utm_source=indiedb and utm_medium=community links. Subsequent saved editor
+  readback verified both full valid anchors and four inline images. Homepage
+  retains the full original tagged URL. No user text/story changed.
+- IndieDB warned of same-name content; inspected /games/master-blaster and
+  confirmed an unrelated TickFarm 2014 Android Unity arcade game. Continued via
+  the site's explicitly supported same-name path; our profile created at
+  https://www.indiedb.com/games/master-blaster1, ID 93095, around 12:04 CEST.
+- Owner page still shows Setup Steps. Go Live explicitly returned Please
+  complete the required steps above. Five gallery images are required in
+  addition to the description images; no live listing/backlink claimed.
+- Saved/verified profile details; separate multiple-file gallery form prepared
+  at /games/master-blaster1/images/add#mediaform, browser tab 21, binding
+  indieMediaUploadTab. Name/tags/summary include truthful staged-action and AI
+  disclosure plus feedback request. User asked to attach action-rockets.png,
+  action-grenades.png, home-menu.jpg, quick-play-loadout-2026-10-05.jpg and
+  gameplay.png from public/press, leaving Save media for assistant. Fifth image
+  is the user's explicitly selected original 191559.png overview, unchanged.
+- Next: once user selects gallery files, save media once, verify actual five
+  items and captions, finish required setup and Go Live, then verify public
+  visibility and add the exact page to published-post register/daily checks.
+  Rando/manual GameDev.net actions and prior moderation holds remain pending.
+  Game/SEO code unchanged; no performance rerun. Preserve unrelated files.
+
+- Later same run: user selected all five gallery files in a new user-owned tab
+  23, not the assistant-prepared tab 21. First save in tab 21 returned missing
+  filedata0; no media created. Located tab 23 via current tab listing, recovered
+  its five actual selected filenames, filled truthful caption/tags and saved
+  once there. All five media IDs 2995101–2995105 and exact image pages verified;
+  see community register. Never assume prepared and user-opened tabs are same.
+- Go Live then succeeded around 12:07 CEST; setup steps disappeared and actual
+  full profile displayed. Verified both tagged anchors and four inline images
+  loaded. Profile plus all five gallery comment areas had no replies at 12:09.
+  Independent anonymous web tool failed to access profile/gallery (including
+  profile trailing-slash retry); do not equate failure with no activity or claim
+  a confirmed public backlink yet. Monitoring register contains exact URLs,
+  IDs, content and successful brand baseline. No further IndieDB upload help
+  required. Next: daily approval/public-access/activity check; Rando user test
+  and manual GameDev.net publication remain outstanding.
+
+- User later reported GameDev.net manual completion and supplied management
+  URL https://gamedev.net/manage/projects/460/. Public checker cannot access it;
+  published/draft status, exact public permalink and final copy/media/account
+  remain unverified. Asked for public View/Preview URL, publishing first if
+  Draft. No automated account/post/edit performed. Daily automation updated to
+  monitor existing IndieDB profile/gallery outcome and recover GameDev.net
+  public URL when supplied, preserving all prior holds and schedule.

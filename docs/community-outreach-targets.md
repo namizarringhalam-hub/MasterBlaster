@@ -86,14 +86,31 @@ Public publication is now confirmed for these topics, not just their submission.
 
 ### Third-wave action state — 5 October 2026
 
+IndieDB profile submission now completed; public access check remains separate:
+
+| Target | Exact URL / stable ID | Submission and content | Actual visibility and latest check |
+| --- | --- | --- | --- |
+| IndieDB game profile | https://www.indiedb.com/games/master-blaster1 / game 93095 | Created 5 Oct around 12:04 CEST; five gallery images saved and Go Live completed around 12:07. MasterBlasterGame. Latest general feedback post, AI story, feedback questions, four loaded inline images and working tagged game/guide anchors. | Setup steps disappeared after Go Live; full profile and comment composer visible to brand account, no replies at 12:09 CEST. Anonymous web reader returned inaccessible for profile/gallery, so independent public visibility/backlink remains unconfirmed. Monitor exact page daily without resubmitting. |
+| IndieDB screenshot gallery | Base https://www.indiedb.com/games/master-blaster1/images/master-blaster-gameplay-and-menus; suffixes 1, 2, 3, 4 are separate image pages | 2995101 home menu (base); 2995102 arena overview (suffix 1); 2995103 current Quick Play (2); 2995104 grenade action (3); 2995105 rocket action (4). Saved once from user-completed tab 23 around 12:07 CEST. Captions include staged-action/AI disclosures and feedback request. | All five exact media pages and original-file links verified in brand browser 12:09 CEST; no reply identifiers. Check their comments as well as profile. Independent anonymous visibility unconfirmed due web-reader access failure. |
+
 Read [the third-wave checkpoint](outreach-third-wave-checkpoint.md) for submitted
-content, prepared manual package and exact blockers. IndieDB brand account is
-created/email-confirmed; prepared Web-only game profile awaits the user's
-required icon/logo attachments before one Save game. Rando's form is prepared
+content, prepared manual package and exact blockers. IndieDB setup/upload handoff
+is complete; monitor the submitted profile/gallery above. Long description links
+were shortened after the site's validation round trip damaged them; ref/source/
+medium tags remain. The namesake /master-blaster is an unrelated TickFarm Android
+game from 2014; do not modify it. Rando's form is prepared
 but not submitted; real cross-origin gameplay check is still incomplete, and
 the user has been asked to test the temporary local harness. GameDev.net has a
 complete manual post/image package under its automated-access restriction.
 No new content/account approval required. Preserve all earlier moderation holds.
+
+GameDev.net update: user reported manual completion and provided management URL
+https://gamedev.net/manage/projects/460/. Public web reader returned inaccessible;
+this is not a verified public permalink or proof of Published state. Asked user
+for public View/Preview URL, publishing first if Draft. Final posted text/media
+and brand identity have not been independently checked. Do not recreate account,
+duplicate project or autonomously edit their manual final text. Daily monitor
+will add exact public URL once supplied and verified.
 
 ### Submission and access log — 4 October 2026
 
