@@ -616,3 +616,25 @@
   git diff --check passed. This run's record is limited to the four documents
   above. Next unfinished work: daily reply/moderation/listing/mail checks and
   obtaining the heading-font/paint evidence for justified LCP changes.
+
+## Collaborative post drafts Page — 5 October 2026
+
+- User requested editable post text with inline images and chose a Page in
+  Spaces instead of Word. Created a private personal Page:
+  https://chatgpt.com/space/page_6f014dc1bbfc81919de2edf967cf18bf
+  Title: Master Blaster community post drafts.
+- Includes the approved first-person generic feedback post, prepared Codex
+  manual-post version, tagged clickable play/guide links, four native uploaded
+  image attachments, editable captions and direct attachment URLs, plus revision
+  notes. Readback confirms all four native image references and section order;
+  each upload independently confirmed file access, and all four attachment reads
+  returned image pixels successfully. No creator/personal details.
+- The app open request returned queued; rendered Page layout is not yet visually
+  verified. No forum post, reply or published text was changed, and Reddit/manual
+  posting holds remain in effect. No alternate game host or website was created.
+- Local snapshot: docs/community-post-drafts.md, with repository-relative inline
+  images and a link to the Page. Page/file changes do not automatically sync;
+  read the latest Page before revising. Preserve user edits and image attachments.
+- Changed files for this request: docs/community-post-drafts.md and this checkpoint.
+  Next: use the Page for requested revisions; continue existing daily monitoring
+  from the community register. No Word document was created.
