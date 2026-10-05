@@ -85,6 +85,21 @@ https://masterblaster.se/press/action-rockets.png. No game copy uploaded.
 
 ## Recovery
 
+User handoff update, 5 October: user reported attaching home-menu and that the
+chooser accepts one file at a time. Readback of the prepared IndieDB tab 15
+still showed zero files in all four upload inputs and no icon/logo preview
+source; no reload or submission was performed. The reported selection has not
+persisted in this form. Attach files separately: Icon → home-menu.jpg, Logo →
+action-rockets.png, both under public/press. Preserve the prepared form and
+verify both required input files before Save game.
+
+User could not log in to GameDev.net. No brand account has been created there.
+Verified official registration https://gamedev.net/signup/ accepts username,
+email, password and confirmation. Register manually as MasterBlasterGame with
+masterblastergame@proton.me and a new password; handle any verification.
+Official login is https://gamedev.net/account/login/. Do not use personal
+Google sign-in. Manual posting remains required under the recorded terms.
+
 Continue outstanding approved actions above. Human puzzles/security questions
 remain user-only; never invent account birth dates. GameDev.net manual action
 needs a concrete prepared post, not new content approval. Add verified public
