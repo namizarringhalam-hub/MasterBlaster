@@ -694,7 +694,7 @@
   Rando.gg and GameDev.net. Options 4, 6 and 8 remain unselected.
 - Reread the authoritative Page's general feedback post and current images.
   Exported the replacement Quick Play JPEG unchanged to
-  public/press/quick-play-loadout-2026-10-05.jpg (1280x720, 89874 bytes).
+  public/press/quick-play-loadout-2026-10-05.jpg (1280x720, 89873 bytes).
   Updated local draft image links; native Page remains unchanged.
 - IndieDB brand signup is prepared but requires user-entered birth date;
   no date invented. Credentials saved only in ignored task-local storage.
@@ -703,3 +703,54 @@
 - Next: verify deployed new image, submit eligible approved targets, test
   iframe gameplay, record exact outcomes and prepare GameDev.net manual route.
   Preserve existing campaign holds and unrelated untracked %SystemDrive%/.
+
+## Third-wave outreach outcomes and handoff — 5 October 2026
+
+- Approved destinations 1, 2, 3, 5 and 7 proceeded using the latest user general
+  post. PaperCroft/Xander Develops received one guest brand submission at 11:13
+  CEST; exact title was independently found in the public queue (144 to 145).
+  No unique item permalink exposed; public queue/title recorded. No stream
+  review/score yet. Submitted notes include current four screenshot links;
+  site's Play button is clickable, notes render plain text without rich editor.
+- SlowDen accepted one general-game submission around 11:14. Initial catalogue
+  absence was temporary: at 11:32 actual public listing was verified at
+  https://slowden.com/games/master-blaster-m8pf4/ with the approved short story,
+  AI disclosure, feedback request and clickable tagged developer-site link.
+  Rocket-action cover and staged-capture caption supplied. Submitted process
+  rating 4/5 reflects actual form experience and explicitly identifies the
+  assistant; it is not fabricated gameplay feedback. No replies or feature
+  claim. Both new publications are in the daily published-post register.
+- User entered IndieDB date in a separate user-opened tab; recovered that tab
+  rather than reusing the initial empty one. Brand MasterBlasterGame account
+  created 11:24, confirmed from its official email. Birth date not copied into
+  records. Fully prepared game form: Web only, HTML5/Three.js, sci-fi shooter,
+  single/multiplayer, full release TBD, truthful summary and latest general
+  description with two rendered tagged anchors and all four inline images.
+  Required icon/logo files remain unattached; browser upload click exposed no
+  targetable system chooser. Computer Use inspected available windows only;
+  no Codex/other app UI was controlled. User asked to attach the two approved
+  files, leaving Save game for assistant. No game profile submitted yet.
+- Rando live iframe inspected; loopback-only HTML harness reproduced its
+  permissions. Production menu renders, but automated activation did not reach
+  setup; direct top-level Quick Play did. Root cause is unconfirmed; do not
+  label game incompatible or claim pointer/audio/multiplayer tests passed.
+  Prepared approved form is not sent. User asked to test gameplay manually at
+  http://127.0.0.1:8796/. Helper task exec session 38186 remains for handoff.
+- GameDev.net terms restrict automated access; full manual posting package
+  prepared in docs/outreach-third-wave-checkpoint.md and rendered at
+  http://127.0.0.1:8797/ (task helper exec session 2677). Readback confirmed
+  both tagged clickable links and all four images loaded. User asked to publish
+  manually through a brand account and supply the public URL. No generated
+  autonomous signup/post, fabricated trust or additional content approval.
+- Brand Inbox/All mail/Spam checked: new IndieDB confirmation only, no new
+  SlowDen/PaperCroft feedback visible. No messages/replies were sent. Existing
+  campaigns, Reddit holds and exclusions preserved; options 4/6/8 unselected.
+- ACTIVE daily automation updated through app tool to cover both new public
+  entries, pending/manual actions and current assets; same 09:00 Stockholm
+  schedule and chat. Stop only the two task-owned local preview helpers once
+  their user handoffs complete; do not terminate unrelated processes.
+- Updated third-wave shortlist/checkpoint, community register and this log.
+  Image/local snapshot already committed/pushed as ddeca28 and deployed image
+  verified HTTP 200 image/jpeg, 89873 bytes. Game/SEO source unchanged, no PSI
+  rerun. Preserve unrelated untracked %SystemDrive%/. Next: required attachments,
+  user iframe check, manual GameDev.net publication and daily outcome monitoring.

@@ -1,9 +1,11 @@
 # Master Blaster third outreach shortlist
 
-Researched 5 October 2026. This is a proposal for the user's target review,
-not a submission register. Seven candidates are newly proposed; GameDev.net
-was already a reserve and has not been submitted. No new accounts, pitches,
-posts or submissions were created during this research.
+Researched 5 October 2026. The user subsequently approved options **1, 2, 3, 5
+and 7**: IndieDB, PaperCroft, SlowDen, Rando.gg and GameDev.net. Options 4, 6
+and 8 remain unselected. Seven candidates were newly proposed; GameDev.net was
+already a reserve. Actual outcomes are recorded in the
+[third-wave checkpoint](outreach-third-wave-checkpoint.md) and community register;
+this table retains the researched routes and requirements.
 
 Use the latest General feedback post on the
 [editable Page](https://chatgpt.com/space/page_6f014dc1bbfc81919de2edf967cf18bf)
@@ -64,8 +66,8 @@ and route fit; they are not measured reach predictions.
 
 ## Recovery and next action
 
-Review these option numbers with the user before new outreach, preserving the
-standing request to review new target lists. Then inspect the actual approved
+The user's review selected options 1, 2, 3, 5 and 7; no further target or content
+approval is needed for these. Inspect the actual approved
 destination form/rules, materialize the latest Page's Quick Play image where
 needed, adapt the approved general copy and verify rendered links/media.
 Human verification remains user-only. Record actual receipts/public permalinks
