@@ -663,3 +663,27 @@
   No new outreach was sent; do not resend prior pitches or bypass moderation.
   Next: apply the latest Page copy to eligible future outreach and continue
   existing daily monitoring; preserve all paused work and access blockers.
+
+## Additional outreach target research — 5 October 2026
+
+- User asked to find more places to share the game. Researched official routes
+  and current requirements, comparing against existing submissions/reserves.
+  Created docs/outreach-third-wave-shortlist.md with eight review options:
+  IndieDB, PaperCroft/Xander Develops, SlowDen, 80 Level editorial, Rando.gg,
+  PC Gamer editorial, GameDev.net Projects and manual Show HN. GameDev.net was
+  an existing reserve; seven other candidates are newly proposed.
+- Specific constraints recorded: brand login/form checks for profiles/queue;
+  iframe gameplay compatibility for Rando; editorial coverage unguaranteed;
+  manual-only HN under generated-text/automation rules; GameDev.net automated
+  access restrictions need a permitted route or manual submission. No measured
+  audience/conversion estimates or explicit AI preapproval claimed.
+- GamingOnLinux and Indie Game Reviewer are poor current fits under their
+  official guidance. TIGSource/Quake forum reads failed and Plaxzy live form/
+  terms remain unverified. Liero Discord remains an existing conditional target.
+  Game Archive's copied/modified hosting route is excluded under AGENTS.md.
+- No new account, email, post or directory submission created. Latest Page general
+  copy/current assets govern later approved outreach. Existing Reddit/moderation,
+  human-verification, no-duplicate, creator/privacy and Lemmy exclusions preserved.
+- Related files: new shortlist, community-outreach-targets.md and this checkpoint.
+  Next: user's review of this concrete new target list, then destination checks
+  and eligible outreach using the approved copy. Continue existing daily checks.

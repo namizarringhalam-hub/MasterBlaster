@@ -23,6 +23,12 @@ audience-fit recommendations, not guarantees of acceptance or SEO ranking gains.
 
 ## Recommended starting targets
 
+The additional [third outreach shortlist](outreach-third-wave-shortlist.md),
+researched 5 October, has eight review options: seven new candidates plus the
+previously reserved GameDev.net showcase. No third-wave action has been submitted
+or sent. Keep proposal status separate from the published-post register and await
+the user's review of these new destinations before publication.
+
 | ID | Target | Fit and proposed approach | Verified constraints / open checks |
 | --- | --- | --- | --- |
 | 1 | [r/WebGames](https://www.reddit.com/r/WebGames/) | Direct access to players looking for browser games. Link to the canonical playable game; title starts with Master Blaster and briefly mentions grappling/destruction. | Browser play without signup, direct link to one game, no referrals, search for duplicates and wait three months between reposts. No AI restriction appears in the listed rules; a highlighted [AI-policy discussion](https://www.reddit.com/r/WebGames/comments/1ryldz4/looking_for_opinions_on_ai_made_web_games/) means eligibility should be rechecked before posting. Do not claim an explicit AI permission. |
