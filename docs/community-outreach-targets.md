@@ -88,14 +88,24 @@ Public publication is now confirmed for these topics, not just their submission.
 
 | Target / community | Published URL | Published date | Brand account | Content version | Status | Last successful check |
 | --- | --- | --- | --- | --- | --- | --- |
-| HTML5 Game Devs / Game Showcase | [Topic 76464](https://www.html5gamedevs.com/topic/76464-wip-master-blaster-%E2%80%94-free-browser-arena-shooter-with-grappling-and-destructible-towers/) / original comment 375862 | Post dated 4 Oct 2026; first public verification 5 Oct | MasterBlasterGame | Approved first-person generic copy, AI-assisted coding disclosure, tagged clickable play/guide anchors, four screenshots and staged-capture disclosure | Publicly visible anonymously; 0 replies | 5 Oct 2026, 09:04 CEST; no reply identifiers |
-| Three.js forum / Showcase | [Topic 95005](https://discourse.threejs.org/t/master-blaster-browser-arena-shooter-with-grappling-and-destructible-towers/95005) / original [post 1](https://discourse.threejs.org/t/master-blaster-browser-arena-shooter-with-grappling-and-destructible-towers/95005/1), ID 235794 | Post dated 4 Oct at 20:22 CEST; approval mail 20:32; first public verification 5 Oct | masterblastergame | User-rewritten/manual submission; verified tagged clickable play/guide anchors and four loaded screenshots. Final body omits explicit AI-assisted coding disclosure; do not claim it contains one or edit it autonomously. | Publicly visible anonymously and in brand browser; 0 replies, 1 like, 15 views at check. Game/guide links have `nofollow ugc`; no ranking gain claimed. | 5 Oct 2026, 09:10 CEST; no reply identifiers. Like by Chaser_Code dated 4 Oct 20:41 in brand notifications, first reported 5 Oct. |
-| PaperCroft / Xander Develops stream review queue | [Public queue](https://www.papercroft.com/livestream); search exact title `Master Blaster — browser arena shooter with grappling and destructible towers`. No unique item permalink exposed in the inspected UI. | 5 Oct 2026, 11:13 CEST | Guest submission, developer handle Master Blaster; brand email supplied privately for streamer follow-up; no account needed | Latest user general post, greeting to Xander, AI-assisted coding story, feedback questions, tagged Play button and game/guide URLs, all four current screenshot URLs with staged-action captions | Public queue item independently reopened; queue increased 144→145. Awaiting streamer review: no Played on Stream date or score. Initial displayed vote count 1; no votes cast by assistant. Notes render plain text; clickable Play button is the verified link. | 5 Oct 2026, 11:15 CEST; no review/reply identifiers |
-| SlowDen / Made by developers | [Master Blaster, slug master-blaster-m8pf4](https://slowden.com/games/master-blaster-m8pf4/) | 5 Oct 2026; form receipt around 11:14, actual public listing verified 11:32 CEST | No account required; submitter/developer handle Master Blaster and private brand email | Shortened current user story, AI-assisted coding disclosure, 47 weapons, up to 15 bots, ongoing development and three feedback questions. Tagged game link and rocket-action cover with staged-capture disclosure. | Public page and home community/new-game rows confirmed. Clickable developer-site link preserves ref=slowden and matching UTM source. Game menu renders in iframe; gameplay compatibility not yet passed. No human review/feature promised. Page exposes no written-reply thread at baseline. | 5 Oct 2026, 11:32 CEST; no reply identifiers |
+| HTML5 Game Devs / Game Showcase | [Topic 76464](https://www.html5gamedevs.com/topic/76464-wip-master-blaster-%E2%80%94-free-browser-arena-shooter-with-grappling-and-destructible-towers/) / original comment 375862 | Post dated 4 Oct 2026; first public verification 5 Oct | MasterBlasterGame | Approved first-person generic copy, AI-assisted coding disclosure, tagged clickable play/guide anchors, four screenshots and staged-capture disclosure | Publicly visible anonymously; 0 replies | 6 Oct 2026, 09:06 CEST; original comment 375862 only, no reply identifiers |
+| Three.js forum / Showcase | [Topic 95005](https://discourse.threejs.org/t/master-blaster-browser-arena-shooter-with-grappling-and-destructible-towers/95005) / original [post 1](https://discourse.threejs.org/t/master-blaster-browser-arena-shooter-with-grappling-and-destructible-towers/95005/1), ID 235794 | Post dated 4 Oct at 20:22 CEST; approval mail 20:32; first public verification 5 Oct | masterblastergame | User-rewritten/manual submission; verified tagged clickable play/guide anchors and four loaded screenshots. Final body omits explicit AI-assisted coding disclosure; do not claim it contains one or edit it autonomously. | Publicly visible anonymously and in brand browser; 0 replies, 1 like, 15 views at check. Game/guide links have `nofollow ugc`; no ranking gain claimed. | 6 Oct 2026, 09:01 CEST; no reply identifiers, one like. Like by Chaser_Code dated 4 Oct 20:41 in brand notifications, first reported 5 Oct. |
+| PaperCroft / Xander Develops stream review queue | [Public queue](https://www.papercroft.com/livestream); search exact title `Master Blaster — browser arena shooter with grappling and destructible towers`. No unique item permalink exposed in the inspected UI. | 5 Oct 2026, 11:13 CEST | Guest submission, developer handle Master Blaster; brand email supplied privately for streamer follow-up; no account needed | Latest user general post, greeting to Xander, AI-assisted coding story, feedback questions, tagged Play button and game/guide URLs, all four current screenshot URLs with staged-action captions | Public queue item independently reopened; queue increased 144→145. Awaiting streamer review: no Played on Stream date or score. Initial displayed vote count 1; no votes cast by assistant. Notes render plain text; clickable Play button is the verified link. | 6 Oct 2026, 09:05 CEST; one displayed vote, no stream date/score or review/reply identifiers |
+| SlowDen / Made by developers | [Master Blaster, slug master-blaster-m8pf4](https://slowden.com/games/master-blaster-m8pf4/) | 5 Oct 2026; form receipt around 11:14, actual public listing verified 11:32 CEST | No account required; submitter/developer handle Master Blaster and private brand email | Shortened current user story, AI-assisted coding disclosure, 47 weapons, up to 15 bots, ongoing development and three feedback questions. Tagged game link and rocket-action cover with staged-capture disclosure. | Public page and home community/new-game rows confirmed. Clickable developer-site link preserves ref=slowden and matching UTM source. Game menu renders in iframe; gameplay compatibility not yet passed. No human review/feature promised. Page exposes no written-reply thread at baseline. | 6 Oct 2026, 09:06 CEST; public listing, no written comment thread or reply identifiers |
+| IndieDB / game profile and five gallery pages | [Game 93095](https://www.indiedb.com/games/master-blaster1); gallery URLs/media IDs below | Go Live 5 Oct around 12:07; official authorization email 12:08; first independent guest verification 6 Oct | MasterBlasterGame | Latest general feedback story, AI disclosure, feedback request, tagged play/guide anchors, four inline images; five gallery captions with staged-action disclosure | Approved and publicly visible. Profile and all five exact media pages successfully read anonymously; no written comments or reply IDs. Public game links confirmed, no search-ranking credit claimed. | 6 Oct 2026, 09:01–09:02 CEST; no reply identifiers |
+| GameDev.net / Projects | [Project 460](https://gamedev.net/projects/460-master-blaster/) | User submitted 5 Oct; official approval mail 5 Oct at 15:27; first guest verification 6 Oct | MasterBlasterGame, project owner member 377432 | User manual final post: current general feedback story, AI coding/copy disclosure, feedback questions, tagged clickable play/guide links, four inline images/current Quick Play and five screenshot gallery entries | Approved and publicly visible to guests. Discussion remains “Loading comments…” after subsequent checks; activity unreadable, not zero. Browser console contains a classList TypeError; causal connection to comments unconfirmed. No autonomous edit or reply. | Public content 6 Oct 2026, 09:06–09:07 CEST; no successful discussion/reply baseline yet |
+
+The status descriptions retain the initial publication evidence. Latest successful checks on
+6 October: HTML5 09:06 CEST, original comment 375862 only; Three.js 09:01,
+original post 235794 only, one previously reported like; PaperCroft 09:05,
+same entry/one vote and no stream date or score; SlowDen 09:06, public listing
+and tagged game link, no comment thread exposed. No new written feedback in
+these successful checks. GameDev.net discussion is explicitly blocked above.
 
 ### Third-wave action state — 5 October 2026
 
-IndieDB profile submission now completed; public access check remains separate:
+IndieDB profile submission completed on 5 October. **Public visibility is now
+confirmed on 6 October**, superseding the historical failed checks below:
 
 | Target | Exact URL / stable ID | Submission and content | Actual visibility and latest check |
 | --- | --- | --- | --- |
@@ -305,6 +315,39 @@ earlier submissions and the now-public Three.js forum topic 95005.
   run. Existing original post IDs and the like event above are the baseline for
   tomorrow's new-activity comparison. The two forum links are confirmed public
   community links, without any claim of search-engine credit or ranking gains.
+
+### Daily outcomes — 6 October 2026, 09:00–09:07 CEST
+
+- **New approvals:** IndieDB authorized 5 Oct 12:08; GameDev.net approved/live
+  5 Oct 15:27, both official messages read today in masterblastergame@proton.me.
+  Both existing profiles independently guest-visible now; exact links, content
+  and reply-check limitations recorded in the published register above.
+- Checked HTML5, Three.js, PaperCroft, SlowDen, IndieDB profile/five gallery
+  pages and GameDev.net. No new written feedback in successfully read areas.
+  GameDev.net discussion failed to load; no zero-activity claim. Three.js's one
+  like is already reported; no new stable reply identifiers or repeated themes.
+- ESReality 2975313 still displays only an empty public wrapper; post/replies
+  unreadable. Administrator moderation remains inferred, not confirmed.
+- Live Reddit checks still show WebGames filter removal and IndieDev target
+  pdrm7lf moderator removal. Hold automated promotion; no new removal reason,
+  repost, alternate account, moderator message or response.
+- Brand Inbox, All mail, Spam and Trash successfully checked. Spam/Trash empty;
+  no directory/editorial reply or new bounce. Three sent editorial pitches
+  remain delivery/coverage unconfirmed. Only known Free Play Games failures;
+  no resend to either rejected address, no verified new official route.
+- Public indexes checked for iogames.party, Something Big, BrowserGames.gg
+  including Shooter, iogames.fun, Three.js Resources Games and Free Play Games:
+  no Master Blaster entry found in those checked lists. Title/domain searches
+  also found no listing/coverage; this is not proof that none exists elsewhere.
+  Gamedev.js Weekly index still lists issue 665 dated 2 Oct, before the pitch.
+  No coverage found in searches for Alpha Beta Gamer or Indie Games Plus.
+- User engagement: existing Rando iframe gameplay test still outstanding;
+  consider manually adding AI-coding disclosure to the Three.js human-finalized
+  topic. No confirmed unanswered player question needing a reply today.
+- Maintained existing editable tracker Page, moved IndieDB/GameDev.net into
+  public placements, refreshed affected statuses/check times and preserved
+  unrelated content. Six public placements include a queue, not six reviews.
+  No duplicate trackers, automations, submissions or pitches.
 
 ## Next step
 

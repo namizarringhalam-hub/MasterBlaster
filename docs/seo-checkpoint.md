@@ -1,5 +1,42 @@
 # SEO checkpoint — 2026-09-18
 
+## Latest recovery checkpoint — 6 October 2026, daily 09:00 follow-up
+
+- Read latest conversation, outreach registers/checkpoints and growth plan;
+  preserve all paused/manual-only/privacy/moderation constraints. No new pitches,
+  accounts, posts, replies or moderator messages; Rando still needs the existing
+  user cross-origin gameplay test. Lemmy SDF excluded.
+- New approved/public profiles: IndieDB game 93095 and five galleries independently
+  guest-visible; official authorization mail dated 5 Oct 12:08. GameDev.net 460
+  approval mail dated 5 Oct 15:27; guest view confirms brand owner, current copy,
+  AI disclosure, tagged play/guide anchors and media. No search-ranking claim.
+- HTML5, Three.js, SlowDen remain public; PaperCroft remains an unreviewed public
+  queue item. No new written feedback in successfully read areas. GameDev.net
+  discussion stays Loading comments…; ESReality post body inaccessible. Report
+  both failures explicitly. Reddit removals persist; promotion hold unchanged.
+- Brand Inbox/All mail/Spam/Trash and public directory/coverage checks completed;
+  no new editorial/directory response, bounce or listing found in checked indexes.
+  Exact status times, links/content and reply baselines in community register;
+  second/third-wave checkpoints refreshed.
+- Browser bootstrap initially timed out; fresh import/setup recovered. Claiming
+  the old mail tab failed CDP focus twice; fresh tab in the selected browser worked.
+  Verified brand mailbox explicitly before reading. No unrelated mail or browser
+  accounts inspected. Browser recovered, no user verification needed this run.
+- Existing tracker Page page_d0265fd1ed8881919479f34806b71fe6 maintained through
+  native guarded edits; eight operations applied, targeted readback confirmed all
+  changed hashes. No draft Page, sharing or scheduler change. All 18 attempted
+  destinations retained; six visible placements include PaperCroft's queue.
+- Mobile LCP last verified 2.9 s, target under 2 s remains unmet. Prior report
+  identifies H1 element render delay but heading-font arrival/paint trace still
+  missing; no justified new code change established in this monitoring run.
+  No blind PageSpeed repeat or performance improvement claimed.
+- Changed docs only: community-outreach-targets.md, outreach-second-wave-
+  checkpoint.md, outreach-third-wave-checkpoint.md, seo-checkpoint.md. Validation:
+  git diff --check and Page readback; no game build/test required. Commit/push
+  these files with brand identity, preserve unrelated %SystemDrive%/ directory.
+- Next: daily feedback/approval checks, especially GameDev.net discussion loading;
+  Rando user test; heading-font/paint evidence before further startup optimization.
+
 - Request: optimize Master Blaster for search and make it discoverable.
 - Changed: PLAYER_TEXT.js, index.html, vite.config.js, public/robots.txt,
   public/sitemap.xml, scripts/prepare-sites.mjs, tests/hosting.mjs, README.md.

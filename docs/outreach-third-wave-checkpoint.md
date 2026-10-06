@@ -6,7 +6,34 @@ before future preparation. Adaptations are authorized. Brand identity/mailbox
 only; existing campaigns and paused work remain unchanged. Do not resubmit after
 a receipt or uncertain result. Options 4, 6 and 8 remain unselected.
 
-## Action register — 5 October 2026
+## Latest outcomes — 6 October 2026, 09:00–09:07 CEST
+
+- IndieDB authorization email from support@indiedb.com dated 5 Oct 12:08 read
+  in the verified brand mailbox. Independent guest web reads now succeed for
+  game 93095 and all five media pages 2995101–2995105. Full story, AI disclosure,
+  clickable tagged play/guide links and media are public. No written comments
+  or reply IDs found on the six pages. Earlier public-unconfirmed state below
+  is historical and superseded; no upload/resubmission needed.
+- GameDev.net official approval email from support@gamedev.net dated 5 Oct
+  15:27 states project 460 is approved and live. Guest browser independently
+  verifies the exact public URL, MasterBlasterGame/member 377432 owner, latest
+  story, AI coding/copy disclosure, feedback request, correct tagged anchors,
+  four inline images and five screenshot entries. Comments remain Loading
+  comments… across checks. A classList TypeError is logged; its connection to
+  that failure is unconfirmed. Publication is confirmed; feedback check is
+  blocked, not no activity. No final text edited or reply posted.
+- PaperCroft exact queue item remains visible, one displayed vote, no Played
+  on Stream date or score. Queue now 148; this is not a streamer review. SlowDen
+  exact listing remains public, correct tagged developer-site link; no written
+  comment thread exposed. Menu loads in iframe; gameplay pass still not claimed.
+- Rando remains prepared/unsubmitted pending the existing user iframe test.
+  Preserve its helper/handoff; no new approval or uploads requested.
+- Full daily monitoring and reply baseline: community-outreach-targets.md.
+  Existing tracker Page updated with the two approval outcomes; all 18 attempted
+  destinations retained. Next: check new replies and resolve GameDev.net comment
+  loading through normal read-only access; never duplicate moderated submissions.
+
+## Historical action register — 5 October 2026
 
 | Option | Destination | Actual state | Next step |
 | --- | --- | --- | --- |
