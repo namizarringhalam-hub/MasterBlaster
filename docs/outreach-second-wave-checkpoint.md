@@ -1,5 +1,22 @@
 # Master Blaster: second outreach wave
 
+## Newsletter subscription confirmed — 6 October 2026
+
+User requested subscription so the upcoming feature can be read. Submitted
+masterblastergame@proton.me once through the official Gamedev.js Weekly signup.
+Confirmation email from contact@gamedevjsweekly.com arrived at 18:43 CEST;
+verified brand mailbox before reading, clicked the opt-in link, and Mailchimp
+explicitly displayed: Your subscription to our list has been confirmed.
+No personal details or extra mailing lists used. Proof screenshot saved in
+ignored .wrangler/tmp/seo/gamedevjsweekly-subscription-confirmed-2026-10-06.png.
+
+Daily follow-up: read incoming newsletter in the brand inbox and check the
+public archive https://gamedevjsweekly.com/archive (RSS also exposed at
+https://gamedevjsweekly.com/feed.xml). Follow observed published issue links;
+do not guess an issue number. Expected feature Friday 9 Oct remains awaiting
+publication. Record exact game anchor and issue permalink when published,
+summarize the actual feature here, and update the existing tracker.
+
 ## Gamedev.js Weekly acceptance — 6 October 2026
 
 User supplied a screenshot of a reply from contact@gamedevjsweekly.com, signed

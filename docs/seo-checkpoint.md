@@ -1,5 +1,19 @@
 # SEO checkpoint — 2026-09-18
 
+## Newsletter opt-in completed — 6 October 2026
+
+- User requested subscription to read the upcoming feature. Official free signup
+  submitted once with masterblastergame@proton.me; confirmation email at 18:43
+  CEST read in verified brand mailbox. Clicked opt-in; explicit subscription-
+  confirmed page verified and proof screenshot saved in ignored task directory.
+- Tracker Gamedev.js Weekly row and second-wave/register records updated.
+  Existing daily monitoring includes newsletter mail and public archive/RSS;
+  feature expected 9 Oct, still awaiting actual issue/public game link.
+  No extra automation, personal account, reply, pitch resend or paid service.
+- Documentation-only validation: successful opt-in receipt/screenshot, guarded
+  Page patch and git diff --check. Commit/push only the three related docs;
+  preserve unrelated files. Next: read the actual newsletter and record coverage.
+
 ## Editorial acceptance update — 6 October 2026
 
 - User supplied Andrzej's reply from contact@gamedevjsweekly.com promising to
