@@ -1,5 +1,19 @@
 # SEO checkpoint — 2026-09-18
 
+## Editorial acceptance update — 6 October 2026
+
+- User supplied Andrzej's reply from contact@gamedevjsweekly.com promising to
+  include Master Blaster in the upcoming Friday issue, expected 9 October.
+  Actual reply timestamp not shown. Receipt/editorial intent confirmed;
+  publication, exact issue URL/game anchor and backlink remain pending.
+- Updated existing tracker Page's Gamedev.js Weekly row and repository outreach
+  register/second-wave checkpoint only. Today's earlier no-response daily record
+  remains historical. No reply, resend, new automation or sharing change.
+- Existing daily follow-up reads these checkpoints: monitor upcoming issue and
+  record actual public coverage/link once verified, then report here.
+- Documentation-only validation: Page patch receipt/readback and git diff --check;
+  commit/push the three related docs with brand identity; preserve unrelated files.
+
 ## Latest recovery checkpoint — 6 October 2026, daily 09:00 follow-up
 
 - Read latest conversation, outreach registers/checkpoints and growth plan;

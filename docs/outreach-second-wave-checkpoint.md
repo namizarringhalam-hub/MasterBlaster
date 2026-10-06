@@ -1,5 +1,19 @@
 # Master Blaster: second outreach wave
 
+## Gamedev.js Weekly acceptance — 6 October 2026
+
+User supplied a screenshot of a reply from contact@gamedevjsweekly.com, signed
+Andrzej, thanking them for the pitch and committing to include the game in this
+Friday's issue. Expected publication: Friday 9 October 2026 (upcoming Friday
+relative to this 6 October update). Email receipt and editorial intent are
+confirmed by user-provided evidence; public coverage/backlink remains pending.
+Screenshot does not show the reply timestamp; do not invent an email date/time.
+Supersedes the 09:07 no-response baseline for this pitch only. No reply sent.
+Daily monitor: check the existing newsletter index and published issue, capture
+the actual issue URL/game link when available, verify tags/media as published,
+then update register/tracker and report here. Do not guess an issue number or
+resend the pitch. Other editorial pitches and all prior holds are unchanged.
+
 ## Latest daily check — 6 October 2026
 
 - Three.js topic 95005 publicly read: original post only, no written replies;
