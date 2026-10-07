@@ -930,7 +930,7 @@ assert.match(mainSource, /authorityWeapon = WEAPONS\[weapon\.sourceWeaponId\] \|
 assert.match(mainSource, /const structuralRadius = radius > 0 \? radius : Math\.max\(\.35, weapon\.projectileRadius \|\| 0\)/, "terrain blasts use their full structural radius while zero-terrain utility impacts retain direct projectile tolerance");
 assert.match(mainSource, /splitProjectile\(shot\)[\s\S]*?radius: shot\.weapon\.radius, terrainRadius: shot\.weapon\.terrainRadius/, "cluster bomblets inherit the expanded canonical player and structural blast radii");
 assert.match(mainSource, /const impactWeapon = WEAPONS\[shot\.weapon\.sourceWeaponId\] \|\| shot\.weapon;[\s\S]*?playImpact\(impactWeapon,/, "cluster bomblet detonations use the canonical cluster impact sample instead of a missing child asset key");
-assert.match(mainSource, /impact\(position, shot\.weapon, shot\.owner, \{ size: Math\.min\(3\.6,/, "expanded explosions retain a bounded but larger visual shockwave scale");
+assert.match(mainSource, /const visualRadius = shot\.weapon\.visualRadius \?\? shot\.weapon\.radius;[\s\S]*?impact\(position, shot\.weapon, shot\.owner, \{ size: Math\.min\(3\.6, Math\.max\(1\.35, visualRadius \* \.42\)\)/, "expanded damage spheres retain the original bounded explosion animation size");
 assert.match(mainSource, /fireHitscan\([\s\S]*?damageTerrain\(wall, weapon, player\)/, "hitscan and precision weapons route direct surface hits into structure damage");
 assert.match(mainSource, /fireFlame\([\s\S]*?damageTerrain\(surface, weapon, player\)/, "maintained flame routes surface contact into structure damage");
 assert.match(mainSource, /fireMelee\([\s\S]*?damageTerrain\(surface, weapon, player\)/, "melee weapons route direct surface contact into structure damage");

@@ -70,6 +70,39 @@ let disposals = 0;
 for (const layer of effects.explosions.layers) for (const resource of [layer.mesh.geometry, layer.mesh.material]) resource.addEventListener("dispose", () => disposals++);
 effects.dispose(); assert.equal(disposals, 8); assert.ok(effects.projectileLights.every(l => !l.userData.projectile));
 
+// Maximum lifetime, speed and puff size with upward smoke tests the complete
+// rendered envelope, including late smoke growth after the bright shell fades.
+const blastEnvelope = new CombatVisuals(new THREE.Scene());
+const envelopeMatrix = new THREE.Matrix4(), envelopePosition = new THREE.Vector3();
+for (const weapon of Object.values(WEAPONS).filter(w => w.visualRadius > 0 && w.radius > w.visualRadius)) {
+  const size = Math.min(3.6, Math.max(1.35, weapon.visualRadius * .42));
+  for (const reducedMotion of [false, true]) {
+    blastEnvelope.reducedMotion = reducedMotion;
+    blastEnvelope.explosions.random = () => 1 - Number.EPSILON;
+    blastEnvelope.impact(point, weapon, owner, { explosive: true, size });
+    const smokeLayer = blastEnvelope.explosions.layers[1];
+    // An upward direction is a valid spawn direction and maximizes buoyant reach.
+    for (const particle of smokeLayer.particles) if (particle.life > 0) particle.velocity.set(0, particle.velocity.length(), 0);
+    let greatestReach = 0;
+    for (let step = 0; step < 121; step++) {
+      blastEnvelope.update(1 / 60);
+      for (const layer of blastEnvelope.explosions.layers.slice(0, 3)) {
+        if (!layer.mesh.geometry.boundingSphere) layer.mesh.geometry.computeBoundingSphere();
+        for (let index = 0; index < layer.mesh.count; index++) {
+          if (layer.particles[index].life <= 0) continue;
+          layer.mesh.getMatrixAt(index, envelopeMatrix);
+          envelopePosition.setFromMatrixPosition(envelopeMatrix);
+          const reach = envelopePosition.distanceTo(point) + layer.mesh.geometry.boundingSphere.radius * envelopeMatrix.getMaxScaleOnAxis();
+          greatestReach = Math.max(greatestReach, reach);
+          assert.ok(reach <= weapon.radius + 1e-5, `${weapon.id} contains its full ${layer.kind} mesh at frame ${step}, reducedMotion=${reducedMotion}`);
+        }
+      }
+    }
+    if (!reducedMotion) assert.ok(greatestReach > weapon.visualRadius, `${weapon.id} formerly showed particles beyond its damage sphere`);
+  }
+}
+blastEnvelope.dispose();
+
 {
   const marks = new CombatVisuals(new THREE.Scene());
   const surface = { x: 0, z: 0, baseY: 0, top: 4, w: 4, d: 4, mesh: { material: { metalness: .7 } } };

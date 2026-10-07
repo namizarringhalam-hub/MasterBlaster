@@ -74,6 +74,19 @@ function weapon(categoryId, id, type, color, stats = {}) {
     value.preferredRange = value.reach * .8;
     value.maxUsefulRange = value.reach + 1;
   }
+  if (value.radius > 0) {
+    value.visualRadius = value.radius;
+    // Inward fields and flat pulses do not emit expanding explosion smoke.
+    if (!value.pull && value.hazard !== "black_hole" && value.presentationPayload !== "pulse" && !value.grappleDisrupt) {
+      const size = Math.min(3.6, Math.max(1.35, value.visualRadius * .42));
+      // ExplosionParticles' full smoke envelope at the 60 Hz simulation step:
+      // maximum travel + puff growth <= 2.82 * size, upward drift <= 1.45m.
+      const radius = Math.max(value.radius, Math.ceil((2.82 * size + 1.45) * 10) / 10);
+      const scale = radius / value.radius;
+      value.radius = radius;
+      if (value.terrainRadius > 0) value.terrainRadius *= scale;
+    }
+  }
   return value;
 }
 

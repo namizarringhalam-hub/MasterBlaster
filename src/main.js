@@ -3412,6 +3412,7 @@ class BlasterBattle {
 
   explode(shot) {
     const position = shot.mesh.position.clone();
+    const visualRadius = shot.weapon.visualRadius ?? shot.weapon.radius;
     for (const target of [...this.players, ...this.decoys]) {
       if (!target.alive) continue;
       const targetPoint = target.position.clone();
@@ -3428,11 +3429,11 @@ class BlasterBattle {
     }
     if (shot.weapon.terrainRadius > 0 || shot.weapon.structureDamage > 0) this.damageTerrain(position, shot.weapon, shot.owner, shot.networkShotId);
     if (shot.weapon.hazard) this.spawnHazard(position, shot.owner, shot.weapon, shot.velocity, shot.networkShotId);
-    this.combatVisuals?.impact(position, shot.weapon, shot.owner, { size: Math.min(3.6, Math.max(1.35, shot.weapon.radius * .42)), explosive: true });
+    this.combatVisuals?.impact(position, shot.weapon, shot.owner, { size: Math.min(3.6, Math.max(1.35, visualRadius * .42)), explosive: true });
     // Ground-only scorch marks cannot float when destructible platforms collapse.
-    if (position.y >= 0 && position.y < Math.min(4, shot.weapon.radius)
+    if (position.y >= 0 && position.y < Math.min(4, visualRadius)
       && this.world.surfaceHeightAt(position, position.y + .05) === 0) {
-      this.combatVisuals?.explosions.scorch(new THREE.Vector3(position.x, 0, position.z), Math.min(3.6, shot.weapon.radius * .55));
+      this.combatVisuals?.explosions.scorch(new THREE.Vector3(position.x, 0, position.z), Math.min(3.6, visualRadius * .55));
     }
     const impactWeapon = WEAPONS[shot.weapon.sourceWeaponId] || shot.weapon;
     this.sound.playImpact(impactWeapon, this.audioSpatial(position, false, 1, shot.owner.id), 0, "explosive");

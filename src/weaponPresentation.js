@@ -49,7 +49,7 @@ export function weaponPresentation(weapon = {}) {
   const signature = (signatureHash & 0xffff) / 0xffff;
   const tempo = weapon.cooldown <= .13 ? "rapid" : weapon.cooldown >= 1 ? "heavy" : "standard";
   const speed = Math.max(0, weapon.projectileSpeed || 0);
-  const blast = Math.max(0, weapon.radius || 0);
+  const blast = Math.max(0, (weapon.visualRadius ?? weapon.radius) || 0);
   const weight = clamp((weapon.damage || 0) / 92 + (weapon.recoil || 0) / 16 + blast / 15, .12, 1.35);
   const energy = ["plasma", "beam", "rail", "chain"].includes(delivery)
     || ["gravity", "implosion", "freeze", "fireball", "teleport", "steal", "disrupt", "energy", "arc"].includes(payload);

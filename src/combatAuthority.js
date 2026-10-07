@@ -229,7 +229,7 @@ export function validateHitProposal({ shot, attacker, target, weapon, impact, ph
     return { damage: headshot ? headshotDamage(canonicalDamage, true) : Math.max(1, Math.ceil(canonicalDamage)), headshot, push: canonicalPush(weapon, origin, targetCenter), strategy };
   }
 
-  const radius = weapon.radius || 0;
+  const radius = (phase === "hazard" ? weapon.visualRadius ?? weapon.radius : weapon.radius) || 0;
   if (targetDistance > radius + PLAYER_RADIUS || lineBlockedByStructure(impact, targetCenter, seed, structuralHealth, arenaRevision, structuralFailures, now)) return null;
   const factor = Math.max(0, 1 - Math.max(0, targetDistance - PLAYER_RADIUS) / Math.max(.01, radius));
   if (phase === "hazard" && weapon.hazard) {
