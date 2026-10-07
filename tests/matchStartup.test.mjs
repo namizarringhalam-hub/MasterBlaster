@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { PLAYER_TEXT } from "../PLAYER_TEXT.js";
+import { SimulationTiming, RenderInterpolation } from "../src/simulationTiming.js";
 
 const source = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
 const controller = source.slice(source.indexOf("class BlasterBattle"), source.indexOf("\nconst game = new BlasterBattle")).replaceAll("import.meta.url", '"test"');
@@ -19,8 +20,8 @@ const ui = {
   querySelectorAll: () => bootButtons,
   set innerHTML(value) { markupWrites++; assert.match(value, /<h1>/); }
 };
-const Game = new Function("requestAnimationFrame", "performance", "TEXT", "setJourney", "matchLoading", "ui", "menuAtmosphereMarkup", `return ${controller}`)(
-  callback => frames.push(callback), { mark() {}, measure() {} }, PLAYER_TEXT, path => journeys.push(path), null, ui, () => "");
+const Game = new Function("requestAnimationFrame", "performance", "TEXT", "setJourney", "matchLoading", "ui", "menuAtmosphereMarkup", "SimulationTiming", "RenderInterpolation", `return ${controller}`)(
+  callback => frames.push(callback), { mark() {}, measure() {} }, PLAYER_TEXT, path => journeys.push(path), null, ui, () => "", SimulationTiming, RenderInterpolation);
 const menu = Object.assign(Object.create(Game.prototype), {
   settings: { graphics: "low" },
   sound: Object.fromEntries(["resume", "setVolume", "setMix", "setPaused", "setMusicScene", "startMusic"].map(name => [name, () => {}])),
@@ -88,7 +89,7 @@ Object.assign(game, {
   renderer: { backend: { device: { queue: { onSubmittedWorkDone: () => new Promise((resolve, reject) => { resolveGpu = resolve; rejectGpu = reject; }) } } } },
   input: { tapped: () => false, endFrame() {} }, timer: { update() {}, getDelta: () => 6.5 },
   commitResize() {}, renderScene() { renders++; return true; },
-  update() { updates++; this.matchTime--; }, updateHud() {}, updatePerformanceSample() {},
+  update() { updates++; this.matchTime--; }, updateAudio() {}, updateHud() {}, updatePerformanceSample() {},
   startMatchCountdown() { countdowns++; }, showRendererFailure() { failures++; }
 });
 game.frame(0);

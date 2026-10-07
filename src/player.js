@@ -1611,10 +1611,11 @@ export function aimWithSpread(aim, spread, random = Math.random) {
     .normalize();
 }
 
-export function reticleAim(player, cameraOrigin, cameraDirection, world, targets) {
+export function reticleAim(player, cameraOrigin, cameraDirection, world, targets, surface = undefined) {
   const direction = cameraDirection.clone().normalize();
   const ray = new THREE.Ray(cameraOrigin, direction);
-  const surface = world.grapplePoint(cameraOrigin, direction);
+  // undefined keeps standalone callers compatible; null reuses a known miss.
+  if (surface === undefined) surface = world.grapplePoint(cameraOrigin, direction);
   let distance = surface ? cameraOrigin.distanceTo(surface) : 520;
   let point = surface || cameraOrigin.clone().addScaledVector(direction, distance);
   let selectedTarget = null;

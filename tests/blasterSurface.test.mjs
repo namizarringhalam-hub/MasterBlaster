@@ -96,8 +96,16 @@ uploadEffects.impact(position,WEAPONS.rocket_launcher,owner,{normal});uploadEffe
 assert.deepEqual(versions(),initialVersions,"legacy-only activity never uploads dormant surface buffers");
 uploadEffects.impact(position,WEAPONS.blaster,owner,{normal});uploadEffects.update(1/60);
 assert.ok(versions().every((n,i)=>n>initialVersions[i]));
-const activeVersions=versions();uploadEffects.update(2);
-assert.ok(versions().every((n,i)=>n>activeVersions[i]),"surface expiry uploads its hidden matrices");
+const activeVersions=versions(),pendingRanges=[uploadEffects.surfaceFront,uploadEffects.surfaceCore]
+  .flatMap(l=>[l.instanceMatrix,l.instanceColor]).map(a=>structuredClone(a.updateRanges));
+uploadEffects.update(2);
+assert.deepEqual(versions(),activeVersions,"zero-count surface expiry creates no redundant GPU writes");
+for(const [index,layer] of [uploadEffects.surfaceFront,uploadEffects.surfaceCore].entries()) {
+  assert.equal(layer.count,0,"expired surface pairs submit no instances");
+  assert.deepEqual(matrixAt(layer,1),hidden,"expiry still clears the CPU matrix for later draw expansion");
+  assert.deepEqual(layer.instanceMatrix.updateRanges,pendingRanges[index*2],"expiry preserves pending matrix work when rendering was skipped");
+  assert.deepEqual(layer.instanceColor.updateRanges,pendingRanges[index*2+1],"expiry preserves pending color work when rendering was skipped");
+}
 const expiredVersions=versions();uploadEffects.impact(position,WEAPONS.rocket_launcher,owner,{normal});uploadEffects.update(1/60);
 assert.deepEqual(versions(),expiredVersions,"subsequent legacy-only activity leaves expired surface buffers dormant");uploadEffects.dispose();
 const runtimeEffects=new CombatVisuals(new THREE.Scene()), backend=Object.create({createRenderPipeline(...args){assert.equal(this,backend);return args;}}), originalPipeline=backend.createRenderPipeline;

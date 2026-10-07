@@ -3,6 +3,7 @@ import { attribute, diffuseColor, materialOpacity, normalViewGeometry, positionG
 import { seededRandom } from "./gameData.js";
 import { emissiveEffectMaterial } from "./effectMaterials.js";
 import { softParticleFade } from "./softParticles.js";
+import { queueParticlePrefix } from "./particleUploads.js";
 
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 const HOT = new THREE.Color(0xfff5e0), FIRE = new THREE.Color(0xff4811);
@@ -156,7 +157,12 @@ export class ExplosionParticles {
         count = i + 1;
       }
       layer.mesh.count = count;
-      if (dirty) { layer.mesh.instanceMatrix.needsUpdate = true; layer.mesh.instanceColor.needsUpdate = true; layer.alpha.needsUpdate = true; layer.phase.needsUpdate = true; }
+      if (dirty) {
+        queueParticlePrefix(layer.mesh.instanceMatrix, count);
+        queueParticlePrefix(layer.mesh.instanceColor, count);
+        queueParticlePrefix(layer.alpha, count);
+        queueParticlePrefix(layer.phase, count);
+      }
     }
   }
 }

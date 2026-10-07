@@ -227,8 +227,9 @@ assert.equal((await generateB(["texture", "uncached"], create, valid)).pixels, 5
 
 const main = await readFile("src/main.js", "utf8");
 const controller = main.slice(main.indexOf("class BlasterBattle"), main.indexOf("\nconst game = new BlasterBattle")).replaceAll("import.meta.url", '"test"');
-const Game = new Function("prepareSurfaceTextures", "preparationProgress", "clampBotCount", "console", `return ${controller}`)(
-  async () => {}, () => {}, value => value, { warn() {} });
+const { FrameTiming } = await import("../src/frameTiming.js");
+const Game = new Function("prepareSurfaceTextures", "preparationProgress", "clampBotCount", "console", "FrameTiming", `return ${controller}`)(
+  async () => {}, () => {}, value => value, { warn() {} }, FrameTiming);
 let resolvePreparation, rejectPreparation, resolveGameplay, rejectGameplay, builds = 0, menus = 0, gameplayRequests = 0;
 const launch = Object.assign(Object.create(Game.prototype), {
   mode: "training", seed: "START", settings: { botCount: 1 }, sound: {}, timeLimitMinutes: 3,

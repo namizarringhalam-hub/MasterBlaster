@@ -377,7 +377,7 @@ assert.equal(decoyHarness.decoyRenderAnchor, null);
 assert.ok([...decoyDisposals.values()].every(count => count === 1), "match teardown releases active and retained clones exactly once");
 const menuSource = mainSource.slice(mainSource.indexOf("\n  renderMain("), mainSource.indexOf("\n  renderSetup("));
 const menuMethod = new Function("ui", "TEXT", "menuAtmosphereMarkup", `return ({${menuSource}}).renderMain;`)({}, PLAYER_TEXT, () => "");
-const frameSource = mainSource.slice(mainSource.indexOf("\n  frame(time) {"), mainSource.indexOf("\n  update(dt, realDt = dt) {"));
+const frameSource = mainSource.slice(mainSource.indexOf("\n  frame(time) {"), mainSource.indexOf("\n  updateFrameInput() {"));
 const menuMarks = [], loaderCalls = [];
 const frameMethod = new Function("performance", `return ({${frameSource}}).frame;`)({ mark: name => menuMarks.push(name), measure: name => menuMarks.push(name) });
 Object.assign(decoyHarness, { settings: {}, bindUi() {}, commitResize() {}, stopGameplayPreparation() {}, setJourney() {},
@@ -437,6 +437,9 @@ const assertFireballUploads = (count) => {
       assert.deepEqual(layer.instanceMatrix.updateRanges, [{ start: 0, count: count * 16 }]);
       assert.deepEqual(layer.instanceColor.updateRanges, [{ start: 0, count: count * 3 }]);
     }
+    // Simulate renderer consumption; pending ranges otherwise survive skipped draws.
+    layer.instanceMatrix.clearUpdateRanges();
+    layer.instanceColor.clearUpdateRanges();
   }
 };
 assertFireballUploads(1);

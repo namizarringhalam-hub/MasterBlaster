@@ -314,7 +314,7 @@ assert.match(mainSource, /combatMusicIntensity\(\{[\s\S]*?nearbyEnemies[\s\S]*?n
 assert.match(mainSource, /startCountdown\(this\.seed, \.42\)/, "gameplay and the score share one authoritative audio-clock countdown");
 assert.match(mainSource, /resumeAudioAfterReload\(\)[\s\S]*?matchStartDelay > 0[\s\S]*?startCountdown\(this\.seed, \.42\)[\s\S]*?else this\.sound\.startMusic\("combat"/, "the first post-reload gesture restores the authored countdown before combat music instead of skipping the score");
 assert.match(mainSource, /update\(dt, realDt = dt\) \{[\s\S]*?awaitingAudioGesture[\s\S]*?return;[\s\S]*?matchStartDelay > 0/, "a fresh match cannot consume its countdown before the browser receives an audio-unlocking gesture");
-assert.match(mainSource, /renderMain\(\)[\s\S]*?sound\.resume\(\)[\s\S]*?setMusicScene\("menu"\)[\s\S]*?startMusic\("menu"/, "the menu prepares and starts its score instead of waiting for a later screen");
+assert.ok(/renderMain\(\{ reuseShell = false \} = \{\}\)[\s\S]*?sound\.resume\(\)[\s\S]*?setMusicScene\("menu"\)[\s\S]*?startMusic\("menu"/.test(mainSource), "the menu prepares and starts its score instead of waiting for a later screen");
 assert.match(mainSource, /resumeAudioAfterReload\(\)[\s\S]*?state !== "play"[\s\S]*?startMusic\("menu"/, "the first browser-permitted gesture releases the prepared menu score immediately");
 assert.match(mainSource, /selectNearestAudio\(\s*this\.hazards, local\.position, 4/, "the four nearest hazards receive tactical loop priority without sorting the full hazard list");
 assert.match(mainSource, /button\.dataset\.weaponSlot != null \? WEAPONS\[this\.players\[0\]\?\.loadout/, "direct HUD and touch slot selection carries the selected weapon's handling identity");

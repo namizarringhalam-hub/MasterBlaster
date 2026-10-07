@@ -4,11 +4,12 @@ import * as THREE from "three/webgpu";
 import { clampBotCount } from "../src/botBrain.js";
 import TEXT from "../src/playerText.js";
 import { setJourney } from "../src/journeys.js";
+import { FrameTiming } from "../src/frameTiming.js";
 
 const source = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
 const controller = source.slice(source.indexOf("class BlasterBattle"), source.indexOf("\nconst game = new BlasterBattle")).replaceAll("import.meta.url", '"test"');
 const ui = { querySelector: () => null };
-const Game = new Function("THREE", "TEXT", "ui", "clearTouchActions", "clampBotCount", "escapeHtml", "prepareSurfaceTextures", "setJourney", `return ${controller}`)(THREE, TEXT, ui, () => {}, clampBotCount, String, async () => {}, setJourney);
+const Game = new Function("THREE", "TEXT", "ui", "clearTouchActions", "clampBotCount", "escapeHtml", "prepareSurfaceTextures", "setJourney", "FrameTiming", `return ${controller}`)(THREE, TEXT, ui, () => {}, clampBotCount, String, async () => {}, setJourney, FrameTiming);
 for (const mode of ["training", "quick", "private", "global"]) {
   const game = Object.create(Game.prototype);
   const local = ["training", "quick"].includes(mode);

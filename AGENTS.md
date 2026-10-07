@@ -8,6 +8,10 @@
 
 - `masterblaster.se`, deployed through Cloudflare Pages from `origin/main`, is the only game host. Never create or publish a `chatgpt.site` copy unless the user explicitly reverses this instruction.
 
+## Browser testing
+
+- Always mute browser tabs used for research or testing before loading game content. Keep them muted throughout the work.
+
 ## Long-running work recovery
 
 - Keep a concise persistent checkpoint for substantial multi-session work, including changed files, verified tests, reviewer findings, blockers and the next unfinished step. Update it at material milestones and before yielding.

@@ -27,6 +27,8 @@ import { backgroundYield } from "./resourceVersion.js";
 import { resourceURL } from "./resourceURLs.js";
 import { preparationProgress } from "./resourceProgress.js";
 import { setJourney } from "./journeys.js";
+import { FrameTiming } from "./frameTiming.js";
+import { SimulationTiming, RenderInterpolation } from "./simulationTiming.js";
 
 const canvas = document.querySelector("#game-canvas");
 const ui = document.querySelector("#ui-root");
@@ -197,6 +199,10 @@ class BlasterBattle {
     this.targetScore = 10;
     this.touch = {};
     this.performanceSample = this.freshPerformanceSample();
+    this.simulationTiming = new SimulationTiming();
+    this.renderInterpolation = new RenderInterpolation();
+    this.interpolationTargets = new Set();
+    this.simulationFrameActive = false;
     this.audioMixTimer = 0;
     this.combatMusicPulse = 0;
     this.menuEnergyTimer = 0;
@@ -509,6 +515,10 @@ class BlasterBattle {
   }
 
   clearMatch(preserveNetwork = false) {
+    this.simulationTiming?.reset();
+    this.renderInterpolation?.clear();
+    this.interpolationTargets?.clear();
+    this.simulationFrameActive = false;
     this.resourceLaunchToken = null;
     this.preparingMatch = false;
     this.renderPipeline?.motionBlur?.reset();
@@ -2194,6 +2204,9 @@ class BlasterBattle {
   togglePause() {
     if (this.state !== "play") return;
     this.paused = !this.paused;
+    this.simulationTiming?.reset();
+    this.renderInterpolation?.clear();
+    this.simulationFrameActive = false;
     this.sound.play(this.paused ? "pause" : "resume");
     this.sound.setPaused(this.paused);
     if (this.paused) {
@@ -2240,7 +2253,7 @@ class BlasterBattle {
   }
 
   freshPerformanceSample() {
-    return { elapsed: 0, frames: 0, windowElapsed: 0, windowFrames: 0, fps: 0, minimum: Infinity, total: 0, samples: 0 };
+    return new FrameTiming();
   }
 
   audioSpatial(position, local = false, volume = 1, ownerId = "") {
@@ -2306,11 +2319,30 @@ class BlasterBattle {
     if (this.preparingGraphics || this.preparingMatch) return;
     this.commitResize();
     this.timer.update(time);
-    const rawDt = Math.min(.25, this.timer.getDelta());
-    const dt = Math.min(.033, rawDt);
-    if (this.state === "play" && !this.hideMatchLoadingAfterFrame && this.input.tapped("Escape")) this.togglePause();
-    if (this.state === "play" && !this.paused && !this.hideMatchLoadingAfterFrame) this.update(dt, rawDt);
+    const rawDt = Math.max(0, this.timer.getDelta());
+    if (!globalThis.document?.hidden && this.state === "play" && !this.hideMatchLoadingAfterFrame && this.input.tapped("Escape")) {
+      this.togglePause();
+      this.input.pressed?.delete("Escape");
+    }
+    const active = this.state === "play" && !this.paused && !this.hideMatchLoadingAfterFrame && !globalThis.document?.hidden;
+    const continuing = active && this.simulationFrameActive;
+    const bootPerf = globalThis.__blasterPerf;
+    const longTasks = bootPerf?.longTasks || 0, longTaskMs = bootPerf?.longTaskMs || 0;
+    const taskDelta = Math.max(0, longTasks - (this.lastLongTasks ?? longTasks));
+    const taskMsDelta = Math.max(0, longTaskMs - (this.lastLongTaskMs ?? longTaskMs));
+    this.lastLongTasks = longTasks; this.lastLongTaskMs = longTaskMs;
+    const updateStarted = performance.now?.() || 0;
+    if (active) {
+      this.updateFrameInput();
+      this.advanceSimulation(continuing ? rawDt : Math.min(rawDt, 1 / 60));
+    } else {
+      this.simulationTiming?.reset();
+      this.renderInterpolation?.clear();
+    }
+    const updateMs = (performance.now?.() || 0) - updateStarted;
+    const renderStarted = performance.now?.() || 0;
     const rendered = this.matchFramePending ? false : this.renderScene();
+    const renderMs = (performance.now?.() || 0) - renderStarted;
     if (this.hideMatchLoadingAfterFrame && rendered) {
       if (this.matchFrameReady) {
         this.hideMatchLoadingAfterFrame = false;
@@ -2322,15 +2354,57 @@ class BlasterBattle {
         if (!this.paused) this.setJourney("/game");
       } else this.waitForMatchFrame();
     }
-    if (this.state === "play" && !this.paused && !this.hideMatchLoadingAfterFrame) this.updatePerformanceSample(rawDt);
-    this.input.endFrame();
+    if (continuing && rendered && this.state === "play" && !this.paused && !this.hideMatchLoadingAfterFrame) {
+      this.performanceSample.longTasks += taskDelta;
+      this.performanceSample.longTaskMs += taskMsDelta;
+      this.updatePerformanceSample(rawDt, updateMs, renderMs, this.simulationTiming.steps, this.simulationTiming.dropped);
+    }
+    this.simulationFrameActive = active && this.state === "play" && !this.paused;
+    // Preserve single-press input on a 120Hz frame with no simulation step.
+    if (!active) this.input.endFrame();
+  }
+
+  updateFrameInput() {
+    if (!this.players?.[0]) return;
+    const look = this.input.consumeLook();
+    ({ yaw: this.cameraYaw, pitch: this.cameraPitch } = updateOrbit(this.cameraYaw, this.cameraPitch, look.x, look.y));
+    if (this.input.tapped("KeyF")) this.cameraFirstPersonRequested = !this.cameraFirstPersonRequested;
+    this.input.pressed?.delete("KeyF");
+  }
+
+  advanceSimulation(elapsed) {
+    this.simulationTiming ||= new SimulationTiming();
+    this.renderInterpolation ||= new RenderInterpolation();
+    this.interpolationTargets ||= new Set();
+    let realTime = 0;
+    this.simulationBatch = true;
+    this.simulationStateAdvanced = false;
+    try {
+      this.simulationTiming.advance(elapsed, (dt, realDt) => {
+        const objects = this.interpolationTargets;
+        objects.clear();
+        if (this.camera) objects.add(this.camera);
+        for (const player of this.players || []) if (player.group) objects.add(player.group);
+        for (const items of [this.projectiles, this.hazards, this.decoys]) for (const item of items || []) if (item.mesh) objects.add(item.mesh);
+        for (const mover of this.world?.movers || []) if (mover.obstacle.mesh) objects.add(mover.obstacle.mesh);
+        this.renderInterpolation.capture(objects);
+        this.update(dt, realDt);
+        realTime += realDt;
+        this.input.endFrame();
+        return this.state === "play" && !this.paused;
+      });
+    } finally { this.simulationBatch = false; }
+    if (realTime && this.state === "play" && !this.paused) {
+      if (this.simulationStateAdvanced && this.isOnlineMatch()) this.multiplayer.sendState(this.players.filter(player => player.alive && this.controlsNetworkPlayer(player)));
+      this.updateAudio(realTime);
+      this.updateHud();
+    }
   }
 
   update(dt, realDt = dt) {
     if (this.paused || this.hideMatchLoadingAfterFrame) return;
     if (this.awaitingAudioGesture) {
-      this.updateAudio(dt);
-      this.updateHud();
+      if (!this.simulationBatch) { this.updateAudio(dt); this.updateHud(); }
       return;
     }
     if (this.matchStartDelay > 0 || this.audioCountdown) {
@@ -2339,15 +2413,14 @@ class BlasterBattle {
         this.matchStartDelay = countdown.remaining;
         this.countdownBeat = countdown.beatsRemaining;
       } else {
-        this.matchStartDelay = Math.max(0, this.matchStartDelay - dt);
+        this.matchStartDelay = Math.max(0, this.matchStartDelay - realDt);
         const beat = Math.ceil(this.matchStartDelay);
         if (beat > 0 && beat !== this.countdownBeat) {
           this.countdownBeat = beat;
           this.sound.play("countdown");
         }
       }
-      this.updateAudio(dt);
-      this.updateHud();
+      if (!this.simulationBatch) { this.updateAudio(dt); this.updateHud(); }
       if ((countdown && !countdown.active) || (!countdown && this.matchStartDelay === 0)) {
         if (!countdown) {
           this.sound.play("go");
@@ -2360,13 +2433,13 @@ class BlasterBattle {
     }
     this.matchTime = this.isOnlineMatch()
       ? Math.max(0, (this.networkEndsAt - Date.now()) / 1000)
-      : Math.max(0, this.matchTime - dt);
+      : Math.max(0, this.matchTime - realDt);
     if (this.networkRecovering) {
-      this.updateAudio(dt);
-      this.updateHud();
+      if (!this.simulationBatch) { this.updateAudio(dt); this.updateHud(); }
       return;
     }
     this.world.update(dt, this.players);
+    this.simulationStateAdvanced = true;
     for (const player of this.players) this.syncGrappleTarget(player);
     this.handleWeaponSwitch();
     this.updateHuman(dt);
@@ -2377,7 +2450,7 @@ class BlasterBattle {
       else if (player.isBot) this.updateBot(player, dt);
     }
     for (const player of this.players) this.updateBurst(player, dt);
-    if (this.isOnlineMatch()) this.multiplayer.sendState(this.players.filter((player) => player.alive && this.controlsNetworkPlayer(player)));
+    if (!this.simulationBatch && this.isOnlineMatch()) this.multiplayer.sendState(this.players.filter((player) => player.alive && this.controlsNetworkPlayer(player)));
     this.updateProjectiles(dt);
     this.updateHazards(dt);
     this.updateDecoys(dt);
@@ -2387,8 +2460,7 @@ class BlasterBattle {
     this.combatVisuals?.update(dt);
     this.updateRespawns(realDt);
     for (const player of this.players) if (player.trainingStandStill && player.alive) this.lockTrainingBot(player);
-    this.updateAudio(dt);
-    this.updateHud();
+    if (!this.simulationBatch) { this.updateAudio(dt); this.updateHud(); }
     if (!this.isOnlineMatch() && (this.matchTime <= 0 || Math.max(...this.scores) >= this.targetScore)) this.finishMatch();
   }
 
@@ -2407,9 +2479,6 @@ class BlasterBattle {
 
   updateHuman(dt) {
     const player = this.players[0];
-    const look = this.input.consumeLook();
-    ({ yaw: this.cameraYaw, pitch: this.cameraPitch } = updateOrbit(this.cameraYaw, this.cameraPitch, look.x, look.y));
-    if (this.input.tapped("KeyF")) this.cameraFirstPersonRequested = !this.cameraFirstPersonRequested;
     this.updateCamera(dt);
     if (!player.alive) {
       this.sound.updateWeaponLoop(player.id, player.weapon, false);
@@ -2421,7 +2490,8 @@ class BlasterBattle {
     if (move.lengthSq() > 1) move.normalize();
     this.aimTargets.length = 0;
     this.aimTargets.push(...this.players, ...this.decoys);
-    const aim = reticleAim(player, this.camera.position, this.camera.getWorldDirection(this.aimDirection), this.world, this.aimTargets);
+    const aimSurface = this.world.grapplePoint(this.camera.position, this.camera.getWorldDirection(this.aimDirection));
+    const aim = reticleAim(player, this.camera.position, this.camera.getWorldDirection(this.aimDirection), this.world, this.aimTargets, aimSurface);
     const jump = this.input.tapped("Space") || this.touch.jumpTap;
     if (jump && player.grounded) this.sound.play("jump", null, { local: true });
     player.update(dt, move, aim, { jump, reducedMotion: this.settings.reducedMotion }, this.world);
@@ -2430,14 +2500,14 @@ class BlasterBattle {
     this.touch.grappleTap = false;
     this.updateGrapple(player, dt, this.input.down("KeyW") || this.input.touchDirection().y < -.1);
     // Movement and grapple physics may have moved the muzzle since the pose update.
-    player.aim.copy(reticleAim(player, this.camera.position, this.camera.getWorldDirection(this.aimDirection), this.world, this.aimTargets));
+    player.aim.copy(reticleAim(player, this.camera.position, this.camera.getWorldDirection(this.aimDirection), this.world, this.aimTargets, aimSurface));
     if (this.input.tapped("KeyR") && !this.beginReload(player)) this.sound.play("uiInvalid");
     const fireHeld = this.input.mouse.left || this.touch.fire;
     const fireTapped = this.input.tapped("MouseLeft") || this.touch.fireTap;
     if (player.weapon.chargeTime) this.updateCharge(player, fireHeld, dt);
     else {
       this.cancelCharge(player);
-      if (fireHeld) this.tryFire(player, fireTapped);
+      if (fireHeld || fireTapped) this.tryFire(player, fireTapped);
     }
     if (weaponUsesAmmo(player.weapon) && fireHeld && player.ammo[player.weapon.id] <= 0 && !player.pendingBurst) this.beginReload(player);
     this.sound.updateWeaponLoop(player.id, player.weapon, fireHeld && player.weapon.maintained && player.ammo[player.weapon.id] > 0, this.audioSpatial(player.position, true, 1, player.id));
@@ -2748,6 +2818,14 @@ class BlasterBattle {
     if (!silent) this.sound.play("grappleRelease", null, this.audioSpatial(position, local, local ? 1 : .3, player.id));
   }
 
+  reserveNetworkFire(player, weapon) {
+    const now = Date.now(), times = player.simulationNetworkFireAt ||= Object.create(null);
+    // Match the authoritative wall-clock gate: catch-up steps share one instant.
+    if (now - (times[weapon.id] ?? -Infinity) < Math.max(24, weapon.cooldown * 1000 * .72)) return false;
+    times[weapon.id] = now;
+    return true;
+  }
+
   tryFire(player, triggerTap = false, replicate = true) {
     if (player.trainingDontAttack) return;
     const weapon = player.weapon;
@@ -2759,6 +2837,7 @@ class BlasterBattle {
         .map((shot, index) => ({ shot, index }))
         .filter(({ shot }) => shot.owner === player && shot.weapon.id === weapon.id && shot.stuck);
       if (triggerTap && charges.length) {
+        if (this.simulationBatch && replicate && this.controlsNetworkPlayer(player) && !this.reserveNetworkFire(player, weapon)) return;
         player.attackTimer = weapon.cooldown;
         if (replicate && this.controlsNetworkPlayer(player)) this.multiplayer.fire(player, weapon, player.aim, true, "detonate");
         this.combatMusicPulse = Math.max(this.combatMusicPulse, player === this.players[0] ? .72 : .4);
@@ -2775,6 +2854,7 @@ class BlasterBattle {
       return;
     }
     if (fireMode === "burst") return this.beginBurst(player, weapon, replicate);
+    if (this.simulationBatch && replicate && this.controlsNetworkPlayer(player) && !this.reserveNetworkFire(player, weapon)) return;
     player.attackTimer = weapon.cooldown;
     if (usesAmmo) player.ammo[weapon.id] -= 1;
     if (replicate && this.controlsNetworkPlayer(player)) this.multiplayer.fire(player, weapon, player.aim, triggerTap);
@@ -2801,6 +2881,7 @@ class BlasterBattle {
     if (player.trainingDontAttack) return;
     const rounds = Math.min(weapon.burstCount, player.ammo[weapon.id]);
     if (!rounds) return this.beginReload(player);
+    if (this.simulationBatch && replicate && this.controlsNetworkPlayer(player) && !this.reserveNetworkFire(player, weapon)) return;
     player.attackTimer = weapon.cooldown;
     player.ammo[weapon.id] -= rounds;
     if (replicate && this.controlsNetworkPlayer(player)) this.multiplayer.fire(player, weapon, player.aim, true);
@@ -2860,8 +2941,9 @@ class BlasterBattle {
     const weapon = WEAPONS[player.chargingWeaponId];
     if (!weapon) return;
     const ratio = clamp(player.chargeTimer / weapon.chargeTime, 0, 1);
+    if (ratio < weapon.minCharge || !player.alive || player.weapon.id !== weapon.id || player.attackTimer > 0 || player.reloadTimer > 0) return this.cancelCharge(player);
+    if (this.simulationBatch && this.controlsNetworkPlayer(player) && !this.reserveNetworkFire(player, weapon)) return;
     this.cancelCharge(player);
-    if (ratio < weapon.minCharge || !player.alive || player.weapon.id !== weapon.id || player.attackTimer > 0 || player.reloadTimer > 0) return;
     player.attackTimer = weapon.cooldown;
     player.ammo[weapon.id] -= 1;
     if (this.controlsNetworkPlayer(player)) this.multiplayer.fire(player, weapon, player.aim, true, "fire", ratio);
@@ -3875,27 +3957,20 @@ class BlasterBattle {
     }
   }
 
-  updatePerformanceSample(dt) {
+  updatePerformanceSample(dt, updateMs = 0, renderMs = 0, steps = 0, dropped = 0) {
     const sample = this.performanceSample;
-    sample.elapsed += dt;
-    sample.frames++;
-    sample.windowElapsed += dt;
-    sample.windowFrames++;
-    if (sample.windowElapsed < 1) return;
-    sample.fps = sample.windowFrames / sample.windowElapsed;
-    sample.minimum = Math.min(sample.minimum, sample.fps);
-    sample.total += sample.fps;
-    sample.samples++;
-    sample.windowElapsed = 0;
-    sample.windowFrames = 0;
+    if (!sample.record(dt, updateMs, renderMs, steps, dropped)) return;
     const node = this.hud?.performance;
     if (!node) return;
     const seconds = Math.min(60, Math.floor(sample.elapsed));
-    const average = sample.total / sample.samples;
+    const stats = sample.snapshot(), average = stats.averageFps;
     node.textContent = formatText(TEXT.hud.performance, { fps: Math.round(sample.fps), draws: this.renderer.info.render.drawCalls, fighters: this.players.length, mode: this.renderPipeline.profile, seconds });
     node.dataset.fps = sample.fps.toFixed(1);
     node.dataset.averageFps = average.toFixed(1);
     node.dataset.minimumFps = sample.minimum.toFixed(1);
+    for (const key of ["medianMs", "p95Ms", "p99Ms", "worstMs", "longFrames", "stallFrames", "updateMs", "renderMs", "updateP95Ms", "renderP95Ms", "simulationSteps", "droppedSimulationMs"]) {
+      node.dataset[key] = stats[key].toFixed(2);
+    }
     node.dataset.sampleSeconds = sample.elapsed.toFixed(1);
     node.dataset.complete = sample.elapsed >= 60 ? "true" : "false";
     node.dataset.cameraDistance = (this.cameraClearance?.actual || 0).toFixed(2);
@@ -3903,9 +3978,11 @@ class BlasterBattle {
     node.dataset.drawCalls = String(this.renderer.info.render.drawCalls);
     node.dataset.geometries = String(this.renderer.info.memory.geometries);
     node.dataset.textures = String(this.renderer.info.memory.textures);
-    node.dataset.longTasks = String(globalThis.__blasterPerf?.longTasks || 0);
+    node.dataset.longTasks = String(stats.longTasks);
+    node.dataset.longTaskMs = stats.longTaskMs.toFixed(2);
+    node.dataset.bootLongTasks = String(globalThis.__blasterPerf?.longTasks || 0);
     if (performance.memory?.usedJSHeapSize) node.dataset.heapMb = (performance.memory.usedJSHeapSize / 1048576).toFixed(1);
-    node.dataset.budget = sample.elapsed < 10 || (average >= 45 && this.renderer.info.render.drawCalls <= 620) ? "pass" : "watch";
+    node.dataset.budget = sample.elapsed < 10 ? "sampling" : average >= 55 && stats.p95Ms <= 18.5 && stats.p99Ms <= 33.34 ? "pass" : "watch";
   }
 
   finishMatch() {
@@ -3978,10 +4055,16 @@ class BlasterBattle {
 
   renderScene() {
     if (!this.world || this.pendingResize) return false;
-    if (this.state !== "play" || this.paused) this.updateCamera();
-    this.world?.updatePresentation(this.camera, this.settings.reducedMotion);
-    this.renderPipeline.render();
-    return true;
+    const interpolate = this.state === "play" && !this.paused && !this.hideMatchLoadingAfterFrame && this.renderInterpolation?.transforms.size;
+    if (interpolate) this.renderInterpolation.apply(this.simulationTiming.alpha);
+    try {
+      if (interpolate) this.updateCamera(0); // Mouse view responds on every rendered frame.
+      else if (this.state !== "play" || this.paused) this.updateCamera();
+      if (this.combatVisuals?.fireballs?.size) this.combatVisuals.updateFireballs();
+      this.world?.updatePresentation(this.camera, this.settings.reducedMotion);
+      this.renderPipeline.render();
+      return true;
+    } finally { if (interpolate) this.renderInterpolation.restore(); }
   }
 
   prepareResources() {

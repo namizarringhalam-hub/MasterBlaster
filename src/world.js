@@ -1782,6 +1782,7 @@ export class ArenaWorld {
     this.group.add(mesh);
     const obstacle = { x, z, w, d, h, baseY, top: baseY + h, mesh, destructible };
     this.obstacles.push(obstacle);
+    this.invalidateGrappleTopology();
     if (destructible) this.destructibles.push(obstacle);
     if (anchor) this.addAnchor(x, baseY + h + .55, z);
     return obstacle;
@@ -2138,6 +2139,7 @@ export class ArenaWorld {
     if (platformIndex >= 0) this.platforms.splice(platformIndex, 1);
     const structuralIndex = this.structuralParts.indexOf(part);
     if (structuralIndex >= 0) this.structuralParts.splice(structuralIndex, 1);
+    this.invalidateGrappleTopology();
     this.syncBoostPadsForPart(part);
   }
 
@@ -2149,6 +2151,7 @@ export class ArenaWorld {
       if (index >= 0) collection.splice(index, 1);
     }
     this.buildObstacleIndex();
+    this.invalidateGrappleTopology();
   }
 
   removeStructuralAnchor(structure) {
@@ -2156,6 +2159,7 @@ export class ArenaWorld {
     if (!anchor) return;
     const index = this.anchors.indexOf(anchor);
     if (index >= 0) this.anchors.splice(index, 1);
+    this.invalidateGrappleTopology();
     for (const visual of anchor.instanceVisuals || []) {
       visual.mesh.setMatrixAt(visual.index, HIDDEN_INSTANCE);
       visual.mesh.instanceMatrix.needsUpdate = true;
@@ -2623,6 +2627,7 @@ export class ArenaWorld {
   addStructuralAnchor(x, y, z) {
     const anchor = { point: new THREE.Vector3(x, y, z), mesh: null, instanceVisuals: [] };
     this.anchors.push(anchor);
+    this.invalidateGrappleTopology();
     return anchor;
   }
 
@@ -2778,6 +2783,7 @@ export class ArenaWorld {
       part.mesh.geometry.dispose();
       part.mesh.material.dispose();
       part.mesh = segmentBatch;
+      this.invalidateGrappleTopology();
       this.updateStructuralVisual(part);
       segmentBatch.setColorAt(index, new THREE.Color(part.visualColor));
       segmentSeamBatch.setColorAt(index, new THREE.Color(part.structure.color));
@@ -2806,6 +2812,7 @@ export class ArenaWorld {
       part.mesh.geometry.dispose();
       part.mesh.material.dispose();
       part.mesh = platformBatch;
+      this.invalidateGrappleTopology();
       this.updateStructuralVisual(part);
       platformBatch.setColorAt(index, new THREE.Color(part.visualColor));
       platformTopBatch.setColorAt(index, new THREE.Color(part.structure.color));
@@ -2820,6 +2827,7 @@ export class ArenaWorld {
         { mesh: cageBatch, index, scale: new THREE.Vector3(1, 1, 1), yOffset: 0 }
       ];
       anchor.mesh = anchorBatch;
+      this.invalidateGrappleTopology();
       this.updateStructuralAnchor(anchor);
       for (const visual of anchor.instanceVisuals) visual.mesh.setColorAt(index, new THREE.Color(structure.color));
       if (index % 8 === 7 || index === anchors.length - 1) yield;
@@ -2857,6 +2865,7 @@ export class ArenaWorld {
     this.group.add(orb);
     const anchor = { point, mesh: orb };
     this.anchors.push(anchor);
+    this.invalidateGrappleTopology();
     this.rotors.push({ object: cage, x: .42, y: .68, z: .25 });
     this.pulsers.push({ object: halo, base: 3.6, amplitude: .12, speed: 3.1, phase: x * .03 + z * .02 });
     return anchor;
@@ -2901,6 +2910,7 @@ export class ArenaWorld {
       Math.abs(z - platform.z) <= platform.d / 2
     ) || null;
     this.boostPads.push({ position: new THREE.Vector3(x, y, z), radius: 2.5, strength, mesh, support, active: true, falling: false, fallSpeed: 0 });
+    this.invalidateGrappleTopology();
     this.pulsers.push({ object: ring, base: 1, amplitude: .055, speed: 3.8, phase: x + z });
   }
 
@@ -3106,6 +3116,7 @@ export class ArenaWorld {
       wall.obstacle.mesh.geometry.dispose();
       wall.obstacle.mesh.material.dispose();
       this.temporaryWalls.splice(index, 1);
+      this.invalidateGrappleTopology();
     }
     for (const mover of this.movers) {
       const item = mover.obstacle;
@@ -3371,6 +3382,7 @@ export class ArenaWorld {
       this.obstacles.splice(this.obstacles.indexOf(item), 1);
       this.destructibles.splice(this.destructibles.indexOf(item), 1);
       item.removed = true;
+      this.invalidateGrappleTopology();
       removed += 1;
     }
     const structuralPart = context.partId
@@ -3394,30 +3406,74 @@ export class ArenaWorld {
     return this.grappleTarget(origin, direction)?.point ?? null;
   }
 
+  invalidateGrappleTopology() {
+    this.grappleTopology = null;
+    if (this.grappleRayHits) this.grappleRayHits.length = 0;
+  }
+
+  getGrappleTopology() {
+    const cached = this.grappleTopology;
+    if (cached && cached.ground === this.ground && cached.obstacles === this.obstacles
+      && cached.anchors === this.anchors && cached.boostPads === this.boostPads
+      && cached.obstacleCount === this.obstacles.length && cached.anchorCount === this.anchors.length
+      && cached.boostPadCount === this.boostPads.length) return cached;
+    const surfaces = [], owners = new Map(), transforms = [], transformSet = new Set();
+    const includeTransform = mesh => {
+      if (!mesh || mesh === this.group || transformSet.has(mesh)) return;
+      includeTransform(mesh.parent);
+      transformSet.add(mesh);
+      transforms.push(mesh);
+    };
+    const include = mesh => {
+      if (!mesh || owners.has(mesh)) return;
+      surfaces.push(mesh);
+      owners.set(mesh, new Map());
+      includeTransform(mesh);
+    };
+    include(this.ground);
+    for (const collection of [this.obstacles, this.anchors, this.boostPads]) for (const item of collection) {
+      const mesh = item.mesh;
+      if (!mesh) continue;
+      include(mesh);
+      const entries = owners.get(mesh), owner = { item, collection };
+      if (!entries.has(undefined)) entries.set(undefined, owner);
+      for (const visual of item.instanceVisuals || []) {
+        if (visual.mesh === mesh && !entries.has(visual.index)) entries.set(visual.index, owner);
+      }
+    }
+    return this.grappleTopology = {
+      ground: this.ground, obstacles: this.obstacles, anchors: this.anchors, boostPads: this.boostPads,
+      obstacleCount: this.obstacles.length, anchorCount: this.anchors.length, boostPadCount: this.boostPads.length,
+      surfaces, owners, transforms
+    };
+  }
+
   grappleTarget(origin, direction) {
-    if (!direction.lengthSq()) return null;
-    this.group.updateMatrixWorld(true);
-    const surfaces = [...new Set([
-      this.ground,
-      ...this.obstacles.map((item) => item.mesh),
-      ...this.anchors.map((anchor) => anchor.mesh),
-      ...this.boostPads.filter((pad) => pad.active).map((pad) => pad.mesh)
-    ].filter(Boolean))];
-    const ray = new THREE.Raycaster(origin, direction.clone().normalize(), .05);
-    for (const hit of ray.intersectObjects(surfaces, false)) {
-      const matches = (item) => item.mesh === hit.object &&
-        (hit.instanceId === undefined || item.instanceVisuals?.some((visual) => visual.mesh === hit.object && visual.index === hit.instanceId));
-      const collection = [this.obstacles, this.anchors, this.boostPads].find((items) => items.some(matches));
-      const item = collection?.find(matches);
+    if (this.disposed || !direction.lengthSq()) return null;
+    const { surfaces, owners, transforms } = this.getGrappleTopology();
+    // Only collision surfaces need fresh transforms; decorative children are
+    // unrelated to these non-recursive raycasts. Moving surfaces stay current.
+    this.group.updateWorldMatrix(true, false, true);
+    for (const mesh of transforms) mesh.updateWorldMatrix(false, false, true);
+    const ray = this.grappleRaycaster ||= new THREE.Raycaster(undefined, undefined, .05);
+    ray.ray.origin.copy(origin);
+    ray.ray.direction.copy(direction).normalize();
+    const hits = this.grappleRayHits ||= [];
+    hits.length = 0;
+    ray.intersectObjects(surfaces, false, hits);
+    for (const hit of hits) {
+      const owner = owners.get(hit.object)?.get(hit.instanceId);
+      const item = owner?.item, collection = owner?.collection;
+      if (item?.removed || (collection === this.boostPads && !item.active)) continue;
       if (!item && hit.object !== this.ground) continue;
-      const matrix = hit.object.matrixWorld.clone();
+      const matrix = (this.grappleHitMatrix ||= new THREE.Matrix4()).copy(hit.object.matrixWorld);
       if (hit.instanceId !== undefined) {
-        const instance = new THREE.Matrix4();
+        const instance = this.grappleInstanceMatrix ||= new THREE.Matrix4();
         hit.object.getMatrixAt(hit.instanceId, instance);
         matrix.multiply(instance);
       }
       const localNormal = hit.face.normal.clone();
-      const normal = localNormal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(matrix));
+      const normal = localNormal.clone().applyNormalMatrix((this.grappleNormalMatrix ||= new THREE.Matrix3()).getNormalMatrix(matrix));
       return { point: hit.point.clone(), normal, localNormal, mesh: hit.object, instanceId: hit.instanceId, item, collection,
         localPoint: hit.point.clone().applyMatrix4(matrix.invert()) };
     }
@@ -3545,6 +3601,10 @@ export class ArenaWorld {
   }
 
   dispose() {
+    this.disposed = true;
+    this.invalidateGrappleTopology();
+    this.grappleRayHits = null;
+    this.grappleRaycaster = null;
     this.buildIterator.return();
     this.scene.background = this.previousBackground;
     this.scene.backgroundNode = this.previousBackgroundNode;

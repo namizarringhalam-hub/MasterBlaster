@@ -1,0 +1,232 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Master Blaster smoothness measurements</title><link rel="stylesheet" href="/src/styles.css">
+<div id="app"><canvas id="game-canvas"></canvas><div id="ui-root"></div></div>
+<div id="match-loading" hidden><span data-match-seed></span><span data-match-kind></span></div>
+<aside style="position:fixed;z-index:999;bottom:0;max-height:45vh;max-width:100%;overflow:auto;background:#09131df2;color:white;padding:10px;font:12px monospace">
+  <label>Window seconds <input id="seconds" type="number" min="2" max="30" value="3" style="width:4em"></label>
+  <label>Effect <select id="effect"><option value="all">All available effects</option></select></label>
+  <label><input id="gpu" type="checkbox" checked>Sample GPU every tenth frame</label>
+  <button id="fixed" disabled>Measure fixed scene</button><button id="compare" disabled>Compare effect A/B</button><button id="combat" disabled>Measure active 16-player combat</button>
+  <p>Audio stays muted. Settings are in memory only. Effect A/B freezes one scene and camera; active combat is a separate workload.</p>
+  <pre id="metrics">Loading engine…</pre>
+</aside>
+<script type="module">
+import { Vector3 } from 'three/webgpu';
+import { SoundBoard } from '../src/audio.js';
+import { GRAPHICS_EFFECTS, graphicsEffectUnavailable } from '../src/graphicsEffects.js';
+import { applyGraphicsPreset } from '../src/graphicsPresets.js';
+
+// Mute before main.js constructs its SoundBoard. Saved volume preferences are
+// never changed, including when a later gesture resumes the audio context.
+const setVolume = SoundBoard.prototype.setVolume;
+SoundBoard.prototype.setVolume = function () {
+  const volume = setVolume.call(this, 0);
+  if (this.master) this.master.gain.setValueAtTime(0, this.context.currentTime);
+  return volume;
+};
+performance.mark('blaster-shell-visible');
+const fixtureURL = location.href, params = new URLSearchParams(location.search);
+const metrics = document.querySelector('#metrics'), buttons = ['fixed', 'compare', 'combat'].map(id => document.querySelector(`#${id}`));
+const errors = [], samples = [], comparisons = [];
+addEventListener('error', event => errors.push(event.message));
+addEventListener('unhandledrejection', event => errors.push(String(event.reason)));
+for (const key of Object.keys(GRAPHICS_EFFECTS)) document.querySelector('#effect').add(new Option(key, key));
+const { gameReady } = await import('../src/main.js');
+const game = await gameReady, renderer = game.renderer;
+// Product journey URLs are useful in the game; this fixture keeps its own URL.
+game.setJourney = () => {};
+history.replaceState(history.state, '', fixtureURL);
+const nativeWebGPU = renderer.backend.isWebGPUBackend === true;
+const gpuSupported = Boolean(nativeWebGPU ? renderer.hasFeature('timestamp-query') : renderer.backend.hasTimestamp);
+if (nativeWebGPU) {
+  const timestamp = renderer.backend.initTimestampQuery.bind(renderer.backend);
+  renderer.backend.initTimestampQuery = (type, uid, descriptor) => {
+    // r185 caches the canvas descriptor. Remove its previous timestamp binding
+    // before the built-in API decides whether this frame should be measured.
+    descriptor.timestampWrites = undefined;
+    return timestamp(type, uid, descriptor);
+  };
+}
+let phase = 'Ready', current = null, gpuPending = null, running = false, frozen = false, presentation = null, frame = 0;
+const update = game.update.bind(game), updateCamera = game.updateCamera.bind(game), productionFrame = game.frame.bind(game);
+const frameInput = game.updateFrameInput.bind(game);
+const report = () => metrics.textContent = JSON.stringify({ phase, backend: nativeWebGPU ? 'WebGPU' : 'WebGL',
+  gpuSupported, gpuStride: 10, quality: game.settings.graphics, viewport: game.renderSize, rendererSamples: renderer.samples,
+  timingWindow: 'CPU/frame percentiles use the latest 600 intervals; worst/counts cover the whole sample',
+  foreground: 'Keep the browser unobscured; OS occlusion is not detectable by this fixture',
+  errors, samples, comparisons }, null, 2);
+const wait = (predicate, timeoutMs = 120000) => new Promise((resolve, reject) => {
+  let request;
+  const finish = error => { clearTimeout(timeout); cancelAnimationFrame(request); error ? reject(error) : resolve(); };
+  const timeout = setTimeout(() => finish(Error('Readiness watchdog elapsed; cause unconfirmed')), timeoutMs);
+  const poll = () => {
+    if (errors.length) return finish(Error(errors.at(-1)));
+    if (document.hidden) return finish(Error('Fixture is hidden; foreground measurements cannot continue'));
+    if (predicate()) return finish();
+    request = requestAnimationFrame(poll);
+  };
+  poll();
+});
+const within = (promise, timeoutMs = 120000, operation = 'Preparation') => new Promise((resolve, reject) => {
+  const timeout = setTimeout(() => reject(Error(`${operation} watchdog elapsed; cause unconfirmed`)), timeoutMs);
+  promise.then(value => { clearTimeout(timeout); resolve(value); }, error => { clearTimeout(timeout); reject(error); });
+});
+const summary = values => {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b), percentile = p => sorted[Math.ceil(sorted.length * p) - 1];
+  return { samples: values.length, meanMs: values.reduce((sum, value) => sum + value, 0) / values.length,
+    medianMs: percentile(.5), p95Ms: percentile(.95), p99Ms: percentile(.99), worstMs: sorted.at(-1) };
+};
+if (summary([4, 1, 3, 2]).medianMs !== 2 || summary([4, 1, 3, 2]).p95Ms !== 4 || summary([]) !== null) throw Error('Percentile self-check failed');
+
+game.update = (...args) => { if (!frozen) return update(...args); };
+game.updateCamera = (...args) => { if (!frozen && !running) return updateCamera(...args); };
+game.updateFrameInput = () => { if (frozen) game.input.consumeLook(); else frameInput(); };
+game.frame = time => {
+  const sample = current;
+  const query = Boolean(sample?.gpu && !gpuPending && ++frame % 10 === 0);
+  renderer.backend.trackTimestamp = query;
+  try { productionFrame(time); }
+  finally {
+    if (query) {
+      // Three resolves all submitted render passes for the measured frame in
+      // milliseconds. Readback never blocks the game loop or CPU phase timer.
+      gpuPending = renderer.resolveTimestampsAsync('render').then(ms => {
+        if (Number.isFinite(ms) && ms > 0) sample.gpuMs.push(ms);
+      }, error => { errors.push(`GPU timestamp: ${error}`); }).finally(() => { gpuPending = null; });
+    }
+    renderer.backend.trackTimestamp = false;
+  }
+};
+
+function signature() {
+  return JSON.stringify({ world: game.seed, time: game.world.time, players: game.players.map(player => player.position.toArray()),
+    camera: [...game.camera.position.toArray(), ...game.camera.quaternion.toArray()], viewport: game.renderSize,
+    projectiles: game.projectiles.length, hazards: game.hazards.length });
+}
+async function configure(effects, label = 'baseline') {
+  phase = `Applying ${label} render graph`; report();
+  game.settings.graphicsEffects = { ...effects };
+  game.applyGraphicsSettings();
+  await wait(() => !game.pendingGraphics && !game.pendingGraphicsEffects && !game.pendingResize);
+  presentation?.call(game.world, game.camera, game.settings.reducedMotion);
+  // Shader and attachment preparation is excluded from steady-state A/B.
+  phase = `Warming ${label} render graph (2 seconds and 30 frames)`; report();
+  const started = performance.now(), initialFrames = renderer.info.frame;
+  await wait(() => performance.now() - started >= 2000 && renderer.info.frame - initialFrames >= 30, 45000);
+  if (game.renderPipeline.direct) throw Error('Direct safety fallback invalidates an effect comparison');
+}
+async function prepare(active) {
+  frozen = false;
+  if (presentation && game.world) game.world.updatePresentation = presentation;
+  presentation = null;
+  applyGraphicsPreset(game.settings, params.get('quality') || 'high');
+  game.settings.reducedMotion = false;
+  game.settings.matchSettings.training.botsStandStill = !active;
+  game.settings.matchSettings.training.botsDontAttack = !active;
+  game.settings.botCount = 15;
+  game.mode = 'training'; game.seed = 'SMOOTHNESS'; game.botDifficulty = 'veteran'; game.timeLimitMinutes = 30; game.targetScore = 100000;
+  phase = `Applying ${game.settings.graphics} preset`; report();
+  game.applyGraphicsSettings();
+  await wait(() => !game.pendingGraphics && !game.pendingGraphicsEffects && !game.pendingResize);
+  phase = 'Preparing SMOOTHNESS arena and 16 fighters'; report();
+  await within(game.startMatch(null, true));
+  phase = 'Waiting for the first visible gameplay frame'; report();
+  await wait(() => game.state === 'play' && game.matchFrameReady && !game.preparingMatch && !game.hideMatchLoadingAfterFrame);
+  if (game.players.length !== 16) throw Error('Expected one human and fifteen bots');
+  game.awaitingAudioGesture = false; game.audioCountdown = false; game.matchStartDelay = 0; game.paused = false;
+  game.sound.stopMusic(); game.sound.setVolume(0);
+  game.camera.position.set(0, 45, 55); game.camera.lookAt(0, 12, 0); game.camera.updateMatrixWorld(true);
+  if (!active) {
+    phase = 'Freezing the scene, camera, and particle field'; report();
+    // Reuse one particle field for every effect variant, including its random
+    // birth samples. No spawning/allocation is part of the render-only window.
+    for (const player of [game.players[0], game.players[3], game.players[7]]) {
+      const point = new Vector3().copy(player.position).add(new Vector3(0, .25, 0));
+      game.combatVisuals.explosions.spawn(point, 3);
+    }
+    game.combatVisuals.update(.18);
+    game.world.updatePresentation(game.camera, game.settings.reducedMotion);
+    presentation = game.world.updatePresentation;
+    game.world.updatePresentation = () => {};
+    frozen = true;
+  }
+  return { ...game.settings.graphicsEffects };
+}
+async function measure(label, workload) {
+  if (document.hidden) throw Error('Keep the fixture foreground during measurements');
+  const durationMs = Math.max(2, Math.min(30, Number(document.querySelector('#seconds').value) || 3)) * 1000;
+  const scene = signature(), initialErrors = errors.length;
+  await within(Promise.resolve(gpuPending), 10000, 'GPU timestamp');
+  phase = `Sampling ${label}`; report();
+  // Rendering the diagnostic report is preparation, outside the measured window.
+  await new Promise(resolve => requestAnimationFrame(resolve));
+  game.performanceSample = game.freshPerformanceSample();
+  const sample = current = { label, workload, gpu: gpuSupported && document.querySelector('#gpu').checked, gpuMs: [] };
+  const started = performance.now();
+  await wait(() => performance.now() - started >= durationMs, durationMs + 10000);
+  current = null;
+  // Freeze CPU/frame results at the measurement boundary. A slow asynchronous
+  // GPU readback must not silently extend that window with extra game frames.
+  const windowMs = performance.now() - started, timing = game.performanceSample.snapshot();
+  const counts = { draws: renderer.info.render.drawCalls, geometries: renderer.info.memory.geometries,
+    textures: renderer.info.memory.textures, particles: game.combatVisuals.explosions.layers.map(layer => layer.mesh.count) };
+  await within(Promise.resolve(gpuPending), 10000, 'GPU timestamp');
+  if (document.hidden || game.paused || game.state !== 'play') throw Error('Foreground gameplay was interrupted');
+  if (game.renderPipeline.direct) throw Error('Direct safety fallback invalidates this sample');
+  if (workload === 'fixed-scene' && signature() !== scene) throw Error('Fixed scene/camera changed during the sample');
+  if (errors.length !== initialErrors) throw Error('Browser errors invalidate this sample');
+  const rejection = timing.frames < 30 ? 'Fewer than 30 foreground frames; increase the window. Throttling or renderer slowness is unconfirmed'
+    : !Number.isFinite(timing.p95Ms) ? 'Production frame percentile is not finite' : '';
+  const result = { label, workload, valid: !rejection, rejection: rejection || undefined,
+    windowMs, tailFrames: Math.min(600, timing.frames), timing, gpu: summary(sample.gpuMs),
+    gpuStatus: sample.gpu ? 'Sparse asynchronous GPU render-pass timestamps; separate from CPU submission' : gpuSupported ? 'disabled' : 'unsupported',
+    effects: { ...game.settings.graphicsEffects }, profile: game.renderPipeline.profile,
+    fighters: game.players.length, ...counts,
+    viewport: { ...game.renderSize }, rendererSamples: renderer.samples, scene: workload === 'fixed-scene' ? scene : undefined };
+  samples.push(result); report();
+  if (rejection) throw Error(rejection);
+  return result;
+}
+async function run(kind) {
+  if (running) return;
+  running = true; buttons.forEach(button => { button.disabled = true; });
+  try {
+    phase = 'Preparing the muted 16-player scene'; report();
+    const baseline = await prepare(kind === 'combat');
+    await configure(baseline);
+    if (kind !== 'compare') await measure(kind === 'combat' ? 'active16' : 'baseline', kind === 'combat' ? 'active16-combat' : 'fixed-scene');
+    else {
+      const requested = document.querySelector('#effect').value;
+      const keys = requested === 'all' ? Object.keys(GRAPHICS_EFFECTS) : [requested];
+      for (const key of keys) {
+        const unavailable = graphicsEffectUnavailable(key, { nativeWebGPU, reducedMotion: false, shadows: game.keyLight.castShadow });
+        if (!baseline[key] || unavailable) { comparisons.push({ effect: key, skipped: unavailable || 'disabled in selected preset' }); continue; }
+        const pair = [], scene = signature();
+        // ABBA reduces ordering bias. Every variant keeps the same objects,
+        // transforms, camera, DPR, preset options and particle birth samples.
+        for (const enabled of [true, false, false, true]) {
+          await configure({ ...baseline, [key]: enabled }, `${key} ${enabled ? 'on' : 'off'}`);
+          if (signature() !== scene) throw Error('A/B scene/camera mismatch');
+          pair.push(await measure(`${key}-${enabled ? 'on' : 'off'}-${pair.length + 1}`, 'fixed-scene'));
+        }
+        if (pair.some(sample => !sample.valid)) throw Error('Invalid A/B windows cannot produce a comparison');
+        const mean = (enabled, metric) => pair.filter(sample => sample.effects[key] === enabled).reduce((sum, sample) => sum + metric(sample), 0) / 2;
+        comparisons.push({ effect: key, order: 'on/off/off/on', p95SavedMs: mean(true, sample => sample.timing.p95Ms) - mean(false, sample => sample.timing.p95Ms),
+          renderCpuSavedMs: mean(true, sample => sample.timing.renderMs) - mean(false, sample => sample.timing.renderMs),
+          gpuSavedMs: pair.every(sample => sample.gpu) ? mean(true, sample => sample.gpu.meanMs) - mean(false, sample => sample.gpu.meanMs) : null,
+          caveat: GRAPHICS_EFFECTS[key].motion ? 'Frozen transforms exclude active movement; use the separate active16 workload for simulation cost' : undefined });
+        report();
+      }
+      await configure(baseline);
+    }
+    phase = 'Complete';
+  } catch (error) { errors.push(String(error)); phase = 'FAIL'; }
+  finally {
+    current = null; renderer.backend.trackTimestamp = false; game.paused = true;
+    running = false; buttons.forEach(button => { button.disabled = false; }); report();
+  }
+}
+buttons[0].onclick = () => run('fixed'); buttons[1].onclick = () => run('compare'); buttons[2].onclick = () => run('combat');
+buttons.forEach(button => { button.disabled = false; }); report();
+</script></html>

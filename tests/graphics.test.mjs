@@ -1414,7 +1414,7 @@ for (const isBot of [false, true]) {
     [isBot ? .64 : .92, isBot ? 1.55 : 2.35, true, false, false, true]);
   material.dispose();
 }
-const frameSource = main.slice(main.indexOf("  frame(time) {"), main.indexOf("  update(dt, realDt = dt) {"));
+const frameSource = main.slice(main.indexOf("  frame(time) {"), main.indexOf("  updateFrameInput() {"));
 const firstFrameEvents = [];
 const frameMethod = new Function("performance", `return ({${frameSource}}).frame`)({
   mark: name => firstFrameEvents.push(name), measure: name => firstFrameEvents.push(name)

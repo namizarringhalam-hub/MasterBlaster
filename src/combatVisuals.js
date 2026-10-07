@@ -5,6 +5,7 @@ import { seededRandom } from "./gameData.js";
 import { surfaceMaps } from "./surfaceTextures.js";
 import { emissiveEffectMaterial } from "./effectMaterials.js";
 import { ExplosionParticles } from "./explosionParticles.js";
+import { queueParticlePrefix } from "./particleUploads.js";
 
 const clamp = THREE.MathUtils.clamp;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -1009,16 +1010,7 @@ export class CombatVisuals {
     }
     for (const layer of this.fireballLayerList) layer.count = index;
     this.fireballCount = index;
-    for (const layer of this.fireballLayerList) {
-      // Only the drawn prefix changed. Keep full capacity and identical effects
-      // without uploading thousands of unused instances for a single shot.
-      layer.instanceMatrix.clearUpdateRanges();
-      layer.instanceMatrix.addUpdateRange(0, index * 16);
-      layer.instanceMatrix.needsUpdate = true;
-      layer.instanceColor.clearUpdateRanges();
-      layer.instanceColor.addUpdateRange(0, index * 3);
-      layer.instanceColor.needsUpdate = true;
-    }
+    this.markUpdated(...this.fireballLayerList);
   }
 
   updateFlashes(dt) {
@@ -1243,11 +1235,9 @@ export class CombatVisuals {
             : .62;
       innerLayer.setColorAt(index, this.color.copy(slot.weaponColor).lerp(WHITE, hotMix).multiplyScalar((.65 + fade * .35) * dissipation));
     }
-    // Upload active categories and their final expiry update, not dormant pairs.
-    if (dirty && (count || this.ringOuter.count)) this.markUpdated(this.ringOuter, this.ringInner);
-    if (dirty && (surfaceCount || this.surfaceFront.count)) this.markUpdated(this.surfaceFront, this.surfaceCore);
     this.ringOuter.count = this.ringInner.count = count;
     this.surfaceFront.count = this.surfaceCore.count = surfaceCount;
+    if (dirty) this.markUpdated(this.ringOuter, this.ringInner, this.surfaceFront, this.surfaceCore);
   }
 
   updateSparks(dt) {
@@ -1325,8 +1315,8 @@ export class CombatVisuals {
 
   markUpdated(...layers) {
     for (const layer of layers) {
-      layer.instanceMatrix.needsUpdate = true;
-      if (layer.instanceColor) layer.instanceColor.needsUpdate = true;
+      queueParticlePrefix(layer.instanceMatrix, layer.count);
+      queueParticlePrefix(layer.instanceColor, layer.count);
     }
   }
 
