@@ -40,11 +40,12 @@ export class RenderInterpolation {
       let state = this.transforms.get(object);
       if (!state) {
         state = { previous: new THREE.Vector3(), previousRotation: new THREE.Quaternion(),
-          current: new THREE.Vector3(), currentRotation: new THREE.Quaternion() };
+          current: new THREE.Vector3(), currentRotation: new THREE.Quaternion(), currentEuler: new THREE.Euler() };
         this.transforms.set(object, state);
       }
       state.previous.copy(object.position);
       state.previousRotation.copy(object.quaternion);
+      object.userData.interpolationReset = false;
     }
   }
 
@@ -52,8 +53,9 @@ export class RenderInterpolation {
     for (const [object, state] of this.transforms) {
       state.current.copy(object.position);
       state.currentRotation.copy(object.quaternion);
+      state.currentEuler.copy(object.rotation);
       // Respawns/teleports should appear at the destination immediately.
-      if (state.previous.distanceToSquared(state.current) <= 64) {
+      if (!object.userData.interpolationReset && state.previous.distanceToSquared(state.current) <= 64) {
         object.position.lerpVectors(state.previous, state.current, alpha);
         object.quaternion.slerpQuaternions(state.previousRotation, state.currentRotation, alpha);
       }
@@ -64,7 +66,9 @@ export class RenderInterpolation {
   restore() {
     for (const [object, state] of this.transforms) {
       object.position.copy(state.current);
-      object.quaternion.copy(state.currentRotation);
+      // Quaternion writes can canonicalize XYZ yaw into pitch/roll of pi.
+      // Keep the exact Euler representation used by simulation's yaw damping.
+      object.rotation.copy(state.currentEuler);
       object.updateMatrix();
     }
   }

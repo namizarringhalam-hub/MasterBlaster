@@ -1580,6 +1580,7 @@ class BlasterBattle {
         : local.position;
       local.reconcileAuthoritativeLife(localData.health ?? local.health, localData.alive !== false, authoritativePosition);
       local.position.copy(authoritativePosition);
+      local.group.userData.interpolationReset = true;
       if (localData.velocity) local.velocity.set(localData.velocity.x, localData.velocity.y, localData.velocity.z);
       if (localData.aim) local.aim.set(localData.aim.x, localData.aim.y, localData.aim.z).normalize();
       local.grounded = Boolean(localData.grounded);
@@ -3472,6 +3473,7 @@ class BlasterBattle {
     const previous = player.position.clone();
     this.spawnBurst(previous, 0x43ffd1, 12);
     player.position.copy(destination);
+    player.group.userData.interpolationReset = true;
     this.world.resolve(player.position, player.radius, previous);
     player.velocity.set(0, 2.5, 0);
     if (shotId && this.isOnlineMatch() && this.controlsNetworkPlayer(player)) this.multiplayer.reportTeleport(player, point, shotId);
@@ -4056,6 +4058,9 @@ class BlasterBattle {
   renderScene() {
     if (!this.world || this.pendingResize) return false;
     const interpolate = this.state === "play" && !this.paused && !this.hideMatchLoadingAfterFrame && this.renderInterpolation?.transforms.size;
+    const rig = this.players?.[0]?.rig, rigVisible = rig?.visible;
+    const firstPerson = this.cameraFirstPerson;
+    const cameraActual = this.cameraClearance?.actual, cameraTarget = this.cameraClearance?.target;
     if (interpolate) this.renderInterpolation.apply(this.simulationTiming.alpha);
     try {
       if (interpolate) this.updateCamera(0); // Mouse view responds on every rendered frame.
@@ -4064,7 +4069,15 @@ class BlasterBattle {
       this.world?.updatePresentation(this.camera, this.settings.reducedMotion);
       this.renderPipeline.render();
       return true;
-    } finally { if (interpolate) this.renderInterpolation.restore(); }
+    } finally {
+      if (interpolate) {
+        this.renderInterpolation.restore();
+        // Render-only collision/hiding must not latch into the next physics step.
+        this.cameraFirstPerson = firstPerson;
+        if (rig) rig.visible = rigVisible;
+        if (this.cameraClearance) { this.cameraClearance.actual = cameraActual; this.cameraClearance.target = cameraTarget; }
+      }
+    }
   }
 
   prepareResources() {

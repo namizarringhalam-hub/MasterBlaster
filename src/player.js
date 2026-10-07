@@ -1124,6 +1124,7 @@ export class Fighter {
   respawn(position) {
     this.muzzleRevision = (this.muzzleRevision || 0) + 1;
     this.position.copy(position);
+    this.group.userData.interpolationReset = true;
     this.velocity.set(0, 0, 0);
     this.health = 100;
     this.alive = true;
@@ -1593,6 +1594,7 @@ export function reconcileRemotePosition(player, authoritativePosition, blend, wo
   const implausibleDisplacement = player.position.distanceToSquared(authoritativePosition) > 24 ** 2;
   if (implausibleDisplacement || world.ropeBlocked(player.position, authoritativePosition)) {
     player.position.copy(authoritativePosition);
+    if (player.group) player.group.userData.interpolationReset = true;
     previous.copy(authoritativePosition);
   } else player.position.lerp(authoritativePosition, blend);
   return world.resolve(player.position, player.radius, previous);
