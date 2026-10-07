@@ -1,5 +1,25 @@
 # Master Blaster: second outreach wave
 
+## Latest daily check — 7 October 2026
+
+- Three.js topic 95005 fresh guest read 09:03 CEST: original post only,
+  one previously reported like, no written replies. Manual-only prose holds.
+- Brand Inbox/All mail/Spam/Trash checked 09:04–09:08; Spam/Trash empty, no new
+  editorial/directory response or bounce. Read existing acceptance body/header:
+  Andrzej's Gamedev.js Weekly reply is dated 6 Oct 12:20 CEST, promises inclusion
+  this Friday (expected 9 Oct). Read existing Subscription Confirmed email dated
+  6 Oct 18:43; brand address confirmed, no personal name supplied.
+- Live archive still lists issue 665 (2 Oct) first; no actual incoming feature.
+  Acceptance/subscription are already reported, not publication. Continue reading
+  brand newsletter and public archive, capture actual issue/game anchor.
+- BrowserGames.gg home/Shooter, iogames.fun rendered index, Three.js Resources
+  Games and Games-filtered Showcase contain no verified Master Blaster entry in
+  checked surfaces. iogames.fun search text did not produce distinct results;
+  search completeness unconfirmed. No resend, duplicate or paid placement.
+- Alpha Beta Gamer/Indie Games Plus recent coverage and focused title/domain
+  searches found no game feature. Sent remains delivery/coverage unconfirmed.
+- Existing native tracker/register refreshed; all prior holds and schedule persist.
+
 ## Newsletter subscription confirmed — 6 October 2026
 
 User requested subscription so the upcoming feature can be read. Submitted

@@ -1,5 +1,43 @@
 # SEO checkpoint — 2026-09-18
 
+## Latest recovery checkpoint — 7 October 2026, daily 09:00 follow-up
+
+- Read conversation, AGENTS.md, SEO/community/growth and second/third-wave
+  checkpoints. All paused/manual-only/moderation/privacy constraints preserved.
+  No submissions, accounts, replies, moderator messages or resends this run.
+- New outcome: PaperCroft official review 7.9/10, Played on Stream 6 Oct at
+  site-displayed 6:14 pm. Breakdown visuals 7.5/sound 8/fun 8.5/satisfaction 7/
+  creativity 8.5; no written rationale, unique review/recording URL or community
+  ratings. Exact title/domain plus stream date retained as stable baseline,
+  first reported 7 Oct. Proof screenshot in ignored task directory.
+- HTML5, Three.js, SlowDen, IndieDB profile and all five gallery pages checked;
+  no new written replies in successfully readable areas. GameDev.net public
+  project confirmed again, discussion load blocked. ESReality body inaccessible.
+  Reddit WebGames remains filter-removed; IndieDev permalink now says comment
+  no longer exists, no restoration or causal explanation claimed.
+- Brand Inbox/All mail/Spam/Trash and directory/editorial surfaces checked;
+  no new listing/response found. Gamedev.js Weekly acceptance/subscription read
+  independently, actual acceptance header 6 Oct 12:20 CEST confirmed. Feature
+  expected Fri 9 Oct, not published yet; archive starts at issue 665 (2 Oct).
+  iogames.fun search didn't produce distinct results; completeness unconfirmed.
+- Existing native tracker maintained with seven guarded patches; targeted
+  readback verifies updated statuses and feedback. No sharing/drafts/schedule
+  change. Browser split bootstrap succeeds; changed Inbox unread-label initially
+  invalidated exact locator, fresh snapshot and current locator recovered.
+  No unrelated mail read or human verification needed.
+- Mobile LCP remains last verified 2.9 s; target under 2 s is unmet. Existing
+  source/report evidence still lacks heading-font arrival/paint timing, so no
+  performance code change or repeated PageSpeed measurement is justified today.
+  Preserve gameplay/visuals. Next technical step remains a heading-font/paint trace.
+- Changed documentation only: community-outreach-targets.md, outreach-second-wave-
+  checkpoint.md, outreach-third-wave-checkpoint.md, seo-checkpoint.md. Validate
+  git diff --check, Page readback and related-file scope; commit/push with brand
+  identity to origin/main. Preserve unrelated untracked %SystemDrive%/ directory.
+- Next: daily replies/status checks, actual Weekly publication, GameDev.net
+  discussion access, Rando existing user iframe test. If engaging Xander manually,
+  ask what improves satisfaction from 7/10 and whether a recording is available.
+  No response sent; no new approval needed for already approved copy/accounts.
+
 ## Newsletter opt-in completed — 6 October 2026
 
 - User requested subscription to read the upcoming feature. Official free signup
