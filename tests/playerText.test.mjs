@@ -58,7 +58,7 @@ assert.match(mainSource, /TEXT\.setup\.difficulties\[this\.privateLobby\.difficu
 const copy = structuredClone(PLAYER_TEXT);
 copy.pause.graphics = "DISPLAY OPTIONS";
 copy.settings.graphicsPanel.title = "DISPLAY DETAILS";
-Object.assign(copy.setup.loadout, { moveUp: "UP", moveDown: "DOWN", removeWeapon: "REMOVE" });
+Object.assign(copy.setup.loadout, { moveUp: "UP", moveDown: "DOWN", saveSet: "SAVE SET" });
 const controller = mainSource.slice(mainSource.indexOf("class BlasterBattle"), mainSource.indexOf("\nconst game = new BlasterBattle")).replaceAll("import.meta.url", '"test"');
 const categories = Object.fromEntries(WEAPON_GROUPS.flatMap(group => group.ids.map(id => [id, group])));
 const Game = new Function("TEXT", "formatText", "ui", "clearTouchActions", "WEAPONS", "WEAPON_CATEGORY_BY_ID", "escapeHtml", `return ${controller}`)(copy, formatText, { querySelector: () => null }, () => {}, WEAPONS, categories, String);
@@ -75,6 +75,6 @@ game.showGraphicsSettings();
 assert.match(game.markup, /id="graphics-title">DISPLAY DETAILS<\/h1>/);
 game.activeLoadoutSlot = 0;
 const actions = game.loadoutActionsMarkup(["blaster"]);
-for (const label of ["UP", "DOWN", "REMOVE"]) assert.ok(actions.includes(`>${label}</button>`));
+for (const label of ["UP", "DOWN", "SAVE SET"]) assert.ok(actions.includes(`>${label}</button>`));
 
 console.log("Master Blaster editable player text check passed.");

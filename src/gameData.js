@@ -197,14 +197,7 @@ export function graphicsProfile(level = "high", coarsePointer = false, deviceSca
 }
 
 function validLoadout(value) {
-  return Array.isArray(value) ? [...new Set(value.filter((id) => WEAPONS[id]))].slice(0, LOADOUT_SLOTS.length) : [];
-}
-
-export function activePresetLoadout(settings) {
-  const index = settings?.defaultLoadoutPreset;
-  if (!Number.isInteger(index) || index < 0 || index >= LOADOUT_PRESET_COUNT) return null;
-  const loadout = validLoadout(settings.loadoutPresets?.[index]?.weaponIds);
-  return loadout.length === LOADOUT_SLOTS.length ? loadout : null;
+  return Array.isArray(value) ? [...new Set(value.filter((id) => typeof id === "string" && Object.hasOwn(WEAPONS, id)))].slice(0, LOADOUT_SLOTS.length) : [];
 }
 
 export function randomLoadout(random = Math.random) {
@@ -362,8 +355,7 @@ function defaults() {
     matchSettingsVersion: MATCH_SETTINGS_VERSION,
     matchSettings: structuredClone(MATCH_SETTINGS_DEFAULTS),
     loadout: [...RECOMMENDED_LOADOUT],
-    loadoutPresets: Array(LOADOUT_PRESET_COUNT).fill(null),
-    defaultLoadoutPreset: null
+    loadoutPresets: Array(LOADOUT_PRESET_COUNT).fill(null)
   };
 }
 
@@ -372,6 +364,7 @@ export function loadSettings() {
     const current = localStorage.getItem(SAVE_KEY);
     const legacy = current == null ? LEGACY_SAVE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean) : null;
     const saved = JSON.parse(current ?? legacy ?? "{}");
+    delete saved.defaultLoadoutPreset;
     if (current == null && legacy) localStorage.setItem(SAVE_KEY, JSON.stringify(saved));
     const loadout = validLoadout(saved.loadout ?? RECOMMENDED_LOADOUT);
     for (const id of DEFAULT_LOADOUT) if (loadout.length < LOADOUT_SLOTS.length && !loadout.includes(id)) loadout.push(id);
@@ -379,14 +372,8 @@ export function loadSettings() {
       const preset = saved.loadoutPresets?.[index];
       const weaponIds = validLoadout(preset?.weaponIds);
       if (weaponIds.length !== LOADOUT_SLOTS.length) return null;
-      return {
-        name: String(preset.name || formatText(TEXT.defaults.presetName, { number: index + 1 })).trim().slice(0, 18) || formatText(TEXT.defaults.presetName, { number: index + 1 }),
-        weaponIds
-      };
+      return { weaponIds };
     });
-    const defaultLoadoutPreset = Number.isInteger(saved.defaultLoadoutPreset) && loadoutPresets[saved.defaultLoadoutPreset]
-      ? saved.defaultLoadoutPreset
-      : null;
     const graphics = graphicsLevel(saved.graphics);
     const matchSettings = Object.fromEntries(Object.entries(MATCH_SETTINGS_DEFAULTS).map(([mode, fallback]) => {
       const remembered = saved.matchSettings?.[mode] || {};
@@ -408,7 +395,7 @@ export function loadSettings() {
       && (saved.graphicsVersion === GRAPHICS_VERSION || saved.graphicsEffects[key] === false)) effects[key] = saved.graphicsEffects[key];
     const graphicsOptions = normalizeGraphicsOptions(saved.graphicsVersion === GRAPHICS_VERSION ? saved.graphicsOptions : null, graphics);
     const motionBlur = Number.isFinite(saved.motionBlur) ? Math.max(0, Math.min(100, saved.motionBlur)) : (effects.motionBlur ? 35 : 0);
-    return { ...defaults(), ...saved, graphics, graphicsVersion: GRAPHICS_VERSION, graphicsOptions, motionBlur, graphicsEffects: effects, loadout, loadoutPresets, defaultLoadoutPreset, matchSettingsVersion: MATCH_SETTINGS_VERSION, matchSettings };
+    return { ...defaults(), ...saved, graphics, graphicsVersion: GRAPHICS_VERSION, graphicsOptions, motionBlur, graphicsEffects: effects, loadout, loadoutPresets, matchSettingsVersion: MATCH_SETTINGS_VERSION, matchSettings };
   } catch {
     return defaults();
   }

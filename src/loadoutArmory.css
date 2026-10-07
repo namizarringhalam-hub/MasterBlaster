@@ -58,6 +58,7 @@
 .slot-select small { grid-column: 2; color: #d6e9f6; font-size: 11px; font-weight: 500; line-height: 1.4; letter-spacing: 0; text-transform: none; overflow-wrap: anywhere; }
 .armory-slot-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
 .armory-slot-actions button { flex: 1 1 auto; padding: 7px 8px; font-size: 10px; }
+.armory-slot-actions [data-preset-save] { flex-basis: 100%; }
 
 .armory-preview { display: grid; grid-template-columns: 240px minmax(0, 1fr); align-items: center; gap: 16px; padding: 16px; border: 1px solid #294052; background: #091725; }
 .armory-preview-art { min-width: 0; border-bottom: 3px solid var(--accent); background: radial-gradient(ellipse, color-mix(in srgb, var(--accent) 28%, transparent), transparent 72%); }

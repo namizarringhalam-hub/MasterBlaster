@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import * as THREE from "three/webgpu";
 import { chooseBotSlot, botFireChance, botWeaponPolicy, clampBotCount, nearestTarget, safestSpawn } from "../src/botBrain.js";
 import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
-import { activePresetLoadout, ARENA_PORTAL_PAIRS, clampMatchMinutes, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, isArenaPortalTransition, LOADOUT_PRESET_COUNT, LOADOUT_SLOTS, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, seededRandom, seedFromText, structuralPartBounds, swapStolenWeapon, topScoreIndices, weaponFireMode, weaponUsesAmmo, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
+import { ARENA_PORTAL_PAIRS, clampMatchMinutes, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, isArenaPortalTransition, LOADOUT_PRESET_COUNT, LOADOUT_SLOTS, loadSettings, projectileLifetime, projectileStepCount, randomLoadout, saveSettings, seededRandom, seedFromText, structuralPartBounds, swapStolenWeapon, topScoreIndices, weaponFireMode, weaponUsesAmmo, WEAPON_GROUPS, WEAPONS } from "../src/gameData.js";
 import { InputManager, TOUCH_LOOK_GAIN, clearTouchActions, deliberateTouchTap, shouldCaptureGameKey, touchLookDelta, touchMoveDelta, updateOrbit } from "../src/input.js";
 import { aimWithSpread, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraCollisionFirstPerson, cameraRelative, damageIndicatorAngle, directionFromKeys, directionFromTouch, Fighter, flameConeFactor, GRAPPLE_SPEED_CAP, grappleSightline, PROJECTILE_SPAWN_OFFSET, projectileTouchesPlayer, reconcileRemotePosition, reticleAim } from "../src/player.js";
 import { NeonRenderPipeline } from "../src/renderPipeline.js";
@@ -209,8 +209,6 @@ assert.equal(LOADOUT_SLOTS.length, 5, "players carry five main weapons");
 assert.equal(DEFAULT_LOADOUT.length, 5, "the default loadout is match-ready");
 assert.equal(LOADOUT_PRESET_COUNT, 3, "players can save exactly three weapon sets");
 const savedSet = ["railgun", "fireball", "shotgun", "freeze_gun", "grapple_disrupting_pulse"];
-assert.deepEqual(activePresetLoadout({ defaultLoadoutPreset: 1, loadoutPresets: [null, { weaponIds: savedSet }, null] }), savedSet, "the chosen default preset preserves exact weapon order");
-assert.equal(activePresetLoadout({ defaultLoadoutPreset: 0, loadoutPresets: [{ weaponIds: ["railgun"] }] }), null, "incomplete presets cannot override a match loadout");
 const releaseStableStorage = new Map([["blaster-battle-settings-v1", JSON.stringify({ displayName: "Veteran", loadout: savedSet })]]);
 globalThis.localStorage = {
   getItem: (key) => releaseStableStorage.get(key) ?? null,
@@ -243,10 +241,11 @@ settingsStorage = JSON.stringify({ matchSettings: {
 } });
 const persistedMatchSettings = loadSettings();
 delete globalThis.localStorage;
-assert.deepEqual(persistedPresetSettings.loadoutPresets[0], { name: "Control", weaponIds: savedSet }, "saved weapon sets survive a settings reload without losing order");
-assert.equal(persistedPresetSettings.defaultLoadoutPreset, 0, "the default-set choice survives a settings reload");
+assert.deepEqual(persistedPresetSettings.loadoutPresets[0], { weaponIds: savedSet }, "saved weapon sets retain their order while legacy names are removed");
+assert.deepEqual(persistedPresetSettings.loadout, savedSet, "settings reload retains the last used loadout");
+assert.equal("defaultLoadoutPreset" in persistedPresetSettings, false, "legacy default selection is retired");
 assert.deepEqual(repairedPresetSettings.loadoutPresets, [null, null, null], "corrupt and partial presets are discarded safely");
-assert.equal(repairedPresetSettings.defaultLoadoutPreset, null, "an invalid preset cannot remain the default");
+assert.equal("defaultLoadoutPreset" in repairedPresetSettings, false, "corrupt old settings cannot restore a default selection");
 settingsStorage = JSON.stringify({ matchSettings: { private: { botCount: 1, botDifficulty: "normal", seed: "" } } });
 const migratedPrivateSettings = loadSettings();
 assert.equal(migratedPrivateSettings.matchSettings.private.botCount, 0, "the former one-bot private default migrates to zero once");
@@ -280,12 +279,9 @@ assert.match(mainSource, /closest\?\.\("\.setup-form"\)\) this\.captureSetupPref
 assert.match(mainSource, /event\.target\.id === "display-name"[\s\S]*?saveSettings\(this\.settings\)/, "display-name edits persist locally without requiring a match start");
 assert.match(mainSource, /equipLoadoutSlot\(id\)[\s\S]*?saveSettings\(this\.settings\)/, "explicit weapon equips persist locally as they are made");
 assert.match(mainSource, /closest\?\.\("\.settings-grid"\)\) this\.captureSettingsPreferences\(\)/, "graphics, accessibility, audio, and effects preferences persist when changed");
-assert.match(mainSource, /savedDefault = activePresetLoadout\(this\.settings\)[\s\S]*?if \(savedDefault\) this\.settings\.loadout = \[\.\.\.savedDefault\]/, "saved defaults apply to every setup mode");
-assert.doesNotMatch(mainSource, /this\.settings\.loadout = randomLoadout\(\)/, "Quick Play preserves the current loadout when no saved default exists");
-assert.match(mainSource, /confirm\(formatText\(TEXT\.setup\.loadout\.replaceConfirm/, "overwriting a saved preset requires editable confirmation copy");
-assert.match(mainSource, /confirm\(formatText\(TEXT\.setup\.loadout\.clearConfirm/, "clearing a saved preset requires editable confirmation copy");
+assert.doesNotMatch(mainSource, /activePresetLoadout|defaultLoadoutPreset|data-preset-name|data-preset-default|data-loadout-remove/, "setup has no named or default sets or remove-weapon control");
+assert.doesNotMatch(mainSource, /this\.settings\.loadout = randomLoadout\(\)/, "Quick Play retains the last used loadout");
 assert.match(mainSource, /aria-live="polite"/, "loadout changes are announced to assistive technology");
-assert.match(mainSource, /aria-pressed="\$\{isDefault\}"/, "default preset controls expose their active state");
 assert.match(armoryStylesSource, /@media \(pointer: coarse\)[\s\S]*?\.armory-slot-actions button[^}]*min-height: 44px/, "armory reorder controls retain reliable touch dimensions");
 const visualOwner = { accent: 0x44eeff };
 for (const id of ["machine_gun", "railgun", "rocket_launcher", "grenade_launcher", "plasma_cannon"]) {

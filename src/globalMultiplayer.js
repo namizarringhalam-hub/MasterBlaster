@@ -1,7 +1,7 @@
 import { MultiplayerClient } from "./multiplayer.js";
 import "./globalMultiplayer.css";
 import { ARENA_REVISION, sanitizeLoadoutSlots, sanitizePlayerName } from "./multiplayerProtocol.js";
-import { activePresetLoadout, saveSettings, WEAPONS } from "./gameData.js";
+import { saveSettings, WEAPONS } from "./gameData.js";
 import TEXT, { formatText } from "./playerText.js";
 
 const copy = TEXT.globalLobby;
@@ -116,7 +116,7 @@ export class GlobalMultiplayer {
     const nonce = this.joinNonce = (this.joinNonce || 0) + 1;
     this.game.mode = "global";
     this.game.seed = code || `G-${crypto.randomUUID().replaceAll("-", "").slice(0, 10)}`.toUpperCase();
-    this.slots = sanitizeLoadoutSlots(activePresetLoadout(this.game.settings) || [], WEAPONS);
+    this.slots = sanitizeLoadoutSlots(this.game.settings.loadout, WEAPONS);
     this.options = { identity: this.identity, create: create ? 1 : 0 };
     if (create) {
       this.options.roomName = sanitizePlayerName(this.ui.querySelector("#global-name").value);
@@ -182,11 +182,16 @@ export class GlobalMultiplayer {
   }
 
   updateSlots() {
+    const loadout = sanitizeLoadoutSlots(this.slots, WEAPONS);
+    if (this.slots.length === 5 && loadout.every(Boolean) && loadout.some((id, index) => id !== this.game.settings.loadout[index])) {
+      this.game.settings.loadout = loadout;
+      saveSettings(this.game.settings);
+    }
     const order = this.ui.querySelector("[data-global-slots]");
     if (!order) return;
     const focused = document.activeElement;
     const focusedSlot = focused?.closest?.("[data-loadout-drag]");
-    const focusAttribute = ["data-loadout-edit", "data-loadout-move", "data-loadout-remove", "data-loadout-equip", "data-preset-save", "data-preset-load", "data-preset-clear", "data-preset-default"].find(name => focused?.hasAttribute?.(name));
+    const focusAttribute = ["data-loadout-edit", "data-loadout-move", "data-loadout-equip", "data-preset-save"].find(name => focused?.hasAttribute?.(name));
     const focusSelector = focusAttribute ? `[${focusAttribute}="${focused.getAttribute(focusAttribute)}"]${focused.hasAttribute("data-direction") ? `[data-direction="${focused.dataset.direction}"]` : ""}` : "";
     this.game.updateLoadoutUi(focusedSlot && !this.slots[Number(focusedSlot.dataset.loadoutDrag)] ? `[data-loadout-edit="${focusedSlot.dataset.loadoutDrag}"]` : focusSelector, false);
   }
@@ -217,7 +222,6 @@ export class GlobalMultiplayer {
       return true;
     }
     if (this.game.mode !== "global" || this.game.state !== "lobby") return false;
-    if (button.dataset.loadoutRemove !== undefined) { this.slots[Number(button.dataset.loadoutRemove)] = null; this.sendSlots(); return true; }
     if (button.dataset.loadoutMove !== undefined) {
       const from = Number(button.dataset.loadoutMove), to = from + Number(button.dataset.direction);
       this.moveSlot(from, to); return true;

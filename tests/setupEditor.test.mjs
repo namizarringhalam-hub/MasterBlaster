@@ -19,7 +19,7 @@ const categories = data.WEAPON_GROUPS.map(group => {
 });
 const filters = ["all", ...data.WEAPON_GROUPS.map(group => group.id)].map(id => ({ dataset: { weaponFilter: id }, setAttribute() {} }));
 const choices = categories.flatMap(group => group.choices);
-const saveButtons = Array.from({ length: 3 }, () => ({}));
+const saveButtons = [{}];
 const ui = { querySelector: selector => nodes.get(selector) || choices.find(choice => selector === `[data-weapon-choice="${choice.dataset.weaponChoice}"]`) || null, querySelectorAll: selector => selector === "[data-weapon-category]" ? categories : selector === "[data-weapon-filter]" ? filters : selector === "[data-weapon-choice]" ? choices : selector === "[data-preset-save]" ? saveButtons : [] };
 const bindings = { ...data, TEXT, formatText, ui, setJourney, clampBotCount, resourceURL: path => path, MENU_ACCENTS: { quick: "#ef3f58", private: "#52e9ff", training: "#b86cff" }, menuAtmosphereMarkup: () => "", escapeHtml: value => String(value).replaceAll('"', '&quot;').replaceAll('<', '&lt;'), WEAPON_CATEGORY_BY_ID: Object.fromEntries(data.WEAPON_GROUPS.flatMap(group => group.ids.map(id => [id, group]))) };
 const Game = new Function(...Object.keys(bindings), `return ${controller}`)(...Object.values(bindings));
@@ -35,8 +35,7 @@ game.mode = "training";
 game.state = "menu";
 game.players = [];
 game.settings.loadout = ["railgun", "blaster", "shotgun", "mine", "needle_launcher"];
-game.settings.loadoutPresets = [{ name: 'Favorite <set>', weaponIds: [...game.settings.loadout] }, null, null];
-game.settings.defaultLoadoutPreset = 0;
+game.settings.loadoutPresets = [{ weaponIds: [...game.settings.loadout] }, null, null];
 game.announceLoadout = value => { game.announcement = value; };
 game.pulseMenuEnergy = () => {};
 game.menuAccent = () => "#52e9ff";
@@ -50,8 +49,17 @@ assert.match(markup, /data-weapon-picker/, "the armory includes the weapon libra
 assert.doesNotMatch(markup, /data-weapon-picker hidden/, "the weapon library is always visible");
 assert.match(markup, /data-loadout-equip/, "weapon previews have an explicit equip action");
 assert.match(markup, /data-loadout-recommended/, "a beginner kit is available without managing presets");
-assert.match(markup, /<details class="preset-manager">/, "preset management starts collapsed");
-assert.match(markup, /Favorite &lt;set>/, "preset labels are escaped");
+assert.doesNotMatch(markup, /preset-manager|data-loadout-presets|data-preset-name|data-preset-default|data-preset-clear/, "the old saved-set manager and naming/default controls are removed");
+assert.doesNotMatch(markup, /data-loadout-remove/, "equipped slots have no remove action");
+assert.match(markup, /data-preset-save/, "Save set is available alongside the equipped slots");
+assert.match(markup, /<h3>Equipped weapons<\/h3>[\s\S]*?data-action="loadout-help"/, "the question-circle help action sits beside Equipped weapons");
+const showModal = game.showModal;
+game.showModal = (html, options) => { game.helpModal = { html, options }; };
+game.showLoadoutHelp();
+assert.ok(game.helpModal.html.includes(TEXT.setup.loadout.detailedHelp), "the modal contains the complete controls help");
+assert.match(game.helpModal.html, /data-action="close-loadout-help"[^>]*>OK<\/button>/, "OK closes the controls help modal");
+assert.deepEqual(game.helpModal.options, { kind: "loadout-help", cancel: "close" }, "the native help dialog also supports dismissal");
+game.showModal = showModal;
 assert.equal((markup.match(/data-loadout-edit=/g) || []).length, 5);
 assert.equal(game.activeLoadoutSlot, 0, "the first slot is ready to edit on arrival");
 assert.equal(game.previewWeaponId, "railgun", "the first equipped weapon is previewed on arrival");
@@ -93,7 +101,7 @@ for (const [id, label, damage] of [["shotgun", TEXT.setup.loadout.pelletDamageLa
 }
 game.previewWeaponId = "railgun";
 const watchedRegions = new Map();
-for (const selector of ["[data-preset-select]", "[data-loadout-order]", "[data-loadout-actions]", "[data-weapon-preview]", "[data-loadout-presets]"]) {
+for (const selector of ["[data-preset-select]", "[data-loadout-order]", "[data-loadout-actions]", "[data-weapon-preview]"]) {
   const region = { dataset: {}, writes: 0, firstChild: {}, html: "", get innerHTML() { return this.html; }, set innerHTML(value) { this.html = value; this.writes++; this.firstChild = {}; } };
   nodes.set(selector, region); watchedRegions.set(selector, region);
 }
@@ -102,9 +110,8 @@ for (const region of watchedRegions.values()) region.writes = 0;
 for (const choice of choices) choice.mutations.length = 0;
 const retainedChildren = new Map([...watchedRegions].map(([selector, region]) => [selector, region.firstChild]));
 const retainedImages = choices.map(choice => choice.querySelector("img"));
-watchedRegions.get("[data-loadout-presets]").firstChild.value = "Unfinished name";
 
-const click = dataset => ui.onclick({ target: { closest: () => ({ dataset, hasAttribute: name => name === "data-loadout-equip" && "loadoutEquip" in dataset || name === "data-loadout-recommended" && "loadoutRecommended" in dataset, setAttribute() {}, classList: { toggle() {} }, querySelector: () => ({}) }) } });
+const click = dataset => ui.onclick({ target: { closest: () => ({ dataset, hasAttribute: name => name === "data-loadout-equip" && "loadoutEquip" in dataset || name === "data-loadout-recommended" && "loadoutRecommended" in dataset || name === "data-preset-save" && "presetSave" in dataset, setAttribute() {}, classList: { toggle() {} }, querySelector: () => ({}) }) } });
 game.bindUi();
 const beforePreview = [...game.settings.loadout], beforePreviewStorage = [...storage];
 click({ weaponChoice: "rocket_launcher" });
@@ -123,7 +130,6 @@ for (const [selector, region] of watchedRegions) {
   assert.equal(region.writes, 0, "browsing does not rebuild equipped slots, actions or preset controls");
   assert.equal(region.firstChild, retainedChildren.get(selector), "unrelated control nodes keep their identity");
 }
-assert.equal(watchedRegions.get("[data-loadout-presets]").firstChild.value, "Unfinished name", "browsing preserves a preset name draft");
 for (let index = 0; index < choices.length; index++) assert.equal(choices[index].querySelector("img"), retainedImages[index], "browsing keeps every card image node");
 const hero = watchedRegions.get("[data-weapon-preview]"), heroImage = hero.firstChild;
 assert.equal(hero.writes, 1, "a changed weapon updates the large preview once");
@@ -172,13 +178,11 @@ assert.deepEqual(game.settings.loadout, ["blaster", "railgun", "shotgun", "mine"
 game.activeLoadoutSlot = 3;
 game.equipLoadoutSlot("hammer");
 assert.equal(game.settings.loadout[3], "hammer", "full loadout can replace a slot directly");
-game.removeLoadout(1);
-assert.equal(game.settings.loadout.length, 4);
-assert.equal(game.activeLoadoutSlot, 4, "removal targets the newly empty slot");
+game.settings.loadout = game.settings.loadout.slice(0, 4);
 game.activeLoadoutSlot = 4;
 game.equipLoadoutSlot("mine");
-assert.equal(game.settings.loadout.length, 5, "removed slots can be filled again");
-game.removeLoadout(4);
+assert.equal(game.settings.loadout.length, 5, "legacy incomplete loadouts can be filled again");
+game.settings.loadout = game.settings.loadout.slice(0, 4);
 game.equipLoadoutSlot(game.settings.loadout[0]);
 assert.equal(game.settings.loadout.length, 4, "moving an already equipped weapon to the empty tail preserves the incomplete loadout");
 assert.equal(game.activeLoadoutSlot, 3, "the selected slot follows the weapon after local empty-slot compaction");
@@ -193,11 +197,12 @@ assert.deepEqual(game.settings.loadout, game.settings.loadoutPresets[0].weaponId
 assert.match(game.presetOptionsMarkup(), /value="0" selected/);
 assert.deepEqual(data.loadSettings().loadoutPresets[0].weaponIds, beforePreview, "saved sets retain their exact order after editing");
 
-game.settings.defaultLoadoutPreset = null;
 const custom = [...game.settings.loadout];
 game.renderSetup("quick");
 game.renderSetup("quick");
 assert.deepEqual(game.settings.loadout, custom, "returning to Quick Play keeps the current custom loadout");
+assert.match(ui.innerHTML, /<header>[\s\S]*?data-action="start"[\s\S]*?data-launch-summary[\s\S]*?<\/header>/, "Start sits in the setup header above its match summary");
+assert.equal((ui.innerHTML.match(/data-action="start"/g) || []).length, 1, "the old bottom Start section is removed");
 for (const mode of ["training", "private", "quick"]) {
   game.renderSetup(mode);
   assert.equal(game.mode, mode);
@@ -207,31 +212,54 @@ for (const mode of ["training", "private", "quick"]) {
 game.settings.defaultLoadoutPreset = 0;
 game.settings.loadout = [...data.DEFAULT_LOADOUT];
 game.renderSetup("quick");
-assert.deepEqual(game.settings.loadout, beforePreview, "a chosen saved default still applies on entry");
+assert.deepEqual(game.settings.loadout, data.DEFAULT_LOADOUT, "a legacy saved-default field cannot replace the last used loadout on entry");
+delete game.settings.defaultLoadoutPreset;
 click({ loadoutRecommended: "" });
 assert.deepEqual(game.settings.loadout, data.RECOMMENDED_LOADOUT, "the recommended action equips a complete beginner kit");
 assert.deepEqual(data.loadSettings().loadout, data.RECOMMENDED_LOADOUT, "the recommended kit persists locally");
-const presetManager = { innerHTML: '<input value="Unfinished name">' }, presetSelect = { innerHTML: "Current selection" };
-nodes.set("[data-loadout-presets]", presetManager);
+const presetSelect = { innerHTML: "Current selection" };
 nodes.set("[data-preset-select]", presetSelect);
 game.settings.loadout = [...game.settings.loadoutPresets[0].weaponIds];
 game.updateLoadoutUi("", false);
-assert.equal(presetManager.innerHTML, '<input value="Unfinished name">', "passive updates preserve unfinished preset names");
 assert.equal(presetSelect.innerHTML, "Current selection", "passive updates preserve the preset dropdown");
 assert.equal(presetSelect.value, "0", "passive updates select the matching preset without replacing its options");
-assert.ok(saveButtons.every(button => button.disabled === false), "passive updates enable Save for a complete kit");
+assert.ok(saveButtons.every(button => button.disabled === false), "passive updates enable Save set for a complete kit");
 game.settings.loadout = game.settings.loadout.slice(0, 4);
 game.updateLoadoutUi("", false);
-assert.equal(presetSelect.value, "", "changing a preset kit switches the retained dropdown to Custom");
-assert.ok(saveButtons.every(button => button.disabled === true), "passive updates still disable Save for incomplete kits");
+assert.equal(presetSelect.value, "0", "editing a kit retains the selected saved-set destination");
+assert.ok(saveButtons.every(button => button.disabled === true), "passive updates disable Save set for incomplete kits");
 game.settings.loadout = [...game.settings.loadoutPresets[0].weaponIds];
 game.updateLoadoutUi("", false);
 assert.equal(presetSelect.value, "0", "restoring the preset kit selects it again without replacing options");
-assert.equal(presetManager.innerHTML, '<input value="Unfinished name">', "synchronizing preset selection preserves unfinished names");
 game.settings.loadout = [...data.RECOMMENDED_LOADOUT];
-game.updateLoadoutUi();
-assert.match(presetManager.innerHTML, /data-preset-name/, "explicit changes refresh preset management");
-nodes.delete("[data-loadout-presets]");
+game.loadPreset(1);
+assert.equal(game.activeLoadoutPreset, 1, "choosing an empty numbered set selects it as the save destination");
+assert.deepEqual(game.settings.loadout, data.RECOMMENDED_LOADOUT, "choosing an empty set keeps the current weapons");
+click({ presetSave: "" });
+assert.equal(game.settings.loadoutPresets.length, 3, "the three numbered saved-set destinations stay fixed");
+assert.deepEqual(game.settings.loadoutPresets[1], { weaponIds: [...data.RECOMMENDED_LOADOUT] }, "saved sets contain ordered weapons without editable names");
+assert.deepEqual(data.loadSettings().loadoutPresets[1], game.settings.loadoutPresets[1], "Save set persists the numbered set");
+assert.deepEqual(game.settings.loadoutPresets[0].weaponIds, beforePreview, "saving the selected set preserves other favorites");
+assert.ok(presetSelect.innerHTML.includes(formatText(TEXT.defaults.presetName, { number: 2 })), "the dropdown labels saved sets by number");
+assert.ok(presetSelect.innerHTML.includes(formatText(TEXT.defaults.presetName, { number: 3 })), "an empty destination remains available in the dropdown");
+assert.doesNotMatch(presetSelect.innerHTML, /value=""/, "saved-set selection has no Custom placeholder");
+game.settings.loadout = ["railgun", "blaster", "shotgun", "mine", "hammer"];
+game.updateLoadoutUi("", false);
+assert.equal(presetSelect.value, "1", "weapon edits retain the chosen replacement destination");
+click({ presetSave: "" });
+assert.deepEqual(game.settings.loadoutPresets[1].weaponIds, game.settings.loadout, "Save set replaces the selected favorite with the current weapons");
+assert.deepEqual(data.loadSettings().loadoutPresets[1].weaponIds, game.settings.loadout, "replacement persists without a separate confirmation");
+assert.deepEqual(data.loadSettings().loadout, game.settings.loadout, "reloading settings restores the last saved current loadout");
+const savedReplacement = [...game.settings.loadoutPresets[1].weaponIds];
+game.settings.loadout = game.settings.loadout.slice(0, 4);
+game.savePreset();
+assert.deepEqual(game.settings.loadoutPresets[1].weaponIds, savedReplacement, "an incomplete kit cannot replace a saved set");
+for (const rejected of [["blaster", "blaster", "shotgun", "mine", "hammer"], ["missing", "blaster", "shotgun", "mine", "hammer"], ["toString", "blaster", "shotgun", "mine", "hammer"]]) {
+  game.settings.loadout = rejected;
+  game.savePreset();
+  assert.deepEqual(game.settings.loadoutPresets[1].weaponIds, savedReplacement, "duplicate or unknown weapons cannot replace a saved set");
+}
+game.settings.loadout = [...data.RECOMMENDED_LOADOUT];
 nodes.delete("[data-preset-select]");
 game.mode = "training";
 
@@ -269,13 +297,18 @@ game.loadPreset(0);
 assert.deepEqual(game.globalMultiplayer.slots, game.settings.loadoutPresets[0].weaponIds, "presets apply to global waiting rooms");
 assert.equal(sent, 2);
 game.settings.loadout = ["hammer"];
-game.savePreset(1);
-assert.deepEqual(game.settings.loadoutPresets[1].weaponIds, game.globalMultiplayer.slots, "global preset saves use the actual room loadout");
+game.savePreset();
+assert.deepEqual(game.settings.loadoutPresets[0].weaponIds, game.globalMultiplayer.slots, "saving the chosen room set retains its slot");
+game.globalMultiplayer.slots = ["railgun", "blaster", "shotgun", "mine", "hammer"];
+game.loadPreset(2);
+assert.deepEqual(game.globalMultiplayer.slots, ["railgun", "blaster", "shotgun", "mine", "hammer"], "choosing an empty room set preserves the waiting-room kit");
+game.savePreset();
+assert.deepEqual(game.settings.loadoutPresets[2].weaponIds, game.globalMultiplayer.slots, "global set saves replace the selected destination using the actual room loadout");
 assert.match(game.loadoutEditorMarkup(true), /data-global-slots/);
 game.applyRecommendedLoadout();
 assert.deepEqual(game.globalMultiplayer.slots, data.RECOMMENDED_LOADOUT, "the recommended kit applies to the actual waiting-room slots");
 assert.equal(sent, 3, "equipping the recommended kit sends one waiting-room update");
-console.log("Armory previews, explicit equip, replacement/swaps, removal/reorder, recommended kit, saved defaults, Quick Play stability, training summary and global random slots passed.");
+console.log("Armory previews, explicit equip, replacement/swaps, reorder, recommended kit, numbered saved sets, last-used loadout, controls help, training summary and global random slots passed.");
 
 // Render multiplayer setup with a local service stub; no live room is created.
 const globalSource = readFileSync(new URL("../src/globalMultiplayer.js", import.meta.url), "utf8").replace(/^import .*;\r?\n/gm, "").replace("export class", "class");
