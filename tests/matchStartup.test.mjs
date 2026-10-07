@@ -7,6 +7,9 @@ const source = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
 const controller = source.slice(source.indexOf("class BlasterBattle"), source.indexOf("\nconst game = new BlasterBattle")).replaceAll("import.meta.url", '"test"');
 const frames = [];
 const journeys = [];
+const openDialogs = [];
+const loadingLabels = { "[data-match-seed]": {}, "[data-match-kind]": {} };
+const matchLoading = { hidden: true, querySelector: selector => loadingLabels[selector] };
 let markupWrites = 0, bootStatusPresent = true, menuBindings = 0;
 const shell = { dataset: {} };
 const bootButtons = [{ dataset: { bootMode: "quick" } }, { dataset: { bootScreen: "settings" } }];
@@ -17,11 +20,11 @@ const bootStatus = {
 };
 const ui = {
   querySelector: selector => selector === "[data-boot-status]" ? bootStatusPresent && bootStatus : shell,
-  querySelectorAll: () => bootButtons,
+  querySelectorAll: selector => selector === "dialog[open]" ? [...openDialogs] : bootButtons,
   set innerHTML(value) { markupWrites++; assert.match(value, /<h1>/); }
 };
 const Game = new Function("requestAnimationFrame", "performance", "TEXT", "setJourney", "matchLoading", "ui", "menuAtmosphereMarkup", "SimulationTiming", "RenderInterpolation", `return ${controller}`)(
-  callback => frames.push(callback), { mark() {}, measure() {} }, PLAYER_TEXT, path => journeys.push(path), null, ui, () => "", SimulationTiming, RenderInterpolation);
+  callback => frames.push(callback), { mark() {}, measure() {} }, PLAYER_TEXT, path => journeys.push(path), matchLoading, ui, () => "", SimulationTiming, RenderInterpolation);
 const menu = Object.assign(Object.create(Game.prototype), {
   settings: { graphics: "low" },
   sound: Object.fromEntries(["resume", "setVolume", "setMix", "setPaused", "setMusicScene", "startMusic"].map(name => [name, () => {}])),
@@ -67,18 +70,43 @@ const game = Object.create(Game.prototype);
 const renderer = {}, sound = {}, pipeline = {}, settings = { loadout: ["a", "b"] };
 let starts = 0, label;
 Object.assign(game, { renderer, sound, renderPipeline: pipeline, settings, seed: "REPLAY", timeLimitMinutes: 7,
-  setMatchLoading(visible, seed, sameSeed) { label = { visible, seed, sameSeed }; if (visible) this.setJourney("/loading"); },
+  setMatchLoading(visible, seed, sameSeed) { label = { visible, seed, sameSeed }; Game.prototype.setMatchLoading.call(this, visible, seed, sameSeed); },
   startMatch(welcome, painted) { assert.equal(painted, true); starts++; this.matchStartQueued = false; }
 });
+function openMatchDialog(path, returnPath) {
+  const dialog = { open: true, journeyPath: path, journeyReturnPath: returnPath,
+    close() { this.open = false; }, remove() { openDialogs.splice(openDialogs.indexOf(this), 1); }
+  };
+  openDialogs.push(dialog);
+  game.setJourney(path);
+  return dialog;
+}
+const results = openMatchDialog("/results", "/game");
 game.queueRematch(); game.queueRematch();
 assert.deepEqual(label, { visible: true, seed: "REPLAY", sameSeed: true });
+assert.equal(results.open, false, "results leave the top layer synchronously, before preparation starts");
+assert.equal(openDialogs.length, 0);
+assert.equal(matchLoading.hidden, false);
+assert.equal(game.journeyPath, "/loading", "closing results cannot restore the old game journey");
+const queuedFrame = Object.assign(Object.create(Game.prototype), {
+  matchStartQueued: game.matchStartQueued,
+  commitResize() { assert.fail("queued launches must give the loader a paint before resize work"); },
+  renderScene() { assert.fail("queued launches must not render the old arena"); }
+});
+queuedFrame.frame(0);
 assert.equal(starts, 0);
 frames.shift()(); assert.equal(starts, 0, "loader gets a paint before arena construction");
 frames.shift()(); assert.equal(starts, 1, "duplicate launch clicks build only one match");
 assert.equal(game.renderer, renderer); assert.equal(game.sound, sound);
 assert.equal(game.renderPipeline, pipeline); assert.equal(game.settings, settings);
 assert.equal(game.timeLimitMinutes, 7);
+const pause = openMatchDialog("/pause", "/game");
+const controls = openMatchDialog("/controls", "/pause");
 game.queueRematch(); game.matchStartQueued = false; game.queueRematch();
+assert.equal(pause.open, false, "pause restart also uncovers the loader");
+assert.equal(controls.open, false, "nested match dialogs cannot cover the loader");
+assert.equal(openDialogs.length, 0);
+assert.equal(game.journeyPath, "/loading");
 while (frames.length) frames.shift()();
 assert.equal(starts, 2, "a cancelled launch cannot consume a later launch's ticket");
 

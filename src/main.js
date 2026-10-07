@@ -1433,6 +1433,8 @@ class BlasterBattle {
     if (visible) {
       if (this.journeyPath !== "/loading") this.loadingJourneyPath = this.journeyPath;
       this.setJourney("/loading");
+      // Modal dialogs occupy the top layer, above the loading overlay.
+      for (const dialog of ui.querySelectorAll("dialog[open]")) this.closeModal(dialog);
     } else if (this.journeyPath === "/loading" && this.state !== "play") {
       this.setJourney(this.loadingJourneyPath || "/");
     }
@@ -2321,7 +2323,7 @@ class BlasterBattle {
   }
 
   frame(time) {
-    if (this.preparingGraphics || this.preparingMatch) return;
+    if (this.matchStartQueued || this.preparingGraphics || this.preparingMatch) return;
     this.commitResize();
     this.timer.update(time);
     const rawDt = Math.max(0, this.timer.getDelta());

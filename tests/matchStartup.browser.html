@@ -1,7 +1,7 @@
 <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Match startup checks</title><link rel="stylesheet" href="/src/styles.css">
 <div id="app"><canvas id="game-canvas"></canvas><div id="ui-root"></div></div>
-<div id="match-loading" hidden><span data-match-seed></span><span data-match-kind></span></div>
+<div id="match-loading" class="rematch-loading" hidden><section class="rematch-loading-card"><h2>Loading</h2><span data-match-seed></span><span data-match-kind></span></section></div>
 <aside style="position:fixed;z-index:999;bottom:0;background:#09131d;color:white;padding:8px;font:12px monospace">
 <button id="run" disabled>Test startup and ten replays</button><pre id="metrics">Loading engine</pre></aside>
 <script type="module">
@@ -35,12 +35,16 @@ button.onclick = async () => {
       if (cycle) game.finishMatch();
       phase = `Loading ${cycle}`; started = performance.now(); report();
       if (cycle) game.queueRematch(); else game.startMatch();
+      if (document.querySelector('dialog:modal')) throw Error('A match dialog still covers loading');
+      await new Promise(requestAnimationFrame);
+      if (!document.elementFromPoint(8, 8)?.closest('#match-loading')) throw Error('Loading is not visible before arena preparation');
+      const loaderFrameMs = Math.round(performance.now() - started);
       await wait(() => game.state === 'play' && !game.hideMatchLoadingAfterFrame && !game.matchStartQueued);
       const readyMs = Math.round(performance.now() - started);
       if (game.renderer !== renderer || game.sound !== sound || game.renderPipeline !== pipeline) throw Error('Engine resources replaced');
       if (game.matchTime !== 1800 || game.players.some(p => p.health !== 100) || game.scores.some(Boolean)) throw Error('Match was not reset or spent time loading');
       if (earlyCountdowns) throw Error('Countdown started before GPU readiness');
-      const sample = {cycle, readyMs, countdown:game.matchStartDelay, matchTime:game.matchTime};
+      const sample = {cycle, loaderFrameMs, readyMs, countdown:game.matchStartDelay, matchTime:game.matchTime};
       phase = `Countdown ${cycle}`;
       await wait(() => !game.matchStartDelay && !game.audioCountdown);
       // Include real simulation frames so subsequent replays also clean active resources.
