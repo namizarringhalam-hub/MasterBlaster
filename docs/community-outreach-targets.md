@@ -1,5 +1,21 @@
 # Master Blaster: community outreach targets
 
+## Xander recording follow-up — 7 October 2026
+
+- At the user's explicit request, emailed Xander once at 09:26 CEST from
+  masterblastergame@proton.me to his verified official contact,
+  infoxanderdevelops@gmail.com (https://xanderdevelops.github.io/).
+  Subject: Master Blaster — recording of your stream review?
+- Matched the original friendly father-and-son submission; asked for the
+  recording/VOD and a Master Blaster timestamp. Rendered clickable game link
+  retains ref=papercroft in Sent. Exact body, prepared tags and proof are in
+  outreach-third-wave-checkpoint.md. No attachments or added creator details.
+- Proton Sent readback confirms sending, not delivery or a reply. Await response;
+  include in existing daily brand-mail checks and summarize any recording/feedback.
+  Do not resend or send further replies without authorization. Existing tracker
+  PaperCroft row and feedback action updated with successful guarded patches.
+  Historical daily no-outbound-message statements below precede this request.
+
 User-facing editable status Page:
 [Master Blaster outreach and approval tracker](https://chatgpt.com/space/page_d0265fd1ed8881919479f34806b71fe6).
 Created 5 October 2026 from verified records below; covers all 18 attempted

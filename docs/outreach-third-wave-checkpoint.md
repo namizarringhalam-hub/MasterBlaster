@@ -1,5 +1,38 @@
 # Master Blaster third-wave outreach checkpoint
 
+## Xander recording request sent — 7 October 2026, 09:26 CEST
+
+- User explicitly requested this email, matching the original friendly submission.
+  Sent once from masterblastergame@proton.me to infoxanderdevelops@gmail.com.
+  Official contact verified through PaperCroft's Xander Develops footer link to
+  https://xanderdevelops.github.io/ (Bio & Contact).
+- Subject: Master Blaster — recording of your stream review?
+  Proton Sent independently verified recipient, sender, timestamp and full body.
+  Sending is confirmed; delivery, recording availability and reply are unconfirmed.
+  Proof: ignored .wrangler/tmp/seo/xander-recording-request-sent-2026-10-07.png.
+- The first Master Blaster mention is a clickable game link. Prepared href:
+  https://masterblaster.se/?ref=papercroft&utm_source=papercroft&utm_medium=email&utm_campaign=first_players&utm_content=recording_request
+  Sent DOM exposes https://masterblaster.se/?ref=papercroft; full UTM retention
+  is not independently confirmed. No attachments or personal account details.
+- Existing tracker updated with two successful guarded patches, sequence 5.
+  Daily brand-mail monitoring includes this reply. Do not resend or send further
+  replies without authorization. Earlier no-message-sent notes are historical.
+
+Exact sent body (first game mention rendered as the link described above):
+
+```text
+Hi Xander!
+
+Thanks for giving Master Blaster a go on stream! I saw it marked as played on PaperCroft yesterday.
+
+I'm the dad helping my 8-year-old son with accounts and marketing :) We'd love to watch the playthrough and hear your feedback.
+
+Do you have a recording or VOD link you could share? A timestamp for the Master Blaster part would be great too.
+
+Thanks again for trying it!
+Master Blaster
+```
+
 ## Latest daily outcomes — 7 October 2026
 
 - PaperCroft now records Played on Stream 6 Oct, 6:14 pm (site-displayed time;

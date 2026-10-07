@@ -1,5 +1,22 @@
 # SEO checkpoint — 2026-09-18
 
+## Xander recording request — 7 October 2026, 09:26 CEST
+
+- User explicitly authorized an email asking Xander for the recording in the
+  original submission's tone. Sent once from the Master Blaster brand mailbox
+  to his verified official address; requested a recording/VOD and game timestamp.
+  Exact message and official contact evidence: outreach-third-wave-checkpoint.md.
+- Validation: independent Proton Sent readback of sender, recipient, timestamp,
+  body and clickable ref-tagged game link; screenshot inspected and saved in
+  ignored .wrangler/tmp/seo/xander-recording-request-sent-2026-10-07.png.
+  Sending confirmed; delivery and reply unconfirmed. No personal details added.
+- Native tracker updated with two successful guarded patches, sequence 5.
+  Related documentation only; validate diff/scope, commit with brand identity and
+  push origin/main. Preserve unrelated untracked %SystemDrive%/ directory.
+- Next: monitor Xander's reply in existing daily checks, report recording link
+  and feedback. No duplicate request or further reply without authorization.
+  All other paused work and existing monitoring/SEO next steps remain in place.
+
 ## Latest recovery checkpoint — 7 October 2026, daily 09:00 follow-up
 
 - Read conversation, AGENTS.md, SEO/community/growth and second/third-wave
