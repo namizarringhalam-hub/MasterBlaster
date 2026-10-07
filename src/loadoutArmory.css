@@ -42,7 +42,13 @@
 .armory-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); align-items: start; gap: 20px; }
 .armory-equipped, .armory-library { min-width: 0; }
 .armory-equipped { position: sticky; top: 16px; }
-.armory-equipped > h3 { margin: 0 0 10px; font: 800 18px/1.1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
+.armory-equipped-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.armory-equipped-heading h3 { margin: 0; font: 800 18px/1.1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; text-transform: uppercase; }
+.loadout-help-button { flex: 0 0 auto; width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: 50%; color: #c4d8e8; font-size: 15px; line-height: 1; }
+.loadout-help-dialog { width: min(560px, 100%); padding: clamp(22px, 4vw, 32px); }
+.loadout-help-dialog h1 { margin: 0; font-size: 32px; }
+.loadout-help-dialog .dialog-lead { margin: 16px 0 24px; font-size: 14px; }
+.loadout-help-dialog button { display: block; min-width: 100px; margin-left: auto; }
 .loadout-armory .loadout-order { grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 0; touch-action: pan-y; }
 .loadout-slot { padding: 3px; border-left: 5px solid var(--accent); }
 .loadout-slot.active { border-color: #fff; background: color-mix(in srgb, var(--accent) 34%, #080f1c); }
@@ -81,8 +87,8 @@
 .weapon-stats strong { display: block; color: color-mix(in srgb, var(--accent) 55%, white); font-size: 16px; font-variant-numeric: tabular-nums; }
 .weapon-stats .stat-no-reload { align-content: center; flex-basis: 90px; }
 .armory-equipped-label { position: absolute; bottom: 8px; left: 12px; right: 10px; color: #f2f8ff; font-size: 11px; font-weight: 700; letter-spacing: 0; }
-.setup-launch { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #294052; }
-.setup-launch p { margin: 0; color: #9ab0c0; font-size: 12px; line-height: 1.5; }
+.setup-launch { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; min-width: 0; margin-left: auto; text-align: right; }
+.setup-dialog .setup-launch p { margin: 0; color: #9ab0c0; font-size: 12px; font-weight: 400; line-height: 1.5; letter-spacing: 0; }
 .setup-launch .launch { width: auto; margin: 0; }
 
 @media (max-width: 1000px) {
@@ -105,11 +111,10 @@
   .weapon-grid { grid-template-columns: minmax(0, 1fr); }
   .weapon-grid .weapon-render { height: 140px; }
   .weapon-grid .weapon-choice b { min-height: 18px; }
-  .setup-launch { align-items: stretch; flex-direction: column; gap: 10px; }
-  .setup-launch .launch { width: 100%; }
 }
 
 @media (pointer: coarse) {
+  .loadout-help-button { width: 44px; height: 44px; min-height: 44px; }
   .weapon-filters button, .armory-slot-actions button { min-height: 44px; }
   .loadout-armory input, .loadout-armory select { font-size: 16px; }
 }

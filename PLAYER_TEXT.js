@@ -122,6 +122,7 @@ export const PLAYER_TEXT = {
       selected: "{count}/5 selected",
       help: "Choose a slot, preview a weapon, then equip it.",
       controlsHelp: "Controls help",
+      helpOk: "OK",
       detailedHelp: "Your five slots become keys 1–5 in game. Any weapon fits any slot. Choose a slot, browse or search the armory, then preview a weapon and press Equip. Equipping a weapon already in another slot swaps the two. Use Move up and Move down, or drag on desktop, to reorder your weapons.",
       recommended: "Use recommended kit",
       equippedWeapons: "Equipped weapons",

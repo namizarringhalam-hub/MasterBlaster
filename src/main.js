@@ -662,7 +662,7 @@ class BlasterBattle {
       <main class="screen menu-scene setup-scene" data-menu-scene="${mode}" data-menu-quality="${this.settings.graphics}" style="--menu-energy:.28;--menu-accent:${MENU_ACCENTS[mode]}">
         ${menuAtmosphereMarkup(mode)}
         <section class="dialog setup-dialog">
-          <header><button class="back" data-screen="main">${TEXT.setup.back}</button></header>
+          <header><button class="back" data-screen="main">${TEXT.setup.back}</button><div class="setup-launch"><button class="launch primary" data-action="start" ${this.settings.loadout.length === 5 ? "" : "disabled"}>${TEXT.setup.start}</button><p data-launch-summary>${this.matchSummary()}</p></div></header>
           <h1>${modeText.title}</h1>
           <p class="dialog-lead">${modeText.description}</p>
           <div class="setup-identity">
@@ -684,7 +684,6 @@ class BlasterBattle {
           ${this.trainingControlsMarkup()}
           </details>
           ${this.loadoutEditorMarkup()}
-          <div class="setup-launch"><p data-launch-summary>${this.matchSummary()}</p><button class="launch primary" data-action="start" ${this.settings.loadout.length === 5 ? "" : "disabled"}>${TEXT.setup.start}</button></div>
           <p class="prototype-note">${TEXT.setup.onlineNote}</p>
         </section>
       </main>`;
@@ -801,7 +800,7 @@ class BlasterBattle {
       <p class="loadout-help">${TEXT.setup.loadout.help}</p>
       <div class="armory-toolbar"><button data-loadout-recommended>${TEXT.setup.loadout.recommended}</button><label>${TEXT.setup.loadout.preset}<select data-preset-select>${this.presetOptionsMarkup()}</select></label></div>
       <div class="armory-layout">
-        <aside class="armory-equipped"><h3>${TEXT.setup.loadout.equippedWeapons}</h3>
+        <aside class="armory-equipped"><div class="armory-equipped-heading"><h3>${TEXT.setup.loadout.equippedWeapons}</h3><button type="button" class="loadout-help-button" data-action="loadout-help" aria-label="${TEXT.setup.loadout.controlsHelp}" aria-haspopup="dialog">?</button></div>
           <div class="loadout-order" ${global ? "data-global-slots" : "data-loadout-order"}>${this.loadoutOrderMarkup(loadout)}</div>
           <p class="loadout-help">${TEXT.setup.loadout.slotHelp}</p>
           <div class="armory-slot-actions" data-loadout-actions>${this.loadoutActionsMarkup(loadout)}</div>
@@ -817,8 +816,12 @@ class BlasterBattle {
       ${global ? `<p class="global-loadout-note">${TEXT.globalLobby.randomHelp}</p><p class="loadout-status" data-global-save role="status"></p><div class="global-room-start" data-global-start></div>` : ""}
       <p class="loadout-status" data-loadout-status aria-live="polite"></p>
       <details class="preset-manager"><summary>${TEXT.setup.loadout.manageSets}</summary><p class="loadout-help">${TEXT.setup.loadout.savedSetsDescription}</p><section class="loadout-presets" aria-label="${TEXT.setup.loadout.savedSetsAria}" data-loadout-presets>${this.loadoutPresetsMarkup()}</section></details>
-      <details class="loadout-instructions"><summary>${TEXT.setup.loadout.controlsHelp}</summary><p>${TEXT.setup.loadout.detailedHelp}</p></details>
     </section>`;
+  }
+
+  showLoadoutHelp() {
+    if (ui.querySelector('dialog[data-modal="loadout-help"]')) return;
+    this.showModal(`<section class="dialog loadout-help-dialog" aria-labelledby="loadout-help-title" aria-describedby="loadout-help-description"><h1 id="loadout-help-title">${TEXT.setup.loadout.controlsHelp}</h1><p class="dialog-lead" id="loadout-help-description">${TEXT.setup.loadout.detailedHelp}</p><button type="button" class="primary" data-action="close-loadout-help" autofocus>${TEXT.setup.loadout.helpOk}</button></section>`, { kind: "loadout-help", cancel: "close" });
   }
 
   loadoutOrderMarkup(loadout = this.settings.loadout) {
@@ -1130,13 +1133,14 @@ class BlasterBattle {
       if (button.dataset.action === "start") return this.captureSetupAndStart();
       if (button.dataset.action === "pause") return this.togglePause();
       if (button.dataset.action === "controls") return this.showControls();
+      if (button.dataset.action === "loadout-help") return this.showLoadoutHelp();
       if (button.dataset.action === "graphics-settings") return this.showGraphicsSettings();
       if (button.dataset.action === "reset-graphics-effects") {
         applyGraphicsPreset(this.settings, this.settings.graphics);
         this.applyGraphicsSettings();
         saveSettings(this.settings); this.refreshGraphicsControls(); return;
       }
-      if (button.dataset.action === "close-controls") return this.closeModal(button.closest("dialog"));
+      if (button.dataset.action === "close-controls" || button.dataset.action === "close-loadout-help") return this.closeModal(button.closest("dialog"));
       if (button.dataset.action === "rematch") return this.queueRematch();
       if (button.dataset.action === "save-settings") return this.saveSettingsForm();
     };
