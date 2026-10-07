@@ -2404,6 +2404,8 @@ class BlasterBattle {
 
   update(dt, realDt = dt) {
     if (this.paused || this.hideMatchLoadingAfterFrame) return;
+    // Keep the player camera following input while combat waits to start/reconnect.
+    if (this.awaitingAudioGesture || this.matchStartDelay > 0 || this.audioCountdown || this.networkRecovering) this.updateCamera(dt);
     if (this.awaitingAudioGesture) {
       if (!this.simulationBatch) { this.updateAudio(dt); this.updateHud(); }
       return;

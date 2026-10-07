@@ -1,0 +1,13 @@
+# Round-start camera anchoring — 2026-10-08
+
+Request: fix loose/unanchored camera for 1–2 seconds at round start. Starting main ff33f1d; only unrelated untracked %SystemDrive%/. Preserve prior facing/visibility and smoothness fixes, keep test tabs muted, validate and push origin/main for masterblaster.se.
+
+Confirmed flow: active frames consume orbit input and capture interpolation during countdown/audio waits, but update returns before updateHuman's updateCamera(dt). renderScene calls updateCamera(0), updating view direction without advancing the orbit position. When combat begins, normal camera damping catches up. Warmup correctly restores temporary viewpoints.
+
+Minimal fix: src/main.js advances camera at the ordinary physics dt before countdown/audio/reconnect early returns. Combat stays frozen; normal gameplay still uses its existing single camera update in updateHuman. Paused/hidden-loader branches remain ahead of this change.
+
+Request files: src/main.js, tests/simulationTiming.test.mjs and this checkpoint. Focused production-controller tests pass for four waits, 20/60/144 FPS and first/third person: mouse yaw/pitch, orbit and FOV settlement, unchanged player/match/countdown time and pause/loading exclusions.
+
+Independent evidence: published ff33f1d keeps camera position exactly frozen and 7.90m from the new mouse-selected orbit for two seconds; normal gameplay later catches up. All 24 new wait/view/FPS cases fail against published HEAD at orbit settlement and pass current code. Instrumentation confirms one positive-dt camera update per physics step and no double update on any of four wait-to-gameplay transitions; normal world-before-human ordering is preserved. Final review found no blockers; warmup/first-frame handoff remain unchanged.
+
+Final source validation: full npm test passes (38 script checks plus 2 files/20 Worker tests), production build/hosting and git diff --check pass. Native WebGPU QA passes 110 finite frames using actual production frame/updateCamera/renderScene/updateHuman methods: 2-second first-/third-person countdowns accept mouse look while orbit/heading remain anchored, fighter/health/ammo/cooldowns/combat stay frozen, countdown advances 4→2, match clock remains 30, rig visibility/projection correct. Clearing countdown resumes actual Fighter movement and world/combat updates with heading preserved; no warnings/errors. This is a controller rendering check, not a performance benchmark or full arena launch. WebGL companion and owned browser/helper/fixture cleanup pending. Origin/main still matches ff33f1d. Next: commit/push origin/main, verify live wait-camera branch and record final browser evidence/cleanup. No unresolved source finding.

@@ -255,6 +255,42 @@ for (const throws of [false, true]) {
   assert.equal(rig.visible, true, "the authoritative third-person fighter stays visible");
 }
 
+// Countdown/audio/reconnect waits freeze combat, not the camera's player orbit.
+for (const waitState of ["awaitingAudioGesture", "matchStartDelay", "audioCountdown", "networkRecovering"]) {
+  for (const fps of [20, 60, 144]) for (const firstPerson of [false, true]) {
+    const waiting = fixture(), player = { group: new THREE.Group(), rig: new THREE.Group(), velocity: new THREE.Vector3() };
+    player.position = player.group.position.set(35, 0, 25); player.group.add(player.rig);
+    Object.assign(waiting, { players: [player], cameraYaw: 0, cameraPitch: -.08, cameraFirstPerson: false,
+      cameraFirstPersonRequested: firstPerson, cameraClearance: { actual: 0, target: 0 }, settings: { reducedMotion: true },
+      cameraScratch: Object.fromEntries(["forward", "flatForward", "right", "pivot", "desired", "target", "constrained", "focus", "menuPosition"].map(key => [key, new THREE.Vector3()])),
+      update: Game.prototype.update, updateCamera: Game.prototype.updateCamera, renderScene: Game.prototype.renderScene,
+      world: { movers: [], constrainCamera: (pivot, desired, radius, target) => target.copy(desired), updatePresentation() {},
+        update() { assert.fail("waiting must not advance the arena or combat"); } },
+      renderPipeline: { render() {} }, matchTime: 30, matchStartDelay: 0,
+      sound: { play() {}, getCountdownState: () => ({ active: true, remaining: 4, beatsRemaining: 8 }) }
+    });
+    waiting.timer.getDelta = () => 1 / fps;
+    waiting.updateCamera(1); waiting.camera.fov = 76;
+    waiting.input.mouse.movementX = -.85 / .0022; waiting.input.mouse.movementY = -.29 / .0022;
+    waiting[waitState] = waitState === "matchStartDelay" ? 4 : true;
+    for (let frame = 0; frame < fps * 2; frame++) waiting.frame(frame * 1000 / fps);
+    assert.ok(Math.abs(waiting.cameraYaw - .85) < 1e-10, "real frame input turns the player's orbit during the wait");
+    assert.ok(Math.abs(waiting.cameraPitch - .21) < 1e-10);
+    assert.ok(waiting.camera.position.distanceTo(waiting.cameraScratch.target) < 1e-6,
+      `${waitState}, ${fps} FPS, firstPerson=${firstPerson}: the camera settles on the new player orbit during the wait`);
+    assert.ok(Math.abs(waiting.camera.fov - 62) < 1e-6, "camera projection settles during the wait too");
+    assert.equal(player.rig.visible, !firstPerson);
+    assert.deepEqual(player.position.toArray(), [35, 0, 25], "camera updates cannot move the waiting fighter");
+    if (waitState !== "networkRecovering") assert.equal(waiting.matchTime, 30, "round countdown/audio wait cannot spend match time");
+    if (waitState === "matchStartDelay") assert.ok(Math.abs(waiting.matchStartDelay - 2) < 1e-10, "camera following does not change countdown timing");
+    const pausedPosition = waiting.camera.position.clone(); waiting.paused = true; waiting.cameraYaw = -.7;
+    waiting.update(1 / 60);
+    assert.ok(waiting.camera.position.equals(pausedPosition), "paused simulation still leaves the camera update to presentation");
+    waiting.paused = false; waiting.hideMatchLoadingAfterFrame = true; waiting.update(1 / 60);
+    assert.ok(waiting.camera.position.equals(pausedPosition), "hidden first-frame preparation cannot advance the camera");
+  }
+}
+
 // Respawns and portal jumps are discontinuities even within the 8m heuristic.
 const spawned = new Fighter(new THREE.Scene(), { id: "respawn-blending", color: 0x12ccff, accent: 0x9dffff }, ["blaster"], new THREE.Vector3());
 const spawnBlend = new RenderInterpolation(), spawnObjects = new Set([spawned.group]);
