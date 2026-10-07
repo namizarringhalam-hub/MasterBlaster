@@ -29,7 +29,7 @@ assert.match(bootSource, /serviceWorker\.register\("\/sw\.js"/, "the lightweight
 assert.match(bootSource, /"serviceWorker" in navigator && window\.isSecureContext/, "immutable caching runs on secure production and loopback test origins only");
 assert.deepEqual(topScoreIndices([2, 7, 7, 4, 9]), [4, 1, 2], "the HUD ranks the top three scores with stable tie ordering");
 assert.match(mainSource, /\[0, 1, 2\]\.map[\s\S]*data-leader-row/, "the top-right HUD renders three leaderboard rows");
-assert.match(mainSource, /<header>[^]*?<div class="setup-launch"><button class="launch primary" data-action="start"[^]*?<p data-launch-summary>[^]*?<\/header>/, "setup sheets place Start above the match summary in the header");
+assert.match(mainSource, /<div class="setup-identity">[^]*?<div class="setup-launch"><button class="launch primary" data-action="start"[^]*?<details class="setup-options">/, "setup sheets place Start beside the name fields above match settings");
 assert.doesNotMatch(mainSource, /FIND MATCH|CREATE ROOM|START TRAINING/, "setup actions no longer change labels by mode");
 assert.match(mainSource, /reticleAim\(player, this\.camera\.position, this\.camera\.getWorldDirection/, "weapons fire through the visible camera's exact center ray");
 assert.match(mainSource, /remembered = this\.settings\.matchSettings\[mode\][\s\S]*?botCount = remembered\.botCount[\s\S]*?botDifficulty = remembered\.botDifficulty/, "each setup mode restores its own saved bot settings");

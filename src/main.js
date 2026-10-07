@@ -660,12 +660,13 @@ class BlasterBattle {
       <main class="screen menu-scene setup-scene" data-menu-scene="${mode}" data-menu-quality="${this.settings.graphics}" style="--menu-energy:.28;--menu-accent:${MENU_ACCENTS[mode]}">
         ${menuAtmosphereMarkup(mode)}
         <section class="dialog setup-dialog">
-          <header><button class="back" data-screen="main">${TEXT.setup.back}</button><div class="setup-launch"><button class="launch primary" data-action="start" ${this.settings.loadout.length === 5 ? "" : "disabled"}>${TEXT.setup.start}</button><p data-launch-summary>${this.matchSummary()}</p></div></header>
+          <header><button class="back" data-screen="main">${TEXT.setup.back}</button></header>
           <h1>${modeText.title}</h1>
           <p class="dialog-lead">${modeText.description}</p>
           <div class="setup-identity">
             <label>${TEXT.setup.labels.displayName}<input id="display-name" maxlength="18" value="${escapeHtml(this.settings.displayName)}"></label>
             ${mode === "private" ? `<label>${TEXT.setup.labels.roomCode}<input id="map-seed" maxlength="12" value="${escapeHtml(this.seed)}"></label>` : ""}
+            <div class="setup-launch"><button class="launch primary" data-action="start" ${this.settings.loadout.length === 5 ? "" : "disabled"}>${TEXT.setup.start}</button></div>
           </div>
           <details class="setup-options">
             <summary><span>${TEXT.setup.editSettings}</span><span data-match-summary>${this.matchSummary()}</span></summary>
@@ -772,10 +773,8 @@ class BlasterBattle {
   }
 
   updateMatchSummary() {
-    for (const selector of ["[data-match-summary]", "[data-launch-summary]"]) {
-      const summary = ui.querySelector(selector);
-      if (summary) summary.textContent = this.matchSummary();
-    }
+    const summary = ui.querySelector("[data-match-summary]");
+    if (summary) summary.textContent = this.matchSummary();
   }
 
   menuLoadout() {

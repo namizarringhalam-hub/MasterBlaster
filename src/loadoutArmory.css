@@ -88,9 +88,10 @@
 .weapon-stats strong { display: block; color: color-mix(in srgb, var(--accent) 55%, white); font-size: 16px; font-variant-numeric: tabular-nums; }
 .weapon-stats .stat-no-reload { align-content: center; flex-basis: 90px; }
 .armory-equipped-label { position: absolute; bottom: 8px; left: 12px; right: 10px; color: #f2f8ff; font-size: 11px; font-weight: 700; letter-spacing: 0; }
-.setup-launch { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; min-width: 0; margin-left: auto; text-align: right; }
-.setup-dialog .setup-launch p { margin: 0; color: #9ab0c0; font-size: 12px; font-weight: 400; line-height: 1.5; letter-spacing: 0; }
+.setup-launch { margin-left: auto; }
 .setup-launch .launch { width: auto; margin: 0; }
+.setup-launch .launch:not(:disabled) { box-shadow: 0 0 14px rgba(255, 72, 98, .6), 0 0 34px rgba(232, 57, 82, .35), inset 0 0 12px rgba(255, 120, 145, .2); }
+.setup-launch .launch:is(:hover, :focus-visible):not(:disabled) { box-shadow: 0 0 18px rgba(255, 72, 98, .85), 0 0 40px rgba(232, 57, 82, .5), inset 0 0 12px rgba(255, 120, 145, .3); }
 
 @media (max-width: 1000px) {
   .armory-preview { grid-template-columns: 180px minmax(0, 1fr); }
