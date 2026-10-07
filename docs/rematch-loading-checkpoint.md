@@ -14,4 +14,6 @@ Isolated validation complete: all 38 Node checks and 20 Worker tests pass (54.96
 
 Browser limitation: initial inventory timed out; isolated blank IAB tab worked. Its documented capabilities do not expose audio muting, so no game content was loaded and no live GPU replay pass is claimed. Browser fixture now also checks top-layer dismissal and loader hit testing before arena preparation.
 
-Next: review selective staged diff, commit/push origin/main and verify published source. Deployment remains masterblaster.se via Cloudflare Pages.
+Published request-only fix: 947659d8b811e86b3ddb2940ab205396c43d4115 pushed to origin/main. Selective staged review confirmed only five request files and rematch hunks; unrelated explosion/armory changes were preserved. Isolated passing logs copied to .codex-rematch-isolated-tests.log and .codex-rematch-isolated-build.log.
+
+Deployment verified: the current homepage references /assets/index-tu22w7rY.js (HTTP 200), importing main-CkekP6WZ.js (HTTP 200). The live main bundle contains both dialog[open] dismissal and the matchStartQueued frame guard. An earlier homepage reference to index-HYRLnI5z.js returned 404; the later current reference is healthy. No cause established for the earlier mismatch. Implementation, automated validation and publication complete; no unfinished code step. Live rendered/GPU replay remains unverified as noted above. Deployment remains masterblaster.se via Cloudflare Pages.
