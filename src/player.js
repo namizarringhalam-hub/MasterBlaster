@@ -1131,6 +1131,8 @@ export class Fighter {
     this.deathTimer = 0;
     this.grounded = true;
     this.boosted = false;
+    this.portalArrival = null;
+    this.portalCooldown = 0;
     this.group.visible = true;
     this.group.scale.setScalar(1);
     this.rig.position.y = -.035;

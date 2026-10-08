@@ -2361,7 +2361,12 @@ class BlasterBattle {
       if (!this.simulationBatch) { this.updateAudio(dt); this.updateHud(); }
       return;
     }
-    this.world.update(dt, this.players);
+    this.world.update(dt, this.players, (player, departure) => {
+      this.releaseGrapple(player, false, true);
+      this.spawnBurst(departure, 0x43ffd1, 12);
+      this.spawnBurst(player.position, 0x43ffd1, 14);
+      this.sound.play("teleport", WEAPONS.teleport_projectile, this.audioSpatial(player.position, player === this.players[0], 1, player.id));
+    });
     this.simulationStateAdvanced = true;
     for (const player of this.players) this.syncGrappleTarget(player);
     this.handleWeaponSwitch();

@@ -3089,7 +3089,7 @@ export class ArenaWorld {
     return obstacle;
   }
 
-  update(dt, players) {
+  update(dt, players, onPortalTransit = null) {
     this.time += dt;
     this.updateStructuralChanges(dt, players);
     this.updateFallingBoostPads(dt);
@@ -3151,16 +3151,22 @@ export class ArenaWorld {
     for (const player of players) {
       player.portalCooldown = Math.max(0, (player.portalCooldown || 0) - dt);
       player.sweeperCooldown = Math.max(0, (player.sweeperCooldown || 0) - dt);
-      if (!player.alive || player.portalCooldown > 0) continue;
+      if (!player.alive || player.networkRemote || player.trainingStandStill) continue;
       const portal = this.portals.find((entry) =>
         Math.abs(player.position.y - entry.position.y) < 1.4 &&
         Math.hypot(player.position.x - entry.position.x, player.position.z - entry.position.z) < 2.15
       );
-      if (!portal) continue;
+      // Jumping above an exit is not re-entry: leave its footprint to rearm it.
+      if (player.portalArrival && Math.hypot(player.position.x - player.portalArrival.position.x, player.position.z - player.portalArrival.position.z) >= 2.15) player.portalArrival = null;
+      if (!portal || portal === player.portalArrival || player.portalCooldown > 0) continue;
+      const departure = onPortalTransit ? player.position.clone() : null;
       player.position.copy(portal.pair.position).setY(portal.pair.position.y + .35);
       player.velocity.y = Math.max(player.velocity.y, 5);
       player.portalCooldown = ARENA_PORTAL_COOLDOWN_SECONDS;
+      player.portalArrival = portal.pair;
+      if (player.group) player.group.userData.interpolationReset = true;
       player.networkPositionDirty = true;
+      onPortalTransit?.(player, departure);
     }
 
     for (const sweeper of this.sweepers) {

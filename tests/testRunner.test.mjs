@@ -3,11 +3,13 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { spawnSync } from "node:child_process";
 
-const source = readFileSync(new URL("../scripts/test.mjs", import.meta.url), "utf8").replace(/^import .*\r?\n/, "");
+const source = readFileSync(new URL("../scripts/test.mjs", import.meta.url), "utf8").replace(/^import .*\r?\n/, "")
+  .replace("for (const args of checks)", "plannedChecks(checks.length); for (const args of checks)");
 for (const outcome of [{ status: 0 }, { status: 1 }, { status: null, error: { code: "ETIMEDOUT" } }]) {
-  let calls = 0, exitCode;
+  let calls = 0, expectedCalls, exitCode;
   try {
     runInNewContext(source, {
+      plannedChecks: count => { expectedCalls = count; },
       spawnSync: (executable, args, options) => {
         calls++;
         assert.equal(executable, process.execPath);
@@ -20,7 +22,7 @@ for (const outcome of [{ status: 0 }, { status: 1 }, { status: null, error: { co
       process: { execPath: process.execPath, exit(code) { exitCode = code; throw new Error("exit"); } }
     }, { timeout: 1000 });
   } catch (error) { if (error.message !== "exit") throw error; }
-  if (outcome.status === 0) { assert.equal(calls, 41); assert.equal(exitCode, undefined); }
+  if (outcome.status === 0) { assert.ok(expectedCalls > 1); assert.equal(calls, expectedCalls); assert.equal(exitCode, undefined); }
   else { assert.equal(calls, 1); assert.equal(exitCode, 1, "timeout/failure cannot report success or continue"); }
 }
 const timedOut = spawnSync(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { timeout: 200, windowsHide: true });

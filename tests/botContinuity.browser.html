@@ -1,0 +1,105 @@
+<!doctype html><meta charset="utf-8"><title>Master Blaster bot continuity</title>
+<link rel="stylesheet" href="/src/styles.css">
+<div id="app"><canvas id="game-canvas"></canvas><div id="ui-root"></div></div>
+<div id="match-loading" hidden><span data-match-seed></span><span data-match-kind></span></div>
+<pre id="report" style="position:fixed;z-index:999;bottom:0;left:0;max-height:32vh;overflow:auto;background:#09131dee;color:white;padding:8px;font:11px monospace">Preparing muted ten-minute match…</pre>
+<script type="module">
+import { SoundBoard } from '../src/audio.js';
+import { applyGraphicsPreset } from '../src/graphicsPresets.js';
+const volume = SoundBoard.prototype.setVolume;
+SoundBoard.prototype.setVolume = function () { return volume.call(this, 0); };
+const output = document.querySelector('#report'), errors = [], events = [], counts = {};
+addEventListener('error', event => errors.push(event.message));
+addEventListener('unhandledrejection', event => errors.push(String(event.reason)));
+let game, started, pump, phase = 'preparing', steps = 0, simulationSeconds = 0, frames = 0, invisibleAlive = 0, unexplained = 0, invalidTransforms = 0;
+const fixtureURL = location.href, params = new URLSearchParams(location.search), duration = Number(params.get('seconds') || 600);
+const snapshot = () => ({ phase, configuredSeconds: duration, wallSeconds: started ? (performance.now() - started) / 1000 : 0,
+  remaining: game?.matchTime, simulationSeconds, steps, frames, hidden: document.hidden, paused: game?.paused,
+  backend: game?.renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL', quality: game?.settings.graphics,
+  seed: game?.seed, players: game?.players.length, driver: params.get('clock') === 'timer' ? 'real-time timer' : 'animation loop',
+  counts, unexplained, invisibleAlive, invalidTransforms, errors, events: events.slice(-80) });
+const report = () => { const result = snapshot(); output.textContent = JSON.stringify(result, null, 2);
+  if (params.has('report')) void fetch('/__bot-report', { method: 'POST', body: JSON.stringify(result) }); };
+const record = (reason, player, previous) => {
+  counts[reason] = (counts[reason] || 0) + 1;
+  if (!['portal', 'teleportWeapon', 'respawn'].includes(reason)) unexplained++;
+  events.push({ time: Math.round((duration - game.matchTime) * 100) / 100, reason, id: player.id,
+    from: previous.toArray(), to: player.position.toArray(), grapple: Boolean(player.grapple), portalCooldown: player.portalCooldown });
+};
+const observe = (owner, name, actors, reason) => {
+  const original = owner[name];
+  owner[name] = function (...args) {
+    const eventStart = events.length;
+    const before = actors(...args).map(player => ({ player, position: player.position.clone(), alive: player.alive, cooldown: player.portalCooldown }));
+    const result = original.apply(this, args);
+    for (const entry of before) {
+      if (entry.alive && entry.player.alive && entry.position.distanceToSquared(entry.player.position) > 64) {
+        if (events.slice(eventStart).some(event => event.id === entry.player.id)) continue;
+        record(reason === 'world' && entry.player.portalCooldown > (entry.cooldown || 0) ? 'portal' : reason, entry.player, entry.position);
+      }
+    }
+    return result;
+  };
+};
+try {
+  performance.mark('blaster-shell-visible');
+  const { gameReady } = await import('../src/main.js'); game = await gameReady;
+  if (params.get('clock') === 'timer') {
+    // Real elapsed time and production frames; avoid OS-occluded rAF throttling.
+    await game.renderer.setAnimationLoop(null);
+    pump = setInterval(() => game.frame(performance.now()), 1000 / 60);
+  }
+  game.setJourney = () => {};
+  history.replaceState(history.state, '', fixtureURL);
+  phase = 'graphics'; report();
+  applyGraphicsPreset(game.settings, params.get('quality') || 'low'); game.applyGraphicsSettings();
+  game.commitResize();
+  await new Promise((resolve, reject) => {
+    const deadline = setTimeout(() => reject(Error('Graphics preparation exceeded 90 seconds')), 90000);
+    const poll = () => { if (!game.pendingGraphics && !game.pendingGraphicsEffects && !game.pendingResize) { clearTimeout(deadline); resolve(); } else requestAnimationFrame(poll); }; poll();
+  });
+  game.mode = 'quick'; game.seed = params.get('seed') || 'BLAST-01'; game.settings.botCount = 15;
+  game.botDifficulty = 'veteran'; game.timeLimitMinutes = duration / 60; game.targetScore = 100000;
+  phase = 'match resources'; report();
+  await Promise.race([game.startMatch(null, true), new Promise((_, reject) => setTimeout(() => reject(Error('Match resources exceeded 120 seconds')), 120000))]);
+  phase = 'first gameplay frame'; report();
+  await new Promise((resolve, reject) => {
+    const deadline = setTimeout(() => reject(Error('Match preparation exceeded 90 seconds')), 90000);
+    const poll = () => { if (game.matchFrameReady && !game.preparingMatch && !game.hideMatchLoadingAfterFrame) { clearTimeout(deadline); resolve(); } else requestAnimationFrame(poll); }; poll();
+  });
+  if (game.players.length !== 16) throw Error('Expected fifteen bots');
+  game.awaitingAudioGesture = false; game.audioCountdown = false; game.matchStartDelay = 0; game.paused = false;
+  game.sound.stopMusic(); game.sound.setVolume(0);
+  observe(game.world, 'update', () => game.players, 'world');
+  for (const name of ['updateBot', 'syncGrappleTarget']) observe(game, name, player => [player], name);
+  for (const name of ['updateProjectiles', 'updateHazards', 'processStructuralEvents']) observe(game, name, () => game.players, name);
+  observe(game, 'teleportOwner', player => [player], 'teleportWeapon');
+  for (const player of game.players) {
+    const respawn = player.respawn;
+    player.respawn = function (...args) { const previous = this.position.clone(); const result = respawn.apply(this, args); record('respawn', this, previous); return result; };
+  }
+  // Keep the whole arena visible while the actual production simulation runs.
+  game.updateCamera = () => {};
+  game.camera.position.set(170, 180, 210); game.camera.lookAt(0, 24, 0); game.camera.updateMatrixWorld(true);
+  const update = game.update, frame = game.frame;
+  game.update = function (dt, realDt) {
+    const active = this.state === 'play' && !this.paused && !this.awaitingAudioGesture && !this.matchStartDelay;
+    const result = update.call(this, dt, realDt);
+    if (active) { steps++; simulationSeconds += dt; for (const player of this.players) {
+      if (player.alive && !player.group.visible) invisibleAlive++;
+      if (![...player.position.toArray(), ...player.velocity.toArray()].every(Number.isFinite)) invalidTransforms++;
+    } }
+    return result;
+  };
+  game.frame = function (...args) { frames++; return frame.apply(this, args); };
+  phase = 'running'; started = performance.now(); report();
+  const status = setInterval(() => {
+    if (game.state === 'results' || game.matchTime <= 0) {
+      if (simulationSeconds < duration * .95) errors.push('Less than 95% simulation coverage; throttled run is invalid');
+      phase = errors.length || invisibleAlive || invalidTransforms || unexplained ? 'FAIL' : 'PASS'; clearInterval(status); clearInterval(pump);
+    }
+    else if (performance.now() - started > (duration + 120) * 1000) { phase = 'FAIL'; errors.push('Match exceeded duration plus two-minute watchdog'); clearInterval(status); clearInterval(pump); }
+    report();
+  }, 5000);
+} catch (error) { phase = 'FAIL'; clearInterval(pump); errors.push(String(error.stack || error)); report(); }
+</script>
