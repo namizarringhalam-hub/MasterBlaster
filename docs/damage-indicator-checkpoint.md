@@ -11,4 +11,5 @@
 - Concurrent unrelated portal/loading edits are present in shared files. Stage only request hunks; leave those changes and unrelated untracked files intact.
 - Worker deployed successfully to both masterblaster.se API routes: version 501b8e96-1fc4-4ee9-aa19-ad780ca96e83.
 - Staged snapshot checked: request-only main/player/script hunks, 41 checks registered; unrelated portal changes and working test-runner improvements retained separately.
-- Next: commit request changes and push origin/main; verify publication.
+- Published request commit 14c0e7f to origin/main. Verified the live masterblaster.se response contains the new arc styles and the loaded game bundle contains continuous bearing/opacity updates. This is an asset verification, not a rendered browser test.
+- Complete. Unrelated portal/loading edits and untracked files remain intact in the canonical checkout. No unfinished implementation step.
