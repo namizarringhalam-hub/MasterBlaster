@@ -429,7 +429,7 @@ class BlasterBattle {
     document.documentElement.classList.toggle("reduce-motion", this.settings.reducedMotion);
   }
 
-  graphicsControlsMarkup() {
+  graphicsControlsMarkup({ showReset = true } = {}) {
     const text = TEXT.settings.graphicsPanel;
     const effects = normalizeGraphicsEffects(this.settings.graphicsEffects);
     return `<section class="graphics-controls" aria-label="${text.title}">
@@ -453,7 +453,7 @@ class BlasterBattle {
         </label>`).join("")}
         ${group === 'motion' ? `<label>${text.motionStrength}<output>${this.settings.motionBlur}%</output><input type="range" aria-label="${text.motionStrength}" min="0" max="100" value="${this.settings.motionBlur}" data-setting="motionBlur"></label>` : ''}
       </details>`).join("")}
-      <button type="button" data-action="reset-graphics-effects">${text.reset}</button>
+      ${showReset ? `<button type="button" data-action="reset-graphics-effects">${text.reset}</button>` : ''}
     </section>`;
   }
 
@@ -961,7 +961,7 @@ class BlasterBattle {
           <header><button class="back" data-screen="main">${TEXT.setup.back}</button><p>${TEXT.settings.section}</p></header>
           <h1>${TEXT.settings.title}</h1>
           <div class="settings-grid">
-            ${this.graphicsControlsMarkup()}
+            ${this.graphicsControlsMarkup({ showReset: false })}
             <details><summary>${TEXT.settings.groups.feedback}</summary>
               <label>${TEXT.settings.labels.blood}
                 <select data-setting="blood">
@@ -991,15 +991,12 @@ class BlasterBattle {
                 </select>
               </label>
             </details>
+            <button type="button" data-action="reset-graphics-effects">${TEXT.settings.graphicsPanel.reset}</button>
           </div>
-          <button class="primary" data-action="save-settings">${TEXT.settings.save}</button>
         </section>
       </main>`;
     this.bindUi();
     this.refreshGraphicsControls();
-    for (const range of ui.querySelectorAll('input[type="range"]')) {
-      range.oninput = () => { range.previousElementSibling.textContent = `${range.value}%`; };
-    }
   }
 
   renderCredits() {
@@ -1128,7 +1125,6 @@ class BlasterBattle {
       }
       if (button.dataset.action === "close-controls" || button.dataset.action === "close-loadout-help") return this.closeModal(button.closest("dialog"));
       if (button.dataset.action === "rematch") return this.queueRematch();
-      if (button.dataset.action === "save-settings") return this.saveSettingsForm();
     };
     ui.onchange = (event) => {
       if (this.changeGraphicsPreference(event.target)) return;
@@ -1152,11 +1148,11 @@ class BlasterBattle {
         saveSettings(this.settings);
         return;
       }
-      if (!["volume", "musicVolume", "effectsVolume", "ambienceVolume"].includes(event.target.dataset.setting)) return;
+      if (!["shake", "volume", "musicVolume", "effectsVolume", "ambienceVolume"].includes(event.target.dataset.setting)) return;
       event.target.closest("label")?.querySelector("output")?.replaceChildren(`${event.target.value}%`);
       this.settings[event.target.dataset.setting] = Number(event.target.value);
       if (event.target.dataset.setting === "volume") this.sound.setVolume(this.settings.volume);
-      else this.sound.setMix({
+      else if (event.target.dataset.setting !== "shake") this.sound.setMix({
         music: this.settings.musicVolume, effects: this.settings.effectsVolume, ambience: this.settings.ambienceVolume
       });
       saveSettings(this.settings);
@@ -1324,19 +1320,8 @@ class BlasterBattle {
     this.settings.dynamicRange = ui.querySelector('[data-setting="dynamicRange"]').value;
     this.settings.reducedMotion = ui.querySelector('[data-setting="reducedMotion"]').checked;
     this.settings.motionBlur = Number(ui.querySelector('[data-setting="motionBlur"]').value);
-    saveSettings(this.settings);
-  }
-
-  saveSettingsForm() {
-    this.captureSettingsPreferences();
-    this.sound.setVolume(this.settings.volume);
-    this.sound.setMix({ music: this.settings.musicVolume, effects: this.settings.effectsVolume, ambience: this.settings.ambienceVolume });
     this.sound.setDynamicRange(this.settings.dynamicRange);
-    document.documentElement.classList.toggle("reduce-motion", this.settings.reducedMotion);
-    this.renderPipeline.setReducedMotion(this.settings.reducedMotion);
-    this.renderPipeline.setMotionBlur(this.settings.motionBlur);
-    this.applyGraphicsSettings();
-    this.renderMain();
+    saveSettings(this.settings);
   }
 
   queueRematch() {

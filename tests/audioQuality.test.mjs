@@ -164,6 +164,24 @@ assert.equal(textureSound.weaponLoops.get("near-flame").nodes.length, 1, "a main
 assert.equal(textureSound.continuousSources.size, 1, "the complete per-weapon loop remains accounted inside the sustained-source budget");
 textureSound.stopAll();
 
+const sliderMix = new SoundBoard();
+sliderMix.context = context;
+const mixBusNames = ["music", "ambience", "weapon", "impact", "movement", "ui"];
+for (const name of mixBusNames) sliderMix.buses[name] = audioNode();
+const sliderGains = new Map();
+for (const percent of [0, 1, 2, 100]) {
+  assert.deepEqual(sliderMix.setMix({ music: percent, effects: percent, ambience: percent }), { music: percent, effects: percent, ambience: percent }, `${percent}% remains a percentage for every mix slider`);
+  sliderGains.set(percent, Object.fromEntries(mixBusNames.map((name) => [name, sliderMix.buses[name].gain.value])));
+}
+for (const name of mixBusNames) {
+  const gain = (percent) => sliderGains.get(percent)[name];
+  assert.equal(gain(0), 0, `0% mutes the ${name} bus`);
+  assert.ok(gain(1) > 0 && gain(1) < gain(2) && gain(2) < gain(100), `${name} gets steadily louder from 1% through 2% to 100%`);
+  assert.ok(Math.abs(gain(1) / gain(100) - .0001) < 1e-9, `1% keeps ${name} at the intended low perceptual gain instead of full volume`);
+}
+assert.deepEqual(sliderMix.setMix({ music: -1, effects: -1, ambience: -1 }), { music: 0, effects: 0, ambience: 0 }, "mix percentages below zero clamp to silence");
+assert.deepEqual(sliderMix.setMix({ music: 101, effects: 101, ambience: 101 }), { music: 100, effects: 100, ambience: 100 }, "mix percentages above 100 clamp to the maximum");
+
 sound.buses.music = audioNode();
 sound.buses.ambience = audioNode();
 sound.musicFilter = audioNode();

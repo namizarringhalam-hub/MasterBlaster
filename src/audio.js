@@ -580,9 +580,9 @@ export class SoundBoard {
 
   setMix({ music, effects, ambience } = {}) {
     const now = this.context?.currentTime || 0;
-    if (Number.isFinite(music)) this.mix.music = clamp(music > 1 ? music : music * 100, 0, 100);
-    if (Number.isFinite(effects)) this.mix.effects = clamp(effects > 1 ? effects : effects * 100, 0, 100);
-    if (Number.isFinite(ambience)) this.mix.ambience = clamp(ambience > 1 ? ambience : ambience * 100, 0, 100);
+    if (Number.isFinite(music)) this.mix.music = clamp(music, 0, 100);
+    if (Number.isFinite(effects)) this.mix.effects = clamp(effects, 0, 100);
+    if (Number.isFinite(ambience)) this.mix.ambience = clamp(ambience, 0, 100);
     this.buses.music?.gain.setTargetAtTime(this._musicBusGain(), now, .04);
     const effectCurve = (this.mix.effects / 100) ** 2;
     for (const [name, base] of Object.entries({ weapon: .88, impact: .82, movement: .48, ui: .7 })) this.buses[name]?.gain.setTargetAtTime(base * effectCurve, now, .04);

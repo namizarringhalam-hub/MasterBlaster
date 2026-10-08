@@ -147,7 +147,7 @@ assert.match(mainSource, /addEventListener\("pointerdown", this\.resumeAudioGest
 assert.match(mainSource, /resumeAudioAfterReload\(\)[\s\S]*?startAmbience\(this\.world\?\.theme\.id\)[\s\S]*?startMusic\("combat", this\.seed\)[\s\S]*?return true/, "rematch audio restoration includes the full ambience and music mix");
 assert.match(renderPipelineSource, /disposePipelineResources\(\)[\s\S]*?scenePass[\s\S]*?highLoadScenePass[\s\S]*?bloomPass[\s\S]*?highLoadBloom[\s\S]*?aoPass/, "rematches release scene, bloom, and ambient-occlusion render targets");
 assert.match(mainSource, /sessionStorage\.setItem\("blaster-force-webgl", "1"\)[\s\S]*?location\.reload\(\)/, "WebGPU device loss restarts through the WebGL2 recovery path");
-assert.match(mainSource, /renderPipeline\.setReducedMotion\(this\.settings\.reducedMotion\)/, "reduced-motion changes immediately retune the active pipeline");
+assert.match(mainSource, /applyGraphicsEffects\(\)\s*\{[\s\S]*?renderPipeline\?\.setReducedMotion\(this\.settings\.reducedMotion\)/, "live graphics application retunes the active pipeline for reduced motion");
 assert.match(mainSource, /data-setting="graphics"[\s\S]*?Object.keys\(GRAPHICS_PRESETS\)/, "settings expose all benchmark presets");
 assert.match(mainSource, /this\.pendingGraphicsEffects = this\.pendingPipelineEffects = true/, "graphics changes immediately retune the active render pipeline");
 assert.match(renderPipelineSource, /this\.reducedMotion = Boolean\(reducedMotion\)[\s\S]*?highLoadBloom = bloom\(this\.highLoadScenePass\.getTextureNode\("bloom"\), this\.reducedMotion \?/, "a newly-created bloom profile inherits Reduced Motion");

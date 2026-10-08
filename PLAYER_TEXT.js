@@ -252,7 +252,7 @@ export const PLAYER_TEXT = {
     title: "Settings",
     groups: { feedback: "Combat feedback", sound: "Sound & volume" },
     graphicsPanel: {
-      title: "Graphics", live: "Presets apply defaults. Individual adjustments show Custom and save automatically. Changes apply live, except MSAA, which needs a reload. Changes may pause rendering while shaders compile.",
+      title: "Graphics", live: "All changes save automatically. Presets apply defaults; individual adjustments show Custom. Changes apply live, except MSAA, which needs a reload. Changes may pause rendering while shaders compile.",
       back: "← BACK", reset: "RESTORE PRESET DEFAULTS", custom: "Custom", detail: "Resolution & detail",
       off: "Off", reload: "APPLY MSAA & RELOAD", reloadNote: "MSAA change pending. Reloading ends the current match.",
       options: { renderScale: "Render resolution", msaaSamples: "MSAA samples (reload required)", shadowMapSize: "Shadow map size",
@@ -295,8 +295,7 @@ export const PLAYER_TEXT = {
       high: "75% resolution, 2K shadows, FXAA and full WebGPU effects, including reflections and ambient occlusion.",
       ultra: "Native resolution, 4× MSAA plus FXAA, 4K shadows and 32-sample ambient occlusion. Maximum quality with a substantial performance cost.",
       note: "Resolution uses device pixel ratio capped at 1.65 before scaling. WebGL supports bloom and FXAA; advanced effects require WebGPU. Performance depends on your hardware and the scene."
-    },
-    save: "SAVE SETTINGS"
+    }
   },
 
   credits: {
