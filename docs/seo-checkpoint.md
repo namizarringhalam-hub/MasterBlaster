@@ -1,5 +1,40 @@
 # SEO checkpoint — 2026-09-18
 
+## Latest recovery checkpoint — 8 October 2026, daily 09:00 follow-up
+
+- Read conversation, AGENTS.md, SEO/community/growth and second/third-wave
+  checkpoints. Preserved all paused/manual-only/moderation/privacy constraints.
+  No submissions, replies, accounts, moderator messages or resends this run.
+- New PaperCroft Community Average 8/10 and two displayed votes (previously
+  one); categories recorded in community/third-wave registers. Official 7.9/10
+  unchanged. No rater identity/count, written rationale or recording link.
+- Checked HTML5, Three.js, SlowDen, IndieDB profile and five gallery pages;
+  successful written-reply checks found no new comments/IDs. GameDev.net
+  discussion blocked; ESReality body unreadable; Reddit removals unchanged.
+  All directory/editorial outcomes and coverage limits in community register.
+- Verified brand mail: no new reply/bounce/newsletter; Spam/Trash empty. Xander
+  recording request still awaiting response. Weekly feature expected tomorrow,
+  9 Oct; archive currently starts at issue 665 (2 Oct), not published coverage.
+  Free Play Games Request Game form is mailto to the already failed info address;
+  no verified working route or resend. No duplicate publication/submission.
+- Existing native tracker maintained with seven applied guarded patches,
+  sequence 6; targeted readback verifies all affected statuses/feedback.
+  No draft/sharing/scheduler change. Initial browser inventory timed out;
+  retry recovered, cause unknown. Research tab muted before game iframe load.
+- Read-only performance review: stored PageSpeed JSON is a summary without
+  heading-font waterfall/paint trace. Mobile LCP remains last verified 2.9 s;
+  target under 2 s unmet. No evidence justifies a source change or repeat PSI
+  measurement on unchanged code. Next technical step remains heading-font
+  arrival/paint timing; preserve gameplay and visuals.
+- Documentation only: community-outreach-targets.md, outreach-second-wave-
+  checkpoint.md, outreach-third-wave-checkpoint.md, seo-checkpoint.md. Page
+  readback and git diff --check passed; diff review confirms only these four
+  related files. Commit/push this validated documentation with brand identity.
+  Preserve unrelated untracked %SystemDrive%/ directory. No build/test claim
+  for read-only source inspection; diagnostic missing-file exit was not a pass.
+- Next: daily activity/mail checks, actual Weekly feature/anchor, Xander
+  recording reply, GameDev.net discussion access and existing Rando user test.
+
 ## Xander recording request — 7 October 2026, 09:26 CEST
 
 - User explicitly authorized an email asking Xander for the recording in the

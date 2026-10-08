@@ -1,5 +1,22 @@
 # Master Blaster: second outreach wave
 
+## Latest daily check — 8 October 2026
+
+- Three.js topic 95005 fresh guest read: original post only, no written replies;
+  one previously reported like unchanged, 31 displayed views. No new reply IDs.
+- Verified brand Inbox/All mail/Spam/Trash at 09:03 CEST: no new reply, bounce or
+  newsletter issue; Spam/Trash empty. Weekly acceptance/subscription unchanged.
+  Expected feature tomorrow, Friday 9 Oct. Live archive still starts with issue
+  665 (2 Oct); no published feature/backlink verified and no guessed issue URL.
+- BrowserGames.gg home and fresh Shooter category, iogames.fun rendered index,
+  Three.js Resources Games and Games-filtered Showcase: no Master Blaster
+  listing verified in checked surfaces. Native iogames.fun search still does
+  not expose distinct results; completeness unconfirmed. No resubmissions.
+- Alpha Beta Gamer/Indie Games Plus recent coverage and focused domain searches
+  show no verified feature. No mail reply; Sent remains delivery unconfirmed.
+- Existing tracker/register refreshed. Three.js manual-prose constraint,
+  moderation holds, privacy constraints and existing daily schedule preserved.
+
 ## Latest daily check — 7 October 2026
 
 - Three.js topic 95005 fresh guest read 09:03 CEST: original post only,
