@@ -173,7 +173,7 @@ export function validateImpactProposal({ shot, weapon, impact, now = Date.now() 
   return distance <= Math.min(maximumRange, possibleTravel) && followsAuthoritativeProjectilePath(shot, impact, weapon, ageMs);
 }
 
-export function validateHitProposal({ shot, attacker, target, weapon, impact, phase = "impact", now = Date.now(), seed = "", structuralHealth = new Map(), arenaRevision = 2, structuralFailures }) {
+export function validateHitProposal({ shot, attacker, target, weapon, impact, incomingDirection, phase = "impact", now = Date.now(), seed = "", structuralHealth = new Map(), arenaRevision = 2, structuralFailures }) {
   if (!shot || !attacker || !target?.alive || !(weapon?.damage > 0) || shot.playerId !== attacker.id || shot.weaponId !== weapon.id) return null;
   const ageMs = now - shot.firedAt;
   if (ageMs < 0 || ageMs > shotLifetimeMs(weapon)) return null;
@@ -203,7 +203,7 @@ export function validateHitProposal({ shot, attacker, target, weapon, impact, ph
     const damage = weapon.executeThreshold && target.health <= weapon.executeThreshold
       ? target.health
       : aimedHead ? headshotDamage(canonicalDamage * factor, true) : Math.max(1, Math.ceil(canonicalDamage * factor));
-    return { damage, headshot: Boolean(aimedHead), push: canonicalPush(weapon, origin, targetCenter, factor), strategy };
+    return { damage, headshot: Boolean(aimedHead), push: canonicalPush(weapon, origin, targetCenter, factor), strategy, source: { ...origin } };
   }
 
   if (strategy === "chain") {
@@ -213,7 +213,7 @@ export function validateHitProposal({ shot, attacker, target, weapon, impact, ph
     if (length(subtract(targetCenter, from)) > maximumDistance || lineBlockedByStructure(from, targetCenter, seed, structuralHealth, arenaRevision, structuralFailures, now)) return null;
     if (!priorPositions.length && dot(direction, normalize(offset)) <= .45) return null;
     const jump = priorPositions.length;
-    return { damage: headshotDamage(Math.max(1, Math.ceil(canonicalDamage * .72 ** jump)), Boolean(aimedHead)), headshot: Boolean(aimedHead), push: canonicalPush(weapon, from, targetCenter, .72 ** jump), strategy };
+    return { damage: headshotDamage(Math.max(1, Math.ceil(canonicalDamage * .72 ** jump)), Boolean(aimedHead)), headshot: Boolean(aimedHead), push: canonicalPush(weapon, from, targetCenter, .72 ** jump), strategy, source: { ...from } };
   }
 
   if (!impact) return null;
@@ -226,7 +226,15 @@ export function validateHitProposal({ shot, attacker, target, weapon, impact, ph
     && followsAuthoritativeProjectilePath(shot, impact, weapon, ageMs, .12 + projectileHitRadius(weapon));
   if (strategy === "projectile") {
     if (targetDistance > PLAYER_RADIUS + (weapon.projectileRadius || .2) + .7) return null;
-    return { damage: headshot ? headshotDamage(canonicalDamage, true) : Math.max(1, Math.ceil(canonicalDamage)), headshot, push: canonicalPush(weapon, origin, targetCenter), strategy };
+    const source = weapon.bounces || weapon.returning ? null : { ...origin };
+    let bearing = null;
+    if (weapon.bounces || weapon.returning) {
+      // ponytail: client trajectory metadata is cosmetic only; damage still uses the authoritative checks above.
+      const magnitude = incomingDirection && length(incomingDirection);
+      bearing = incomingDirection && [incomingDirection.x, incomingDirection.y, incomingDirection.z].every(Number.isFinite)
+        && Number.isFinite(magnitude) && magnitude > .0001 ? normalize(incomingDirection) : null;
+    }
+    return { damage: headshot ? headshotDamage(canonicalDamage, true) : Math.max(1, Math.ceil(canonicalDamage)), headshot, push: canonicalPush(weapon, origin, targetCenter), strategy, source, incomingDirection: bearing };
   }
 
   const radius = (phase === "hazard" ? weapon.visualRadius ?? weapon.radius : weapon.radius) || 0;
@@ -236,11 +244,11 @@ export function validateHitProposal({ shot, attacker, target, weapon, impact, ph
     const perTick = weapon.hazard === "napalm" ? 4 * (.35 + factor * .65)
       : weapon.hazard === "black_hole" ? 2 * (.35 + factor * .65)
         : .6 + factor * .8;
-    return { damage: Math.max(1, Math.ceil(perTick * (target.id === attacker.id ? .35 : 1))), push: canonicalPush(weapon, impact, targetCenter, factor), strategy: "hazard" };
+    return { damage: Math.max(1, Math.ceil(perTick * (target.id === attacker.id ? .35 : 1))), push: canonicalPush(weapon, impact, targetCenter, factor), strategy: "hazard", source: { ...impact } };
   }
   return {
     damage: headshot ? headshotDamage(canonicalDamage, true) : Math.max(1, Math.ceil(canonicalDamage * factor * (target.id === attacker.id ? .35 : 1))),
     headshot,
-    push: canonicalPush(weapon, impact, targetCenter, factor), strategy
+    push: canonicalPush(weapon, impact, targetCenter, factor), strategy, source: { ...impact }
   };
 }

@@ -849,7 +849,7 @@ export class MatchRoom extends DurableObject {
       if (prior >= limit) continue;
       const impact = message.impact ? sanitizeVector(message.impact) : null;
       const validation = validateHitProposal({
-        shot, attacker, target, weapon, impact, phase: message.phase,
+        shot, attacker, target, weapon, impact, incomingDirection: message.incomingDirection, phase: message.phase,
         now, seed: this.meta.seed, structuralHealth: this.structuralHealth, arenaRevision: this.meta.arenaRevision || 1, structuralFailures: this.structuralFailures
       });
       if (!validation) return null;
@@ -886,6 +886,7 @@ export class MatchRoom extends DurableObject {
     this.broadcast({
       type: "damage", attackerId: attacker.id, targetId: target.id, weaponId: weapon.id,
       damage, health: target.health, killed, headshot: validation.headshot === true, push: validation.push, respawnAt: target.respawnAt,
+      source: validation.source || null, incomingDirection: validation.incomingDirection || null,
       lifeSequence: target.deaths, scores: Object.fromEntries(this.allPlayers().map((player) => [player.id, player.score])), serverTime: now
     });
     return killed;

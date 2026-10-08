@@ -24,13 +24,15 @@ describe("MatchRoom durable authority", () => {
         attacker.lastFireAt = {};
         const fire = { playerId: attacker.id, weaponId: "machine_gun", slotIndex: 0, shotId: crypto.randomUUID(), direction: { x: 1, y: pitch, z: 0 } };
         await room.handleFire(socket, fire);
+        const source = { ...room.recentFires.get(attacker.id).at(-1).origin };
         const hit = { attackerId: attacker.id, targetId: target.id, weaponId: fire.weaponId, shotId: fire.shotId,
-          impact: { x: 8, y: 2.08, z: -.5 }, headshot: true, damage: 9999, headshotDamageMultiplier: 9999 };
+          impact: { x: 8, y: 2.08, z: -.5 }, headshot: true, damage: 9999, headshotDamageMultiplier: 9999,
+          source: { x: 999, y: 999, z: 999 }, incomingDirection: { x: 0, y: 0, z: 1 } };
         const before = target.health;
         await room.handleHit(socket, hit);
         const damage = WEAPONS.machine_gun.damage * (expectedHeadshot ? 2 : 1);
         expect(target.health).toBe(before - damage);
-        expect(broadcasts.at(-1)).toMatchObject({ type: "damage", headshot: expectedHeadshot, damage });
+        expect(broadcasts.at(-1)).toMatchObject({ type: "damage", headshot: expectedHeadshot, damage, source, incomingDirection: null });
         await room.handleHit(socket, hit);
         expect(target.health).toBe(before - damage);
       }
@@ -67,9 +69,45 @@ describe("MatchRoom durable authority", () => {
       await room.handleHit(socket, hit);
       expect(target.alive).toBe(false);
       expect(attacker.score).toBe(1);
-      expect(broadcasts.at(-1)).toMatchObject({ type: "damage", killed: true, scores: { shooter: 1 } });
+      expect(broadcasts.at(-1)).toMatchObject({ type: "damage", killed: true, scores: { shooter: 1 }, source: hit.impact, incomingDirection: null });
       await room.handleHit(socket, hit);
       expect(attacker.score).toBe(1);
+      if (room.persistenceTask) await room.persistenceTask;
+    });
+  });
+
+  it("bounds trajectory feedback without trusting it to authorize damage", async () => {
+    const stub = env.MATCH_ROOMS.getByName("DAMAGE-BEARING");
+    await runInDurableObject(stub, async (room) => {
+      await room.ready;
+      room.meta = { seed: "AUTHORITY", phase: "playing", ended: false, endsAt: Date.now() + 60_000, targetScore: 10, arenaRevision: 2 };
+      const attacker = { id: "shooter", bot: true, alive: true, health: 100, score: 0, deaths: 0,
+        loadout: ["blaster", "ricochet_cannon", "boomerang_blade"], position: { x: 0, y: 0, z: 0 } };
+      const target = { ...attacker, id: "target", position: { x: 8, y: 0, z: 0 } };
+      room.bots.set(attacker.id, attacker);
+      room.bots.set(target.id, target);
+      const socket = { deserializeAttachment: () => ({ id: attacker.id }) };
+      const broadcasts = [];
+      room.broadcast = (message) => broadcasts.push(message);
+      for (const [weaponId, incomingDirection, expected] of [
+        ["blaster", { x: 0, y: 30, z: -40 }, null],
+        ["ricochet_cannon", { x: 0, y: 30, z: -40 }, { x: 0, y: .6, z: -.8 }],
+        ["boomerang_blade", null, null],
+        ["ricochet_cannon", { x: Number.MAX_VALUE, y: Number.MAX_VALUE, z: Number.MAX_VALUE }, null]
+      ]) {
+        target.health = 100;
+        const shot = { id: crypto.randomUUID(), playerId: attacker.id, weaponId, firedAt: Date.now() - 200,
+          origin: { x: 0, y: 1.2, z: 0 }, direction: { x: 1, y: 0, z: 0 }, hits: {}, hitPositions: [] };
+        room.recentFires.set(attacker.id, [shot]);
+        const hit = { attackerId: attacker.id, targetId: target.id, weaponId, shotId: shot.id,
+          impact: { x: 8, y: 1.05, z: 0 }, incomingDirection, source: { x: 999, y: 0, z: 999 }, damage: 999 };
+        await room.handleHit(socket, { ...hit, impact: { x: 1000, y: 1.05, z: 0 } });
+        expect(target.health).toBe(100);
+        await room.handleHit(socket, hit);
+        expect(target.health).toBe(100 - WEAPONS[weaponId].damage);
+        expect(broadcasts.at(-1)).toMatchObject({ type: "damage", damage: WEAPONS[weaponId].damage,
+          source: weaponId === "blaster" ? shot.origin : null, incomingDirection: expected });
+      }
       if (room.persistenceTask) await room.persistenceTask;
     });
   });

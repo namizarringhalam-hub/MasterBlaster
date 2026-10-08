@@ -160,6 +160,7 @@ class BlasterBattle {
     this.listenerDirection = new THREE.Vector3();
     this.aimDirection = new THREE.Vector3();
     this.damageDirection = new THREE.Vector3();
+    this.damageIndicators = [];
     this.aimTargets = [];
     this.nearestAudioDistances = new Float64Array(6);
     this.nearestAudioIds = Array(6);
@@ -210,7 +211,6 @@ class BlasterBattle {
     this.matchStartQueued = false;
     this.hideMatchLoadingAfterFrame = false;
     this.targetHealthTimer = 0;
-    this.damageDirectionTimer = 0;
     this.botTargets = new Map();
     this.multiplayer = null;
     this.onlineWelcome = null;
@@ -533,7 +533,7 @@ class BlasterBattle {
     clearTimeout(this.damageVignetteTimer);
     clearTimeout(this.headshotTimer);
     clearTimeout(this.targetHealthTimer);
-    clearTimeout(this.damageDirectionTimer);
+    this.damageIndicators?.splice(0);
     clearTimeout(this.privateStartTimer);
     this.privateStartTimer = 0;
     this.networkRecovering = false;
@@ -1902,7 +1902,9 @@ class BlasterBattle {
     if (target.alive) applyWeaponStatus(target, weapon);
     this.combatMusicPulse = Math.max(this.combatMusicPulse, target === this.players[0] || attacker === this.players[0] ? .8 : .45);
     this.spawnImpact(target.position, target, weapon, attacker);
-    this.showCombatFeedback(target, attacker, weapon, message.killed || killed, message.headshot === true);
+    this.showCombatFeedback(target, attacker, weapon, message.killed || killed, message.headshot === true, {
+      source: message.source, incomingDirection: message.incomingDirection, directionalSourceKnown: true
+    });
     if (message.killed || killed) {
       target.networkRespawnId = "";
       target.networkRespawnSpawnIndex = -1;
@@ -1935,7 +1937,7 @@ class BlasterBattle {
     target.networkRespawnSpawnIndex = -1;
     this.combatMusicPulse = 1;
     this.spawnImpact(target.position, target, STRUCTURAL_COLLAPSE, attacker);
-    this.showCombatFeedback(target, attacker, STRUCTURAL_COLLAPSE, message.killed || killed);
+    this.showCombatFeedback(target, attacker, STRUCTURAL_COLLAPSE, message.killed || killed, false, { suppressDirection: true });
     if (message.killed || killed) {
       this.networkRespawnRequests.delete(target.id);
       this.releaseGrapple(target);
@@ -1980,6 +1982,7 @@ class BlasterBattle {
   }
 
   renderHud() {
+    this.damageIndicators.length = 0;
     ui.innerHTML = `
       <div class="hud">
         <section class="combatant left">
@@ -2001,7 +2004,7 @@ class BlasterBattle {
         <div class="damage-vignette" data-damage-vignette></div>
         <div class="headshot-announcement" data-headshot role="status" aria-live="polite"></div>
         <div class="motion-vignette" data-motion-vignette></div>
-        <div class="incoming-direction" data-incoming-direction aria-hidden="true"><i></i></div>
+        <div class="incoming-directions" data-incoming-direction aria-hidden="true">${Array.from({ length: 6 }, () => '<div class="incoming-direction" data-incoming-hit><i></i><b></b></div>').join("")}</div>
         <div class="reticle" data-reticle aria-hidden="true"><i></i></div>
         <div class="target-health" data-target-health aria-live="polite">
           <span><b data-target-name>${TEXT.hud.enemy}</b><strong data-target-value>100</strong></span>
@@ -2054,6 +2057,7 @@ class BlasterBattle {
       scoreboard: ui.querySelector("[data-scoreboard]"),
       reticle: ui.querySelector("[data-reticle]"),
       incomingDirection: ui.querySelector("[data-incoming-direction]"),
+      incomingHits: [...ui.querySelectorAll("[data-incoming-hit]")],
       targetHealth: ui.querySelector("[data-target-health]"),
       targetName: ui.querySelector("[data-target-name]"),
       targetValue: ui.querySelector("[data-target-value]"),
@@ -2899,6 +2903,7 @@ class BlasterBattle {
     const shot = {
       audioId: `projectile-${player.id}-${weapon.id}-${performance.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
       mesh, owner: player, weapon, velocity, radius,
+      sourcePosition: mesh.position.clone(),
       life: projectileLifetime(weapon),
       age: 0, bounces: 0, hitTargets: new Set(),
       previousPosition: new THREE.Vector3(),
@@ -2964,7 +2969,7 @@ class BlasterBattle {
     const wallDistance = wall ? start.distanceTo(wall) : 1000;
     const hits = this.hitscanTargets(player, start, aim, wallDistance).slice(0, (weapon.penetration || 0) + 1);
     for (const { target, distance } of hits) {
-      this.damageTarget(target, weapon.damage, aim.clone().multiplyScalar(weapon.recoil * 1.7), player, weapon, { point: start.clone().addScaledVector(aim, distance) });
+      this.damageTarget(target, weapon.damage, aim.clone().multiplyScalar(weapon.recoil * 1.7), player, weapon, { point: start.clone().addScaledVector(aim, distance), source: start });
     }
     const end = hits.length && !weapon.penetration
       ? start.clone().addScaledVector(aim, hits[0].distance)
@@ -3027,7 +3032,7 @@ class BlasterBattle {
       const push = weapon.beamPull
         ? player.position.clone().sub(target.position).normalize().multiplyScalar(weapon.beamPull)
         : direction.clone().multiplyScalar(weapon.recoil * 1.7);
-      this.damageTarget(target, weapon.damage, push, player, weapon, { point: start.clone().addScaledVector(direction, hitDistance) });
+      this.damageTarget(target, weapon.damage, push, player, weapon, { point: start.clone().addScaledVector(direction, hitDistance), source: start });
     }
     if (targets.length && !weapon.penetration) end = start.clone().addScaledVector(direction, targets[0].distance);
     if (damagesTerrain && wall && !targets.length && !weapon.penetration) this.damageTerrain(wall, weapon, player);
@@ -3060,7 +3065,7 @@ class BlasterBattle {
       const head = jump === 0 ? aimedHeadContact(target, origin, player.aim) : null;
       const end = head ? new THREE.Vector3(head.x, head.y, head.z) : target.position.clone().add(new THREE.Vector3(0, 1.05, 0));
       this.spawnTracer(from, end, weapon, player, .18);
-      this.damageTarget(target, Math.ceil(weapon.damage * Math.pow(.72, jump)), target.position.clone().sub(from).normalize().multiplyScalar(weapon.recoil * 1.5), player, weapon, { point: end });
+      this.damageTarget(target, Math.ceil(weapon.damage * Math.pow(.72, jump)), target.position.clone().sub(from).normalize().multiplyScalar(weapon.recoil * 1.5), player, weapon, { point: end, source: from });
       hitTargets.add(target);
       from = end;
     }
@@ -3086,7 +3091,7 @@ class BlasterBattle {
       const factor = flameConeFactor(origin, direction, targetPoint, target.radius, weapon.reach, weapon.coneAngle);
       if (factor <= 0 || this.world.ropeBlocked(origin, targetPoint)) continue;
       const push = direction.clone().multiplyScalar(weapon.recoil * 1.7);
-      this.damageTarget(target, weapon.damage * factor, push, player, weapon, { point: targetPoint });
+      this.damageTarget(target, weapon.damage * factor, push, player, weapon, { point: targetPoint, source: origin });
     }
   }
 
@@ -3103,7 +3108,7 @@ class BlasterBattle {
       if (offset.length() > weapon.reach + target.radius || offset.normalize().dot(player.aim) < 1 - weapon.arc) continue;
       if (this.world.ropeBlocked(origin, targetPoint)) continue;
       const damage = weapon.executeThreshold && !target.isDecoy && target.health <= weapon.executeThreshold ? target.health : weapon.damage;
-      this.damageTarget(target, damage, player.aim.clone().multiplyScalar(weapon.recoil * 1.8).setY(weapon.recoil * .45), player, weapon, { point: targetPoint });
+      this.damageTarget(target, damage, player.aim.clone().multiplyScalar(weapon.recoil * 1.8).setY(weapon.recoil * .45), player, weapon, { point: targetPoint, source: origin });
     }
     this.spawnTracer(origin, end, weapon, player, .12, Math.max(.12, weapon.arc * .35));
   }
@@ -3193,7 +3198,9 @@ class BlasterBattle {
               this.finishProjectile(index, shot);
             } else {
               this.damageTarget(target, shot.weapon.damage, shot.velocity.clone().normalize().multiplyScalar(shot.weapon.recoil * 1.7), shot.owner, shot.weapon, {
-                point: shot.mesh.position.clone(), direction: shot.velocity.clone(), sourceSlot: shot.sourceSlot, shotId: shot.networkShotId, hitRadius: shot.radius
+                point: shot.mesh.position.clone(), direction: shot.velocity.clone(),
+                source: shot.weapon.bounces || shot.weapon.returning ? null : shot.sourcePosition,
+                sourceSlot: shot.sourceSlot, shotId: shot.networkShotId, hitRadius: shot.radius
               });
               shot.hitTargets.add(target.id);
               if (shot.remainingPenetration > 0) {
@@ -3336,7 +3343,7 @@ class BlasterBattle {
       const selfScale = target === shot.owner ? .35 : 1;
       const push = targetPoint.clone().sub(position).setY(.18).normalize().multiplyScalar((8 + shot.weapon.recoil) * factor * (shot.weapon.pull ? -1 : 1));
       const headshot = target !== shot.owner && headContact(target, position, shot.radius);
-      this.damageTarget(target, headshot ? shot.weapon.damage : Math.ceil(shot.weapon.damage * factor * selfScale), push, shot.owner, shot.weapon, { point: position, phase: "impact", shotId: shot.networkShotId, headshot });
+      this.damageTarget(target, headshot ? shot.weapon.damage : Math.ceil(shot.weapon.damage * factor * selfScale), push, shot.owner, shot.weapon, { point: position, source: position, phase: "impact", shotId: shot.networkShotId, headshot });
       if (shot.weapon.grappleDisrupt && target.grapple) this.releaseGrapple(target);
     }
     if (shot.weapon.terrainRadius > 0 || shot.weapon.structureDamage > 0) this.damageTerrain(position, shot.weapon, shot.owner, shot.networkShotId);
@@ -3494,7 +3501,7 @@ class BlasterBattle {
             damage = .6 + factor * .8;
             push.set(-offset.z, 8, offset.x).normalize().multiplyScalar(13 * factor).setY(7 * factor);
           }
-          this.damagePlayer(player, Math.ceil(damage * (player === hazard.owner ? .35 : 1)), push, hazard.owner, hazard.weapon, { point: hazard.mesh.position, phase: "hazard", shotId: hazard.networkShotId });
+          this.damagePlayer(player, Math.ceil(damage * (player === hazard.owner ? .35 : 1)), push, hazard.owner, hazard.weapon, { point: hazard.mesh.position, source: hazard.mesh.position, phase: "hazard", shotId: hazard.networkShotId });
         }
       }
       if (hazard.life <= 0) {
@@ -3595,7 +3602,7 @@ class BlasterBattle {
       this.combatMusicPulse = Math.max(this.combatMusicPulse, killed ? 1 : .76);
     }
     this.spawnImpact(target.position, target, weapon, attacker);
-    this.showCombatFeedback(target, attacker, weapon, killed, headshot);
+    this.showCombatFeedback(target, attacker, weapon, killed, headshot, context);
     if (!killed) return;
     this.releaseGrapple(target);
     const attackerIndex = this.players.indexOf(attacker);
@@ -3604,7 +3611,7 @@ class BlasterBattle {
     this.respawnTimers[targetIndex] = 2.8;
   }
 
-  showCombatFeedback(target, attacker, weapon, killed, headshot = false) {
+  showCombatFeedback(target, attacker, weapon, killed, headshot = false, context = {}) {
     if (!this.hud) return;
     if (killed && target === this.players[0]) this.localEliminatorName = attacker?.name || TEXT.hud.environment;
     if (attacker === this.players[0]) {
@@ -3636,9 +3643,9 @@ class BlasterBattle {
         this.targetHealthTimer = setTimeout(() => this.hud?.targetHealth?.classList.remove("visible"), 1450);
       }
     }
-    if (target === this.players[0] && attacker) {
+    if (target === this.players[0]) {
       if (!killed) this.sound.play("damage", weapon, { local: true });
-      const damageColor = `#${new THREE.Color(attacker.accent).getHexString()}`;
+      const damageColor = "#ff4668";
       this.hud.damageVignette.style.setProperty("--damage-color", damageColor);
       this.hud.damageVignette.classList.remove("visible");
       void this.hud.damageVignette.offsetWidth;
@@ -3648,14 +3655,7 @@ class BlasterBattle {
         () => this.hud?.damageVignette?.classList.remove("visible"),
         this.settings.reducedMotion ? 120 : 520
       );
-      if (attacker !== target) {
-        const angle = damageIndicatorAngle(this.cameraYaw, this.damageDirection.copy(attacker.position).sub(target.position));
-        setStyle(this.hud.incomingDirection, "--incoming-angle", `${angle.toFixed(1)}deg`);
-        setStyle(this.hud.incomingDirection, "--damage-color", damageColor);
-        this.hud.incomingDirection.classList.add("visible");
-        clearTimeout(this.damageDirectionTimer);
-        this.damageDirectionTimer = setTimeout(() => this.hud?.incomingDirection?.classList.remove("visible"), this.settings.reducedMotion ? 300 : 720);
-      }
+      this.addDamageIndicator(target, attacker, context);
     }
     if (!killed || !attacker || attacker === target) return;
     const line = document.createElement("p");
@@ -3668,6 +3668,45 @@ class BlasterBattle {
     line.append(source, document.createTextNode(`  ${weapon?.name || TEXT.hud.impact}  `), victim);
     this.hud.combatLog.prepend(line);
     while (this.hud.combatLog.children.length > 4) this.hud.combatLog.lastElementChild.remove();
+  }
+
+  addDamageIndicator(target, attacker, context = {}, now = performance.now()) {
+    if (context.suppressDirection || !this.hud?.incomingHits?.length) return;
+    const finiteVector = (value) => value && [value.x, value.y, value.z].every(Number.isFinite);
+    const source = finiteVector(context.source) ? context.source
+      : !context.directionalSourceKnown && attacker !== target ? attacker?.position : null;
+    const incoming = finiteVector(context.incomingDirection) ? context.incomingDirection
+      : !context.directionalSourceKnown && !finiteVector(context.source) && finiteVector(context.direction)
+        ? { x: -context.direction.x, y: -context.direction.y, z: -context.direction.z } : null;
+    // A projectile's last approach is more useful than its owner's new position.
+    const incomingDirection = incoming ? new THREE.Vector3(incoming.x, incoming.y, incoming.z) : null;
+    const sourcePosition = !incomingDirection && finiteVector(source) ? new THREE.Vector3(source.x, source.y, source.z) : null;
+    if (!incomingDirection && !sourcePosition) return;
+    const direction = incomingDirection || this.damageDirection.copy(sourcePosition).sub(target.position);
+    if (Math.hypot(direction.x, direction.z) < .00001) return;
+    this.updateDamageIndicators(now);
+    let element = this.hud.incomingHits.find(hit => !this.damageIndicators.some(entry => entry.element === hit));
+    if (!element) element = this.damageIndicators.shift().element;
+    this.damageIndicators.push({ element, source: sourcePosition, incomingDirection, expiresAt: now + 900 });
+    this.updateDamageIndicators(now);
+  }
+
+  updateDamageIndicators(now) {
+    if (!this.damageIndicators?.length || !this.players[0]) return;
+    now ??= performance.now();
+    for (let index = this.damageIndicators.length - 1; index >= 0; index--) {
+      const entry = this.damageIndicators[index];
+      const remaining = entry.expiresAt - now;
+      if (remaining <= 0) {
+        entry.element.classList.remove("visible");
+        this.damageIndicators.splice(index, 1);
+        continue;
+      }
+      const direction = entry.incomingDirection || this.damageDirection.copy(entry.source).sub(this.players[0].position);
+      entry.element.classList.toggle("visible", Math.hypot(direction.x, direction.z) >= .00001);
+      setStyle(entry.element, "--incoming-angle", `${damageIndicatorAngle(this.cameraYaw, direction).toFixed(1)}deg`);
+      setStyle(entry.element, "--incoming-opacity", String(Math.min(1, remaining / 300)));
+    }
   }
 
   spawnImpact(position, target, weapon, attacker) {
@@ -3702,7 +3741,7 @@ class BlasterBattle {
         if (this.isOnlineMatch()) {
           if (this.controlsNetworkPlayer(target)) this.multiplayer.reportCrush(target, event.structureId, event.terrainEventId);
         } else {
-          this.damagePlayer(target, 100, new THREE.Vector3(), attacker, STRUCTURAL_COLLAPSE);
+          this.damagePlayer(target, 100, new THREE.Vector3(), attacker, STRUCTURAL_COLLAPSE, { suppressDirection: true });
         }
         continue;
       }
@@ -3984,6 +4023,7 @@ class BlasterBattle {
     try {
       if (interpolate) this.updateCamera(0); // Mouse view responds on every rendered frame.
       else if (this.state !== "play" || this.paused) this.updateCamera();
+      this.updateDamageIndicators();
       if (this.combatVisuals?.fireballs?.size) this.combatVisuals.updateFireballs();
       this.world?.updatePresentation(this.camera, this.settings.reducedMotion);
       this.renderPipeline.render();

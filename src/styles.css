@@ -543,13 +543,11 @@ dialog[data-modal="pause"]:has(~ dialog[data-modal="graphics"]) { visibility: hi
 .hud[data-player-state="grapple"] .reticle { border-color: #67f2ff; filter: drop-shadow(0 0 12px rgba(74,232,255,.92)); }
 .hud[data-player-state="hit"] .combatant.left { box-shadow: 0 14px 42px rgba(255,49,95,.23), inset 0 1px 0 rgba(255,255,255,.07); }
 
-.incoming-direction { position: absolute; left: 50%; top: 50%; width: 250px; height: 250px; opacity: 0; transform: translate(-50%, -50%) rotate(var(--incoming-angle, 0deg)); transition: opacity .14s ease-out, transform .08s linear; }
-.incoming-direction i { position: absolute; top: 0; left: 50%; width: 76px; height: 22px; transform: translateX(-50%); border-top: 5px solid var(--damage-color, #ff4668); border-radius: 50%; filter: drop-shadow(0 0 5px var(--damage-color, #ff4668)); }
-.incoming-direction i::before, .incoming-direction i::after { content: ""; position: absolute; top: -7px; width: 18px; height: 3px; background: var(--damage-color, #ff4668); }
-.incoming-direction i::before { left: -2px; transform: rotate(28deg); }
-.incoming-direction i::after { right: -2px; transform: rotate(-28deg); }
-.incoming-direction.visible { opacity: .95; }
-.incoming-direction.visible i { animation: incoming-direction-pulse .38s ease-in-out infinite alternate; }
+.incoming-directions { position: absolute; inset: 0; pointer-events: none; }
+.incoming-direction { position: absolute; left: 50%; top: 50%; width: 250px; height: 250px; opacity: 0; transform: translate(-50%, -50%) rotate(var(--incoming-angle, 0deg)); }
+.incoming-direction i { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(from -30deg, #ff4668 0deg 60deg, transparent 60deg); mask: radial-gradient(circle, transparent 61%, #000 62% 69%, transparent 70%); filter: drop-shadow(0 0 3px #3b0010); }
+.incoming-direction b { position: absolute; top: 14px; left: 50%; width: 0; height: 0; transform: translateX(-50%); border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 10px solid #ff4668; filter: drop-shadow(0 1px 2px #17000a); }
+.incoming-direction.visible { opacity: var(--incoming-opacity, 1); }
 
 .target-health { position: absolute; left: 50%; top: calc(50% + 40px); width: min(220px, 48vw); padding: 7px 9px 8px; opacity: 0; transform: translate(-50%, 6px); color: #f3f8fc; background: linear-gradient(90deg, rgba(5,14,24,.9), rgba(12,24,36,.82)); border: 1px solid rgba(255,255,255,.18); border-top-color: #ff5572; box-shadow: 0 8px 24px rgba(0,0,0,.34); clip-path: polygon(0 0, 100% 0, 96% 100%, 4% 100%); transition: opacity .16s ease-out, transform .16s ease-out; }
 .target-health > span { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 5px; }
@@ -613,7 +611,6 @@ dialog[data-modal="pause"]:has(~ dialog[data-modal="graphics"]) { visibility: hi
 @keyframes hit-confirm { 50% { transform: translate(-50%, -50%) scale(.68); filter: drop-shadow(0 0 10px #fff); } }
 @keyframes eliminate-confirm { 45% { transform: translate(-50%, -50%) rotate(45deg) scale(1.45); } }
 @keyframes damage-flash { 0% { opacity: .78; } 100% { opacity: 0; } }
-@keyframes incoming-direction-pulse { to { filter: brightness(1.4); transform: translateX(-50%) scale(1.05); } }
 @keyframes combat-log-in { from { opacity: 0; transform: translateX(18px); } }
 @keyframes motion-tunnel { to { transform: rotate(.42deg) scale(1.024); } }
 @keyframes grapple-speed-pulse { 50% { opacity: calc(.62 + var(--motion, 0) * .34); filter: brightness(1.32); transform: scale(1.018); } }
@@ -850,7 +847,8 @@ summary:focus-visible { outline: 2px solid #52e9ff; outline-offset: 4px; }
   .combat-log { right: 8px; width: 66vw; }
   .grapple-readout { bottom: 80px; max-width: 210px; text-align: center; }
   .perf-readout { display: none; }
-  .incoming-direction { width: 190px; height: 190px; }
+  .incoming-direction { width: 230px; height: 230px; }
+  .incoming-direction b { top: 12px; }
   .target-health { top: calc(50% + 32px); width: min(190px, 56vw); }
 }
 
@@ -975,7 +973,7 @@ summary:focus-visible { outline: 2px solid #52e9ff; outline-offset: 4px; }
 .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation: none !important; transition-duration: .01ms !important; }
 .reduce-motion .motion-vignette { display: none; }
 .reduce-motion .damage-vignette.visible { opacity: .16; }
-.reduce-motion .incoming-direction.visible { opacity: .82; }
+.reduce-motion .incoming-direction.visible { opacity: calc(var(--incoming-opacity, 1) * .82); }
 .reduce-motion .target-health.visible { opacity: 1; }
 
 @media (prefers-reduced-motion: reduce) {

@@ -23,6 +23,49 @@ assert.equal(hitProposalLimit(WEAPONS.needle_launcher), WEAPONS.needle_launcher.
 
 const aligned = validateHitProposal({ shot: shot("machine_gun"), attacker, target, weapon: WEAPONS.machine_gun, now: 1_050, seed: "AUTHORITY" });
 assert.equal(aligned.damage, WEAPONS.machine_gun.damage, "an aligned unobstructed ray applies canonical damage");
+assert.deepEqual(aligned.source, shot("machine_gun").origin, "ray feedback uses its recorded shot origin");
+for (const weaponId of ["machine_gun", "chainsaw", "flamethrower", "arc_lightning"]) {
+  const sourceShot = shot(weaponId);
+  const hit = validateHitProposal({ shot: sourceShot, attacker: player("attacker", -30), target: player("near", 2),
+    weapon: WEAPONS[weaponId], incomingDirection: { x: 0, y: 0, z: 1 }, now: 1_050, seed: "AUTHORITY" });
+  assert.deepEqual(hit.source, sourceShot.origin, `${weaponId} feedback keeps the firing origin after its shooter moves`);
+  assert.equal(hit.incomingDirection, undefined, `${weaponId} ignores client bearing metadata`);
+}
+const chainShot = { ...shot("arc_lightning"), hitPositions: [{ x: 8, y: 1.05, z: 0 }] };
+const chainHit = validateHitProposal({ shot: chainShot, attacker, target: player("chain-target", 8, 0, 8),
+  weapon: WEAPONS.arc_lightning, now: 1_050, seed: "AUTHORITY" });
+assert.deepEqual(chainHit.source, chainShot.hitPositions[0], "chain feedback comes from its previous authoritative hop");
+
+const ballisticWeapon = { ...WEAPONS.blaster, gravity: 5, arcLift: 3 };
+const ballisticShot = shot("blaster", { x: 1, y: .2, z: .5 });
+const ballisticDirection = new THREE.Vector3(1, .2, .5).normalize();
+const ballisticImpact = {
+  x: ballisticDirection.x * ballisticWeapon.projectileSpeed * .1,
+  y: ballisticShot.origin.y + (ballisticDirection.y * ballisticWeapon.projectileSpeed + ballisticWeapon.arcLift) * .1 - .5 * ballisticWeapon.gravity * .1 ** 2,
+  z: ballisticDirection.z * ballisticWeapon.projectileSpeed * .1
+};
+const ballisticHit = validateHitProposal({ shot: ballisticShot, attacker,
+  target: player("ballistic-target", ballisticImpact.x, ballisticImpact.y - 1.05, ballisticImpact.z), weapon: ballisticWeapon,
+  impact: ballisticImpact, incomingDirection: { x: 0, y: 0, z: 1 }, now: 1_150, seed: "AUTHORITY" });
+assert.deepEqual(ballisticHit.source, ballisticShot.origin,
+  "projectile feedback preserves its authoritative firing origin despite gravity, spread or spoofed bearing metadata");
+assert.equal(ballisticHit.incomingDirection, null, "ordinary projectiles use their precise recorded firing position instead of an approximate launch heading");
+
+for (const weaponId of ["ricochet_cannon", "boomerang_blade"]) {
+  const proposal = incomingDirection => validateHitProposal({ shot: shot(weaponId), attacker, target, weapon: WEAPONS[weaponId],
+    impact: { x: 8, y: 1.05, z: 0 }, incomingDirection, now: 1_250, seed: "AUTHORITY" });
+  const baseline = proposal(undefined);
+  assert.equal(baseline.incomingDirection, null, `${weaponId} does not invent a post-bounce or return bearing`);
+  const cosmetic = proposal({ x: 0, y: 30, z: -40 });
+  assert.deepEqual(cosmetic.incomingDirection, { x: 0, y: .6, z: -.8 }, `${weaponId} normalizes cosmetic trajectory metadata`);
+  assert.deepEqual({ ...cosmetic, incomingDirection: null }, baseline, `${weaponId} bearing metadata cannot change canonical damage or push`);
+  for (const invalid of [{ x: Infinity, y: 0, z: 1 }, { x: "1", y: 0, z: 1 }, { x: 0, y: 0, z: 0 }, { x: Number.MAX_VALUE, y: Number.MAX_VALUE, z: Number.MAX_VALUE }]) {
+    assert.deepEqual(proposal(invalid), baseline, `${weaponId} rejects invalid or unbounded bearing metadata`);
+  }
+  assert.equal(validateHitProposal({ shot: shot(weaponId), attacker, target, weapon: WEAPONS[weaponId],
+    impact: { x: 1000, y: 1.05, z: 0 }, incomingDirection: { x: 1, y: 0, z: 0 }, now: 1_250, seed: "AUTHORITY" }), null,
+  `${weaponId} cosmetic direction cannot authorize an impossible hit`);
+}
 assert.equal(validateHitProposal({ shot: shot("machine_gun", { x: -1, y: 0, z: 0 }), attacker, target, weapon: WEAPONS.machine_gun, now: 1_050, seed: "AUTHORITY" }), null, "an opposite-facing claim is rejected");
 assert.equal(validateHitProposal({ shot: shot("machine_gun", { x: 0, y: 0, z: 1 }), attacker, target, weapon: WEAPONS.machine_gun, now: 1_050, seed: "AUTHORITY" }), null, "a ninety-degree claim is rejected");
 assert.equal(validateHitProposal({ shot: shot("machine_gun", { x: 1, y: 0, z: 0 }, 0), attacker, target, weapon: WEAPONS.machine_gun, now: 9_000, seed: "AUTHORITY" }), null, "an expired ray claim is rejected");
@@ -68,6 +111,7 @@ const blast = validateHitProposal({
   impact: { x: 40, y: 1.05, z: 0 }, now: 1_450, seed: "AUTHORITY"
 });
 assert.equal(blast.damage, WEAPONS.rocket_launcher.damage, "a valid projectile impact uses canonical blast damage");
+assert.deepEqual(blast.source, { x: 40, y: 1.05, z: 0 }, "blast feedback originates at its validated explosion center");
 const selfBlast = validateHitProposal({
   shot: rocketShot, attacker, target: attacker, weapon: WEAPONS.rocket_launcher,
   impact: { x: 0, y: 1.05, z: 0 }, now: 1_050, seed: "AUTHORITY"
@@ -145,7 +189,9 @@ for (const [id, [radius, terrainRadius, damage, recoil, structureDamage]] of Obj
       const hazardProposal = current => validateHitProposal({
         shot: authorityShot, attacker, target, weapon: current, impact, phase: "hazard", now: 1_250, seed: "AUTHORITY"
       });
-      assert.deepEqual(hazardProposal(weapon), hazardProposal(original), `${id} lingering hazard reach and per-tick damage remain unchanged`);
+      const hazardHit = hazardProposal(weapon);
+      assert.deepEqual(hazardHit, hazardProposal(original), `${id} lingering hazard reach and per-tick damage remain unchanged`);
+      if (hazardHit) assert.deepEqual(hazardHit.source, impact, `${id} lingering damage feedback originates at its validated hazard center`);
     }
   }
 }

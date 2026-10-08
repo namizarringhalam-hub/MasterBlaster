@@ -300,6 +300,9 @@ export class MultiplayerClient extends EventTarget {
       damage,
       push,
       impact: context.point || null,
+      incomingDirection: context.incomingDirection || (context.direction ? {
+        x: -context.direction.x, y: -context.direction.y, z: -context.direction.z
+      } : null),
       phase: context.phase || "impact"
     });
   }

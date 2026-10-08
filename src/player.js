@@ -1658,7 +1658,7 @@ export function reticleAim(player, cameraOrigin, cameraDirection, world, targets
 }
 
 export function damageIndicatorAngle(cameraYaw, toAttacker) {
-  const delta = Math.atan2(toAttacker.x, toAttacker.z) - cameraYaw;
+  const delta = cameraYaw - Math.atan2(toAttacker.x, toAttacker.z);
   return THREE.MathUtils.radToDeg(Math.atan2(Math.sin(delta), Math.cos(delta)));
 }
 

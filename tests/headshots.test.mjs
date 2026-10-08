@@ -29,7 +29,7 @@ const Game = new Function(...Object.keys(bindings), `return ${controller}`)(...O
 const game = Object.create(Game.prototype);
 let received, feedback;
 Object.assign(game, { players: [attacker, target], isOnlineMatch: () => false, spawnImpact() {},
-  showCombatFeedback(...args) { feedback = args.at(-1); } });
+  showCombatFeedback(...args) { feedback = args[4]; } });
 target.takeHit = (damage) => { received = damage; return false; };
 for (const weapon of Object.values(WEAPONS).filter(weapon => weapon.damage > 0)) {
   game.damagePlayer(target, weapon.damage, new THREE.Vector3(), attacker, weapon, { point: headPoint });

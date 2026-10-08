@@ -153,12 +153,12 @@ assert.match(mainSource, /this\.pendingGraphicsEffects = this\.pendingPipelineEf
 assert.match(renderPipelineSource, /this\.reducedMotion = Boolean\(reducedMotion\)[\s\S]*?highLoadBloom = bloom\(this\.highLoadScenePass\.getTextureNode\("bloom"\), this\.reducedMotion \?/, "a newly-created bloom profile inherits Reduced Motion");
 assert.match(mainSource, /damageVignetteTimer = setTimeout\([\s\S]*?classList\.remove\("visible"\)[\s\S]*?reducedMotion \? 120 : 520/, "the damage vignette clears explicitly even when CSS animations are disabled");
 assert.equal(damageIndicatorAngle(0, new THREE.Vector3(0, 0, 1)), 0, "incoming fire from ahead points to the top of the HUD");
-assert.equal(damageIndicatorAngle(0, new THREE.Vector3(1, 0, 0)), 90, "incoming fire from the right points right");
-assert.equal(damageIndicatorAngle(Math.PI, new THREE.Vector3(1, 0, 0)), -90, "the incoming-fire indicator remains camera-relative after turning around");
+assert.equal(damageIndicatorAngle(0, new THREE.Vector3(-1, 0, 0)), 90, "incoming fire from camera-right points right");
+assert.equal(damageIndicatorAngle(Math.PI, new THREE.Vector3(1, 0, 0)), 90, "the incoming-fire indicator remains camera-relative after turning around");
 assert.match(mainSource, /data-incoming-direction[\s\S]*?data-target-health[\s\S]*?data-target-fill/, "the combat HUD includes directional damage and enemy-health feedback");
 assert.match(mainSource, /attacker === this\.players\[0\][\s\S]*?targetValue[\s\S]*?targetFill[\s\S]*?targetHealth/, "confirmed hits reveal the struck enemy's remaining health");
-assert.match(mainSource, /damageIndicatorAngle\(this\.cameraYaw[\s\S]*?incomingDirection/, "damage feedback rotates from the current camera heading toward the attacker");
-assert.match(stylesSource, /\.incoming-direction\.visible[\s\S]*?\.target-health\.visible[\s\S]*?@keyframes incoming-direction-pulse/, "combat feedback has distinct readable motion and health-bar treatments");
+assert.match(mainSource, /updateDamageIndicators\([\s\S]*?damageIndicatorAngle\(this\.cameraYaw/, "damage feedback continuously rotates from the current camera heading toward its source");
+assert.match(stylesSource, /\.incoming-direction\.visible[\s\S]*?\.target-health\.visible/, "combat feedback has distinct readable direction and health-bar treatments");
 const ropeGeometry = createGrappleRopeGeometry();
 const ropeData = ropeGeometry.attributes.instanceStart.data;
 const ropeBuffer = ropeData.array.buffer;
