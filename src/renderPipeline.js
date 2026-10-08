@@ -232,6 +232,38 @@ export class NeonRenderPipeline {
     } finally { THREE.RendererUtils.restoreRendererState(renderer, state); }
   }
 
+  async prepareRender(valid = () => true) {
+    if (!valid()) return false;
+    if (!this.nativeWebGPU) { this.render(); return valid(); }
+    const backend = this.renderer.backend, create = backend.createRenderPipeline;
+    // Exercise the exact shadow/depth/post graph, including nested pass contexts.
+    // Three skips draws until their async pipelines are ready. Scope this hook to
+    // the synchronous discovery render; normal frames retain the native backend.
+    for (let attempt = 0; attempt < 8; attempt++) {
+      if (!valid()) return false;
+      const pending = [], pipelines = [];
+      try {
+        backend.createRenderPipeline = (object, promises) => {
+          const result = create.call(backend, object, promises ?? pending);
+          pipelines.push(object.pipeline);
+          return result;
+        };
+        try { this.render(); }
+        finally { backend.createRenderPipeline = create; }
+        await Promise.all(pending);
+      } catch (error) {
+        // Keep owners alive even if one shader or render fails before the rest.
+        await Promise.allSettled(pending);
+        throw error;
+      }
+      if (!valid()) return false;
+      // Three resolves native compilation promises even after a shader error.
+      if (pipelines.some(pipeline => backend.get(pipeline).error)) throw Error("Graphics shader compilation failed");
+      if (!pending.length) return true;
+    }
+    throw Error("Graphics pipeline preparation did not settle");
+  }
+
   render() {
     if (this.direct || this.renderQuality === "low") return this.renderer.render(this.scene, this.camera);
     try {

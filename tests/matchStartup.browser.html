@@ -1,7 +1,11 @@
 <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Match startup checks</title><link rel="stylesheet" href="/src/styles.css">
 <div id="app"><canvas id="game-canvas"></canvas><div id="ui-root"></div></div>
-<div id="match-loading" class="rematch-loading" hidden><section class="rematch-loading-card"><h2>Loading</h2><span data-match-seed></span><span data-match-kind></span></section></div>
+<div id="match-loading" class="rematch-loading" hidden><section class="rematch-loading-card">
+<div class="rematch-loading-core" aria-hidden="true"><i></i><i></i><span></span></div>
+<h2>Loading</h2><span data-match-seed></span><span data-match-kind></span>
+<div class="rematch-loading-track" aria-hidden="true"><i></i></div>
+</section></div>
 <aside style="position:fixed;z-index:999;bottom:0;background:#09131d;color:white;padding:8px;font:12px monospace">
 <button id="run" disabled>Test startup and ten replays</button><pre id="metrics">Loading engine</pre></aside>
 <script type="module">

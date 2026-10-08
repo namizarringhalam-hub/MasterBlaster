@@ -22,8 +22,8 @@ export function gameplayPreparationKey(game, seed, version = RESOURCE_VERSION) {
 
 // Exercise the actual render graph, including empty particle/debris pools and
 // off-camera geometry. Restore every temporary change before yielding to UI.
-// Menu-owned resources may compile asynchronously, but their owner must await
-// this task before disposal or handoff. Active-match warmup uses only renders.
+// Resources may compile asynchronously; their owner must await this task before
+// disposal or handoff, including active fighters' detached weapon models.
 export function warmGameplayScene(game, roots, valid = () => true, sceneAtmosphere = null, compileRoots = roots) {
   const pending = (game.graphicsWarmup || Promise.resolve()).catch(() => {}).then(() => renderWarmup(game, roots, valid, sceneAtmosphere, compileRoots));
   game.graphicsWarmup = pending;
@@ -58,7 +58,9 @@ async function renderWarmup(game, roots, valid, sceneAtmosphere, compileRoots) {
           await game.renderPipeline.prepareScene?.(compileRoots, valid);
           if (!valid()) return false;
         }
-        game.renderPipeline.render();
+        if (game.renderPipeline.prepareRender) await game.renderPipeline.prepareRender(valid);
+        else game.renderPipeline.render();
+        if (!valid()) return false;
       } finally {
         for (const { object, visible, culled, matrix } of saved) {
           object.visible = visible;

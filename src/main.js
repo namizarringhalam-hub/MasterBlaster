@@ -514,6 +514,11 @@ class BlasterBattle {
     this.refreshGraphicsControls();
   }
 
+  disposeAfterGraphicsWarmup(dispose) {
+    if (this.preparingGraphics && this.graphicsWarmup) this.graphicsWarmup.then(dispose, dispose);
+    else dispose();
+  }
+
   clearMatch(preserveNetwork = false) {
     this.simulationTiming?.reset();
     this.renderInterpolation?.clear();
@@ -538,15 +543,18 @@ class BlasterBattle {
     this.privateStartTimer = 0;
     this.networkRecovering = false;
     this.hideNetworkReconnecting();
-    this.combatVisuals?.dispose();
+    const visuals = this.combatVisuals, preparation = this.matchPreparation, world = this.world;
+    this.disposeAfterGraphicsWarmup(() => {
+      visuals?.dispose();
+      disposeGameplaySamples(this, preparation);
+      world?.dispose();
+    });
     this.combatVisuals = null;
-    disposeGameplaySamples(this, this.matchPreparation);
     this.matchPreparation = null;
-    this.world?.dispose();
     for (const player of this.players) {
       this.sound.stopOwner(player.id);
       this.releaseGrapple(player, false, true);
-      player.dispose();
+      this.disposeAfterGraphicsWarmup(() => player.dispose());
     }
     for (const shot of this.projectiles) {
       this.removeObject(shot.mesh);
@@ -1770,7 +1778,8 @@ class BlasterBattle {
       this.sound.stopOwner(id);
       this.releaseGrapple(current.player, false, true);
       this.removeOwnedCombat(current.player);
-      current.player.dispose();
+      current.player.group.removeFromParent();
+      this.disposeAfterGraphicsWarmup(() => current.player.dispose());
       this.networkTargets.delete(id);
     }
     let rosterChanged = ordered.length !== this.players.length;
@@ -4066,7 +4075,7 @@ class BlasterBattle {
         this.resourceWarmupMesh.receiveShadow = this.resourceWarmupMesh.castShadow = true;
         this.resourceWarmupMesh.visible = true;
         this.scene.add(this.resourceWarmupMesh);
-        this.renderPipeline.render();
+        await this.renderPipeline.prepareRender();
         await this.renderer.backend.device?.queue.onSubmittedWorkDone();
       } finally {
         if (this.resourceWarmupMesh) this.resourceWarmupMesh.visible = false;
@@ -4111,10 +4120,12 @@ class BlasterBattle {
   removeObject(object) {
     if (!object) return;
     this.scene.remove(object);
-    object.traverse?.((child) => {
-      if (!child.geometry?.userData?.sharedProjectile) child.geometry?.dispose?.();
-      if (Array.isArray(child.material)) child.material.forEach((entry) => entry.dispose?.());
-      else child.material?.dispose?.();
+    this.disposeAfterGraphicsWarmup(() => {
+      object.traverse?.((child) => {
+        if (!child.geometry?.userData?.sharedProjectile) child.geometry?.dispose?.();
+        if (Array.isArray(child.material)) child.material.forEach((entry) => entry.dispose?.());
+        else child.material?.dispose?.();
+      });
     });
   }
 }

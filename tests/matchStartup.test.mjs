@@ -181,4 +181,83 @@ Game.prototype.setMatchLoading.call(game, true);
 Game.prototype.setMatchLoading.call(game, false);
 assert.equal(game.journeyPath, "/private-lobby", "failed/timed-out lobby launches restore the waiting room journey");
 assert.deepEqual(loadingMusicStates.slice(-3), [true, true, false], "shared loading protects music and releases it when a launch is cancelled");
+
+// Exercise the real controller cleanup while native shader compilation owns
+// resources. Navigation stays synchronous; only resource disposal waits.
+const OwnershipGame = new Function("clearTouchActions", "disposeGameplaySamples", "uniquePlayersById", `return ${controller}`)(
+  () => {}, (_game, entry) => entry?.dispose(), players => players);
+function ownershipFixture() {
+  const disposed = [], immediate = [];
+  const owner = name => ({ disposed: false, dispose() { this.disposed = true; disposed.push(name); } });
+  const player = Object.assign(owner("player"), { id: "departing", group: { removeFromParent() { immediate.push("detach"); } } });
+  const fixture = Object.assign(Object.create(OwnershipGame.prototype), {
+    state: "loading", preparingGraphics: true, resourceLaunchToken: {}, preparingMatch: true,
+    combatVisuals: owner("visuals"), matchPreparation: owner("samples"), world: owner("world"), players: [player],
+    projectiles: [], hazards: [], decoys: [], effects: [], scores: [0], touch: {},
+    botTargets: new Map(), networkTargets: new Map([[player.id, {}]]), networkRespawnRequests: new Map(),
+    input: { releasePointer() { immediate.push("pointer"); } }, renderPipeline: { motionBlur: { reset() {} } },
+    sound: { stopOwner() { immediate.push("audio"); }, stopAll() { immediate.push("all-audio"); } },
+    releaseGrapple(current) { assert.equal(current.disposed, false, "grapples release before fighter resources are disposed"); immediate.push("grapple"); },
+    removeOwnedCombat() {}, hideNetworkReconnecting() {}, removeObject() {},
+    multiplayer: { playerId: "local", close() { immediate.push("network"); } }
+  });
+  return { fixture, disposed, immediate, player };
+}
+for (const reject of [false, true]) {
+  const { fixture, disposed, immediate, player } = ownershipFixture();
+  let finish;
+  fixture.graphicsWarmup = new Promise((resolve, fail) => { finish = reject ? () => fail(Error("shader cancelled")) : resolve; });
+  const oldWorld = fixture.world;
+  fixture.clearMatch();
+  assert.equal(fixture.resourceLaunchToken, null, "navigation cancels the launch before compilation settles");
+  assert.equal(fixture.preparingMatch, false);
+  assert.equal(fixture.world, null); assert.equal(fixture.combatVisuals, null); assert.equal(fixture.matchPreparation, null);
+  assert.deepEqual(fixture.players, []);
+  assert.equal(fixture.multiplayer, null, "network cleanup does not wait for compilation");
+  assert.ok(immediate.includes("audio") && immediate.includes("grapple") && immediate.includes("all-audio"));
+  assert.deepEqual(disposed, [], "cancellation keeps every captured resource alive while compilation is pending");
+  const replacement = { dispose() { assert.fail("old cleanup must not dispose replacement resources"); } };
+  Object.assign(fixture, { world: replacement, combatVisuals: replacement, matchPreparation: replacement, players: [replacement] });
+  finish();
+  await fixture.graphicsWarmup.catch(() => {});
+  await Promise.resolve();
+  assert.deepEqual(disposed, ["visuals", "samples", "world", "player"], "both success and failure release only captured owners");
+  assert.equal(oldWorld.disposed, true); assert.equal(player.disposed, true);
+  assert.equal(fixture.world, replacement); assert.deepEqual(fixture.players, [replacement]);
+}
+const immediateCleanup = ownershipFixture();
+immediateCleanup.fixture.preparingGraphics = false;
+immediateCleanup.fixture.clearMatch();
+assert.deepEqual(immediateCleanup.disposed, ["visuals", "samples", "world", "player"], "ordinary match cleanup remains synchronous");
+
+const departed = ownershipFixture();
+let finishRosterWarmup;
+departed.fixture.graphicsWarmup = new Promise(resolve => { finishRosterWarmup = resolve; });
+departed.fixture.syncOnlineRoster({ players: [] });
+assert.deepEqual(departed.fixture.players, [], "authoritative departures update the live roster immediately");
+assert.equal(departed.fixture.networkTargets.has(departed.player.id), false);
+assert.ok(departed.immediate.includes("detach") && departed.immediate.includes("grapple") && departed.immediate.includes("audio"));
+assert.deepEqual(departed.disposed, [], "departing fighters retain shader resources until compilation settles");
+finishRosterWarmup(); await departed.fixture.graphicsWarmup; await Promise.resolve();
+assert.deepEqual(departed.disposed, ["player"]);
+
+for (const outcome of ["resolved", "rejected", "ordinary"]) {
+  const removals = [], released = [];
+  const cleanup = Object.create(OwnershipGame.prototype);
+  let settle;
+  cleanup.scene = { remove(object) { removals.push(object); } };
+  cleanup.preparingGraphics = outcome !== "ordinary";
+  cleanup.graphicsWarmup = new Promise((resolve, reject) => { settle = outcome === "rejected" ? () => reject(Error("native pipeline failed")) : resolve; });
+  const object = { traverse(callback) {
+    callback({ geometry: { userData: {}, dispose() { released.push("geometry"); } }, material: { dispose() { released.push("material"); } } });
+    callback({ geometry: { userData: { sharedProjectile: true }, dispose() { assert.fail("shared projectile geometry must survive removal"); } },
+      material: ["array-1", "array-2"].map(name => ({ dispose() { released.push(name); } })) });
+  } };
+  cleanup.removeObject(object);
+  cleanup.removeObject(null);
+  assert.deepEqual(removals, [object], "transient objects leave the scene immediately during native preparation");
+  assert.deepEqual(released, outcome === "ordinary" ? ["geometry", "material", "array-1", "array-2"] : [], "pending native preparation retains transient geometry and materials");
+  settle(); await cleanup.graphicsWarmup.catch(() => {}); await Promise.resolve();
+  assert.deepEqual(released, ["geometry", "material", "array-1", "array-2"], "transient resources dispose exactly once after success or failure");
+}
 console.log("In-memory replay, slow GPU countdown gating, journey readiness/recovery, cancellation, failure and WebGL startup checks passed.");

@@ -250,7 +250,8 @@ const mainSource = fs.readFileSync(new URL("../src/main.js", import.meta.url), "
 const decoyMethods = mainSource.slice(mainSource.indexOf("\n  spawnDecoy("), mainSource.indexOf("\n  damagePlayer("));
 const removeObjectMethod = mainSource.slice(mainSource.indexOf("\n  removeObject(object) {"), mainSource.indexOf("\n}\n\nconst game ="));
 const transientMethod = mainSource.slice(mainSource.indexOf("\n  clearTransientNetworkCombat() {"), mainSource.indexOf("\n  removeOwnedCombat("));
-const decoyHarness = new Function("THREE", `return new (class {${decoyMethods}${removeObjectMethod}${transientMethod}})();`)(THREE);
+const disposalMethod = mainSource.slice(mainSource.indexOf("\n  disposeAfterGraphicsWarmup("), mainSource.indexOf("\n  clearMatch("));
+const decoyHarness = new Function("THREE", `return new (class {${decoyMethods}${removeObjectMethod}${transientMethod}${disposalMethod}})();`)(THREE);
 Object.assign(decoyHarness, { scene: new THREE.Scene(), world: { surfaceHeightAt: () => 0 },
   decoys: [], projectiles: [], hazards: [], effects: [], decoyRenderAnchor: null, spawnBurst() {}, renderPipeline: { quality: "high", direct: false } });
 // Exercise the capsule housing as well as the shared head pivot in holograms.
@@ -335,7 +336,7 @@ for (const scale of [.65, 1.2, 1.8]) {
   assert.deepEqual(snapshot.geometry.attributes.position.array, frozenPositions, "later owner thrust cannot change an existing decoy pose");
   decoyHarness.clearTransientNetworkCombat();
 }
-const clearMatchMethod = mainSource.slice(mainSource.indexOf("\n  clearMatch("), mainSource.indexOf("\n  renderMain("));
+const clearMatchMethod = mainSource.slice(mainSource.indexOf("\n  disposeAfterGraphicsWarmup("), mainSource.indexOf("\n  renderMain("));
 decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
 const oldTierDecoy = decoyHarness.decoys[0];
 oldTierDecoy.mesh.traverse(child => { if (child.isMesh) child.onAfterRender(); });
@@ -356,7 +357,9 @@ assert.equal(mixedTierDecoy.mesh.userData.decoyRendered, false, "partial coverag
 decoyHarness.removeDecoy(mixedTierDecoy);
 assert.ok(decoyHarness.decoyRenderAnchor === currentTierDecoy.mesh);
 decoyHarness.clearTransientNetworkCombat();
-decoyHarness.clearMatch = new Function("clearTouchActions", "disposeGameplaySamples", `return (class {${clearMatchMethod}}).prototype.clearMatch;`)(() => {}, () => {});
+const cleanupMethods = new Function("clearTouchActions", "disposeGameplaySamples", `return (class {${clearMatchMethod}}).prototype;`)(() => {}, () => {});
+decoyHarness.clearMatch = cleanupMethods.clearMatch;
+decoyHarness.disposeAfterGraphicsWarmup = cleanupMethods.disposeAfterGraphicsWarmup;
 Object.assign(decoyHarness, { input: { releasePointer() {} }, touch: {}, hideNetworkReconnecting() {},
   sound: { stopAll() {} }, players: [], botTargets: new Map(), networkTargets: new Map(), networkRespawnRequests: new Map() });
 decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);

@@ -50,6 +50,8 @@ const playerMergeSource = readFileSync(new URL("../src/player.js", import.meta.u
   const scene = new THREE.Scene(), effects = new CombatVisuals(scene);
   const removeSource = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
   const removeObject = new Function(`return function(object) {${removeSource.split("  removeObject(object) {")[1].split(/\r?\n  }\r?\n}/)[0]}}`)();
+  const disposalSource = removeSource.slice(removeSource.indexOf("\n  disposeAfterGraphicsWarmup("), removeSource.indexOf("\n  clearMatch("));
+  const disposeAfterGraphicsWarmup = new Function(`return ({${disposalSource}}).disposeAfterGraphicsWarmup;`)();
   let geometry, colorAttribute, geometryDisposals = 0;
   const materials = new Set();
   for (let i = 0; i < 32; i++) {
@@ -71,7 +73,7 @@ const playerMergeSource = readFileSync(new URL("../src/player.js", import.meta.u
     assert.equal(materials.has(trail.material), false); materials.add(trail.material);
     assert.ok(trail.material.color.equals(new THREE.Color(i % 2 ? 0xff3377 : 0x6ff6ff).multiplyScalar(2.2)));
     let materialDisposals = 0; trail.material.addEventListener("dispose", () => materialDisposals++);
-    removeObject.call({ scene }, mesh);
+    removeObject.call({ scene, disposeAfterGraphicsWarmup }, mesh);
     assert.equal(materialDisposals, 1); assert.equal(geometryDisposals, 0);
     assert.equal(mesh.parent, null);
   }
