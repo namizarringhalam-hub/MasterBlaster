@@ -444,12 +444,12 @@ class BlasterBattle {
         </select></label>`).join('')}
       </details>
       <p data-msaa-reload hidden>${text.reloadNote} <button type="button" data-action="reload-page">${text.reload}</button></p>
-      <label class="toggle"><input type="checkbox" data-setting="reducedMotion" ${this.settings.reducedMotion ? "checked" : ""}>${TEXT.settings.labels.reducedMotion}</label>
       ${Object.entries(text.groups).map(([group, label]) => `<details ${group === 'rendering' ? 'open' : ''}><summary>${label}</summary>
         ${Object.entries(GRAPHICS_EFFECTS).filter(([, effect]) => effect.group === group).map(([key]) => `<label class="graphics-effect">
           <input type="checkbox" data-graphics-effect="${key}" ${effects[key] ? "checked" : ""} aria-label="${text.effects[key]}" aria-describedby="effect-note-${key}">
           <span>${text.effects[key]}<small id="effect-note-${key}" data-effect-note="${key}"></small></span>
         </label>`).join("")}</details>`).join("")}
+      <label class="toggle"><input type="checkbox" data-setting="reducedMotion" ${this.settings.reducedMotion ? "checked" : ""}>${TEXT.settings.labels.reducedMotion}</label>
       <label>${text.motionStrength}<output>${this.settings.motionBlur}%</output><input type="range" aria-label="${text.motionStrength}" min="0" max="100" value="${this.settings.motionBlur}" data-setting="motionBlur"></label>
       <small>${text.aaNote}</small><button type="button" data-action="reset-graphics-effects">${text.reset}</button>
     </section>`;

@@ -458,13 +458,14 @@ input, select {
 
 .settings-dialog { max-width: 760px; }
 .settings-grid { grid-template-columns: 1fr; }
-.settings-grid label { padding: 16px; background: rgba(23, 47, 68, .45); }
+.settings-grid label, .graphics-controls label { display: block; min-width: 0; padding: 16px; background: rgba(23, 47, 68, .45); line-height: 1.5; }
 .settings-grid output { float: right; color: #4fe9ff; }
 .settings-grid .toggle, .graphics-controls .toggle { display: flex; gap: 12px; align-items: center; }
 .settings-grid .toggle input, .graphics-controls .toggle input { width: auto; margin: 0; }
 .graphics-controls { display: grid; gap: 12px; text-align: left; }
 .graphics-controls details { border: 1px solid #274159; padding: 10px; }
 .graphics-controls summary { cursor: pointer; color: #9bd9e8; font-weight: 700; padding: 5px; }
+.graphics-controls details > label { margin-top: 12px; }
 .graphics-controls .graphics-effect { display: flex; align-items: center; gap: 12px; padding: 10px; margin: 4px 0; }
 .graphics-effect input { width: 18px; height: 18px; flex: 0 0 18px; margin: 0; }
 .graphics-effect small { display: block; color: #96adbf; font-size: 11px; }
