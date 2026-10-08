@@ -250,6 +250,7 @@ export const PLAYER_TEXT = {
   settings: {
     section: "LOCAL PREFERENCES",
     title: "Settings",
+    groups: { feedback: "Combat feedback", sound: "Sound & volume" },
     graphicsPanel: {
       title: "Graphics", live: "Presets apply defaults. Individual adjustments show Custom and save automatically. Changes apply live, except MSAA, which needs a reload. Changes may pause rendering while shaders compile.",
       back: "← BACK", reset: "RESTORE PRESET DEFAULTS", custom: "Custom", detail: "Resolution & detail",

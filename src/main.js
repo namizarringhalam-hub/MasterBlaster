@@ -434,24 +434,26 @@ class BlasterBattle {
     const effects = normalizeGraphicsEffects(this.settings.graphicsEffects);
     return `<section class="graphics-controls" aria-label="${text.title}">
       <p class="dialog-lead">${text.live}</p>
-      <label>${TEXT.settings.labels.graphics}<select data-setting="graphics">
-        ${Object.keys(GRAPHICS_PRESETS).map(value => `<option value="${value}" ${this.settings.graphics === value ? "selected" : ""}>${TEXT.settings.options.graphics[value]}</option>`).join("")}
-        <option value="custom" disabled hidden>${text.custom}</option>
-      </select></label>
       <details><summary>${text.detail}</summary>
+        <label>${TEXT.settings.labels.graphics}<select data-setting="graphics">
+          ${Object.keys(GRAPHICS_PRESETS).map(value => `<option value="${value}" ${this.settings.graphics === value ? "selected" : ""}>${TEXT.settings.options.graphics[value]}</option>`).join("")}
+          <option value="custom" disabled hidden>${text.custom}</option>
+        </select></label>
         ${Object.entries(GRAPHICS_OPTIONS).map(([key, values]) => `<label>${text.options[key]}<select data-graphics-option="${key}">
           ${values.map(value => `<option value="${value}" ${this.settings.graphicsOptions[key] === value ? 'selected' : ''}>${value === 0 ? text.off : ['renderScale', 'ssrScale', 'bloomScale', 'combatQuality'].includes(key) ? value * 100 + '%' : value}</option>`).join('')}
         </select></label>`).join('')}
+        <p data-msaa-reload hidden>${text.reloadNote} <button type="button" data-action="reload-page">${text.reload}</button></p>
+        <small>${text.aaNote}</small>
       </details>
-      <p data-msaa-reload hidden>${text.reloadNote} <button type="button" data-action="reload-page">${text.reload}</button></p>
       ${Object.entries(text.groups).map(([group, label]) => `<details ${group === 'rendering' ? 'open' : ''}><summary>${label}</summary>
+        ${group === 'motion' ? `<label class="toggle"><input type="checkbox" data-setting="reducedMotion" ${this.settings.reducedMotion ? "checked" : ""}>${TEXT.settings.labels.reducedMotion}</label>` : ''}
         ${Object.entries(GRAPHICS_EFFECTS).filter(([, effect]) => effect.group === group).map(([key]) => `<label class="graphics-effect">
           <input type="checkbox" data-graphics-effect="${key}" ${effects[key] ? "checked" : ""} aria-label="${text.effects[key]}" aria-describedby="effect-note-${key}">
           <span>${text.effects[key]}<small id="effect-note-${key}" data-effect-note="${key}"></small></span>
-        </label>`).join("")}</details>`).join("")}
-      <label class="toggle"><input type="checkbox" data-setting="reducedMotion" ${this.settings.reducedMotion ? "checked" : ""}>${TEXT.settings.labels.reducedMotion}</label>
-      <label>${text.motionStrength}<output>${this.settings.motionBlur}%</output><input type="range" aria-label="${text.motionStrength}" min="0" max="100" value="${this.settings.motionBlur}" data-setting="motionBlur"></label>
-      <small>${text.aaNote}</small><button type="button" data-action="reset-graphics-effects">${text.reset}</button>
+        </label>`).join("")}
+        ${group === 'motion' ? `<label>${text.motionStrength}<output>${this.settings.motionBlur}%</output><input type="range" aria-label="${text.motionStrength}" min="0" max="100" value="${this.settings.motionBlur}" data-setting="motionBlur"></label>` : ''}
+      </details>`).join("")}
+      <button type="button" data-action="reset-graphics-effects">${text.reset}</button>
     </section>`;
   }
 
@@ -960,31 +962,35 @@ class BlasterBattle {
           <h1>${TEXT.settings.title}</h1>
           <div class="settings-grid">
             ${this.graphicsControlsMarkup()}
-            <label>${TEXT.settings.labels.blood}
-              <select data-setting="blood">
-                ${["off", "reduced", "full"].map((value) => `<option value="${value}" ${this.settings.blood === value ? "selected" : ""}>${TEXT.settings.options.blood[value]}</option>`).join("")}
-              </select>
-            </label>
-            <label>${TEXT.settings.labels.cameraShake} <output>${this.settings.shake}%</output>
-              <input type="range" min="0" max="100" value="${this.settings.shake}" data-setting="shake">
-            </label>
-            <label>${TEXT.settings.labels.masterVolume} <output>${this.settings.volume}%</output>
-              <input type="range" min="0" max="100" value="${this.settings.volume}" data-setting="volume">
-            </label>
-            <label>${TEXT.settings.labels.musicVolume} <output>${this.settings.musicVolume}%</output>
-              <input type="range" min="0" max="100" value="${this.settings.musicVolume}" data-setting="musicVolume">
-            </label>
-            <label>${TEXT.settings.labels.effectsVolume} <output>${this.settings.effectsVolume}%</output>
-              <input type="range" min="0" max="100" value="${this.settings.effectsVolume}" data-setting="effectsVolume">
-            </label>
-            <label>${TEXT.settings.labels.ambienceVolume} <output>${this.settings.ambienceVolume}%</output>
-              <input type="range" min="0" max="100" value="${this.settings.ambienceVolume}" data-setting="ambienceVolume">
-            </label>
-            <label>${TEXT.settings.labels.dynamicRange}
-              <select data-setting="dynamicRange">
-                ${["wide", "standard", "night"].map((value) => `<option value="${value}" ${this.settings.dynamicRange === value ? "selected" : ""}>${TEXT.settings.options.dynamicRange[value]}</option>`).join("")}
-              </select>
-            </label>
+            <details><summary>${TEXT.settings.groups.feedback}</summary>
+              <label>${TEXT.settings.labels.blood}
+                <select data-setting="blood">
+                  ${["off", "reduced", "full"].map((value) => `<option value="${value}" ${this.settings.blood === value ? "selected" : ""}>${TEXT.settings.options.blood[value]}</option>`).join("")}
+                </select>
+              </label>
+              <label>${TEXT.settings.labels.cameraShake} <output>${this.settings.shake}%</output>
+                <input type="range" min="0" max="100" value="${this.settings.shake}" data-setting="shake">
+              </label>
+            </details>
+            <details><summary>${TEXT.settings.groups.sound}</summary>
+              <label>${TEXT.settings.labels.masterVolume} <output>${this.settings.volume}%</output>
+                <input type="range" min="0" max="100" value="${this.settings.volume}" data-setting="volume">
+              </label>
+              <label>${TEXT.settings.labels.musicVolume} <output>${this.settings.musicVolume}%</output>
+                <input type="range" min="0" max="100" value="${this.settings.musicVolume}" data-setting="musicVolume">
+              </label>
+              <label>${TEXT.settings.labels.effectsVolume} <output>${this.settings.effectsVolume}%</output>
+                <input type="range" min="0" max="100" value="${this.settings.effectsVolume}" data-setting="effectsVolume">
+              </label>
+              <label>${TEXT.settings.labels.ambienceVolume} <output>${this.settings.ambienceVolume}%</output>
+                <input type="range" min="0" max="100" value="${this.settings.ambienceVolume}" data-setting="ambienceVolume">
+              </label>
+              <label>${TEXT.settings.labels.dynamicRange}
+                <select data-setting="dynamicRange">
+                  ${["wide", "standard", "night"].map((value) => `<option value="${value}" ${this.settings.dynamicRange === value ? "selected" : ""}>${TEXT.settings.options.dynamicRange[value]}</option>`).join("")}
+                </select>
+              </label>
+            </details>
           </div>
           <button class="primary" data-action="save-settings">${TEXT.settings.save}</button>
         </section>
