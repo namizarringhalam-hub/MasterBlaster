@@ -67,7 +67,8 @@ scene.state = "play"; scene.paused = true;
 assert.equal(scene.renderScene(), true, "paused matches keep their visible arena background");
 assert.equal(submittedFrames, 1);
 const game = Object.create(Game.prototype);
-const renderer = {}, sound = {}, pipeline = {}, settings = { loadout: ["a", "b"] };
+const loadingMusicStates = [];
+const renderer = {}, sound = { setLoadingMusic: visible => loadingMusicStates.push(visible) }, pipeline = {}, settings = { loadout: ["a", "b"] };
 let starts = 0, label;
 Object.assign(game, { renderer, sound, renderPipeline: pipeline, settings, seed: "REPLAY", timeLimitMinutes: 7,
   setMatchLoading(visible, seed, sameSeed) { label = { visible, seed, sameSeed }; Game.prototype.setMatchLoading.call(this, visible, seed, sameSeed); },
@@ -166,7 +167,7 @@ assert.equal(audioStarts, 0, "an audio unlock gesture during fighter preparation
 game.preparingMatch = false;
 let audioPaused;
 Object.assign(game, { mode: "global", world: { theme: { id: "test" } },
-  sound: { startAmbience() {}, setMusicIntensity() {}, setMusicScene() {}, startMusic() {}, setPaused(value) { audioPaused = value; } }
+  sound: { setLoadingMusic: visible => loadingMusicStates.push(visible), startAmbience() {}, setMusicIntensity() {}, setMusicScene() {}, startMusic() {}, setPaused(value) { audioPaused = value; } }
 });
 for (const paused of [true, false]) {
   game.paused = paused;
@@ -179,4 +180,5 @@ Game.prototype.setMatchLoading.call(game, true);
 Game.prototype.setMatchLoading.call(game, true);
 Game.prototype.setMatchLoading.call(game, false);
 assert.equal(game.journeyPath, "/private-lobby", "failed/timed-out lobby launches restore the waiting room journey");
+assert.deepEqual(loadingMusicStates.slice(-3), [true, true, false], "shared loading protects music and releases it when a launch is cancelled");
 console.log("In-memory replay, slow GPU countdown gating, journey readiness/recovery, cancellation, failure and WebGL startup checks passed.");

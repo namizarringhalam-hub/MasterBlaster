@@ -1339,6 +1339,7 @@ class BlasterBattle {
   }
 
   setMatchLoading(visible, seed = this.seed, sameSeed = false) {
+    this.sound.setLoadingMusic(visible);
     if (visible) {
       if (this.journeyPath !== "/loading") this.loadingJourneyPath = this.journeyPath;
       this.setJourney("/loading");

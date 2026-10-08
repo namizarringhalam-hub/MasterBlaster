@@ -329,7 +329,7 @@ assert.match(audioSource, /fetch\(resourceURL\(file.url\)/, "runtime audio uses 
 assert.match(audioSource, /prefetchMusic\(\)[\s\S]*?criticalRoles[\s\S]*?_musicFileData[\s\S]*?Promise\.allSettled/, "menu-critical recordings warm first through the shared download path");
 assert.match(audioSource, /cache: retry \? "reload" : "force-cache"/, "versioned recordings reuse cached bytes while repair requests bypass them");
 assert.match(audioSource, /pendingMusicStart\?\.scene === "countdown"\) this\.pendingMusicStart = null[\s\S]*?musicCountdown = null/, "a failed recorded countdown releases to the frame-clock GO instead of starting combat early on retry");
-const musicScheduler = audioSource.slice(audioSource.indexOf("_scheduleMusicEvent(event"), audioSource.indexOf("duckMusic(", audioSource.indexOf("_scheduleMusicEvent(event")));
+const musicScheduler = audioSource.slice(audioSource.indexOf("\n  _scheduleMusicEvent("), audioSource.indexOf("\n  duckMusic("));
 assert.match(musicScheduler, /musicSample\(event\.sample/, "all score events travel through the recorded-sample player");
 assert.doesNotMatch(musicScheduler, /this\.tone\(|this\.noise\(/, "the musical scheduler contains no oscillator or noise-synth fallback");
 assert.match(audioSource, /linearRampToValueAtTime\?\.\(\.0001, now \+ fade\)/, "music teardown performs a real gain fade before source stops");

@@ -125,6 +125,10 @@ export class SoundBoard {
     this.musicSeed = "BLAST-01";
     this.musicStep = 0;
     this.musicNextTime = 0;
+    this.loadingMusic = false;
+    this.loadingMusicBuffer = null;
+    this.loadingMusicPromise = null;
+    this.loadingMusicSource = null;
     this.musicIntensity = .22;
     this.musicTargetIntensity = .22;
     this.musicBarIntensity = .22;
@@ -213,6 +217,73 @@ export class SoundBoard {
       this.musicSamples = {};
       throw new Error("Music preparation incomplete");
     }
+    await this._prepareLoadingMusic();
+    if (this.loadingMusic) this._startLoadingMusic();
+  }
+
+  _prepareLoadingMusic() {
+    if (this.loadingMusicPromise) return this.loadingMusicPromise;
+    const OfflineContext = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
+    if (!OfflineContext || !this.context || this.disposed) return Promise.resolve();
+    this.loadingMusicPromise = (async () => {
+      const sampleRate = this.context.sampleRate;
+      const stepDuration = 60 / MUSIC.tempoTiers[0] / MUSIC.stepsPerBeat;
+      const steps = MUSIC.roots.length * MUSIC.stepsPerBar;
+      const frames = Math.round(steps * stepDuration * sampleRate);
+      const context = new OfflineContext(2, frames * 2, sampleRate);
+      // ponytail: reuse the recorded score and instrument graph; no second mixer.
+      const score = Object.assign(Object.create(SoundBoard.prototype), {
+        context, enabled: true, master: context.destination, buses: { music: context.destination },
+        musicSamples: this.musicSamples, musicRoundRobin: new Map(), routeGraphs: new WeakMap(),
+        _claimVoice: () => true, _track: () => {}
+      });
+      for (let index = 0; index < steps * 2; index++) {
+        const bar = Math.floor((index % steps) / MUSIC.stepsPerBar), step = index % MUSIC.stepsPerBar;
+        for (const event of musicEventsForStep({ bar, step, scene: "menu", intensity: .42 })) {
+          score._scheduleMusicEvent(event, index * stepDuration, stepDuration);
+        }
+        if (index % MUSIC.stepsPerBar === 0) await backgroundYield();
+        if (this.disposed) return;
+      }
+      const rendered = await context.startRendering();
+      if (this.disposed) return;
+      // Keep the second cycle so the loop begins with the preceding notes' tails.
+      const buffer = this.context.createBuffer(2, frames, sampleRate);
+      for (let channel = 0; channel < 2; channel++) buffer.copyToChannel(rendered.getChannelData(channel).subarray(frames), channel);
+      this.loadingMusicBuffer = buffer;
+    })().catch(error => { this.loadingMusicPromise = null; throw error; });
+    return this.loadingMusicPromise;
+  }
+
+  setLoadingMusic(loading) {
+    this.loadingMusic = Boolean(loading);
+    if (loading) return this._startLoadingMusic();
+    if (!this.loadingMusicSource) return false;
+    const at = this.context.currentTime + .035;
+    this._stopMusicVoicesAt(at);
+    this.musicNextTime = at;
+    this._scheduleMusic();
+    return true;
+  }
+
+  _startLoadingMusic() {
+    if (this.loadingMusicSource) return true;
+    if (!this.loadingMusicBuffer || !this.context || !this.enabled || this.musicPaused || this.disposed) return false;
+    const at = this.context.currentTime + .035;
+    this._stopMusicVoicesAt(at);
+    if (!this._claimVoice(MUSIC_PRIORITY, "music")) return false;
+    const source = this.context.createBufferSource(), gain = this.context.createGain();
+    source.buffer = this.loadingMusicBuffer;
+    source.loop = true;
+    gain.gain.setValueAtTime(.0001, at);
+    gain.gain.linearRampToValueAtTime(1, at + .015);
+    source.connect(gain);
+    this._route(gain, "music", 0, .075);
+    source.start(at);
+    this._track(source, MUSIC_PRIORITY, "music", [gain, ...(this.routeGraphs.get(gain) || [])]);
+    this.loadingMusicSource = source;
+    if (!this.musicTimer) this.musicTimer = setInterval(() => this._scheduleMusic(), 25);
+    return true;
   }
 
   async _prepareAudioAssetsFallback() {
@@ -1063,6 +1134,10 @@ export class SoundBoard {
     }
     this.pendingMusicStart = null;
     this.musicSeed = seed || "BLAST-01"; this.musicPaused = false; this.musicSuspended = false;
+    if (this.loadingMusic && this.loadingMusicBuffer) {
+      this.musicScene = scene;
+      return this._startLoadingMusic();
+    }
     if (this.musicTimer) {
       if (scene === "combat" && this.musicScene === "countdown") return true;
       if (scene === "combat") this._setMusicSceneNow(scene, this.musicTargetIntensity);
@@ -1092,12 +1167,14 @@ export class SoundBoard {
   }
 
   _stopMusicVoicesAt(at) {
+    this.loadingMusicSource = null;
     const now = this.context?.currentTime || 0;
     for (const voice of [...this.activeVoices]) {
       if (voice.group !== "music") continue;
       try { voice.source.stop(at); } catch {}
       this.activeVoices.delete(voice);
-      if (at > now) this._countFade(voice.source, at - now, voice.priority);
+      if (at > now) this._countFade(voice.source, at - now, voice.priority, voice.nodes);
+      else for (const node of voice.nodes) try { node.disconnect?.(); } catch {}
     }
   }
 
@@ -1204,8 +1281,14 @@ export class SoundBoard {
   }
 
   _scheduleMusic() {
-    if (!this.context || !this.enabled || this.musicPaused) return;
-    const horizon = this.context.currentTime + .12;
+    if (!this.context || !this.enabled || this.musicPaused || this.loadingMusicSource) return;
+    const now = this.context.currentTime, horizon = now + .12;
+    if (this.musicScene !== "countdown" && this.musicNextTime < now - .12) {
+      const stepDuration = 60 / this.musicBpm / MUSIC.stepsPerBeat;
+      const missed = Math.ceil((now + .035 - this.musicNextTime) / stepDuration);
+      this.musicStep += missed;
+      this.musicNextTime += missed * stepDuration;
+    }
     this.musicIntensity += (this.musicTargetIntensity - this.musicIntensity) * .08;
     while (this.musicNextTime < horizon) {
       if (this.musicScene === "countdown" && this.musicCountdown && this.musicNextTime >= this.musicCountdown.endTime - 1e-6) this._finishCountdownAt(this.musicCountdown.endTime);
@@ -1258,6 +1341,7 @@ export class SoundBoard {
     if (!this.context) return;
     const now = this.context.currentTime;
     if (this.musicPaused && !wasPaused) this.musicPauseTime = now;
+    if (this.musicPaused && this.loadingMusicSource) this._stopMusicVoicesAt(now + .05);
     if (!this.musicPaused && wasPaused && this.musicPauseTime != null && this.musicCountdown && !this.musicCountdown.completed) {
       const shift = Math.max(0, now - this.musicPauseTime);
       this.musicCountdown.startTime += shift;
@@ -1271,12 +1355,14 @@ export class SoundBoard {
     this.buses.ambience?.gain.setTargetAtTime(this._ambienceBusGain(), now, .08);
     if (paused && this.musicTimer) { clearInterval(this.musicTimer); this.musicTimer = null; this.musicSuspended = true; }
     else if (!paused && this.musicSuspended) { this.musicSuspended = false; if (!this.musicCountdown || this.musicCountdown.completed) this.musicNextTime = now + .04; this.musicTimer = setInterval(() => this._scheduleMusic(), 25); }
+    if (!paused && this.loadingMusic && this.musicScene !== "countdown") this._startLoadingMusic();
   }
 
   stopMusic(fade = .2) {
     if (this.musicTimer) clearInterval(this.musicTimer);
     this.pendingMusicStart = null;
     this.musicTimer = null;
+    this.loadingMusicSource = null;
     this.musicCountdown = null;
     this.musicPauseTime = null;
     const now = this.context?.currentTime || 0;
@@ -1313,6 +1399,8 @@ export class SoundBoard {
 
   dispose() {
     this.disposed = true;
+    this.loadingMusicBuffer = null;
+    this.loadingMusicPromise = null;
     this.musicFileData.clear();
     this.musicAbortController?.abort();
     this.musicPrefetchAbortController?.abort();

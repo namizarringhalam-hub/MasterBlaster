@@ -1,0 +1,84 @@
+<!doctype html><meta charset="utf-8">
+<title>Music loading continuity check</title>
+<button id="run">Test a five-second loading stall</button><pre id="result">Ready</pre>
+<script type="module">
+import { SoundBoard } from "../src/audio.js";
+const output = document.querySelector("#result"), button = document.querySelector("#run");
+const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+button.onclick = async () => {
+  button.disabled = true;
+  const sound = new SoundBoard(), results = {};
+  try {
+    output.textContent = "Preparing recorded instruments and loading loop";
+    const started = performance.now();
+    await sound.prepareResources();
+    results.preparationMs = Math.round(performance.now() - started);
+    results.loopSeconds = sound.loadingMusicBuffer.duration;
+    results.loopBytes = sound.loadingMusicBuffer.length * 2 * 4;
+    sound.resume();
+    await sound.context.resume();
+    const url = URL.createObjectURL(new Blob([`
+      class ContinuityProbe extends AudioWorkletProcessor {
+        constructor() {
+          super(); this.reset();
+          this.port.onmessage = ({data}) => {
+            if (data === 'reset') this.reset();
+            else this.port.postMessage({ frames: this.frames, maxQuietFrames: this.maxQuiet, audibleFrames: this.audible });
+          };
+        }
+        reset() { this.frames = this.quiet = this.maxQuiet = this.audible = 0; }
+        process(inputs) {
+          const samples = inputs[0]?.[0];
+          if (!samples) return true;
+          let energy = 0;
+          for (const sample of samples) energy += sample * sample;
+          this.frames += samples.length;
+          if (energy / samples.length < 1e-12) this.quiet += samples.length;
+          else { this.audible += samples.length; this.quiet = 0; }
+          this.maxQuiet = Math.max(this.maxQuiet, this.quiet);
+          return true;
+        }
+      }
+      registerProcessor('continuity-probe', ContinuityProbe);
+    `], { type: "text/javascript" }));
+    await sound.context.audioWorklet.addModule(url);
+    URL.revokeObjectURL(url);
+    const probe = new AudioWorkletNode(sound.context, "continuity-probe");
+    sound.master.connect(probe).connect(sound.context.destination);
+    const report = () => new Promise(resolve => {
+      probe.port.onmessage = ({ data }) => resolve({
+        seconds: data.frames / sound.context.sampleRate,
+        maxQuietMs: data.maxQuietFrames / sound.context.sampleRate * 1000,
+        audibleSeconds: data.audibleFrames / sound.context.sampleRate
+      });
+      probe.port.postMessage("report");
+    });
+    for (const loading of [false, true]) {
+      sound.stopMusic(0);
+      sound.setLoadingMusic(false);
+      sound.setMusicIntensity(.94);
+      sound.startMusic("menu", "LOADING-CONTINUITY");
+      if (loading) sound.setLoadingMusic(true);
+      await wait(350);
+      probe.port.postMessage("reset");
+      await wait(50);
+      const blockedAt = performance.now();
+      while (performance.now() - blockedAt < 5000) { /* Simulate synchronous graphics compilation. */ }
+      await wait(250);
+      results[loading ? "loading" : "baseline"] = await report();
+    }
+    if (results.baseline.maxQuietMs < 500) throw Error("Baseline did not reproduce scheduler starvation");
+    if (results.loading.seconds < 4.9 || results.loading.maxQuietMs > 150) throw Error("Native loading music lost continuity");
+    sound.startCountdown("LOADING-CONTINUITY", .42);
+    sound.setLoadingMusic(false);
+    if (sound.loadingMusicSource || sound.musicScene !== "countdown") throw Error("Loading loop did not yield to countdown");
+    results.status = "PASS";
+  } catch (error) { results.status = "FAIL"; results.error = String(error.stack || error); }
+  finally { sound.dispose(); }
+  output.textContent = JSON.stringify(results, null, 2);
+  button.disabled = false;
+  const endpoint = new URLSearchParams(location.search).get("report");
+  if (endpoint) await fetch(endpoint, { method: "POST", body: JSON.stringify(results) });
+};
+if (new URLSearchParams(location.search).has("autorun")) button.click();
+</script>
