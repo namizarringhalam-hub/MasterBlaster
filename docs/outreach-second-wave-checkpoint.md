@@ -1,5 +1,23 @@
 # Master Blaster: second outreach wave
 
+## Latest daily check — 9 October 2026, 10:12–10:17 CEST
+
+- Three.js topic 95005: original post only, no replies; one like unchanged,
+  36 displayed views. No new reply IDs; manual-prose/editing hold preserved.
+- Verified brand Inbox/All mail/Spam/Trash: no new outreach response, bounce or
+  newsletter; Spam/Trash empty. Fresh tab recovered existing-tab binding timeouts.
+  Weekly acceptance/subscription unchanged; feature expected today, release time
+  unspecified. Live archive starts with issue 665 (2 Oct); no public feature yet.
+- BrowserGames.gg home/Shooter, iogames.fun home/New: no listing verified in
+  checked surfaces. iogames.fun pagination incomplete (page 2 stale, 3–5 failed).
+  Three.js Resources Games/Showcase reader 403 recovered via guest browser;
+  Games and Games-filtered Showcase render no Master Blaster entry. Still pending.
+- Alpha Beta Gamer home/Browser Game, Indie Games Plus recent coverage and
+  focused title/domain searches: no verified feature; no brand-mail reply.
+  Sending is not delivery/coverage. No resubmission, pitch resend or response.
+- Existing daily schedule, brand-only identity and moderation/manual holds
+  preserved. Capture actual Weekly issue and game anchor only once published.
+
 ## Latest daily check — 8 October 2026
 
 - Three.js topic 95005 fresh guest read: original post only, no written replies;

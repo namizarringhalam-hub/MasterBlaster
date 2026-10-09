@@ -1,5 +1,38 @@
 # SEO checkpoint — 2026-09-18
 
+## Latest recovery checkpoint — 9 October 2026, daily follow-up
+
+- Heartbeat arrived 10:12 CEST; actual checks 10:12–10:17, not 09:00. Read current
+  conversation/new user AGENTS, on-disk AGENTS and requested SEO/community/growth
+  and second/third-wave checkpoints. Paused/manual/moderation/privacy holds kept.
+- Delegated independent directory/editorial verification and read-only source
+  performance audit under user's new review instructions. Findings recorded in
+  community/second/third-wave checkpoints; no new publication/written feedback.
+- HTML5, Three.js, IndieDB profile/five images, PaperCroft and SlowDen checked.
+  Three.js 36 views, otherwise reply/rating baselines unchanged. GameDev.net
+  comments remain load-blocked; ESReality empty wrapper; Reddit removals persist.
+- Brand-mail connection failed twice on existing tab (focus-emulation timeout).
+  Fresh brand-only tab recovered; cause unknown, no restart/unrelated tab edits.
+  Inbox/All mail/Spam/Trash read successfully; no new outreach reply/newsletter.
+  Weekly expected today, release time unspecified; archive still issue 665
+  (2 Oct). Xander recording reply outstanding. Reader 403 at Three.js Resources
+  recovered by fresh guest browser. Research tab muted before game iframe load.
+- Source review confirms heading fonts/preloads/swap, inlined CSS and engine
+  load/fonts-ready/two-paint deferral already present. Prior ignored PSI artifact
+  directory absent in this checkout; 2.9 s is checkpoint evidence, not a repeated
+  measurement. No justified source change or PageSpeed rerun. Next technical
+  step: sanctioned mobile load trace, font response/H1 LCP/paint attribution and
+  explicit CPU/network/viewport presets. Native computer APIs currently disabled;
+  no bypass or unsupported diagnostic automation. Preserve gameplay/visuals.
+- Documentation only: community-outreach-targets.md, outreach-second-wave-
+  checkpoint.md, outreach-third-wave-checkpoint.md, seo-checkpoint.md. Existing
+  native tracker updated with six applied guarded patches, sequence 7; targeted
+  readback passed. Independent critical review found no must-fix defects; git
+  diff --check passed and scope is these four files. Brand commit/push follows.
+  Preserve unrelated changes; no new scheduler/drafts/sharing changes.
+- Next: actual Weekly issue/game anchor, Xander recording reply, pending directory
+  outcomes, GameDev.net comment access, existing Rando user test and load trace.
+
 ## Latest recovery checkpoint — 8 October 2026, daily 09:00 follow-up
 
 - Read conversation, AGENTS.md, SEO/community/growth and second/third-wave
