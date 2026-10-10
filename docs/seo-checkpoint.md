@@ -1,5 +1,45 @@
 # SEO checkpoint — 2026-09-18
 
+## Latest recovery checkpoint — 10 October 2026, daily follow-up
+
+- Heartbeat arrived 09:04 CEST; actual external checks 09:05–09:11. Read current
+  conversation, AGENTS and requested SEO/community/growth/second/third-wave
+  checkpoints. Delegated directory/editorial checks and read-only source audit.
+  Paused/manual/moderation/privacy constraints preserved.
+- NEW Gamedev.js Weekly publication: public issue 666 dated 9 Oct links Master
+  Blaster under Games directly to https://masterblaster.se/. Brand newsletter
+  received 9 Oct 14:01. Rendered anchor has no referral tags and empty rel;
+  exact issue/content/date registered. Title-only inclusion, no written review,
+  measured ranking gain or traffic claim. Native tracker now counts seven
+  publicly verified placements, including PaperCroft's queue/recorded review.
+- HTML5, Three.js, PaperCroft, SlowDen, IndieDB profile/five images checked;
+  no new written feedback or rating change. Three.js 38 views/one like.
+  GameDev.net discussion still blocked; ESReality empty; Reddit removals persist.
+  Directory/catalog coverage limits recorded in community checkpoint.
+- Brand Inbox/All mail/Spam/Trash: no additional outreach reply/bounce, empty
+  Spam/Trash. Xander recording reply outstanding; no resend or unauthorized
+  response. Resources web-reader failures recovered through guest browser.
+- Initial browser inventory timed out/reset; one retry recovered access.
+  Cause unconfirmed; no unrelated processes stopped or app restart performed.
+  Research tab muted before game iframe content; personal accounts not used.
+- Independent source audit confirms no startup/font/style/build change since
+  9 Oct audit. Existing font preloads/swap, inlined CSS and engine deferral
+  unchanged. No justified source fix/PageSpeed rerun. Historical mobile LCP
+  remains 2.9 s. Next: sanctioned mobile load trace with explicit viewport,
+  network/CPU, font response/H1 LCP paint attribution. Native computer APIs
+  disabled; no unsupported profiling or browser automation workaround.
+- Documentation only: community-outreach-targets.md, outreach-second-wave-
+  checkpoint.md, outreach-third-wave-checkpoint.md and this checkpoint. Native
+  tracker saved seven guarded patches, sequence 8; targeted readback passed.
+  Independent review caught the new register row's table break and obsolete
+  newsletter monitoring instruction; both corrected. Final independent review
+  found no remaining must-fix issue; git diff --check passed. Brand commit/push
+  follows for these four related documents only.
+  Preserve unrelated untracked %SystemDrive%/, existing scheduler/drafts/sharing.
+- Next: daily feedback/listing/mail checks, Xander recording response, pending
+  directory/editorial outcomes, GameDev.net discussion access, Rando user test
+  and mobile trace. Newsletter publication is resolved; monitoring continues.
+
 ## Latest recovery checkpoint — 9 October 2026, daily follow-up
 
 - Heartbeat arrived 10:12 CEST; actual checks 10:12–10:17, not 09:00. Read current

@@ -1,5 +1,27 @@
 # Master Blaster: second outreach wave
 
+## Latest daily check — 10 October 2026, 09:05–09:11 CEST
+
+- NEW publication: [Gamedev.js Weekly issue 666](https://gamedevjsweekly.com/666),
+  dated 9 Oct, includes the Master Blaster title link under Games. Its brand
+  newsletter arrived 9 Oct 14:01 CEST. Archive, public issue and rendered anchor
+  verified today; destination https://masterblaster.se/, no ref/UTM, empty rel.
+  Confirmed public backlink, without written review/screenshots/guide/comments.
+  No referral traffic or ranking benefit measured. Recorded exact publication;
+  subscription stays confirmed, no additional signup or response sent.
+- Three.js topic 95005: original post only, one like unchanged, 38 views.
+  No written replies or new IDs. User-final prose/editing hold preserved.
+- Brand Inbox/All mail/Spam/Trash: Weekly issue only new outreach item; no
+  Alpha Beta Gamer/Indie Games Plus/directory response or new bounce. Spam/Trash
+  empty. Public coverage checks and focused searches found no other feature.
+  Sent still does not establish those two pitches' delivery/coverage.
+- BrowserGames.gg home/Shooter and iogames.fun home/New show no listing in
+  checked surfaces. iogames.fun pages 2–5 timed out: coverage incomplete.
+  Resources reader failed; guest browser recovered Games and Games-filtered
+  Showcase checks (12 and eight entries), no Master Blaster match. Still pending.
+- Native tracker updated with current coverage and check limitations. Preserve
+  existing daily schedule, manual/moderation/privacy holds, and no-duplicate rule.
+
 ## Latest daily check — 9 October 2026, 10:12–10:17 CEST
 
 - Three.js topic 95005: original post only, no replies; one like unchanged,
@@ -65,12 +87,14 @@ explicitly displayed: Your subscription to our list has been confirmed.
 No personal details or extra mailing lists used. Proof screenshot saved in
 ignored .wrangler/tmp/seo/gamedevjsweekly-subscription-confirmed-2026-10-06.png.
 
-Daily follow-up: read incoming newsletter in the brand inbox and check the
-public archive https://gamedevjsweekly.com/archive (RSS also exposed at
-https://gamedevjsweekly.com/feed.xml). Follow observed published issue links;
-do not guess an issue number. Expected feature Friday 9 Oct remains awaiting
-publication. Record exact game anchor and issue permalink when published,
-summarize the actual feature here, and update the existing tracker.
+Daily follow-up: publication was verified on 10 Oct in
+[issue 666](https://gamedevjsweekly.com/666), dated 9 Oct. Continue monitoring
+this existing issue and the brand inbox. Its Games link points directly to
+https://masterblaster.se/ without the referral tags supplied in the pitch.
+The public archive https://gamedevjsweekly.com/archive and RSS
+https://gamedevjsweekly.com/feed.xml remain available for later issues;
+follow observed links rather than guessing an issue number. Keep the existing
+tracker current without duplicate subscriptions, pitches or unauthorized replies.
 
 ## Gamedev.js Weekly acceptance — 6 October 2026
 
