@@ -1,5 +1,38 @@
 # SEO checkpoint — 2026-09-18
 
+## Latest recovery checkpoint — 11 October 2026, daily follow-up
+
+- Heartbeat arrived 08:58 CEST; actual external checks 08:58–09:03. Read current
+  conversation, AGENTS and SEO/community/growth/second/third-wave checkpoints.
+  Delegated directory/editorial checks and read-only source audit. Existing
+  paused/manual/moderation/privacy constraints preserved.
+- Prior validated 10 Oct documentation commit 4276288 is HEAD and was pushed.
+  Existing Weekly issue 666 feature remains public; seven verified placements,
+  including PaperCroft queue/recorded review. No new publication/written feedback.
+- HTML5, Three.js, PaperCroft, SlowDen and IndieDB profile/five media checked.
+  No new written reply IDs or rating change; Three.js 40 views/one like.
+  GameDev.net comments still blocked; ESReality empty; Reddit removals persist.
+  Catalog limits and recovered Resources browser checks in community checkpoint.
+- Brand Inbox/All mail/Spam/Trash read successfully: no new outreach response,
+  bounce or newsletter; Spam/Trash empty. Xander recording reply outstanding.
+  No sends/reposts/account creation or edits to user-final external prose.
+  Research tab muted before game iframe content; brand-only mailbox confirmed.
+- Independent source audit: no startup/font/style/build change since 4276288.
+  Font preloads/swap, CSS inlining and engine load/fonts-ready/two-frame deferral
+  unchanged. No source fix or PageSpeed rerun justified. Historical mobile LCP
+  remains 2.9 s, not today's measurement. Next is a sanctioned mobile cold-load
+  trace with recorded viewport/network/CPU and font/H1 LCP paint attribution;
+  available controls cannot collect it, native computer APIs disabled.
+- Related documentation only: community-outreach-targets.md, second-/third-wave
+  checkpoints and this file. Native tracker saved seven guarded patches,
+  sequence 9; all seven updated blocks matched expected text on readback.
+  Independent review found no must-fix factual/formatting issue; git diff --check
+  passed. Brand commit/push follows for these four documents only.
+  Preserve unrelated untracked %SystemDrive%/, existing scheduler/drafts/sharing.
+- Next: daily listing/feedback/mail checks; Xander recording response; pending
+  directory/editorial outcomes; GameDev.net discussion access; Rando user test;
+  mobile trace. Newsletter publication already resolved; monitoring continues.
+
 ## Latest recovery checkpoint — 10 October 2026, daily follow-up
 
 - Heartbeat arrived 09:04 CEST; actual external checks 09:05–09:11. Read current

@@ -1,5 +1,23 @@
 # Master Blaster: second outreach wave
 
+## Latest daily check — 11 October 2026, 08:58–09:03 CEST
+
+- Existing [Gamedev.js Weekly issue 666](https://gamedevjsweekly.com/666) Games
+  feature remains public. Published 9 Oct and reported 10 Oct; not new coverage
+  today. Title-only game link, no written review/comment surface exposed.
+- Three.js topic 95005 still original post 235794 only, one like, 40 views
+  (previously 38). No written reply IDs; manual-prose/editing hold preserved.
+- Brand Inbox/All mail/Spam/Trash read successfully: no new outreach response,
+  bounce or newsletter; Spam/Trash empty. Alpha Beta Gamer and Indie Games Plus
+  home/category/recent coverage and focused searches show no verified feature.
+  Sent pitches are not confirmed delivery or coverage; no duplicate pitch.
+- BrowserGames.gg home/Shooter and iogames.fun home/New show no verified listing.
+  iogames.fun page 5 recovered with no match; pages 2–4 timed out, incomplete
+  catalog coverage. Resources reader 403 recovered in fresh guest browser:
+  12 Games and eight Games-filtered Showcase entries have no Master Blaster match.
+- Native tracker updated from actual checks. Existing schedule, privacy,
+  manual-posting and moderation holds unchanged; no resubmissions or replies.
+
 ## Latest daily check — 10 October 2026, 09:05–09:11 CEST
 
 - NEW publication: [Gamedev.js Weekly issue 666](https://gamedevjsweekly.com/666),
