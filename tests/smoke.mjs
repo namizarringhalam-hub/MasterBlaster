@@ -122,7 +122,7 @@ assert.match(mainSource, /pulseMenuEnergy\(\.48, MENU_ACCENTS\[mode\], 2300\)/, 
 assert.match(stylesSource, /\.menu-atmosphere[\s\S]*?transform[\s\S]*?opacity/, "the menu atmosphere is implemented with compositor-friendly transform and opacity motion");
 assert.match(stylesSource, /\.arena-towers[\s\S]*?url\("\/menu-arena-v2\.webp"\)[\s\S]*?arena-camera-drift[\s\S]*?infinite alternate/, "the menu uses a cinematic arena plate with reversible parallax instead of chart-like procedural columns");
 assert.match(stylesSource, /\.menu-shell \{[\s\S]*?width: 100%;[\s\S]*?height: 100%;[\s\S]*?max-height: none;[\s\S]*?\.menu-shell::before \{[\s\S]*?position: fixed;[\s\S]*?width: min\(1480px, calc\(100% - 48px\)\)/, "the arena fills every viewport while the glass UI frame scales independently above it");
-assert.match(stylesSource, /@media \(max-height: 520px\) and \(min-width: 600px\)[\s\S]*?grid-template-columns: minmax\(0, 720px\)[\s\S]*?\.primary-actions \{ grid-template-columns: 1\.25fr 1fr 1fr[\s\S]*?\.secondary-actions :is\(button, \.how-to-play-link\) \{ min-height: 44px/, "short landscape screens keep all menu actions visible without falling back to the portrait stack or undersized touch targets");
+assert.match(stylesSource, /@media \(max-height: 520px\) and \(min-width: 600px\)[\s\S]*?grid-template-columns: minmax\(0, 720px\)[\s\S]*?\.primary-actions \{ grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)[\s\S]*?\.secondary-actions :is\(button, \.how-to-play-link\) \{ min-height: 44px/, "short landscape screens arrange all four game modes in one row and retain 44px secondary actions");
 assert.match(stylesSource, /-webkit-text-size-adjust: 100%; text-size-adjust: 100%[\s\S]*?@media \(max-width: 600px\) and \(max-height: 700px\) and \(orientation: portrait\)[\s\S]*?\.primary-actions button \{ min-height: 58px[\s\S]*?\.capabilities \{ display: none/, "short portrait phones render the core menu at device scale without Safari text inflation or requiring an initial zoom-out");
 assert.doesNotMatch(stylesSource, /arena-grid-drift|repeating-linear-gradient\(117deg/, "no translating grid or repeating streak texture can expose a visible loop reset");
 assert.match(stylesSource, /@keyframes projectile-sweep[\s\S]*?0%, 12% \{ opacity: 0[\s\S]*?82%, 100% \{ opacity: 0/, "projectile sweeps reset only while fully invisible");
@@ -562,8 +562,9 @@ const previousAddEventListener = globalThis.addEventListener;
 const previousDocument = globalThis.document;
 const windowListeners = {};
 const canvasListeners = {};
+const documentListeners = {};
 globalThis.addEventListener = (type, listener) => { windowListeners[type] = listener; };
-globalThis.document = { pointerLockElement: null, addEventListener() {} };
+globalThis.document = { pointerLockElement: null, addEventListener(type, listener) { documentListeners[type] = listener; } };
 const touchInput = new InputManager({
   clientWidth: 200,
   addEventListener(type, listener) { canvasListeners[type] = listener; },
@@ -594,14 +595,24 @@ assert.deepEqual(touchInput.touchDirection(), { x: 0, y: 0 }, "cancelling the wa
 let lockRequests = 0;
 const desktopCanvas = {
   addEventListener(type, listener) { canvasListeners[type] = listener; },
-  requestPointerLock() { lockRequests++; }
+  requestPointerLock() { lockRequests++; },
+  focus(options) { assert.deepEqual(options, { preventScroll: true }); document.activeElement = this; }
 };
 const desktopInput = new InputManager(desktopCanvas);
+assert.equal(desktopCanvas.tabIndex, -1, "the playfield accepts focus without adding a menu Tab stop");
+document.activeElement = { closest: () => ({ tagName: "BUTTON" }) };
+assert.equal(shouldCaptureGameKey({ code: "KeyW", target: document.activeElement }, true), false, "focused UI controls retain their normal keyboard behavior");
 canvasListeners.mousedown({ button: 0, preventDefault() {} });
 assert.equal(lockRequests, 1, "the first gameplay click requests mouse capture");
 assert.equal(desktopInput.mouse.left, false, "the click used to capture the mouse is consumed instead of firing");
 assert.equal(desktopInput.tapped("MouseLeft"), false, "the capture click never queues a projectile shot");
 globalThis.document.pointerLockElement = desktopCanvas;
+documentListeners.pointerlockchange();
+assert.equal(document.activeElement, desktopCanvas, "recapturing the mouse transfers focus from the HUD to the playfield");
+windowListeners.keydown({ code: "KeyW", target: document.activeElement, preventDefault() {} });
+assert.equal(desktopInput.tapped("KeyW"), true, "movement keys work immediately after returning from a HUD button");
+windowListeners.keyup({ code: "KeyW", target: document.activeElement, preventDefault() {} });
+desktopInput.endFrame();
 canvasListeners.mousedown({ button: 0, preventDefault() {} });
 assert.equal(desktopInput.mouse.left, true, "left click fires normally after mouse capture is active");
 assert.equal(desktopInput.tapped("MouseLeft"), true, "captured clicks still queue normal weapon input");

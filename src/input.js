@@ -52,6 +52,7 @@ export function deliberateTouchTap(start, end, bounds, slop = 24) {
 export class InputManager {
   constructor(canvas, shouldCapture = () => true, onPointerUnlock = () => {}) {
     this.shouldCapture = shouldCapture;
+    canvas.tabIndex = -1;
     this.keys = new Set();
     this.pressed = new Set();
     this.mouse = { left: false, right: false, movementX: 0, movementY: 0, locked: false };
@@ -100,6 +101,8 @@ export class InputManager {
       this.mouse.locked = document.pointerLockElement === canvas;
       this.mouse.movementX = 0;
       this.mouse.movementY = 0;
+      // Pointer lock alone leaves the last HUD button focused, swallowing game keys.
+      if (this.mouse.locked && this.shouldCapture()) canvas.focus?.({ preventScroll: true });
       if (!this.mouse.locked) this.mouse.left = this.mouse.right = false;
       if (wasLocked && !this.mouse.locked) onPointerUnlock();
     });

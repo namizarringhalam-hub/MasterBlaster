@@ -5,6 +5,7 @@ import { CombatVisuals } from "../src/combatVisuals.js";
 import { NeonRenderPipeline } from "../src/renderPipeline.js";
 import { ArenaWorld } from "../src/world.js";
 import { Fighter } from "../src/player.js";
+import { normalizeGraphicsEffects } from "../src/graphicsEffects.js";
 
 // Exercise Three's actual shader generators without a browser/device. The only
 // stand-ins are conservative hardware limits; this is not a GPU pixel test.
@@ -98,5 +99,35 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
   world.dispose(); sky.geometry.dispose(); sky.material.dispose();
   fighter.dispose();
   key.shadow.map.dispose();
+}
+// Custom depth-only graphs must still compile when the unused normal attachment
+// is absent, including their real scene output and post-process shader nodes.
+for (const effect of ["softParticles", "motionBlur", "heatDistortion", "localFog"]) {
+  const renderer = new THREE.WebGPURenderer({
+    canvas: { width: 64, height: 64, style: {}, addEventListener() {}, removeEventListener() {} }
+  });
+  renderer.backend.capabilities = { getUniformBufferLimit: () => 16384 };
+  renderer.backend.renderer = renderer;
+  renderer.hasFeature = renderer.hasCompatibility = () => false;
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(), key = new THREE.DirectionalLight();
+  key.castShadow = true; key.position.set(-22, 40, 18); scene.add(key);
+  const effects = Object.fromEntries(Object.keys(normalizeGraphicsEffects()).map(name => [name, name === effect]));
+  const pipeline = new NeonRenderPipeline(renderer, scene, camera, { effects });
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial());
+  renderer.setRenderTarget(pipeline.scenePass.renderTarget); renderer.setMRT(pipeline.scenePass.getMRT());
+  const build = object => {
+    const builder = new THREE.WGSLNodeBuilder(object, renderer);
+    builder.scene = scene; builder.camera = camera; builder.build();
+    assert.ok(builder.fragmentShader.length > 100);
+    assert.doesNotMatch(builder.fragmentShader, /undefined|NaN/);
+  };
+  build(mesh);
+  assert.deepEqual(pipeline.scenePass.renderTarget.textures.map(texture => texture.name), ["output"]);
+  renderer.setRenderTarget(null); renderer.setMRT(null);
+  const material = new THREE.NodeMaterial(), quad = new THREE.Mesh(new THREE.PlaneGeometry(), material);
+  for (const node of [pipeline.pipeline.outputNode, ...pipeline.outputTargets.map(target => target.node)]) {
+    material.fragmentNode = node; build(quad);
+  }
+  mesh.geometry.dispose(); mesh.material.dispose(); quad.geometry.dispose(); material.dispose(); pipeline.dispose();
 }
 console.log("WGSL/GLSL high/medium shaders generate with selective emission, smoke alpha and instanced attributes.");

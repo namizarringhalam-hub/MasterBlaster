@@ -3875,6 +3875,7 @@ class BlasterBattle {
       slot.classList.toggle("selected", index === player.slotIndex);
       const selected = String(index === player.slotIndex);
       if (slot.getAttribute("aria-pressed") !== selected) slot.setAttribute("aria-pressed", selected);
+      if (slot.getAttribute("aria-label") !== weapon.name) slot.setAttribute("aria-label", weapon.name);
       const category = WEAPON_CATEGORY_SLUG_BY_ID[weapon.id];
       if (slot.dataset.category !== category) slot.dataset.category = category;
       setStyle(slot, "--weapon", WEAPON_CSS_COLOR_BY_ID[weapon.id]);
@@ -3907,7 +3908,7 @@ class BlasterBattle {
     if (!player.alive) {
       const seconds = Math.max(0, Math.ceil(this.respawnTimers[0] || 0));
       const cause = formatText(TEXT.hud.eliminatedBy, { name: this.localEliminatorName || TEXT.hud.environment });
-      this.hud.respawnStatus.hidden = false;
+      if (this.hud.respawnStatus.hidden) this.hud.respawnStatus.hidden = false;
       setText(this.hud.respawnCause, cause);
       setText(this.hud.respawnCountdown, formatText(TEXT.hud.respawningIn, { seconds }));
       if (this.lastRespawnAnnouncement !== cause) {
@@ -3915,7 +3916,7 @@ class BlasterBattle {
         this.lastRespawnAnnouncement = cause;
       }
     } else {
-      this.hud.respawnStatus.hidden = true;
+      if (!this.hud.respawnStatus.hidden) this.hud.respawnStatus.hidden = true;
       if (this.lastRespawnAnnouncement) setText(this.hud.respawnAnnouncement, TEXT.hud.controlRestored);
       this.lastRespawnAnnouncement = "";
       this.localEliminatorName = "";

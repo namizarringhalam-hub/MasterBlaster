@@ -3,6 +3,8 @@
   font-family: Inter, "Inter Fallback", system-ui, sans-serif;
   background: #07111d;
   font-synthesis: none;
+  color-scheme: dark;
+  accent-color: var(--cyan);
   --cyan: #52e9ff;
 }
 
@@ -32,10 +34,11 @@ body:has([data-menu-scene], #ui-root > .screen) #game-canvas { visibility: hidde
 .resource-progress progress { position: absolute; bottom: 0; left: 0; width: 100%; height: 3px; border: 0; appearance: none; accent-color: var(--cyan); }
 .resource-progress progress::-webkit-progress-bar { background: #173343; }
 .resource-progress progress::-webkit-progress-value { background: var(--cyan); }
-.resource-progress [data-resource-detail] { margin-left: auto; text-align: right; }
-.resource-progress button { pointer-events: auto; padding: 3px 10px; font-size: 11px; }
+.resource-progress [data-resource-detail] { min-width: 0; margin-left: auto; overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.resource-progress button { flex-shrink: 0; pointer-events: auto; padding: 3px 10px; font-size: 11px; }
 body:not(:has([data-menu-scene="landing"])) .resource-progress { display: none; }
-[data-menu-scene="landing"] { padding-top: max(50px, env(safe-area-inset-top)); }
+body:has(#resource-progress:not([hidden])) [data-menu-scene="landing"] { padding-top: max(clamp(32px, 5vw, 84px), 50px, calc(env(safe-area-inset-top) + 36px)); }
+body:has(#resource-progress:not([hidden]) [data-resource-retry]:not([hidden])) [data-menu-scene="landing"] { padding-top: max(clamp(32px, 5vw, 84px), 80px, calc(env(safe-area-inset-top) + 66px)); }
 
 .rematch-loading {
   position: fixed;
@@ -149,8 +152,8 @@ button::before, .how-to-play-link::before {
 button:hover:not(:disabled), .how-to-play-link:hover { transform: translateY(-2px); border-color: #45e8ff; background: rgba(25, 49, 71, .95); box-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 12px 32px rgba(0, 196, 255, .12); }
 button:hover:not(:disabled)::before, .how-to-play-link:hover::before { transform: translateX(125%); }
 button:disabled { opacity: .4; cursor: not-allowed; }
-button.primary { background: #e83952; border-color: #ff6f83; box-shadow: 0 12px 34px rgba(232, 57, 82, .24); }
-button.primary:hover:not(:disabled) { background: #ff4862; border-color: #fff; }
+button.primary { background: linear-gradient(135deg, #ce2846, #be203e); border-color: #ff6f83; box-shadow: 0 12px 34px rgba(232, 57, 82, .24); }
+button.primary:hover:not(:disabled) { background: #d52947; border-color: #fff; }
 
 .menu-shell {
   position: relative;
@@ -375,6 +378,7 @@ button.primary:hover:not(:disabled) { background: #ff4862; border-color: #fff; }
 .primary-actions button { min-height: 92px; text-align: left; display: flex; flex-direction: column; justify-content: center; }
 .primary-actions span { font: 800 19px/1 "Barlow Condensed", "Barlow Condensed Fallback", sans-serif; letter-spacing: .06em; }
 .primary-actions small { margin-top: 8px; color: #9db0c0; font-size: 11px; font-weight: 500; letter-spacing: 0; }
+.primary-actions .primary small { color: #fff; }
 .secondary-actions { display: flex; gap: 10px; margin-top: 10px; }
 .secondary-actions :is(button, .how-to-play-link) { flex: 1; min-width: 0; min-height: 42px; padding: 8px; color: #a7bbc9; }
 .how-to-play-link { display: flex; align-items: center; justify-content: center; text-align: center; text-decoration: none; }
@@ -421,7 +425,6 @@ button.primary:hover:not(:disabled) { background: #ff4862; border-color: #fff; }
   border: 1px solid rgba(100, 214, 255, .22);
   border-top: 3px solid #49e8ff;
   box-shadow: 0 34px 110px rgba(0, 0, 0, .58), inset 0 1px 0 rgba(255,255,255,.055), inset 18px 0 52px rgba(54, 226, 255, .025);
-  backdrop-filter: blur(18px) saturate(1.15);
 }
 
 .dialog header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
@@ -808,7 +811,7 @@ summary:focus-visible { outline: 2px solid #52e9ff; outline-offset: 4px; }
   .kicker { margin: 13px 0 7px; font-size: 9px; }
   .hero-panel h1 { font-size: 48px; line-height: .82; }
   .lead { margin: 12px 0 0; max-width: none; font-size: 13px; line-height: 1.35; }
-  .primary-actions { grid-template-columns: 1.25fr 1fr 1fr; gap: 8px; margin-top: 12px; }
+  .primary-actions { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
   .primary-actions button { min-height: 54px; padding: 10px 13px; }
   .primary-actions span { font-size: 16px; }
   .primary-actions small { margin-top: 4px; font-size: 9px; }
@@ -818,6 +821,8 @@ summary:focus-visible { outline: 2px solid #52e9ff; outline-offset: 4px; }
 }
 
 @media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="range"]), select { min-height: 44px; font-size: 16px; }
+  .dialog .back { min-height: 44px; }
   .menu-scene .arena-towers,
   .menu-scene .grapple-arc,
   .menu-scene .arena-streaks { filter: none; }
@@ -835,6 +840,7 @@ summary:focus-visible { outline: 2px solid #52e9ff; outline-offset: 4px; }
   .primary-actions { margin-top: 18px; }
   .primary-actions button { min-height: clamp(58px, 10vh, 72px); }
   .primary-actions small { margin-top: 5px; }
+  .secondary-actions :is(button, .how-to-play-link) { font-size: clamp(12px, 3.6vw, 14px); }
   .capabilities { margin-top: 14px; gap: 9px; font-size: 8px; }
   .combatant { top: 8px; width: calc(50% - 14px); padding: 8px 9px; }
   .combatant.left { left: 8px; }

@@ -33,6 +33,15 @@ for(const native of [true,false])for(const quality of ['low','medium','high']) {
 const withAO=new NeonRenderPipeline(renderer(true),new THREE.Scene(),new THREE.PerspectiveCamera());
 let releasedNoise=0;withAO.aoPass._noiseNode.value.addEventListener('dispose',()=>releasedNoise++);
 withAO.dispose();withAO.dispose();assert.equal(releasedNoise,1,'live rebuild releases the AO noise texture exactly once');
+for (const effect of ['softParticles','motionBlur','heatDistortion','localFog','ambientOcclusion','reflections','contactShadows']) {
+  const scene=new THREE.Scene(), key=new THREE.DirectionalLight();key.castShadow=true;scene.add(key);
+  const pipeline=new NeonRenderPipeline(renderer(true),scene,new THREE.PerspectiveCamera(),{effects:{...off,[effect]:true}});
+  const needsNormal=['ambientOcclusion','reflections','contactShadows'].includes(effect);
+  assert.equal(pipeline.scenePass.renderTarget.textures.some(texture=>texture.name==='normal'),needsNormal,
+    `${effect}: allocate and write normals only for effects that consume them`);
+  assert.equal(pipeline.scenePass.renderTarget.textures.length,1+Number(needsNormal)+Number(effect==='reflections'));
+  pipeline.dispose();
+}
 const world=new ArenaWorld(new THREE.Scene());world.setGraphicsProfile(graphicsProfile('high'));
 const obstacles=[...world.obstacles], camera=new THREE.PerspectiveCamera();
 world.setGraphicsEffects(off);world.time=10;world.updatePresentation(camera);

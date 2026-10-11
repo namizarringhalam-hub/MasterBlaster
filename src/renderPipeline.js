@@ -131,14 +131,17 @@ export class NeonRenderPipeline {
     if (bloomPass) bloomPass.setResolutionScale(this.options.bloomScale);
     this.bloomPass = bloomPass;
 
-    const normal = scenePass.getTextureNode("normal");
+    // Requesting an attachment allocates it and makes every scene fragment write
+    // it. Depth-only effects need no normal buffer or extra HDR memory traffic.
+    const normal = this.effects.ambientOcclusion || this.effects.reflections || this.effects.contactShadows
+      ? scenePass.getTextureNode("normal") : null;
     const depth = scenePass.getTextureNode("depth");
     if (this.effects.heatDistortion) this.heatDistortion = new HeatDistortion(depth, camera);
     const sceneUV = this.heatDistortion ? this.heatDistortion.node(screenUV) : screenUV;
-    const aoNormals = renderer.backend.compatibilityMode === true
-      ? recoverInvalidAONormals(normal, depth, uniform(camera.projectionMatrixInverse)) : normal;
     let grounding = float(1);
     if (this.effects.ambientOcclusion) {
+      const aoNormals = renderer.backend.compatibilityMode === true
+        ? recoverInvalidAONormals(normal, depth, uniform(camera.projectionMatrixInverse)) : normal;
       const aoPass = ao(depth, aoNormals, camera);
       this.aoPass = aoPass;
       aoPass.resolutionScale = .5;
