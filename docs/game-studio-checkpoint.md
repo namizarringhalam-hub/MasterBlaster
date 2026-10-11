@@ -18,6 +18,6 @@ Custom graphics: native full-to-depth-only graph replacement passes shader gener
 
 Diagnostics: initial development-server probe failed waiting for Start after source edits (cause unconfirmed); subsequent diagnostic waits returned before countdown completion because of asynchronous predicates. Synchronous state predicates and a real hidden-loader check corrected the harness, then production gameplay passed. No product workaround was made for diagnostic failures. All browser launches use --mute-audio before loading content.
 
-Next: commit/push these validated files to origin/main, verify hosted artifacts, close only task-owned test servers. No remaining implementation or review items.
+Published: b03404e706b83de6217c6ff7317d0fff21e76a39 pushed to origin/main and remote HEAD verified. masterblaster.se serves entry /assets/index-C5_UdCLV.js and engine main-eZJaCDpS.js; direct HTTP checks verify focus restoration, dynamic labels, dark controls and four-column layout in served artifacts. Local/hosted build identities differ; do not claim byte-for-byte bundle parity. Both task-owned Vite servers and all task browser contexts are closed. Only unrelated untracked `%SystemDrive%/` remains. No remaining implementation, review or publication steps.
 
 Blockers: none known. Do not infer prior browser frame-throttling causes or claim whole-game FPS gains from microbenchmarks. Existing checkpoints document limited foreground measurement reliability.
