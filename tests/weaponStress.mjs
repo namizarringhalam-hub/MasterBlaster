@@ -44,6 +44,7 @@ for (const quality of [.25, .5, .75, 1]) {
   const blastScene = new THREE.Scene();
   const blastVisuals = new CombatVisuals(blastScene, { quality });
   blastVisuals.setGraphicsProfile({ combatQuality: quality, combatLights: 4 });
+  const fixedGroupCount = blastVisuals.group.children.length;
   for (let index = 0; index < fighters.length; index++) {
     const center = new THREE.Vector3((index % 4) * 8, 2, Math.floor(index / 4) * 8);
     blastVisuals.impact(center, WEAPONS.mortar, fighters[index], { size: 3.6, explosive: true });
@@ -57,21 +58,21 @@ for (const quality of [.25, .5, .75, 1]) {
   assert.equal(blastVisuals.cursors.ring, fighters.length * 7, `${quality} quality processes every mortar and six-child cluster impact in a synchronized 16-player volley`);
   assert.equal(blastVisuals.rings.filter((ring) => ring.life > 0).length, fighters.length * 7, `${quality} quality preserves every one of the 112 critical impact cues without overwriting earlier hits`);
   assert.ok(Math.max(...blastVisuals.rings.map((ring) => ring.size || 0)) > 3, `${quality} quality preserves the enlarged mortar shockwave instead of covertly scaling it down`);
-  assert.equal(blastVisuals.group.children.length, 13, `${quality} quality retains its existing groups plus one fixed explosion pool`);
+  assert.equal(blastVisuals.group.children.length, fixedGroupCount, `${quality} quality adds no drawable groups during a synchronized volley`);
   assert.equal(blastVisuals.surfaceFront.count, 0, "explosions submit no surface-front instances");
   assert.equal(blastVisuals.surfaceCore.count, 0, "explosions submit no surface-core instances");
   blastVisuals.dispose();
 }
 
 assert.equal(fighters.length, 16, "the stress matrix renders a full sixteen-fighter match");
-assert.equal(visuals.group.children.length, 13, "rapid effects, surface layers and explosions stay in fixed render groups");
+assert.equal(visuals.group.children.length, 17, "rapid effects, surface layers, pooled sparks and explosions stay in fixed render groups");
 assert.equal(visuals.surfaceFront.count, 0); assert.equal(visuals.surfaceCore.count, 0);
 assert.ok(!visuals.group.getObjectByName("Momentum speed streaks"), "the local cone shower has been removed from the grapple presentation");
 const speedPresentationCss = await readFile(new URL("../src/styles.css", import.meta.url), "utf8");
 const speedPresentationMain = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
-assert.match(speedPresentationCss, /backdrop-filter: blur\(var\(--environment-blur/, "grapple speed applies a peripheral speed-dependent environment blur");
-assert.match(speedPresentationCss, /grapple-speed-pulse/, "outer speed lines have a distinct animated pulse");
-assert.match(speedPresentationMain, /this\.graphics\.level !== "low"[\s\S]*?environment-blur/, "speed blur respects graphics quality and stays disabled on Low");
+assert.match(speedPresentationMain, /updatePresentation\?\.\(\{ speed, motion: clamp\(\(speed - 14\) \/ 30, 0, 1\)/, "rendered speed drives the in-engine peripheral motion effect");
+assert.match(await readFile(new URL("../src/cinematicPresentation.js", import.meta.url), "utf8"), /this\.motion\.value = active && !reducedMotion \? clamp01\(motion\) : 0[\s\S]*?Only the periphery smears/, "speed streaking and blur stay centered on gameplay aim and honor reduced motion");
+assert.doesNotMatch(speedPresentationCss, /environment-blur|grapple-speed-pulse/, "gameplay speed effects no longer depend on continuous DOM backdrop filters");
 assert.equal(visuals.flashes.length, 64, "sixteen-fighter muzzle flashes stay below the fixed pool capacity");
 assert.equal(visuals.tracers.length, 128, "sixteen-fighter rapid tracers stay below the fixed pool capacity");
 assert.equal(visuals.rings.length, 128, "sixteen-fighter impact rings retain the bounded 112-hit volley capacity");
@@ -97,6 +98,7 @@ const accumulatedFireballs = Array.from({ length: 2100 }, (_, index) => {
   return shot;
 });
 visuals.update(1 / 60);
+visuals.syncPresentation(new THREE.PerspectiveCamera());
 assert.equal(visuals.fireballs.size, 2100, "persistent Fireballs remain registered without expiring or being deleted");
 assert.ok(accumulatedFireballs.every((shot) => shot.mesh.children.length === 0 && shot.mesh.parent === null), "persistent Fireballs add no per-shot drawable or scene node");
 assert.equal(visuals.fireballGroup.children.length, 7, "all Fireballs share seven instanced visual layers");
@@ -106,8 +108,8 @@ assert.ok(["flameA", "flameB", "flameC"].every((name) => visuals.fireballLayers[
 
 const mainSource = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
 assert.match(mainSource, /this\.hazards\.length >= 24/, "persistent hazards also have a global match cap");
-assert.match(mainSource, /setHighLoadMode\(fighterCount >= 13\)/, "maximum-size matches expose high-load telemetry before heavy fighter materials are created");
-assert.match(await readFile(new URL("../src/renderPipeline.js", import.meta.url), "utf8"), /this\.renderQuality === "medium" \? this\.highLoadPipeline : this\.pipeline/, "fighter count cannot silently replace the requested render path");
+assert.doesNotMatch(mainSource, /setHighLoadMode|fighterCount[^\n]*renderPipeline/, "maximum-size matches keep the selected graphics tier without a separate high-load graph");
+assert.match(await readFile(new URL("../src/renderPipeline.js", import.meta.url), "utf8"), /setQuality\(quality = 'high'\)[\s\S]*?this\.ensureQualityPipeline\(\)/, "pipeline selection follows explicit graphics quality, independent of fighter count");
 assert.match(await readFile(new URL("../src/hazardVisuals.js", import.meta.url), "utf8"), /new THREE\.InstancedMesh[\s\S]*?kind: "flame"[\s\S]*?vortexRibbonGeometry[\s\S]*?kind: "ribbon"/, "napalm stays instanced while tornadoes use one authored helical ribbon draw");
 assert.match(mainSource, /shot\.bounces < \(shot\.weapon\.bounces \|\| 0\)[\s\S]*?bounceProjectile\(shot, previous\)/, "infinite Fireball ricochets stay on the swept world-collision path");
 

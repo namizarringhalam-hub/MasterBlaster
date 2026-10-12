@@ -1,7 +1,8 @@
 import * as THREE from "three/webgpu";
 import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
-import { attribute, color, materialColor, materialEmissive, materialOpacity, normalViewGeometry, positionViewDirection, texture, uv } from "three/tsl";
+import { attribute, color, materialColor, materialEmissive, materialOpacity, normalViewGeometry, normalWorld, positionViewDirection, texture, uv, vec3 } from "three/tsl";
 import { surfaceMaps, projectSurfaceUVs } from "./surfaceTextures.js";
+import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
 
 // Cross sections author the volume, not just the front outline: shoulders taper
 // on all three axes, breastplates have a prow, and calves flare behind the shin.
@@ -72,6 +73,209 @@ function fitArmor(mesh, x, y, z, lift = 0) {
   mesh.geometry.computeBoundingSphere();
 }
 
+// Rigid armour does not need vertex blending, but it does need the skeleton:
+// one 100%-weighted bone per authored assembly keeps every hinge exact while
+// collapsing each material's assemblies to one draw.  The animation groups are
+// retained as the pose solver's ergonomic controls; their transforms are
+// mirrored to this lightweight render skeleton once per presented frame.
+function consolidateRigidArmor(rig, fighter, excluded = []) {
+  rig.updateMatrixWorld(true);
+  const visorMaterial = fighter.visor?.material;
+  const joints = [
+    ["root", rig, null],
+    ["helmet", fighter.helmet, "root"],
+    ["leftArm", fighter.leftArm, "root"],
+    ["leftForearm", fighter.leftForearm, "leftArm"],
+    ["rightArm", fighter.rightArm, "root"],
+    ["rightForearm", fighter.rightForearm, "rightArm"],
+    ["leftLeg", fighter.leftLeg, "root"],
+    ["leftKnee", fighter.leftKnee, "leftLeg"],
+    ["leftAnkle", fighter.leftAnkle, "leftKnee"],
+    ["rightLeg", fighter.rightLeg, "root"],
+    ["rightKnee", fighter.rightKnee, "rightLeg"],
+    ["rightAnkle", fighter.rightAnkle, "rightKnee"]
+  ];
+  const jointBones = new Map(), jointGroups = new Map();
+  for (const [name, group] of joints) jointGroups.set(group, name);
+  for (const [name, group, parentName] of joints) {
+    const bone = new THREE.Bone();
+    bone.name = `Mecha bone ${name}`;
+    if (parentName) {
+      bone.position.copy(group.position);
+      bone.quaternion.copy(group.quaternion);
+      bone.scale.copy(group.scale);
+    } else {
+      // This bone is already parented to the rig, so copying the rig transform
+      // would double-transform the bind pose and leave a permanent offset.
+      bone.position.set(0, 0, 0);
+      bone.quaternion.identity();
+      bone.scale.set(1, 1, 1);
+    }
+    jointBones.set(name, bone);
+    (parentName ? jointBones.get(parentName) : rig).add(bone);
+  }
+  const excludedMeshes = new Set();
+  for (const root of excluded.filter(Boolean)) root.traverse(child => excludedMeshes.add(child));
+  const batches = new Map(), rootInverse = rig.matrixWorld.clone().invert();
+  rig.traverse(mesh => {
+    if (!mesh.isMesh || excludedMeshes.has(mesh) || mesh.isSkinnedMesh || Array.isArray(mesh.material)) return;
+    let parent = mesh.parent, jointName = "root";
+    while (parent && parent !== rig) {
+      const match = jointGroups.get(parent);
+      if (match) { jointName = match; break; }
+      parent = parent.parent;
+    }
+    const boneIndex = joints.findIndex(([name]) => name === jointName);
+    const geometry = mesh.geometry.clone();
+    geometry.applyMatrix4(rootInverse.clone().multiply(mesh.matrixWorld));
+    const count = geometry.attributes.position.count;
+    const skinIndex = new Uint16Array(count * 4), skinWeight = new Float32Array(count * 4);
+    for (let index = 0; index < count; index++) {
+      skinIndex[index * 4] = boneIndex;
+      skinWeight[index * 4] = 1;
+    }
+    geometry.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(skinIndex, 4));
+    geometry.setAttribute("skinWeight", new THREE.Float32BufferAttribute(skinWeight, 4));
+    const batch = batches.get(mesh.material) || [];
+    batch.push({ mesh, geometry });
+    batches.set(mesh.material, batch);
+  });
+  // Bones join the hierarchy after the source rig was first updated.  Refresh
+  // their world transforms before calculating inverses or the rest pose would
+  // bind against identity matrices and visibly explode the articulated mesh.
+  rig.updateMatrixWorld(true);
+  const bones = joints.map(([name]) => jointBones.get(name));
+  const skeleton = new THREE.Skeleton(bones);
+  skeleton.calculateInverses();
+  const skinMeshes = [];
+  for (const [material, entries] of batches) {
+    const geometry = mergeGeometries(entries.map(entry => entry.geometry), false);
+    for (const { mesh, geometry: source } of entries) {
+      source.dispose();
+      mesh.removeFromParent();
+      mesh.geometry.dispose();
+    }
+    const mesh = new THREE.SkinnedMesh(geometry, material);
+    mesh.name = `Mecha rigid skin ${skinMeshes.length + 1}`;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    // The lighting owner assigns this mesh to its near-shadow camera layer.
+    mesh.userData.nearSilhouetteShadow = true;
+    rig.add(mesh);
+    skinMeshes.push(mesh);
+  }
+  rig.updateMatrixWorld(true);
+  for (const mesh of skinMeshes) mesh.bind(skeleton);
+  fighter.mechaSkinMeshes = skinMeshes;
+  // One skeleton is shared by the material-consolidated skins.  The owning
+  // Fighter disposes it exactly once; hologram clones own separate skeletons.
+  fighter.mechaSkeleton = skeleton;
+  fighter.visor = skinMeshes.find(mesh => mesh.material === visorMaterial) || fighter.visor;
+  fighter.nearShadowCasters = skinMeshes;
+  fighter.setNearShadowLayer = layer => skinMeshes.forEach(mesh => mesh.layers.enable(layer));
+  fighter.syncMechaSkeleton = () => {
+    for (const [name, group] of joints) {
+      const bone = jointBones.get(name);
+      if (name === "root") {
+        bone.position.set(0, 0, 0);
+        bone.quaternion.identity();
+        bone.scale.set(1, 1, 1);
+      } else {
+        bone.position.copy(group.position);
+        bone.quaternion.copy(group.quaternion);
+        bone.scale.copy(group.scale);
+      }
+    }
+    rig.updateMatrixWorld(true);
+    // Leave palette flattening to Three's skinning object-update hook.  That
+    // hook snapshots the prior bone palette immediately before producing the
+    // current one; an eager update here destroys skeletal motion vectors and
+    // uploads every skeleton twice. CPU skin queries read bone.matrixWorld,
+    // which the rig update above has already made current.
+  };
+  fighter.syncMechaSkeleton();
+}
+
+function addPresentationEffects(fighter, rig) {
+  const damageMaterial = new THREE.MeshBasicMaterial({ color: fighter.accent, transparent: true, opacity: 0,
+    blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  const damageSparks = new THREE.InstancedMesh(new THREE.OctahedronGeometry(.025, 0), damageMaterial, 6);
+  damageSparks.name = "Critical damage sparks";
+  damageSparks.visible = false;
+  damageSparks.frustumCulled = false;
+  rig.add(damageSparks);
+  fighter.damageSparks = damageSparks;
+  fighter.damageSparkMaterial = damageMaterial;
+
+  const fragmentMaterial = new THREE.MeshBasicMaterial({ color: fighter.accent, transparent: true, opacity: 0,
+    blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  const fragments = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(.11, 0), fragmentMaterial, 12);
+  fragments.name = "Mecha death armour fragments";
+  fragments.visible = false;
+  fragments.frustumCulled = false;
+  rig.add(fragments);
+  fighter.deathFragments = fragments;
+  fighter.deathFragmentMaterial = fragmentMaterial;
+  fighter.presentationMatrix = new THREE.Matrix4();
+  fighter.presentationVector = new THREE.Vector3();
+  fighter.presentationFragmentScale = new THREE.Vector3(1, 1, 1);
+  fighter.deathFragmentSeeds = Array.from({ length: fragments.count }, (_, index) => {
+    const angle = index * 2.399963229728653;
+    return new THREE.Vector3(Math.cos(angle) * (.32 + (index % 3) * .08), .2 + (index % 4) * .13,
+      Math.sin(angle) * (.32 + (index % 2) * .11));
+  });
+
+  const blastMaterial = new THREE.MeshBasicMaterial({ color: fighter.accent, transparent: true, opacity: 0,
+    blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+  const deathBlast = new THREE.Mesh(new THREE.RingGeometry(.18, .28, 24), blastMaterial);
+  deathBlast.name = "Mecha death blast";
+  deathBlast.rotation.x = -Math.PI / 2;
+  deathBlast.visible = false;
+  rig.add(deathBlast);
+  fighter.deathBlast = deathBlast;
+  fighter.deathBlastMaterial = blastMaterial;
+
+  const hologram = new THREE.Group();
+  hologram.name = "Respawn hologram scan";
+  const scanMaterial = new THREE.MeshBasicMaterial({ color: fighter.accent, transparent: true, opacity: 0,
+    blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+  const scanLine = new THREE.Mesh(new THREE.TorusGeometry(.54, .018, 6, 24), scanMaterial);
+  scanLine.rotation.x = Math.PI / 2;
+  const scanShell = new THREE.Mesh(new THREE.CylinderGeometry(.48, .57, 2.25, 14, 1, true), scanMaterial);
+  scanShell.position.y = 1.18;
+  hologram.add(scanLine, scanShell);
+  hologram.visible = false;
+  rig.add(hologram);
+  fighter.respawnHologram = hologram;
+  fighter.respawnScanLine = scanLine;
+  fighter.respawnScanMaterial = scanMaterial;
+}
+
+// A regular Object3D clone shares a SkinnedMesh's skeleton.  Decoys must pose
+// independently, so callers that make holograms should always come through here.
+export function cloneMechaHologram(source) {
+  return cloneSkeleton(source);
+}
+
+// Pool users retain a skeleton per hologram.  At checkout, copy just the
+// source pose into that independent hierarchy; buffers and materials stay
+// shared, so no GPU resource is recreated for a decoy shot.
+export function refreshMechaHologramPose(clone, source) {
+  const sourceBones = new Map();
+  source.traverse(node => { if (node.isBone) sourceBones.set(node.name, node); });
+  clone.traverse(node => {
+    const sourceBone = node.isBone ? sourceBones.get(node.name) : null;
+    if (!sourceBone) return;
+    node.position.copy(sourceBone.position);
+    node.quaternion.copy(sourceBone.quaternion);
+    node.scale.copy(sourceBone.scale);
+  });
+  clone.updateMatrixWorld(true);
+  // As with live fighters, the renderer owns palette updates so its previous
+  // and current bone textures represent adjacent rendered frames.
+  return clone;
+}
+
 export function createMechaRig(fighter) {
   const variant=[...fighter.id].reduce((sum,letter)=>sum+letter.charCodeAt(0),0)%4;
   const paint=fighter.color,light=fighter.accent,frame=0x111a25,steel=0x536777,ceramic=0xcbd5db;
@@ -82,8 +286,12 @@ export function createMechaRig(fighter) {
   const surface=attribute("surface","vec2");
   armor.roughnessNode=surface.x.mul(texture(armor.roughnessMap).g);
   armor.metalnessNode=surface.y.mul(texture(armor.metalnessMap).b);armor.clearcoatNode=surface.y.mul(.25);
-  // View-dependent team rim preserves silhouettes without lighting the whole arena.
-  armor.emissiveNode=materialEmissive.add(color(light).mul(normalViewGeometry.dot(positionViewDirection).abs().oneMinus().pow(3).mul(.22)));
+  // The camera rim protects readability against the dark arena, while the
+  // directional term gives armour a convincing lit-side edge rather than a
+  // flat outline. Both stay deliberately restrained outside the silhouette.
+  const viewRim=normalViewGeometry.dot(positionViewDirection).abs().oneMinus().pow(3);
+  const keyRim=normalWorld.dot(vec3(-.38,.72,-.58).normalize()).max(0).pow(1.8).mul(viewRim);
+  armor.emissiveNode=materialEmissive.add(color(light).mul(viewRim.mul(.12).add(keyRim.mul(.32))));
   const glow=new THREE.MeshPhysicalMaterial({...surfaceMaps(),normalScale:new THREE.Vector2(.2,.2),color:paint,emissive:light,emissiveIntensity:.7,
     roughness:.8,metalness:0,toneMapped:false});
   fighter.armorMaterial=armor;fighter.accentMaterial=glow;
@@ -178,8 +386,8 @@ export function createMechaRig(fighter) {
     add(panel(.078,.158,.025),paint,0,.244,.039);
     add(panel(.049,.083,.015),frame,0,.254,.058);
   }));
-  const lens=new THREE.MeshPhysicalMaterial({...surfaceMaps("glass"),color:paint,emissive:light,emissiveIntensity:.7,
-    roughness:.18,metalness:0,clearcoat:1,clearcoatRoughness:.08,ior:1.5});
+  const lens=new THREE.MeshPhysicalMaterial({...surfaceMaps("glass"),color:paint,emissive:light,emissiveIntensity:3.4,
+    roughness:.18,metalness:0,clearcoat:1,clearcoatRoughness:.08,ior:1.5,toneMapped:false});
   const eyes=assembly(lens,"Mecha twin eye lenses",add=>{
     for(const side of [-1,1])add(plate([[side*.024,.055],[side*.145,.066],[side*.12,.026],[side*.035,.019]],.008,.001),0xffffff,0,0,.182);
     add(new THREE.CylinderGeometry(.021,.021,.009,12),0xffffff,0,.253,.073,Math.PI/2);
@@ -355,5 +563,18 @@ export function createMechaRig(fighter) {
       ankle.quaternion.copy(orientation).invert();
     }
   };
+  consolidateRigidArmor(rig,fighter,[fighter.thrusterLights]);
+
+  // A single HDR trim mesh gives the chest and shoulder panel lines a crisp
+  // bloom core without brightening the rest of the armour.
+  const trimParts=[
+    new THREE.BoxGeometry(.32,.018,.016).translate(0,1.72,.295),
+    new THREE.BoxGeometry(.18,.014,.014).translate(-.34,1.73,.17),
+    new THREE.BoxGeometry(.18,.014,.014).translate(.34,1.73,.17)
+  ];
+  const trimGeometry=mergeGeometries(trimParts,false);trimParts.forEach(part=>part.dispose());
+  const trim=new THREE.Mesh(trimGeometry,new THREE.MeshBasicMaterial({color:light,toneMapped:false}));
+  trim.name="HDR mecha panel lines";rig.add(trim);fighter.panelLines=trim;
+  addPresentationEffects(fighter,rig);
   return rig;
 }

@@ -44,10 +44,10 @@ assert.match(mainSource, /setDrawingBufferSize\(size.width, size.height, size.pi
 assert.match(mainSource, /frame\(time\) \{\s*if \(this.matchStartQueued \|\| this.preparingGraphics \|\| this.preparingMatch\) return;\s*this.commitResize\(\)/, "resize commits before rendering, after the loader paint and outside resource preparation");
 assert.doesNotMatch(mainSource.slice(mainSource.indexOf("  commitResize()"), mainSource.indexOf("  applyGraphicsSettings()")), /onSubmittedWorkDone/, "resizing does not add an unnecessary GPU queue wait");
 assert.match(renderPipelineSource, /RenderPipeline[\s\S]*?bloom\([\s\S]*?ao\(/, "the HDR pipeline combines bloom with ambient grounding");
-assert.match(renderPipelineSource, /this\.direct = false[\s\S]*?if \(!nativeWebGPU\)[\s\S]*?bloom\([\s\S]*?renderer\.render\(this\.scene, this\.camera\)/, "pointer type cannot silently replace a selected graphics tier with direct rendering");
+assert.match(renderPipelineSource, /this\.direct = false[\s\S]*?scenePass\.setResolutionScale\(this\.options\.renderScale\)[\s\S]*?degradeToDirect\(error\)/, "all device tiers use the selected internal scale and only rendering failures enter direct fallback");
 assert.match(renderPipelineSource, /catch \(error\)[\s\S]*?degradeToDirect\(error\)/, "post-processing failures degrade to direct rendering");
 const recoveryRenderer = {
-  backend: { isWebGPUBackend: false }, toneMapping: "ACES", toneMappingExposure: 1.02, outputColorSpace: "sRGB", xr: { enabled: false }, target: null, cubeFace: 0, mipLevel: 0,
+  backend: { isWebGPUBackend: false }, toneMapping: "AgX", toneMappingExposure: 1.02, outputColorSpace: "sRGB", xr: { enabled: false }, target: null, cubeFace: 0, mipLevel: 0,
   mrt: null, renderObjectFunction: null, pixelRatio: 1.5, clearColor: new THREE.Color(0x07111d), clearAlpha: 1, autoClear: true, scissorTest: false,
   transparent: true, opaque: true, contextNode: "baseline-context", directFrames: 0,
   getRenderTarget() { return this.target; }, getActiveCubeFace() { return this.cubeFace; }, getActiveMipmapLevel() { return this.mipLevel; },
@@ -67,12 +67,12 @@ const recoveryRenderer = {
   }
 };
 const recoveryScene = { name: "Arena", overrideMaterial: null };
-const recoveryCamera = { layers: { mask: 7 } };
+const recoveryCamera = { layers: { mask: 7 }, clearViewOffset() {} };
 const recoveryPipeline = Object.create(NeonRenderPipeline.prototype);
 Object.assign(recoveryPipeline, {
   renderer: recoveryRenderer, rendererState: THREE.RendererUtils.saveRendererState(recoveryRenderer), rendererXrEnabled: false,
   passState: { transparent: true, opaque: true, contextNode: "baseline-context", sceneName: "Arena", overrideMaterial: null, cameraLayerMask: 7 },
-  scene: recoveryScene, camera: recoveryCamera, quality: "high", nativeWebGPU: false, direct: false, highLoadMode: false
+  scene: recoveryScene, camera: recoveryCamera, quality: "high", nativeWebGPU: false, direct: false
 });
 recoveryPipeline.direct = false;
 const disposedRenderResources = [];
@@ -87,20 +87,20 @@ recoveryPipeline.pipeline = {
   },
   dispose() { disposedRenderResources.push("pipeline"); }
 };
-for (const name of ["scenePass", "highLoadScenePass", "bloomPass", "highLoadBloom", "aoPass"]) recoveryPipeline[name] = { dispose() { disposedRenderResources.push(name); } };
+for (const name of ["scenePass", "bloomPass", "aoPass"]) recoveryPipeline[name] = { dispose() { disposedRenderResources.push(name); } };
 const originalWarn = console.warn;
 console.warn = () => {};
 try { recoveryPipeline.render(); } finally { console.warn = originalWarn; }
 assert.equal(recoveryRenderer.directFrames, 1, "a failed rematch pass immediately produces a visible direct frame");
-assert.equal(recoveryRenderer.toneMapping, "ACES");
+assert.equal(recoveryRenderer.toneMapping, "AgX");
 assert.equal(recoveryRenderer.outputColorSpace, "sRGB");
 assert.equal(recoveryRenderer.xr.enabled, false);
 assert.equal(recoveryScene.name, "Arena");
 assert.equal(recoveryScene.overrideMaterial, null);
 assert.equal(recoveryCamera.layers.mask, 7);
-assert.deepEqual(disposedRenderResources.sort(), ["aoPass", "bloomPass", "highLoadBloom", "highLoadScenePass", "pipeline", "scenePass"].sort(), "fallback releases every post-processing render target");
+assert.deepEqual(disposedRenderResources.sort(), ["aoPass", "bloomPass", "pipeline", "scenePass"].sort(), "fallback releases every allocated post-processing render target");
 recoveryPipeline.dispose();
-assert.equal(disposedRenderResources.length, 6, "repeated match cleanup is idempotent and cannot leak old GPU targets");
+assert.equal(disposedRenderResources.length, 4, "repeated match cleanup is idempotent and cannot leak old GPU targets");
 assert.match(mainSource, /dataset\.action === "rematch"\) return this\.queueRematch\(\)/, "the results button uses the clean renderer rematch path");
 assert.match(mainSource, /queueRematch\(\)\s*\{\s*this\.queueMatchStart\(true\)/, "rematches preserve the same-seed label while using the shared clean launch path");
 assert.match(mainSource, /startMatch\(welcomeOverride = null, loadingPainted = false\)\s*\{\s*if \(!welcomeOverride && !loadingPainted\) return this\.queueMatchStart\(false\)/, "local launches paint their loader while server-started lobbies preserve their connection");
@@ -133,7 +133,7 @@ assert.match(indexSource, /Number\.isFinite\(queuedAt\)[\s\S]*?age >= 0 && age <
 assert.match(mainSource, /queueMatchStart\(sameSeed = false\)[\s\S]*?setMatchLoading\(true[\s\S]*?requestAnimationFrame\(\(\) => requestAnimationFrame/, "the loading screen receives a paint before every match navigation");
 assert.match(mainSource, /this\.state = "play";[\s\S]*?this\.renderHud\(\);[\s\S]*?await warmFighterWeapons[\s\S]*?this\.hideMatchLoadingAfterFrame = true/, "the loader is armed for dismissal only after the arena, HUD and GPU warmup are ready");
 assert.doesNotMatch(mainSource, /this\.startMatch\(\);\s*this\.hideMatchLoadingAfterFrame = true/, "the async match initializer cannot dismiss the loader from an earlier menu frame");
-assert.match(mainSource, /frame\(time\)[\s\S]*?this\.renderScene\(\);[\s\S]*?hideMatchLoadingAfterFrame[\s\S]*?setMatchLoading\(false\)/, "the loading screen clears only after the first restored arena frame");
+assert.match(mainSource, /frame\(time\)[\s\S]*?this\.renderScene\(active \? \(continuing \? rawDt : Math\.min\(rawDt, 1 \/ 60\)\) : 0\)[\s\S]*?hideMatchLoadingAfterFrame[\s\S]*?setMatchLoading\(false\)/, "the loading screen clears only after the first restored arena frame");
 assert.match(mainSource, /const cameraTarget = this\.world\.constrainCamera\(pivot, desired[\s\S]*?this\.camera\.position\.lerp\(cameraTarget[\s\S]*?this\.world\.constrainCamera\(pivot, this\.camera\.position/, "camera collision retracts the existing view boom smoothly without changing the player's aim angle");
 assert.doesNotMatch(mainSource, /CAMERA_ALTERNATIVE_ANGLES|candidateDesired|actualDistance < 3\.2/, "camera collision cannot alternate escape sides or teleport across rounded obstacles");
 assert.equal(cameraCollisionFirstPerson(2.5, false), true, "a body-width camera gap switches to the unobstructed eye-line view");
@@ -145,13 +145,14 @@ assert.match(mainSource, /game\.init\(\)\.then[\s\S]*?sessionStorage\.removeItem
 assert.doesNotMatch(mainSource, /startMatch\(\)\s*\{\s*this\.clearMatch\(\);\s*this\.rebuildRenderPipeline\(\)/, "no rematch can rebuild post-processing on a live graphics device");
 assert.match(mainSource, /addEventListener\("pointerdown", this\.resumeAudioGesture, \{ passive: true, capture: true \}\)/, "the first canvas or HUD gesture restores browser-gated rematch audio on every device");
 assert.match(mainSource, /resumeAudioAfterReload\(\)[\s\S]*?startAmbience\(this\.world\?\.theme\.id\)[\s\S]*?startMusic\("combat", this\.seed\)[\s\S]*?return true/, "rematch audio restoration includes the full ambience and music mix");
-assert.match(renderPipelineSource, /disposePipelineResources\(\)[\s\S]*?scenePass[\s\S]*?highLoadScenePass[\s\S]*?bloomPass[\s\S]*?highLoadBloom[\s\S]*?aoPass/, "rematches release scene, bloom, and ambient-occlusion render targets");
+assert.match(renderPipelineSource, /disposePipelineResources\(\)[\s\S]*?scenePass[\s\S]*?bloomPass[\s\S]*?aoPass/, "rematches release the selected scene, bloom, and ambient-occlusion render targets");
 assert.match(mainSource, /sessionStorage\.setItem\("blaster-force-webgl", "1"\)[\s\S]*?location\.reload\(\)/, "WebGPU device loss restarts through the WebGL2 recovery path");
 assert.match(mainSource, /applyGraphicsEffects\(\)\s*\{[\s\S]*?renderPipeline\?\.setReducedMotion\(this\.settings\.reducedMotion\)/, "live graphics application retunes the active pipeline for reduced motion");
 assert.match(mainSource, /data-setting="graphics"[\s\S]*?Object.keys\(GRAPHICS_PRESETS\)/, "settings expose all benchmark presets");
 assert.match(mainSource, /this\.pendingGraphicsEffects = this\.pendingPipelineEffects = true/, "graphics changes immediately retune the active render pipeline");
-assert.match(renderPipelineSource, /this\.reducedMotion = Boolean\(reducedMotion\)[\s\S]*?highLoadBloom = bloom\(this\.highLoadScenePass\.getTextureNode\("bloom"\), this\.reducedMotion \?/, "a newly-created bloom profile inherits Reduced Motion");
-assert.match(mainSource, /damageVignetteTimer = setTimeout\([\s\S]*?classList\.remove\("visible"\)[\s\S]*?reducedMotion \? 120 : 520/, "the damage vignette clears explicitly even when CSS animations are disabled");
+assert.match(renderPipelineSource, /setReducedMotion\(reducedMotion\)[\s\S]*?this\.reducedMotion = Boolean\(reducedMotion\)[\s\S]*?this\.updateBloomQuality\(\)/, "live reduced-motion changes retune the current bloom graph");
+assert.match(mainSource, /this\.damageFlash = Math\.max\(this\.damageFlash \|\| 0, this\.settings\.reducedMotion \? \.16 : \.78\)/, "damage feedback sets a bounded in-engine screen pulse");
+assert.match(mainSource, /damage: this\.damageFlash \|\| 0[\s\S]*?this\.damageFlash = \(this\.damageFlash \|\| 0\) \* Math\.exp/, "the damage pulse is driven and decayed once during rendered presentation");
 assert.equal(damageIndicatorAngle(0, new THREE.Vector3(0, 0, 1)), 0, "incoming fire from ahead points to the top of the HUD");
 assert.equal(damageIndicatorAngle(0, new THREE.Vector3(-1, 0, 0)), 90, "incoming fire from camera-right points right");
 assert.equal(damageIndicatorAngle(Math.PI, new THREE.Vector3(1, 0, 0)), 90, "the incoming-fire indicator remains camera-relative after turning around");
@@ -223,9 +224,9 @@ globalThis.localStorage = {
 };
 const legacySettings = loadSettings();
 assert.equal(legacySettings.graphics, "high", "existing players default to the revised High preset");
-assert.equal(graphicsProfile("high", false, 3).pixelRatio, 1.65 * .75, "High scales the capped device resolution to 75 percent");
-assert.ok(graphicsProfile("medium", false, 3).pixelRatio < 1.65 && graphicsProfile("medium", false, 3).combatQuality < 1, "Medium reduces resolution and effect density");
-assert.ok(graphicsProfile("low", false, 3).pixelRatio < graphicsProfile("medium", false, 3).pixelRatio && graphicsProfile("low", false, 3).combatQuality < graphicsProfile("medium", false, 3).combatQuality, "Low applies the lightest render profile");
+assert.equal(graphicsProfile("high", false, 3).pixelRatio, 1.65, "render resolution keeps the capped browser pixel ratio");
+assert.ok(graphicsProfile("medium", false, 3).renderScale < 1 && graphicsProfile("medium", false, 3).combatQuality < 1, "Medium reduces internal resolution and effect density");
+assert.ok(graphicsProfile("low", false, 3).renderScale < graphicsProfile("medium", false, 3).renderScale && graphicsProfile("low", false, 3).combatQuality < graphicsProfile("medium", false, 3).combatQuality, "Low applies the lightest render profile");
 assert.deepEqual(legacySettings.loadout, savedSet, "legacy loadout-only settings migrate without changing weapon order");
 assert.deepEqual(legacySettings.loadoutPresets, [null, null, null], "legacy settings gain three empty preset slots");
 legacySettings.loadoutPresets[0] = { name: "Control", weaponIds: [...savedSet] };
@@ -351,7 +352,11 @@ for (const [id, weapon] of Object.entries(WEAPONS)) {
   assert.ok(model.weaponMuzzleDistance > .3, `${id} exposes a valid muzzle or strike origin`);
   const casters = [];
   model.group.traverse(child => { if (child.castShadow) casters.push(child.name); });
-  assert.deepEqual(casters, ["Fighter shadow proxy"], `${id} has exactly one smooth bounded shadow caster`);
+  const rigidCasters = casters.filter(name => name.startsWith("Mecha rigid skin "));
+  assert.equal(rigidCasters.length, 4, `${id} batches rigid armor into four material shadow casters`);
+  assert.equal(new Set(rigidCasters).size, rigidCasters.length, `${id} gives each material batch its own caster`);
+  assert.ok(casters.includes("Fighter shadow proxy") && casters.length === rigidCasters.length + 1,
+    `${id} keeps one smooth bounded proxy alongside the four rigid batches`);
   const shadow = model.group.getObjectByName("Fighter shadow proxy");
   assert.equal(shadow?.geometry.type, "CapsuleGeometry");
   assert.equal(shadow?.material.colorWrite, false);
@@ -477,7 +482,7 @@ assert.match(mainSource, /updateBurst\(player, dt\)[\s\S]*?burst\.timer -= dt[\s
 assert.match(mainSource, /updateCharge\(player, wantsFire, dt\)[\s\S]*?releaseCharge\(player\)/, "charged shots use an explicit hold and release lifecycle");
 assert.match(mainSource, /effectBlocked\(position, targetPoint\)/, "radial blasts and hazards respect solid cover");
 assert.match(mainSource, /fireMelee\([\s\S]*?ropeBlocked\(origin, targetPoint\)/, "melee strikes cannot pass through arena geometry");
-assert.match(mainSource, /fireChain\([\s\S]*?point\.distanceTo\(from\) <= 14[\s\S]*?ropeBlocked\(from, point\)/, "every Arc Lightning hop performs its own distance and cover check");
+assert.match(mainSource, /fireChain\([\s\S]*?offset\.lengthSq\(\) > \(jump === 0 \? weapon\.reach \*\* 2 : 14 \*\* 2\)[\s\S]*?ropeBlocked\(from, point\)[\s\S]*?nearest > 14 \*\* 2/, "every Arc Lightning hop performs its own distance and cover check");
 const stealAttacker = {
   loadout: ["weapon_stealing_projectile", "blaster", "shotgun", "railgun", "laser_beam"],
   ammo: { weapon_stealing_projectile: 2, railgun: 1 }
@@ -500,7 +505,7 @@ assert.match(mainSource, /updateChargeLoop\(player\.id, weapon, player\.chargeLe
 assert.match(mainSource, /if \(!bot\.alive\)[\s\S]*?stopChargeLoop\(bot\.id\)[\s\S]*?if \(!target\)[\s\S]*?stopChargeLoop\(bot\.id\)/, "dead and targetless bots always stop charged-rifle wind-up audio");
 assert.match(mainSource, /stolenId === "remote_explosive"[\s\S]*?trimRemoteCharges\(attacker, WEAPONS\[stolenId\], WEAPONS\[stolenId\]\.maxCharges\)/, "stealing Remote Explosives immediately restores the receiver's charge cap");
 assert.match(mainSource, /weapon\.type === "remote"[\s\S]*?\$\{armed\} \$\{TEXT\.hud\.armed\}/, "the Remote Explosive HUD displays its live armed-charge count with editable copy");
-assert.match(mainSource, /presentationPayload === "mortar"[\s\S]*?RingGeometry\([\s\S]*?shot\.telegraph = telegraph/, "mortar shells show a predicted landing telegraph");
+assert.match(mainSource, /presentationPayload === "mortar"[\s\S]*?world\.surfaceHeightAt\(landing[\s\S]*?createMortarRing\(weapon, landing\)[\s\S]*?shot\.telegraph = telegraph/, "mortar shells predict the landing surface and retain a pooled landing telegraph");
 const flameOrigin = new THREE.Vector3();
 const flameDirection = new THREE.Vector3(0, 0, 1);
 const centreFlame = flameConeFactor(flameOrigin, flameDirection, new THREE.Vector3(0, 0, 5), .72, WEAPONS.flamethrower.reach, WEAPONS.flamethrower.coneAngle);
@@ -1126,6 +1131,7 @@ assert.ok(flameFighter.weaponMuzzleDistance > 1.4 && flameBounds.max.z - flameBo
 assert.ok(flameFighter.weaponGroup.children.filter((child) => child.isMesh).length <= 4, "rigid Flamethrower parts collapse into material batches");
 flameFighter.slowTimer = 1;
 flameFighter.update(.016, new THREE.Vector3(), new THREE.Vector3(0, 0, 1), {}, worldB);
+flameFighter.updatePresentation(.016);
 assert.ok(flameFighter.freezeRing.material.opacity > 0, "the geometry-based cyan frozen-state cue remains visible while slowed");
 applyWeaponStatus(flameFighter, WEAPONS.freeze_gun);
 assert.equal(flameFighter.slowTimer, 4.5, "repeated Freeze Gun hits refresh rather than add their duration");

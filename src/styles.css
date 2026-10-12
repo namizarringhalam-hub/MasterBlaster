@@ -484,22 +484,7 @@ dialog[data-modal="pause"]:has(~ dialog[data-modal="graphics"]) { visibility: hi
 .credits-dialog p { color: #aebfcb; line-height: 1.7; }
 
 .hud { position: absolute; inset: 0; pointer-events: none; isolation: isolate; }
-.hud::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: radial-gradient(circle at center, transparent 48%, rgba(1, 6, 14, .2) 78%, rgba(1, 5, 12, .52));
-}
-.hud::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  opacity: .08;
-  background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(112, 236, 255, .14) 4px);
-  mix-blend-mode: screen;
-}
+/* Vignette and scanlines run in the native-resolution output pass. */
 .combatant {
   position: absolute;
   top: 22px;
@@ -507,7 +492,6 @@ dialog[data-modal="pause"]:has(~ dialog[data-modal="graphics"]) { visibility: hi
   padding: 13px 15px;
   background: linear-gradient(90deg, rgba(8, 20, 33, .92), rgba(8, 20, 33, .55));
   border-top: 2px solid #44e8ff;
-  backdrop-filter: blur(8px);
   box-shadow: 0 14px 38px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.045);
   clip-path: polygon(0 0, 100% 0, 100% 82%, 94% 100%, 0 100%);
 }
@@ -541,8 +525,8 @@ dialog[data-modal="pause"]:has(~ dialog[data-modal="graphics"]) { visibility: hi
 .reticle::before { width: 8px; height: 1px; left: 10px; top: 14px; }
 .reticle::after { width: 1px; height: 8px; left: 14px; top: 10px; }
 .reticle i { position: absolute; inset: 5px; border: 1px solid rgba(83, 235, 255, .5); transform: rotate(45deg); }
-.reticle.hit { animation: hit-confirm .16s ease-out; border-color: #fff; }
-.reticle.elimination { animation: eliminate-confirm .28s ease-out; border-color: #ffdd55; filter: drop-shadow(0 0 9px #ff8a4a); }
+.reticle.hit { border-color: #fff; }
+.reticle.elimination { border-color: #ffdd55; filter: drop-shadow(0 0 9px #ff8a4a); }
 .hud[data-player-state="firing"] .reticle { transform: translate(-50%, -50%) scale(.82); border-color: #fff; filter: drop-shadow(0 0 9px rgba(112,242,255,.92)); }
 .hud[data-player-state="grapple"] .reticle { border-color: #67f2ff; filter: drop-shadow(0 0 12px rgba(74,232,255,.92)); }
 .hud[data-player-state="hit"] .combatant.left { box-shadow: 0 14px 42px rgba(255,49,95,.23), inset 0 1px 0 rgba(255,255,255,.07); }
@@ -561,48 +545,16 @@ dialog[data-modal="pause"]:has(~ dialog[data-modal="graphics"]) { visibility: hi
 .target-health > i b { display: block; width: 100%; height: 100%; background: linear-gradient(90deg, #ff315f, #ff718a); box-shadow: 0 0 8px rgba(255,49,95,.7); transition: width .12s ease-out; }
 .target-health.visible { opacity: 1; transform: translate(-50%, 0); }
 
-.damage-vignette { position: absolute; inset: 0; opacity: 0; background: radial-gradient(circle at center, transparent 48%, color-mix(in srgb, var(--damage-color, #ff365d) 50%, transparent) 74%, color-mix(in srgb, var(--damage-color, #ff365d) 84%, transparent)), repeating-conic-gradient(from 12deg at 50% 50%, transparent 0 8deg, color-mix(in srgb, var(--damage-color, #ff365d) 18%, transparent) 8.2deg 8.7deg); mix-blend-mode: screen; }
-.damage-vignette.visible { animation: damage-flash .5s ease-out; }
+
 .headshot-announcement { position: absolute; top: calc(50% - 92px); left: 50%; transform: translateX(-50%); pointer-events: none; opacity: 0; padding: 4px 16px; white-space: nowrap; color: #ff3449; font-size: clamp(22px, 2.8vw, 34px); font-weight: 900; font-style: italic; letter-spacing: .1em; text-shadow: 0 2px 3px #000; }
 .headshot-announcement::before, .headshot-announcement::after { content: ""; position: absolute; top: 50%; width: 24px; height: 3px; background: #ff3449; }
 .headshot-announcement::before { right: 100%; }
 .headshot-announcement::after { left: 100%; }
-.headshot-announcement.visible { animation: headshot-impact .9s ease-out forwards; }
+.headshot-announcement.visible { opacity: 0; }
 .hud .reticle.headshot-hit { border-color: #ff3449; filter: drop-shadow(0 0 8px #ff3449); }
 .hud .reticle.headshot-hit i { border-color: #ff3449; }
-@keyframes headshot-impact { 0% { opacity: 0; transform: translate(-50%, 14px) scale(.65); } 12% { opacity: 1; transform: translate(-50%, -3px) scale(1.12); } 26%, 65% { opacity: 1; transform: translate(-50%, 0) scale(1); } 100% { opacity: 0; transform: translate(-50%, -14px) scale(.94); } }
 .reduce-motion .headshot-announcement.visible { animation: none; opacity: 1; }
-.motion-vignette {
-  position: absolute;
-  inset: -8%;
-  opacity: calc(var(--motion, 0) * .42);
-  background:
-    radial-gradient(circle, transparent 0 45%, rgba(117, 241, 255, .06) 58%, transparent 78%),
-    repeating-conic-gradient(from 0deg at 50% 50%, rgba(158, 248, 255, .72) 0 .12deg, rgba(65, 213, 255, .26) .15deg .24deg, transparent .3deg 7.5deg);
-  mask-image: radial-gradient(circle, transparent 0 42%, rgba(0,0,0,.32) 56%, #000 76%);
-  mix-blend-mode: screen;
-  transition: opacity .12s linear;
-  filter: drop-shadow(0 0 6px rgba(75, 225, 255, .42));
-  animation: motion-tunnel .38s linear infinite;
-}
-.motion-vignette::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: rgba(0,0,0,.001);
-  backdrop-filter: blur(var(--environment-blur, 0px));
-  mask-image: radial-gradient(circle, transparent 0 47%, rgba(0,0,0,.2) 60%, #000 84%);
-}
-.motion-vignette::after {
-  content: "";
-  position: absolute;
-  inset: 7%;
-  background: repeating-conic-gradient(from 3deg at 50% 50%, rgba(255,255,255,.64) 0 .1deg, rgba(113,238,255,.25) .13deg .2deg, transparent .26deg 12.5deg);
-  mask-image: radial-gradient(circle, transparent 0 50%, #000 82%);
-  opacity: calc(.42 + var(--motion, 0) * .4);
-  animation: grapple-speed-pulse .72s ease-in-out infinite;
-}
-.motion-vignette.grappling { opacity: calc(.16 + var(--motion, 0) * .48); }
+.motion-vignette, .damage-vignette { display: none; }
 .combat-log { position: absolute; top: 182px; right: 22px; width: min(340px, 42vw); text-align: right; }
 .combat-log p { margin: 0 0 5px; padding: 7px 10px; color: #9fb5c5; background: linear-gradient(90deg, transparent, rgba(4, 13, 24, .78)); border-right: 2px solid rgba(100, 229, 255, .5); font: 700 10px/1.2 Inter, "Inter Fallback", sans-serif; animation: combat-log-in .2s ease-out; text-transform: uppercase; }
 .combat-log b { font-weight: 900; }
@@ -612,12 +564,7 @@ dialog[data-modal="pause"]:has(~ dialog[data-modal="graphics"]) { visibility: hi
 .sr-status { position: fixed; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .hud[data-player-state="death"] .reticle { opacity: 0; }
 
-@keyframes hit-confirm { 50% { transform: translate(-50%, -50%) scale(.68); filter: drop-shadow(0 0 10px #fff); } }
-@keyframes eliminate-confirm { 45% { transform: translate(-50%, -50%) rotate(45deg) scale(1.45); } }
-@keyframes damage-flash { 0% { opacity: .78; } 100% { opacity: 0; } }
 @keyframes combat-log-in { from { opacity: 0; transform: translateX(18px); } }
-@keyframes motion-tunnel { to { transform: rotate(.42deg) scale(1.024); } }
-@keyframes grapple-speed-pulse { 50% { opacity: calc(.62 + var(--motion, 0) * .34); filter: brightness(1.32); transform: scale(1.018); } }
 
 .weapon-strip {
   position: absolute;
@@ -961,6 +908,11 @@ summary:focus-visible { outline: 2px solid #52e9ff; outline-offset: 4px; }
   }
   .touch-controls button:active { transform: scale(.94); filter: brightness(1.18); }
   .grapple-readout { display: none; }
+}
+
+@media (pointer: coarse) and (orientation: portrait),
+       (hover: none) and (orientation: portrait) {
+  .active-weapon-readout { bottom: calc(max(10px, env(safe-area-inset-bottom)) + 84px); }
 }
 
 @media (pointer: coarse) and (max-height: 500px) and (orientation: landscape),

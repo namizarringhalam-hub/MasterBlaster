@@ -71,7 +71,7 @@ const game = Object.assign(Object.create(Game.prototype), {
 });
 const cues = [], bursts = [], removed = [];
 game.sound.updateGrappleLoop = () => {};
-for (const name of ["syncGrappleTarget", "handleWeaponSwitch", "updateHuman", "updateBotPlanner", "updateBurst", "updateProjectiles", "updateHazards", "updateDecoys", "processStructuralEvents", "updateEffects", "updateRespawns"]) game[name] = () => {};
+for (const name of ["syncGrappleTarget", "handleWeaponSwitch", "updateHuman", "updateBotPlanner", "updateBurst", "updateProjectiles", "updateHazards", "updateDecoys", "processStructuralEvents", "updateRespawns"]) game[name] = () => {};
 fighter.respawn(world.portals[0].position);
 const line = {};
 fighter.grapple = { line };

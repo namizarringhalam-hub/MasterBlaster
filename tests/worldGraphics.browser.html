@@ -1,0 +1,65 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Master Blaster world graphics review</title><link rel="icon" href="data:,">
+<style>body{margin:0;background:#060b11}canvas{display:block;width:100vw;height:100vh}pre{position:fixed;inset:8px auto auto 8px;color:#def;background:#06101bcc;font:11px monospace;pointer-events:none}</style>
+<canvas></canvas><pre id="result">Preparing world…</pre>
+<script type="module">
+import * as THREE from 'three/webgpu';
+import { NeonRenderPipeline } from '../src/renderPipeline.js';
+import { graphicsProfile } from '../src/gameData.js';
+import { LIGHTING, setupEnvironment, fitArenaShadow, ArenaShadowRig } from '../src/lighting.js';
+const params = new URLSearchParams(location.search), baseline = params.has('baseline');
+const { ArenaWorld } = await import(baseline ? '/.codex-spec-render/lag-graphics/baseline/world.js' : '/src/world.js');
+const errors = [], result = window.worldReview = { status:'loading', errors, baseline };
+addEventListener('error', event => errors.push(String(event.error || event.message)));
+addEventListener('unhandledrejection', event => errors.push(String(event.reason)));
+try {
+  const renderer = new THREE.WebGPURenderer({ canvas:document.querySelector('canvas'), forceWebGL:params.has('webgl') });
+  renderer.info.autoReset=false; renderer.setSize(1280,720,false); renderer.setPixelRatio(1); renderer.toneMapping=THREE.AgXToneMapping;
+  renderer.shadowMap.enabled=true; renderer.shadowMap.type=params.has('vsm')?THREE.VSMShadowMap:THREE.PCFShadowMap;
+  await renderer.init(); renderer.backend.device?.addEventListener('uncapturederror', event => errors.push(String(event.error)));
+  const scene = new THREE.Scene(); await setupEnvironment(renderer,scene);
+  const camera = new THREE.PerspectiveCamera(55,1280/720,.1,800), key = new THREE.DirectionalLight(0xffeee0,1.55);
+  key.position.set(-22,40,18); key.castShadow=true; key.shadow.mapSize.set(1024,1024); key.shadow.bias=LIGHTING.shadowBias; key.shadow.normalBias=LIGHTING.shadowNormalBias;
+  scene.add(key,key.target); const rim = new THREE.DirectionalLight(0x91bfff,.62); rim.position.set(22,15,-25); scene.add(rim);
+  const world = new ArenaWorld(scene,'BLAST-01'); world.setGraphicsProfile(graphicsProfile('high')); fitArenaShadow(key,world);
+  const shadows = baseline ? null : new ArenaShadowRig(key,{mapSize:1024}); shadows?.registerWorld(world.group);
+  const pipeline = new NeonRenderPipeline(renderer,scene,camera,{quality:params.get('tier')||'high',motionBlur:0});
+  const views = {arena:[[70,47,98],[0,25,0]], skyline:[[0,74,0],[150,92,-130]], floor:[[3,1.8,65],[0,4,-40]], signs:[[72,15,-86],[35,16,-112]]};
+  result.capture = async view => {
+    const pose=views[view];camera.position.set(...pose[0]);camera.lookAt(...pose[1]);camera.updateMatrixWorld(true);shadows?.update(camera);
+    world.time=32;world.updatePresentation(camera,false,1/60);pipeline.resetHistory();
+    for(let i=0;i<8;i++){renderer.info.reset();pipeline.render();await new Promise(resolve=>requestAnimationFrame(resolve));}
+    await renderer.backend.device?.queue.onSubmittedWorkDone();
+    Object.assign(result,{status:'ready',view,backend:renderer.backend.isWebGPUBackend?'webgpu':'webgl',direct:pipeline.direct,draws:renderer.info.render.drawCalls,triangles:renderer.info.render.triangles,textures:renderer.info.memory.textures});
+    document.querySelector('#result').hidden=true;
+  };
+  result.checkShadowCoverage = async () => {
+    if (!shadows) return { skipped:'baseline uses the former single arena map' };
+    const samples=[], resize=[], failures=[], originalFov=camera.fov;
+    camera.fov=62;camera.updateProjectionMatrix();
+    for(const heading of [0,Math.PI/2,Math.PI,-Math.PI/2]) {
+      const direction=new THREE.Vector3(Math.sin(heading),0,Math.cos(heading));
+      camera.position.set(0,5,10);camera.lookAt(camera.position.clone().add(direction));camera.updateMatrixWorld(true);shadows.update(camera);
+      renderer.info.reset();pipeline.render();await renderer.backend.device?.queue.onSubmittedWorkDone();
+      for(const distance of [1,5,20,45,46,60,150,320]) {
+        const cascade=distance<46?0:1, point=camera.position.clone().addScaledVector(direction,distance).applyMatrix4(shadows.lights[cascade].shadow.matrix);
+        const covered=[point.x,point.y,point.z].every(value=>value>=0&&value<=1);
+        samples.push({heading,distance,cascade,covered,uvz:point.toArray()});
+        if(!covered)failures.push(`heading ${heading}, distance ${distance}, cascade ${cascade}: ${point.toArray()}`);
+      }
+    }
+    for(const size of [512,1024]) {
+      const before=shadows.lights.map(light=>light.shadow.map);
+      shadows.setMapSize(size);
+      renderer.info.reset();pipeline.render();await renderer.backend.device?.queue.onSubmittedWorkDone();
+      shadows.lights.forEach((light,index)=>{
+        const map=light.shadow.map, retained=map===before[index], dimensions=[map?.width,map?.height];
+        resize.push({size,cascade:index,retained,dimensions});
+        if(!retained||dimensions.some(value=>value!==size))failures.push(`cascade ${index} resize ${size}: ${dimensions}, retained ${retained}`);
+      });
+    }
+    camera.fov=originalFov;camera.updateProjectionMatrix();await result.capture('arena');
+    return result.shadowChecks={samples,resize,failures,passed:failures.length===0};
+  };
+  await result.capture('arena');
+} catch(error){errors.push(String(error.stack||error));result.status='failed';document.querySelector('#result').textContent=errors.join('\n');}
+</script></html>

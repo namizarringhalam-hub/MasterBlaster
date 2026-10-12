@@ -24,9 +24,13 @@ const renderer=native=>({backend:{isWebGPUBackend:native},xr:{enabled:false},get
   getClearColor:c=>c.set(0),getClearAlpha:()=>1,getScissorTest:()=>false});
 for(const native of [true,false])for(const quality of ['low','medium','high']) {
   const pipeline=new NeonRenderPipeline(renderer(native),new THREE.Scene(),new THREE.PerspectiveCamera(),{quality,effects:off});
-  for(const property of ['bloomPass','highLoadBloom','aoPass','reflectionPass','localFog','contactShadows','heatDistortion','particleDepth','motionBlur'])
-    assert.equal(pipeline[property],null,`${quality}/${native}: disabled ${property} has no GPU owner`);
-  assert.equal(pipeline.outputTargets.length,0,'no FXAA/blur intermediates when disabled');
+  for(const property of ['bloomPass','aoPass','reflectionPass','localFog','contactShadows','heatDistortion','particleDepth','motionBlur'])
+    assert.equal(pipeline[property] ?? null,null,`${quality}/${native}: disabled ${property} has no GPU owner`);
+  assert.ok(pipeline.outputTargets.length>=1,'the color conversion stage remains even with optional effects off');
+  assert.equal(pipeline.outputTargets.at(-1).renderTarget.texture.type,THREE.UnsignedByteType,
+    'final output applies the display color transform before post effects are disabled');
+  assert.equal(pipeline.temporal,null,'disabling antialiasing removes temporal history');
+  assert.equal(Boolean(pipeline.spatial),pipeline.options.renderScale<1,'spatial reconstruction follows the selected internal scale');
   pipeline.setQuality('high');pipeline.setQuality('medium');assert.equal(pipeline.bloomPass,null);
   pipeline.dispose();pipeline.dispose();
 }
@@ -39,7 +43,8 @@ for (const effect of ['softParticles','motionBlur','heatDistortion','localFog','
   const needsNormal=['ambientOcclusion','reflections','contactShadows'].includes(effect);
   assert.equal(pipeline.scenePass.renderTarget.textures.some(texture=>texture.name==='normal'),needsNormal,
     `${effect}: allocate and write normals only for effects that consume them`);
-  assert.equal(pipeline.scenePass.renderTarget.textures.length,1+Number(needsNormal)+Number(effect==='reflections'));
+  assert.equal(pipeline.scenePass.renderTarget.textures.length,1+Number(needsNormal)+Number(effect==='motionBlur'),
+    'packed normal, reflectivity and roughness share one attachment');
   pipeline.dispose();
 }
 const world=new ArenaWorld(new THREE.Scene());world.setGraphicsProfile(graphicsProfile('high'));
@@ -81,35 +86,35 @@ try {
 } finally { globalThis.localStorage=previousStorage; }
 
 // The reviewed recipes and their real render graphs agree, including custom effects on Low.
-for (const [level,scale,samples,shadow,aoSamples] of [['low',.5,0,0,16],['medium',.65,0,1024,16],['high',.75,0,2048,16],['ultra',1,4,4096,32]]) {
+for (const [level,scale,samples,shadow,aoSamples] of [['low',.5,0,0,16],['medium',.65,0,1024,16],['high',.75,0,2048,16],['ultra',1,0,4096,32]]) {
   const settings={};applyGraphicsPreset(settings,level);
   assert.equal(isCustomGraphics(settings),false);
   assert.deepEqual([settings.graphicsOptions.renderScale,settings.graphicsOptions.msaaSamples,settings.graphicsOptions.shadowMapSize,settings.graphicsOptions.aoSamples],[scale,samples,shadow,aoSamples]);
-  assert.equal(graphicsProfile(level,false,1,settings.graphicsOptions).pixelRatio,scale);
+  assert.equal(graphicsProfile(level,false,1,settings.graphicsOptions).pixelRatio,1,'render scale is applied inside the pipeline, not as a browser pixel ratio');
   const pipeline=new NeonRenderPipeline(renderer(true),new THREE.Scene(),new THREE.PerspectiveCamera(),{
     quality:level,effects:settings.graphicsEffects,options:settings.graphicsOptions});
-  assert.equal(pipeline.renderQuality,level==='ultra'?'high':level);
+  assert.equal(pipeline.renderQuality,level==='low'?'medium':'high');
   if(pipeline.aoPass)assert.equal(pipeline.aoPass.samples.value,aoSamples);
-  const bloom=pipeline.bloomPass||pipeline.highLoadBloom;
-  if(bloom)assert.equal(bloom.getResolutionScale(),level==='medium'?.34:.5);
+  const bloom=pipeline.bloomPass;
+  if(bloom)assert.equal(bloom.getResolutionScale(),scale*settings.graphicsOptions.bloomScale);
   pipeline.dispose();
   settings.graphicsOptions.renderScale=.25;assert.equal(isCustomGraphics(settings),true);
   applyGraphicsPreset(settings,level);settings.graphicsEffects.wetSurfaces=false;assert.equal(isCustomGraphics(settings),true);
 }
 const custom=new NeonRenderPipeline(renderer(true),new THREE.Scene(),new THREE.PerspectiveCamera(),{
   quality:'low',effects:{...presetEffects('low'),ambientOcclusion:true,bloom:true},options:{aoSamples:32,bloomScale:1}});
-assert.equal(custom.renderQuality,'high');assert.equal(custom.aoPass.samples.value,32);assert.equal(custom.bloomPass.getResolutionScale(),1);custom.dispose();
+assert.equal(custom.renderQuality,'high');assert.equal(custom.aoPass.samples.value,32);assert.equal(custom.bloomPass.getResolutionScale(),.5);custom.dispose();
 const mediumAO=new NeonRenderPipeline(renderer(true),new THREE.Scene(),new THREE.PerspectiveCamera(),{
   quality:'medium',effects:{...presetEffects('medium'),ambientOcclusion:true}});
-assert.equal(mediumAO.bloomPass.strength.value,.28,'enabling AO does not change the preset bloom strength');
-assert.equal(mediumAO.bloomPass.radius.value,.16);mediumAO.dispose();
+assert.equal(mediumAO.bloomPass.strength.value,.36,'enabling AO does not change the preset bloom strength');
+assert.equal(mediumAO.bloomPass.radius.value,.25);mediumAO.dispose();
 const highBloom=new NeonRenderPipeline(renderer(true),new THREE.Scene(),new THREE.PerspectiveCamera(),{
   quality:'high',effects:{...off,bloom:true}});
-assert.equal(highBloom.highLoadBloom.strength.value,.52,'disabling advanced effects preserves High bloom');
-assert.equal(highBloom.highLoadBloom.radius.value,.18);highBloom.setReducedMotion(true);
-assert.equal(highBloom.highLoadBloom.strength.value,.22);highBloom.dispose();
+assert.equal(highBloom.bloomPass.strength.value,.52,'disabling advanced effects preserves High bloom');
+assert.equal(highBloom.bloomPass.radius.value,.3);highBloom.setReducedMotion(true);
+assert.equal(highBloom.bloomPass.strength.value,.22);highBloom.dispose();
 const webglUltra=new NeonRenderPipeline(renderer(false),new THREE.Scene(),new THREE.PerspectiveCamera(),{quality:'ultra'});
-assert.equal(webglUltra.bloomPass.strength.value,.36,'Ultra retains former High fallback bloom');webglUltra.dispose();
+assert.equal(webglUltra.bloomPass.strength.value,.52,'Ultra retains full tier bloom on the compatibility renderer');webglUltra.dispose();
 assert.deepEqual(normalizeGraphicsOptions({renderScale:NaN,msaaSamples:8,shadowMapSize:-1},'low'),GRAPHICS_PRESETS.low);
 globalThis.localStorage={getItem:key=>stored.get(key)??null,setItem:(key,value)=>stored.set(key,value)};
 try {

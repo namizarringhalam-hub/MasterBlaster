@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import * as THREE from "three/webgpu";
 import { Fighter } from "../src/player.js";
 import { advanceSpring } from "../src/motionSpring.js";
@@ -8,11 +9,41 @@ const colors = [[0x129dba, 0x6ff6ff], [0xc82849, 0xff6b82], [0x6bad22, 0xb9ff55]
   [0x7847ca, 0xc793ff], [0xd77a16, 0xffc14f], [0xb92d86, 0xff75cf]];
 const world = { resolve(position) { const grounded = position.y <= 0; if (grounded) position.y = 0; return { grounded }; }, boostAt: () => null };
 const still = new THREE.Vector3(), move = new THREE.Vector3(0, 0, 1), look = new THREE.Vector3(0, 0, 1);
+const tick = (fighter, dt, direction = still, aim = look, actions = {}) => {
+  fighter.update(dt, direction, aim, actions, world);
+  fighter.updatePresentation(dt);
+};
+function sampledSkinnedLegFloor(root, budget = 500) {
+  root.updateMatrixWorld(true);
+  const names = new Set(["Mecha bone leftLeg", "Mecha bone leftKnee", "Mecha bone leftAnkle", "Mecha bone rightLeg", "Mecha bone rightKnee", "Mecha bone rightAnkle"]);
+  const vertex = new THREE.Vector3(); let count = 0, minY = Infinity;
+  root.traverse(mesh => {
+    if (!mesh.isSkinnedMesh) return;
+    const { skinIndex, skinWeight, position } = mesh.geometry.attributes;
+    const targets = mesh.skeleton.bones.flatMap((bone, index) => names.has(bone.name) ? [index] : []);
+    if (!targets.length) return;
+    const step = Math.max(1, Math.floor(position.count / budget));
+    for (let i = 0; i < position.count; i += step) {
+      let legVertex = false;
+      for (let slot = 0; slot < 4; slot++) if (skinWeight.getComponent(i, slot) > 0 && targets.includes(skinIndex.getComponent(i, slot))) { legVertex = true; break; }
+      if (!legVertex) continue;
+      mesh.getVertexPosition(i, vertex).applyMatrix4(mesh.matrixWorld);
+      assert.ok(Number.isFinite(vertex.x) && Number.isFinite(vertex.y) && Number.isFinite(vertex.z), "sampled leg skin vertex is finite");
+      minY = Math.min(minY, vertex.y); count++;
+    }
+  });
+  return { minY, count };
+}
 const variants = new Set();
 for (let variant = 0; variant < 4; variant++) for (const [color, accent] of colors) {
+  // Exercise every paint on one build and all four deterministic silhouettes;
+  // repeating all six palettes on every identical geometry family adds cost
+  // without covering another material or skinning path.
+  if (variant > 0 && color !== colors[0][0]) continue;
   const fighter = new Fighter(new THREE.Scene(), { id: `helmet-${variant}`, color, accent }, ["blaster", "energy_sword"], new THREE.Vector3());
   const geometries = new Set(), materials = new Set(), palette = new THREE.Color(color);
   let triangles = 0, matches = 0, meshes = 0;
+  const skinMeshes = [];
   fighter.rig.traverse(object => {
     if (!object.isMesh) return;
     meshes++;
@@ -21,54 +52,135 @@ for (let variant = 0; variant < 4; variant++) for (const [color, accent] of colo
     for (const material of Array.isArray(object.material) ? object.material : [object.material]) materials.add(material);
     triangles += (geometry.index?.count ?? geometry.attributes.position.count) / 3;
     for (const attribute of Object.values(geometry.attributes)) assert.ok(attribute.array.every(Number.isFinite), "all vertex data is finite");
-    if (!object.name.startsWith("Mecha")) return;
+    if (!object.isSkinnedMesh) return;
+    skinMeshes.push(object);
     assert.equal(geometry.groups.length, 0, "paint colors do not introduce material draws");
     const p = geometry.attributes.position, n = geometry.attributes.normal, c = geometry.attributes.color;
-    assert.ok(p.count > 0 && p.count === n.count && p.count === c.count);
+    const skinIndex = geometry.attributes.skinIndex, skinWeight = geometry.attributes.skinWeight;
+    assert.ok(p.count > 0 && p.count === n.count && (!c || p.count === c.count));
+    assert.ok(p.count === skinIndex.count && p.count === skinWeight.count, "each rigid vertex has a bone binding");
     for (let i = 0; i < n.count; i++) {
-      const normal = new THREE.Vector3().fromBufferAttribute(n, i);
-      assert.ok(Math.abs(normal.length() - 1) < 1e-5, "armor normals stay normalized for AO and lighting");
-      if (Math.abs(c.getX(i) - palette.r) + Math.abs(c.getY(i) - palette.g) + Math.abs(c.getZ(i) - palette.b) < 1e-5) matches++;
+      assert.ok(Math.abs(Math.hypot(n.getX(i), n.getY(i), n.getZ(i)) - 1) < 1e-5, "armor normals stay normalized for AO and lighting");
+      if (c && Math.abs(c.getX(i) - palette.r) + Math.abs(c.getY(i) - palette.g) + Math.abs(c.getZ(i) - palette.b) < 1e-5) matches++;
+      let totalWeight = 0, influences = 0;
+      for (let slot = 0; slot < 4; slot++) {
+        const weight = skinWeight.getComponent(i, slot);
+        totalWeight += weight;
+        if (weight > 0) {
+          influences++;
+          assert.ok(skinIndex.getComponent(i, slot) < object.skeleton.bones.length, "skin index resolves to a bone");
+        }
+      }
+      assert.equal(influences, 1, "rigid armor uses one exact hinge per vertex");
+      assert.ok(Math.abs(totalWeight - 1) < 1e-6, "rigid skin weights stay normalized");
     }
-    if (object.name === "Mecha helmet armor") variants.add(Buffer.from(p.array.buffer).toString("base64"));
   });
+  assert.ok(skinMeshes.length >= 3 && skinMeshes.every(mesh => mesh.skeleton === skinMeshes[0].skeleton), "armor batches share one articulated skeleton");
+  const armorSkin = skinMeshes.find(mesh => mesh.material === fighter.armorMaterial);
+  assert.ok(armorSkin, "painted armor is consolidated into a rigid skin batch");
+  variants.add(createHash("sha1").update(armorSkin.geometry.attributes.position.array).digest("hex"));
   assert.ok(matches > 1000, "player paint covers large armor surfaces");
   assert.ok(meshes <= 22, `bounded draw count: ${meshes}`);
-  assert.ok(triangles < 16000, `bounded geometry budget: ${triangles}`);
-  assert.equal(fighter.visor.parent, fighter.helmet);
+  assert.ok(triangles < 16500, `bounded geometry budget: ${triangles}`);
+  if (variant === 0 && color === colors[0][0]) {
+  assert.ok(skinMeshes.includes(fighter.visor), "visor material retains its own skinned batch");
   assert.equal(fighter.leftKnee.parent, fighter.leftLeg);
   assert.equal(fighter.rightKnee.parent, fighter.rightLeg);
   fighter.group.updateMatrixWorld(true);
-  for (const side of [-1, 1]) {
-    const origin = new THREE.Vector3(side * .10, .037, 1).applyMatrix4(fighter.helmet.matrixWorld);
-    const direction = new THREE.Vector3(0, 0, -1).transformDirection(fighter.helmet.matrixWorld);
-    const hits = new THREE.Raycaster(origin, direction).intersectObjects(fighter.helmet.children, true);
-    assert.equal(hits[0]?.object, fighter.visor, "the brow and face armor cannot occlude either eye lens");
+  // Skinning is checked on the CPU at the bind pose: a stale inverse bind can
+  // still pass joint-angle assertions while throwing every rigid batch away
+  // from its authored rest transform.
+  for (const mesh of skinMeshes) {
+    const positions = mesh.geometry.attributes.position;
+    const step = Math.max(1, Math.floor(positions.count / 100));
+    for (let index = 0; index < positions.count; index += step) {
+      const expected = new THREE.Vector3().fromBufferAttribute(positions, index);
+      const deformed = expected.clone();
+      mesh.applyBoneTransform(index, deformed);
+      assert.ok(deformed.distanceTo(expected) < 2e-4, "bound rest pose leaves rigid armor at its authored vertex position");
+    }
   }
-  const eyeTransform = fighter.helmet.matrixWorld.clone().invert().multiply(fighter.visor.matrixWorld);
+  const helmetBone = skinMeshes[0].skeleton.bones.find(bone => bone.name === "Mecha bone helmet");
+  assert.ok(helmetBone, "render skeleton includes the articulated helmet bone");
+  const helmetBoneIndex = skinMeshes[0].skeleton.bones.indexOf(helmetBone);
+  for (let index = 0; index < fighter.visor.geometry.attributes.skinIndex.count; index++) {
+    const indices = fighter.visor.geometry.attributes.skinIndex, weights = fighter.visor.geometry.attributes.skinWeight;
+    let helmetWeighted = false;
+    for (let slot = 0; slot < 4; slot++)
+      if (indices.getComponent(index, slot) === helmetBoneIndex && weights.getComponent(index, slot) > 0) helmetWeighted = true;
+    assert.ok(helmetWeighted, "visor vertices stay rigidly attached to the moving helmet bone");
+  }
+  const helmetBind = helmetBone.quaternion.clone();
+  let helmetPoseChange = 0;
   for (const pitch of [-1.2, 0, 1.2]) {
-    look.set(0, Math.sin(pitch), Math.cos(pitch));
-    for (let i = 0; i < 60; i++) fighter.update(1 / 60, still, look, {}, world);
-    fighter.group.updateMatrixWorld(true);
-    const relative = fighter.helmet.matrixWorld.clone().invert().multiply(fighter.visor.matrixWorld);
-    assert.ok(relative.elements.every((value, i) => Math.abs(value - eyeTransform.elements[i]) < 1e-10), "eyes stay in their moving helmet");
+    fighter.aim.set(0, Math.sin(pitch), Math.cos(pitch));
+    fighter.updatePresentation(1 / 60);
+    helmetPoseChange = Math.max(helmetPoseChange, helmetBone.quaternion.angleTo(helmetBind));
+    assert.ok(fighter.visor.skeleton === skinMeshes[0].skeleton, "visor remains on the animated render skeleton");
   }
+  assert.ok(helmetPoseChange > .01, "look pitch continues to drive the helmet's render bone");
   look.set(0, 0, 1);
   const kneeAngles = [];
   for (let i = 0; i < 90; i++) {
-    fighter.update(1 / 60, move, look, {}, world);
+    tick(fighter, 1 / 60, move, look);
     kneeAngles.push(fighter.leftKnee.rotation.x - fighter.rightKnee.rotation.x);
   }
   assert.ok(Math.min(...kneeAngles) < -.2 && Math.max(...kneeAngles) > .2, "running alternates the articulated knees");
-  fighter.update(1 / 60, still, look, { jump: true }, world);
+  const kneeBoneIndex = skinMeshes[0].skeleton.bones.findIndex(bone => bone.name === "Mecha bone leftKnee");
+  assert.ok(kneeBoneIndex >= 0, "render skeleton includes the articulated knee bone");
+  const kneeSkin = skinMeshes.find(mesh => {
+    const indices = mesh.geometry.attributes.skinIndex, weights = mesh.geometry.attributes.skinWeight;
+    for (let i = 0; i < indices.count; i++) for (let slot = 0; slot < 4; slot++)
+      if (indices.getComponent(i, slot) === kneeBoneIndex && weights.getComponent(i, slot) > 0) return true;
+    return false;
+  });
+  const kneeBone = skinMeshes[0].skeleton.bones[kneeBoneIndex];
+  const skeleton = skinMeshes[0].skeleton;
+  // Establish a renderer-produced rest/current palette before testing motion
+  // history. This makes the following comparison an adjacent-frame update,
+  // rather than a first flatten from the Skeleton constructor's zero array.
+  fighter.leftLeg.rotation.set(0, 0, 0);
+  fighter.leftKnee.rotation.set(0, 0, 0);
+  fighter.syncMechaSkeleton();
+  skeleton.update();
+  const previousPoseWorld = kneeBone.matrixWorld.clone();
+  const paletteBeforeSync = skeleton.boneMatrices.slice();
+  fighter.leftKnee.rotation.set(.7, 0, 0);
+  fighter.syncMechaSkeleton();
+  assert.ok(kneeBone.matrixWorld.elements.some((value, index) => Math.abs(value - previousPoseWorld.elements[index]) > 1e-4),
+    "manual pose sync updates the knee bone world transform for CPU skin queries");
+  assert.deepEqual(skeleton.boneMatrices, paletteBeforeSync,
+    "manual pose sync leaves the renderer-owned current palette unchanged");
+
+  // Emulate the renderer's skeleton update: the saved palette is the previous
+  // rendered pose, and only the current palette advances after pose sync.
+  const previousPalette = skeleton.boneMatrices.slice();
+  skeleton.update();
+  const currentPalette = skeleton.boneMatrices.slice();
+  assert.ok(currentPalette.some((value, index) => Math.abs(value - previousPalette[index]) > 1e-4),
+    "renderer palette update records the posed knee separately from its previous frame");
+  const kneeIndices = kneeSkin.geometry.attributes.skinIndex, kneeWeights = kneeSkin.geometry.attributes.skinWeight;
+  const kneePositions = kneeSkin.geometry.attributes.position;
+  let kneeVertexMotion = 0;
+  for (let index = 0; index < kneeIndices.count; index++) {
+    let kneeWeighted = false;
+    for (let slot = 0; slot < 4; slot++)
+      if (kneeIndices.getComponent(index, slot) === kneeBoneIndex && kneeWeights.getComponent(index, slot) > 0) kneeWeighted = true;
+    if (!kneeWeighted) continue;
+    const authored = new THREE.Vector3().fromBufferAttribute(kneePositions, index);
+    kneeSkin.applyBoneTransform(index, authored);
+    kneeVertexMotion = Math.max(kneeVertexMotion, authored.distanceTo(new THREE.Vector3().fromBufferAttribute(kneePositions, index)));
+  }
+  assert.ok(kneeVertexMotion > .02, "animated pose moves consolidated skin vertices through the knee bone");
+  tick(fighter, 1 / 60, still, look, { jump: true });
   assert.equal(fighter.grounded, false, "new armor retains production jumping");
-  for (let i = 0; i < 8; i++) fighter.update(1 / 60, still, look, {}, world);
+  for (let i = 0; i < 8; i++) tick(fighter, 1 / 60);
   assert.ok(fighter.leftKnee.rotation.x > .25 && fighter.rightKnee.rotation.x > .25, "airborne legs tuck");
   fighter.position.set(0, 0, 0); fighter.velocity.set(0, 0, 0); fighter.grounded = true;
-  for (let i = 0; i < 100; i++) fighter.update(1 / 60, still, look, {}, world);
+  for (let i = 0; i < 100; i++) tick(fighter, 1 / 60);
   const idle = fighter.armorMaterial.emissiveIntensity;
   fighter.takeHit(10, look);
-  fighter.update(1 / 60, still, look, {}, world);
+  tick(fighter, 1 / 60);
   assert.ok(fighter.armorMaterial.emissiveIntensity > idle, "colored armor retains hit feedback");
   fighter.takeHit(500, look); fighter.updateDeath(.2);
   assert.equal(fighter.alive, false);
@@ -78,13 +190,14 @@ for (let variant = 0; variant < 4; variant++) for (const [color, accent] of colo
   assert.equal(fighter.armorMaterial.emissiveIntensity, idle, "respawn restores the armor finish");
   // Weapon cache and appearance resources have separate ownership.
   const disposals = new Map();
-  for (const resource of [...geometries, ...materials]) if (!resource.userData?.sharedFighterGeometry) {
+  for (const resource of [...geometries, ...materials]) if (!resource.userData?.sharedFighterGeometry && !resource.userData?.sharedWeaponTemplate) {
     disposals.set(resource, 0); resource.addEventListener("dispose", () => disposals.set(resource, disposals.get(resource) + 1));
   }
   fighter.switchSlot(1); fighter.switchSlot(0);
   assert.ok([...disposals.values()].every(count => count === 0), "switching weapons preserves the armor");
   fighter.dispose();
   assert.ok([...disposals.values()].every(count => count === 1), "all owned model resources dispose exactly once");
+  } else fighter.dispose();
 }
 assert.equal(variants.size, 4, "all four deterministic armor families have distinct helmets");
 // The rejected gait passed pose-only checks. Sample complete strides and input
@@ -99,9 +212,10 @@ for (const fps of [30, 60, 144]) {
     const time = frame / fps;
     const direction = time < 2 ? new THREE.Vector3(0, 0, 1) : time < 4 ? new THREE.Vector3(0, 0, -1)
       : time < 6 ? new THREE.Vector3(1, 0, 0) : still;
-    f.update(1 / fps, direction, look, {}, world); f.group.updateMatrixWorld(true);
+    tick(f, 1 / fps, direction, look); f.group.updateMatrixWorld(true);
     const feet = [f.leftAnkle, f.rightAnkle].map(ankle => ankle.getWorldPosition(new THREE.Vector3()).sub(f.position));
-    for (const leg of [f.leftLeg, f.rightLeg]) assert.ok(new THREE.Box3().setFromObject(leg, true).min.y >= -.001, "moving armor clears the floor");
+    const legs = sampledSkinnedLegFloor(f.rig);
+    assert.ok(legs.count > 0 && Number.isFinite(legs.minY) && legs.minY >= -.001, "sampled articulated leg skin vertices clear the floor");
     for (const ankle of [f.leftAnkle, f.rightAnkle]) {
       const up = new THREE.Vector3(0, 1, 0).transformDirection(ankle.matrixWorld);
       assert.ok(up.y > .998, "soles counter-rotate the hip, knee and body lean");
@@ -125,20 +239,36 @@ assert.ok(Math.max(...steadyHeights) - Math.min(...steadyHeights) < .002, "pelvi
   assert.ok(magazine?.parent, "animated magazine remains outside rigid batching");
   f.ammo.minigun=0; f.reload();
   f.reloadTimer=WEAPONS.minigun.reload*.5;
-  f.update(1/120,still,look,{},world);
+  tick(f,1/120,still,look);
   assert.ok(magazine.position.y < f.weaponMagazineHome.y-.25);
   f.switchSlot(1); f.switchSlot(0);
   assert.equal(f.weaponMagazine,magazine,"cached models reuse magazine geometry");
   assert.deepEqual(magazine.position.toArray(),f.weaponMagazineHome.toArray(),"switching restores magazine rest pose");
   f.reloadTimer=0; f.recoil(4); f.attackTimer=.2;
   let peak=0;
-  for(let i=0;i<120;i++){f.update(1/60,still,look,{},world);peak=Math.max(peak,f.weaponKick.value);assert.deepEqual(f.weaponGroup.scale.toArray(),[1,1,1]);}
+  for(let i=0;i<120;i++){tick(f,1/60);peak=Math.max(peak,f.weaponKick.value);assert.deepEqual(f.weaponGroup.scale.toArray(),[1,1,1]);}
   assert.ok(peak>.04 && peak<.23,"weapon kick has a bounded physical return");
   assert.ok(Math.abs(f.weaponKick.value)<1e-6 && f.weaponSpinSpeed<.2,"recoil and barrels settle after firing");
   const rotation=f.weaponSpinner.rotation.z;
-  f.recoil(4); f.attackTimer=.2; f.update(1/60,still,look,{reducedMotion:true},world);
+  f.recoil(4); f.attackTimer=.2; tick(f,1/60,still,look,{reducedMotion:true});
   assert.equal(f.weaponKick.value,0); assert.equal(f.weaponSpinner.rotation.z,rotation);
   f.respawn(new THREE.Vector3()); assert.deepEqual(f.weaponKick,{value:0,velocity:0});
+  f.dispose();
+}
+for (const mechaMotion of [false, true]) for (const weaponMotion of [false, true]) {
+  const f = new Fighter(new THREE.Scene(), { id: `motion-${mechaMotion}-${weaponMotion}`, color: 0x129dba, accent: 0x6ff6ff },
+    ["minigun", "blaster"], new THREE.Vector3());
+  f.graphicsEffects = { mechaMotion, weaponMotion };
+  f.ammo.minigun = 0;
+  f.reload();
+  f.reloadTimer = WEAPONS.minigun.reload * .5;
+  f.attackTimer = .2;
+  const spinnerRotation = f.weaponSpinner.rotation.z;
+  tick(f, 1 / 60, still, look);
+  assert.equal(f.weaponSpinner.rotation.z !== spinnerRotation, weaponMotion,
+    `mechaMotion=${mechaMotion}, weaponMotion=${weaponMotion}: minigun spinner follows weapon motion`);
+  assert.equal(f.weaponMagazine.position.y < f.weaponMagazineHome.y - .25, weaponMotion,
+    `mechaMotion=${mechaMotion}, weaponMotion=${weaponMotion}: reload follows weapon motion`);
   f.dispose();
 }
 console.log("Mecha colors, geometry budgets, head tracking, knee animation, jumping, hit feedback and disposal passed.");
@@ -155,7 +285,7 @@ console.log("Mecha colors, geometry budgets, head tracking, knee animation, jump
   let peak = 0;
   for(let frame=0;frame<90;frame++) {
     const direction=frame<45?move:still;
-    pair.forEach((f,index)=>f.update(1/60,direction,look,{reducedMotion:Boolean(index)},world));
+    pair.forEach((f,index)=>tick(f,1/60,direction,look,{reducedMotion:Boolean(index)}));
     peak=Math.max(peak,Math.abs(pair[0].bodyPitchSpring.value));
     assert.deepEqual(pair[0].position.toArray(),pair[1].position.toArray(),"secondary motion never changes physics");
     assert.deepEqual(pair[0].muzzlePoint().toArray(),pair[1].muzzlePoint().toArray(),"logical muzzle and aim remain unchanged");

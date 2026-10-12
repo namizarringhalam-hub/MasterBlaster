@@ -211,12 +211,13 @@ const runExplosion = (weapon, impactHeight = 1.05) => {
   const fighter = (id, fraction, extras = {}) => ({ id, alive: true, position: new THREE.Vector3(40 + weapon.radius * fraction, 0, 0), ...extras });
   const owner = fighter("owner", .47);
   const decoy = fighter("decoy", .81, { isDecoy: true });
-  const result = { hits: new Map(), impacts: [], scorches: [], terrain: [], hazards: [] };
+  const result = { hits: new Map(), impacts: [], scorches: [], terrain: [], hazards: [], cameraImpacts: [] };
   const context = {
     players: [owner, fighter("center", 0), fighter("near", .18), fighter("far", .81), fighter("outside", 1.01), fighter("blocked", .18, { position: new THREE.Vector3(40, 0, 1) }), fighter("dead", .18, { alive: false })],
     decoys: [decoy], world: { effectBlocked: (_from, to) => to.z === 1, surfaceHeightAt: () => 0 },
     damageTarget(target, damage, push, _owner, _weapon, feedback) { result.hits.set(target.id, { damage, push: push.length(), headshot: feedback.headshot }); },
     damageTerrain(...args) { result.terrain.push(args); }, spawnHazard(...args) { result.hazards.push(args); },
+    addCameraImpact(point, strength) { result.cameraImpacts.push({ point: point.toArray(), strength }); },
     combatVisuals: { impact(_point, _weapon, _owner, options) { result.impacts.push(options); }, explosions: { scorch(_point, size) { result.scorches.push(size); } } },
     sound: { playImpact() {} }, audioSpatial() {}
   };
@@ -233,6 +234,8 @@ for (const [id, [radius, terrainRadius]] of Object.entries(originalBlasts)) {
     assert.equal(hit.headshot, false, `${id} controller splash stays a body hit`);
   }
   assert.deepEqual(after.impacts, before.impacts, `${id} keeps its actual explosion animation size`);
+  assert.equal(after.cameraImpacts.length, 1, `${id} emits exactly one camera impact`);
+  assert.deepEqual(after.cameraImpacts, before.cameraImpacts, `${id} keeps camera feedback tied to visual blast size`);
   assert.deepEqual(after.scorches, before.scorches, `${id} keeps its scorch size`);
   assert.equal(after.terrain.length, before.terrain.length, `${id} keeps the structural damage path`);
   assert.equal(after.hazards.length, before.hazards.length, `${id} keeps the lingering hazard spawn path`);

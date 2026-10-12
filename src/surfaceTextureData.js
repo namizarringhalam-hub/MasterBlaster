@@ -1,8 +1,11 @@
 import { seedFromText } from "./gameData.js";
 const lerp = (a, b, t) => (1 - t) * a + t * b;
 
+export const surfaceTextureResolution = seed => /-(structure|ground)$/.test(seed) ? 512 : 256;
+
 export function surfaceTextureData(seed, machined = false, finish = "metal") {
-  const size = 256, tile = machined ? 128 : 64, fastenerInset = machined ? 20 : 6, seedValue = seedFromText(seed);
+  const size = surfaceTextureResolution(seed), scale = size / 256;
+  const tile = (machined ? 128 : 64) * scale, fastenerInset = (machined ? 20 : 6) * scale, seedValue = seedFromText(seed);
   const buffers = Array.from({ length: 3 }, () => new Uint8Array(size * size * 4));
   const hash = (x, y) => ((Math.imul(x + seedValue, 374761393) ^ Math.imul(y, 668265263)) >>> 0) % 251 / 251;
   // Periodic smooth noise bakes broad grime into the existing maps. Keeping
@@ -21,8 +24,8 @@ export function surfaceTextureData(seed, machined = false, finish = "metal") {
     const edge = Math.min(x, y, tile - 1 - x, tile - 1 - y);
     const rivet = Math.hypot(Math.min(Math.abs(x - fastenerInset), Math.abs(x - tile + fastenerInset + 1)), Math.min(Math.abs(y - fastenerInset), Math.abs(y - tile + fastenerInset + 1)));
     heights[y * tile + x] = machined
-      ? Math.min(1, edge) * .45 - Math.max(0, 1 - rivet / 1.4) * .16
-      : Math.min(1, edge / 2.4) * .45 + Math.max(0, 1 - rivet / 1.6) * .25;
+      ? Math.min(1, edge) * .45 - Math.max(0, 1 - rivet / (1.4 * scale)) * .16
+      : Math.min(1, edge / (2.4 * scale)) * .45 + Math.max(0, 1 - rivet / (1.6 * scale)) * .25;
   }
   const height = (x, y) => heights[((y + size) % tile) * tile + (x + size) % tile];
   const [diffuse, normals, roughnessData] = buffers;
@@ -32,8 +35,9 @@ export function surfaceTextureData(seed, machined = false, finish = "metal") {
     const variation = hash(Math.floor(x / tile), Math.floor(y / tile)) * 12;
     const albedo = machined ? (h < .4 ? 145 : 184) + variation * .25 + grain : 154 + h * 52 + variation + grain;
     diffuse[at] = albedo; diffuse[at + 1] = albedo + 3; diffuse[at + 2] = albedo + 7; diffuse[at + 3] = 255;
-    const dx = (height(x - 1, y) - height(x + 1, y)) * .7;
-    const dy = (height(x, y - 1) - height(x, y + 1)) * .7;
+    const detail = (hash(x, y) - .5) * .028;
+    const dx = (height(x - 1, y) - height(x + 1, y)) * .7 * scale + detail;
+    const dy = (height(x, y - 1) - height(x, y + 1)) * .7 * scale + detail * .55;
     const length = Math.hypot(dx, dy, 1);
     normals[at] = (dx / length * .5 + .5) * 255; normals[at + 1] = (dy / length * .5 + .5) * 255;
     normals[at + 2] = (1 / length * .5 + .5) * 255; normals[at + 3] = 255;
@@ -47,7 +51,7 @@ export function surfaceTextureData(seed, machined = false, finish = "metal") {
     const stain = noise(x, y, 4) * .65 + noise(x, y, 16) * .35;
     const grime = Math.max(0, stain - .35);
     const edge = Math.min(x % tile, y % tile, tile - 1 - x % tile, tile - 1 - y % tile);
-    const wear = edge > 1 && edge < 5 && noise(x, y, 32) > .48 ? 1 : 0;
+    const wear = edge > scale && edge < 5 * scale && noise(x, y, 32) > .48 ? 1 : 0;
     const scratch = hash(Math.floor(x / 24), y) > .985 && noise(x, y, 8) > .48 ? 1 : 0;
     for (let channel = 0; channel < 3; channel++) diffuse[at + channel] = Math.min(255,
       diffuse[at + channel] * (1 - grime * .24) + (wear * 23 + scratch * 17));

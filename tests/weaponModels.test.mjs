@@ -1,7 +1,43 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import * as THREE from "three/webgpu";
-import { Fighter } from "../src/player.js";
+import { Fighter, prewarmWeaponTemplates, weaponTemplateCount } from "../src/player.js";
 import { WEAPONS } from "../src/gameData.js";
+
+assert.equal(prewarmWeaponTemplates(), Object.keys(WEAPONS).length, "loading prewarms every session weapon template");
+assert.equal(weaponTemplateCount(), Object.keys(WEAPONS).length, "the session owns one published template per weapon");
+
+const mainSource = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
+assert.match(mainSource, /import\s*\{[^}]*\bprewarmWeaponTemplates\b[^}]*\}\s*from\s*["']\.\/player\.js["']/s,
+  "main imports the session template prewarm entry point");
+const prepareResourcesBody = mainSource.match(/\bprepareResources\s*\(\)\s*\{([\s\S]*?)\r?\n  \}\r?\n\r?\n  prepareGameplayResources/);
+assert.ok(prepareResourcesBody, "main has a resource preparation phase");
+assert.match(prepareResourcesBody[1], /preparationProgress\(["']graphics["']\);\s*prewarmWeaponTemplates\(\)/,
+  "main prewarms weapon templates during graphics preparation");
+
+const sessionGeometryDisposals = new Map();
+const exactVisualMuzzles = {
+  blaster: [.05, .06, .994],
+  flamethrower: [.05, .06, 1.4],
+  drill_missile: [.05, .06, 1.17]
+};
+
+function assertVisualMuzzleAnchor(fighter, weaponId, label) {
+  const anchor = fighter.weaponMuzzleAnchor;
+  assert.ok(anchor?.isObject3D, `${label}: every fighter has a visual muzzle anchor`);
+  assert.equal(anchor.name, "Weapon visual muzzle anchor", `${label}: anchor is explicitly named`);
+  assert.equal(anchor.parent, fighter.weaponGroup, `${label}: anchor is attached to the active weapon group`);
+  assert.ok(anchor.position.distanceTo(fighter.visualMuzzleLocal) < 1e-9, `${label}: local muzzle position comes from the anchor`);
+  if (exactVisualMuzzles[weaponId]) assert.deepEqual(anchor.position.toArray(), exactVisualMuzzles[weaponId],
+    `${weaponId}: authored muzzle avoids falling back to an AABB-edge estimate`);
+  return anchor;
+}
+
+function assertVisualMuzzleMatchesAnchorOrigin(fighter, weaponId) {
+  const expected = fighter.weaponMuzzleAnchor.getWorldPosition(new THREE.Vector3());
+  const actual = fighter.visualMuzzlePoint(new THREE.Vector3());
+  assert.ok(actual.distanceTo(expected) < 1e-9, `${weaponId}: visual muzzle equals the posed anchor world origin`);
+}
 
 // Appearance changes retain the firing and hand-placement contracts of the
 // existing arsenal. These values are independent of the new mesh topology.
@@ -35,6 +71,7 @@ let maxTriangles = 0, maxDraws = 0;
 for (const [id, weapon] of Object.entries(WEAPONS)) {
   const fighter = new Fighter(new THREE.Scene(), { id: "weapon-model-qa", color: 0x129dba, accent: 0x6ff6ff },
     [id, id === "blaster" ? "shotgun" : "blaster"], new THREE.Vector3());
+  const muzzleAnchor = assertVisualMuzzleAnchor(fighter, id, id);
   assert.equal(fighter.weaponMuzzleDistance, muzzles[id] ?? 1.08, `${id}: logical firing origin is preserved`);
   assert.deepEqual(fighter.weaponGrip.toArray(), grips[id] ?? (weapon.type === "melee" ? [.06, -.01, .03] : [.05, -.2, .11]), `${id}: dominant-hand anchor`);
   assert.deepEqual(fighter.weaponSupportGrip.toArray(), id === "hammer" ? [-.055, .04, .12] : id === "chainsaw" ? [-.18, -.04, .2] : [-.14, -.1, .32], `${id}: support-hand anchor`);
@@ -43,13 +80,20 @@ for (const [id, weapon] of Object.entries(WEAPONS)) {
   assert.equal(Boolean(fighter.weaponPiston), id === "punch_glove", `${id}: piston remains animated`);
   assert.equal(Boolean(fighter.weaponMagazine), magazines.has(id), `${id}: magazine remains animated`);
 
-  const resources = new Set(), materials = new Set();
+  const resources = new Set(), materials = new Set(), weaponGeometries = new Set();
   let meshes = 0, triangles = 0, draws = 0;
   fighter.weaponGroup.traverse(object => {
     if (!object.isMesh) return;
     meshes++; triangles += (object.geometry.index?.count ?? object.geometry.attributes.position.count) / 3;
     draws += Array.isArray(object.material) ? object.geometry.groups.length || 1 : 1;
-    if (!object.geometry.userData.sharedFighterGeometry) resources.add(object.geometry);
+    weaponGeometries.add(object.geometry);
+    assert.equal(object.geometry.userData.sharedWeaponTemplate, true, `${id}: geometry comes from the prewarmed session template`);
+    if (!sessionGeometryDisposals.has(object.geometry)) {
+      sessionGeometryDisposals.set(object.geometry, 0);
+      object.geometry.addEventListener("dispose", () => sessionGeometryDisposals.set(object.geometry,
+        sessionGeometryDisposals.get(object.geometry) + 1));
+    }
+    if (!object.geometry.userData.sharedFighterGeometry && !object.geometry.userData.sharedWeaponTemplate) resources.add(object.geometry);
     for (const material of [object.material].flat()) { materials.add(material); resources.add(material); }
     for (const attribute of Object.values(object.geometry.attributes)) assert.ok(attribute.array.every(Number.isFinite), `${id}: finite vertex data`);
     object.geometry.computeBoundingSphere();
@@ -65,6 +109,20 @@ for (const [id, weapon] of Object.entries(WEAPONS)) {
   const disposed = new Map([...resources].map(resource => [resource, 0]));
   for (const resource of resources) resource.addEventListener("dispose", () => disposed.set(resource, disposed.get(resource) + 1));
 
+  // Repeating prewarm must preserve the already published template geometry.
+  assert.equal(prewarmWeaponTemplates(), Object.keys(WEAPONS).length, `${id}: repeated prewarm is idempotent`);
+  const second = new Fighter(new THREE.Scene(), { id: `weapon-model-isolation-${id}`, color: 0xc82849, accent: 0xff6b82 },
+    [id], new THREE.Vector3());
+  assertVisualMuzzleAnchor(second, id, `${id} peer`);
+  const secondGeometries = new Set(), secondMaterials = new Set();
+  second.weaponGroup.traverse(object => {
+    if (!object.isMesh) return;
+    secondGeometries.add(object.geometry);
+    for (const material of [object.material].flat()) secondMaterials.add(material);
+  });
+  assert.deepEqual(secondGeometries, weaponGeometries, `${id}: separate live fighters use identical prewarmed template geometries`);
+  assert.ok([...materials].every(material => !secondMaterials.has(material)), `${id}: each fighter has isolated mutable materials`);
+
   const refs = [fighter.weaponSpinner, fighter.weaponPiston, fighter.weaponMagazine];
   const spinnerRotation = fighter.weaponSpinner?.quaternion.clone(), pistonPosition = fighter.weaponPiston?.position.clone();
   const magazinePosition = fighter.weaponMagazine?.position.clone(), magazineRotation = fighter.weaponMagazine?.rotation.clone();
@@ -73,14 +131,26 @@ for (const [id, weapon] of Object.entries(WEAPONS)) {
   fighter.attackTimer = weapon.cooldown * .9;
   if (fighter.weaponMagazine) { fighter.ammo[id] = 0; fighter.reload(); fighter.reloadTimer = weapon.reload * .5; }
   fighter.update(1 / 120, still, look, {}, world);
+  fighter.updatePresentation(1 / 120);
   if (fighter.weaponSpinner) assert.ok(fighter.weaponSpinner.quaternion.angleTo(spinnerRotation) > .001, `${id}: spinning parts survive batching`);
   if (fighter.weaponPiston) assert.ok(fighter.weaponPiston.position.z > pistonPosition.z, `${id}: piston survives batching`);
   if (fighter.weaponMagazine) assert.ok(fighter.weaponMagazine.position.y < magazinePosition.y - .25, `${id}: reload mechanism survives batching`);
   const muzzle = fighter.muzzlePoint();
+  // Verify the named anchor remains the visual source under a nontrivial weapon
+  // pose, including transforms that make any bounds-based estimate diverge.
+  fighter.weaponGroup.position.set(.23, -.17, .31);
+  fighter.weaponGroup.rotation.set(.17, -.31, .09);
+  fighter.weaponGroup.scale.set(1.1, .9, .8);
+  assertVisualMuzzleMatchesAnchorOrigin(fighter, id);
   fighter.switchSlot(1);
   assert.ok(visibleMeshes.every(mesh => !fighter.weaponGroup.getObjectById(mesh.id)), `${id}: inactive geometry is detached from the visible weapon`);
+  assert.notEqual(fighter.weaponMuzzleAnchor, muzzleAnchor, `${id}: switching selects the other cached muzzle anchor`);
+  assertVisualMuzzleAnchor(fighter, id === "blaster" ? "shotgun" : "blaster", `${id} alternate slot`);
   assert.ok([...disposed.values()].every(count => count === 0), `${id}: switching preserves cached resources`);
   fighter.switchSlot(0);
+  assert.equal(fighter.weaponMuzzleAnchor, muzzleAnchor, `${id}: switching restores the cached muzzle anchor identity`);
+  assertVisualMuzzleAnchor(fighter, id, `${id} restored slot`);
+  assertVisualMuzzleMatchesAnchorOrigin(fighter, id);
   assert.ok(refs.every((ref, index) => ref === [fighter.weaponSpinner, fighter.weaponPiston, fighter.weaponMagazine][index]), `${id}: switching restores animation references`);
   assert.ok(visibleMeshes.every(mesh => fighter.weaponGroup.getObjectById(mesh.id)), `${id}: cached mesh identity is retained`);
   if (spinnerRotation) assert.ok(fighter.weaponSpinner.quaternion.equals(spinnerRotation), `${id}: spinning rest pose is restored`);
@@ -91,7 +161,10 @@ for (const [id, weapon] of Object.entries(WEAPONS)) {
   }
   assert.ok(fighter.muzzlePoint().equals(muzzle), `${id}: model switching never shifts the firing line`);
   fighter.dispose();
-  assert.ok([...disposed.values()].every(count => count === 1), `${id}: cached and visible resources dispose exactly once`);
+  assert.ok([...disposed.values()].every(count => count === 1), `${id}: owned cached and visible resources dispose exactly once`);
+  assert.ok([...sessionGeometryDisposals.values()].every(count => count === 0), `${id}: disposing one fighter preserves session-owned geometry`);
+  second.dispose();
+  assert.ok([...sessionGeometryDisposals.values()].every(count => count === 0), `${id}: disposing both fighters preserves session-owned geometry`);
 }
 
 console.log(`All ${Object.keys(WEAPONS).length} weapon models preserve firing origins, hand anchors, animation caches and resource ownership (${maxTriangles} maximum triangles, ${maxDraws} maximum material draws).`);

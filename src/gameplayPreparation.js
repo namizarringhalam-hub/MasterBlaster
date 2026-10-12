@@ -1,14 +1,11 @@
 import * as THREE from "three/webgpu";
-import { materialOpacity } from "three/tsl";
 import { Fighter } from "./player.js";
-import { CombatVisuals, createProjectileVisual } from "./combatVisuals.js";
-import { WEAPONS } from "./gameData.js";
+import { CombatVisuals } from "./combatVisuals.js";
+import { WEAPONS, weaponFireMode } from "./gameData.js";
 import { fitArenaShadow } from "./lighting.js";
 import { prepareSurfaceTextures } from "./surfaceTextures.js";
 import { RESOURCE_VERSION, backgroundYield } from "./resourceVersion.js";
-import { createHazardVisual } from "./hazardVisuals.js";
-import { Line2 } from "three/addons/lines/webgpu/Line2.js";
-import { createGrappleRopeGeometry, updateGrappleRopeGeometry } from "./grappleRope.js";
+import { createGrappleVisual, updateGrappleVisual, disposeGrappleVisual } from "./grappleRope.js";
 import { ArenaPreparation } from "./arenaPreparation.js";
 
 const atmosphereKeys = ["background", "backgroundNode", "fog", "fogNode"];
@@ -35,7 +32,7 @@ async function renderWarmup(game, roots, valid, sceneAtmosphere, compileRoots) {
   try {
     for (const position of [[0, 110, 90], [0, 5, 14]]) {
       if (!valid()) return false;
-      const camera = game.camera.clone(), savedAtmosphere = atmosphere(game.scene), saved = [];
+      const camera = game.camera.clone(), savedAtmosphere = atmosphere(game.scene), saved = [], savedMatrices = new Map();
       try {
         if (sceneAtmosphere) Object.assign(game.scene, sceneAtmosphere);
         for (const root of roots) root.traverse(object => {
@@ -44,10 +41,14 @@ async function renderWarmup(game, roots, valid, sceneAtmosphere, compileRoots) {
           object.visible = true;
           object.frustumCulled = false;
           if (object.isInstancedMesh && object.count === 0 && object.instanceMatrix.count) {
-            entry.matrix = new THREE.Matrix4();
-            object.getMatrixAt(0, entry.matrix);
-            object.setMatrixAt(0, new THREE.Matrix4());
-            object.instanceMatrix.needsUpdate = true;
+            entry.emptyInstances = true;
+            // Rigid projectile parts share this attribute. Capture its original
+            // first slot once, before another mesh sees the warmup identity.
+            if (!savedMatrices.has(object.instanceMatrix)) {
+              const matrix = new THREE.Matrix4(); object.getMatrixAt(0, matrix);
+              savedMatrices.set(object.instanceMatrix, matrix);
+              object.setMatrixAt(0, new THREE.Matrix4()); object.instanceMatrix.needsUpdate = true;
+            }
             object.count = 1;
           }
         });
@@ -62,14 +63,13 @@ async function renderWarmup(game, roots, valid, sceneAtmosphere, compileRoots) {
         else game.renderPipeline.render();
         if (!valid()) return false;
       } finally {
-        for (const { object, visible, culled, matrix } of saved) {
+        for (const { object, visible, culled, emptyInstances } of saved) {
           object.visible = visible;
           object.frustumCulled = culled;
-          if (matrix) {
-            object.count = 0;
-            object.setMatrixAt(0, matrix);
-            object.instanceMatrix.needsUpdate = true;
-          }
+          if (emptyInstances) object.count = 0;
+        }
+        for (const [attribute, matrix] of savedMatrices) {
+          matrix.toArray(attribute.array, 0); attribute.needsUpdate = true;
         }
         Object.assign(game.scene, savedAtmosphere);
         // A resize may update the projection while WebGL compiles. Restore only
@@ -117,6 +117,7 @@ export async function warmFighterWeapons(game, fighters, roots, valid, sceneAtmo
 
 function disposeSamples(game, entry) {
   for (const fighter of entry.fighters) fighter.dispose();
+  disposeGrappleVisual(entry.ropeVisual);
   game.removeObject(entry.projectiles);
 }
 
@@ -192,17 +193,15 @@ export class GameplayPreparation {
         entry.world.setGraphicsProfile(game.graphics, game.renderer.getMaxAnisotropy());
         entry.world.setGraphicsEffects(game.settings.graphicsEffects);
         fitArenaShadow(game.keyLight, entry.world);
+        game.shadowRig?.registerWorld(entry.world.group);
         entry.visuals = new CombatVisuals(game.scene, { reducedMotion: game.settings.reducedMotion, quality: game.graphics.combatQuality });
         entry.visuals.setGraphicsProfile(game.graphics);
         entry.visuals.group.visible = false;
         entry.projectiles.visible = false;
         game.scene.add(entry.projectiles);
-        const ropeGeometry = createGrappleRopeGeometry();
-        updateGrappleRopeGeometry(ropeGeometry, [new THREE.Vector3(), new THREE.Vector3(0, 6, 0)]);
-        entry.projectiles.add(new Line2(ropeGeometry, new THREE.Line2NodeMaterial({
-          color: 0x52e9ff, linewidth: 2, transparent: true, opacity: .92, opacityNode: materialOpacity,
-          depthWrite: false, toneMapped: false, alphaToCoverage: true
-        })));
+        entry.ropeVisual = createGrappleVisual({ color: 0x52e9ff, accent: 0x52e9ff });
+        updateGrappleVisual(entry.ropeVisual.line, [new THREE.Vector3(), new THREE.Vector3(0, 6, 0)], game.camera);
+        entry.projectiles.add(entry.ropeVisual.line);
         const weapons = Object.keys(WEAPONS);
         for (let offset = 0; offset < weapons.length && valid(); offset += 5) {
           const loadout = weapons.slice(offset, offset + 5);
@@ -210,12 +209,10 @@ export class GameplayPreparation {
           entry.fighters.push(fighter);
           fighter.group.visible = false;
           await prepareFighterWeapons(fighter, valid);
+          game.shadowRig?.registerFighter(fighter.group);
           if (!valid()) break;
-          for (const id of loadout) {
-            const weapon = WEAPONS[id];
-            if (weapon.type !== "melee") entry.projectiles.add(createProjectileVisual(weapon, fighter, weapon.radius || .11));
-            if (weapon.hazard) entry.projectiles.add(createHazardVisual(weapon).mesh);
-          }
+          // Projectile and hazard batches are the actual live render objects in
+          // entry.visuals; warmGameplayScene temporarily draws their empty slots.
           const roots = [entry.world.group, entry.visuals.group, entry.projectiles, fighter.group];
           await warmFighterWeapons(game, [fighter], roots, valid, entry.atmosphere,
             offset === 0 ? roots : [entry.projectiles, fighter.group]);

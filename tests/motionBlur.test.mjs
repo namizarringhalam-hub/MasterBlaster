@@ -20,9 +20,8 @@ tick(); tick(); tick(true, 300); assert.equal(blur.amount.value, 0, 'suspended f
 tick(); tick(); tick(false); assert.equal(blur.amount.value, 0, 'reduced motion disables blur');
 tick(); assert.equal(blur.amount.value, 0, 're-enable warms current transforms');
 tick(); tick(); blur.reset(); assert.equal(blur.amount.value, 0, 'match and tier reset');
-assert.equal(depth.target.texture.type, THREE.HalfFloatType, 'signed motion vectors retain direction');
 assert.equal(depth.target.samples, 0);
-assert.ok(depth.material.fragmentNode, 'shared depth prepass also writes rigid-object velocity');
+assert.equal(depth.material, undefined, 'opaque depth is copied from the main pass without a geometry prepass');
 depth.dispose();
 
 const originalStorage = globalThis.localStorage;

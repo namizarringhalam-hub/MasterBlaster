@@ -103,7 +103,7 @@ try {
   assert.equal(LIGHTING.exposure, 1);
   const source = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
   assert.doesNotMatch(source, /new THREE\.(AmbientLight|HemisphereLight)/);
-  assert.match(source, /toneMapping = THREE\.ACESFilmicToneMapping/);
+  assert.match(source, /toneMapping = THREE\.AgXToneMapping/);
   assert.match(source, /toneMappingExposure = LIGHTING\.exposure/);
   assert.match(source, /await this\.renderer\.init\(\)[\s\S]*await setupEnvironment[\s\S]*this\.rebuildRenderPipeline\(\)/);
 } finally {

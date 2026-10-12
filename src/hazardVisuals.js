@@ -1,4 +1,7 @@
 import * as THREE from "three/webgpu";
+import { attribute, materialOpacity } from "three/tsl";
+import { emissiveEffectMaterial } from "./effectMaterials.js";
+import { queueParticlePrefix } from "./particleUploads.js";
 
 function vortexRibbonGeometry(radius = 2.25, height = 3.8, turns = 3.4, segments = 76) {
   const positions = [];
@@ -25,7 +28,8 @@ function vortexRibbonGeometry(radius = 2.25, height = 3.8, turns = 3.4, segments
   return geometry;
 }
 
-export function createHazardVisual(weapon) {
+export function createHazardVisual(weapon, pool = null) {
+    if (pool) return pool.acquire(weapon);
     const hazardRadius = weapon.hazard === "black_hole" ? 9 : weapon.hazard === "tornado" ? 7 : 6;
     const mesh = new THREE.Group();
     const ringOpacity = weapon.hazard === "tornado" ? .12 : weapon.hazard === "black_hole" ? .18 : .28;
@@ -81,4 +85,86 @@ export function createHazardVisual(weapon) {
       instances = { kind: "ribbon", mesh: ribbon };
     }
     return { mesh, radius: hazardRadius, instances, fadeMaterials };
+}
+
+/** All 24 gameplay hazards reuse these same render objects across their life. */
+export class HazardVisualPool {
+  constructor(parent, weapons) {
+    this.group = new THREE.Group(); this.group.name = "Persistent hazard families"; parent.add(this.group);
+    this.templates = new Map(); this.active = new Set(); this.free = [];
+    this.dummy = new THREE.Object3D(); this.matrix = new THREE.Matrix4(); this.color = new THREE.Color();
+    for (const weapon of Object.values(weapons)) {
+      if (!weapon.hazard || this.templates.has(weapon.hazard)) continue;
+      const source = createHazardVisual(weapon);
+      const template = { radius: source.radius, layers: [], kind: weapon.hazard };
+      for (const child of source.mesh.children) {
+        const flames = child.isInstancedMesh, capacity = flames ? 24 * 9 : 24;
+        const geometry = child.geometry;
+        const alpha = new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(THREE.DynamicDrawUsage);
+        geometry.setAttribute("hazardAlpha", alpha);
+        const original = child.material;
+        const material = emissiveEffectMaterial({ color: original.color, transparent: true, opacity: original.opacity,
+          depthWrite: false, blending: original.blending, side: original.side, toneMapped: false });
+        material.opacityNode = materialOpacity.mul(attribute("hazardAlpha", "float"));
+        const mesh = new THREE.InstancedMesh(geometry, material, capacity);
+        mesh.name = `Hazard ${weapon.hazard}${flames ? " flame field" : " envelope"}`;
+        mesh.count = 0; mesh.frustumCulled = false; mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        mesh.setColorAt(0, this.color.set(0xffffff)); mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+        this.group.add(mesh);
+        template.layers.push({ mesh, alpha, flames, basePosition: child.position.clone(), baseRotation: child.rotation.clone(), count: 0 });
+        original.dispose();
+      }
+      this.templates.set(weapon.hazard, template);
+    }
+    for (let i = 0; i < 24; i++) {
+      const mesh = new THREE.Object3D();
+      const entry = { mesh, radius: 0, instances: null, fadeMaterials: [], template: null, color: new THREE.Color(), born: 0 };
+      mesh.userData.releaseVisual = () => {
+        if (!this.active.delete(entry)) return;
+        mesh.removeFromParent(); entry.template = null; this.free.push(entry);
+      };
+      this.free.push(entry);
+    }
+  }
+
+  acquire(weapon) {
+    const entry = this.free.pop();
+    if (!entry) throw new Error("Hazard presentation capacity exhausted (24)");
+    entry.template = this.templates.get(weapon.hazard); entry.radius = entry.template.radius;
+    entry.mesh.position.set(0, 0, 0); entry.mesh.rotation.set(0, 0, 0); entry.mesh.scale.setScalar(1);
+    entry.color.set(weapon.color); entry.born = this.time || 0; this.active.add(entry);
+    return entry;
+  }
+
+  sync(camera, time = 0, reducedMotion = false) {
+    this.time = time;
+    for (const template of this.templates.values()) for (const layer of template.layers) layer.count = 0;
+    for (const entry of this.active) {
+      const template = entry.template, elapsed = reducedMotion ? 0 : time - entry.born;
+      entry.mesh.updateMatrix();
+      const proximity = camera ? THREE.MathUtils.clamp((camera.position.distanceTo(entry.mesh.position) - 2) / 7, .025, 1) : 1;
+      for (const layer of template.layers) {
+        for (let flame = 0; flame < (layer.flames ? 9 : 1); flame++) {
+          const index = layer.count++;
+          this.dummy.position.copy(layer.basePosition); this.dummy.rotation.copy(layer.baseRotation); this.dummy.scale.setScalar(1);
+          if (layer.flames) {
+            const angle = flame / 9 * Math.PI * 2, phase = flame * .73;
+            const flicker = 1 + Math.sin(elapsed * 11 + phase) * .22;
+            this.dummy.position.set(Math.cos(angle) * template.radius * .42, .65 + flame % 2 * .25, Math.sin(angle) * template.radius * .42);
+            this.dummy.rotation.set(0, phase, 0); this.dummy.scale.set(flicker, .78 + flicker * .42, flicker);
+          } else if (template.kind === "tornado" && layer.basePosition.y > 0) {
+            this.dummy.rotation.y += elapsed * 1.8; this.dummy.scale.y = 1 + Math.sin(elapsed * 5) * .035;
+          }
+          this.dummy.updateMatrix(); this.matrix.multiplyMatrices(entry.mesh.matrix, this.dummy.matrix);
+          layer.mesh.setMatrixAt(index, this.matrix); layer.alpha.setX(index, proximity);
+          layer.mesh.setColorAt(index, layer.flames ? (flame % 2 ? entry.color : this.color.set(0xffd061)) : this.color.set(0xffffff));
+        }
+      }
+    }
+    for (const template of this.templates.values()) for (const layer of template.layers) {
+      layer.mesh.count = layer.count;
+      queueParticlePrefix(layer.mesh.instanceMatrix, layer.count); queueParticlePrefix(layer.mesh.instanceColor, layer.count);
+      queueParticlePrefix(layer.alpha, layer.count);
+    }
+  }
 }

@@ -50,7 +50,10 @@ function fixture() {
     state: "play", paused: false, settings: {}, players: [], projectiles: [], hazards: [], decoys: [], touch: {},
     simulationTiming: new SimulationTiming(), renderInterpolation: new RenderInterpolation(), interpolationTargets: new Set(),
     simulationFrameActive: true, performanceSample: new FrameTiming(), input,
-    world: { movers: [] }, camera: new THREE.PerspectiveCamera(),
+  world: { movers: [], updatePresentation() {} }, camera: new THREE.PerspectiveCamera(),
+    players: [], projectiles: [], hazards: [], decoys: [], settings: { reducedMotion: false },
+    combatVisuals: { update() {}, syncPresentation() {}, updateProjectile() {}, muzzle() {} },
+    flushCombatAnimations() {}, updateDamageIndicators() {},
     timer: { update() {}, getDelta: () => 1 / 60 }, commitResize() {}, renderScene: () => true,
     isOnlineMatch: () => false, updateAudio() {}, updateHud() {},
     updatePerformanceSample(dt, updateMs, renderMs, steps, dropped) { this.performanceSample.record(dt, updateMs, renderMs, steps, dropped); }
@@ -125,7 +128,7 @@ const click = fixture();
 const human = { alive: true, weapon: WEAPONS.blaster, weaponMuzzleDistance: 1, radius: .5, position: new THREE.Vector3(), aim: new THREE.Vector3(0, 0, 1),
   grounded: false, ammo: { blaster: 10 }, forwardPoint: () => new THREE.Vector3(), muzzlePoint: target => target.set(0, 1, 0), update() {} };
 Object.assign(click, { players: [human], cameraYaw: 0, updateCamera() {}, updateGrapple() {}, cancelCharge() {}, aimDirection: new THREE.Vector3(), aimTargets: [],
-  world: { grapplePoint: () => null }, sound: { updateWeaponLoop() {} }, updateHuman: Game.prototype.updateHuman,
+  world: { grapplePoint: () => null }, sound: { updateWeaponLoop() {} }, combatVisuals: { muzzle() {} }, updateHuman: Game.prototype.updateHuman,
   update: dt => click.updateHuman(dt), audioSpatial() {}, beginReload() {} });
 let clicks = 0; click.tryFire = () => { clicks++; };
 click.input.mouse.left = true; click.input.pressed.add("MouseLeft"); click.timer.getDelta = () => 1 / 120;
@@ -155,7 +158,7 @@ Object.assign(game, {
   awaitingAudioGesture: false, audioCountdown: false, networkRecovering: false,
   world: { update() {} }, players: [{ alive: true }], multiplayer: null, simulationBatch: false
 });
-for (const method of ["syncGrappleTarget", "handleWeaponSwitch", "updateHuman", "updateBotPlanner", "updateBurst", "updateProjectiles", "updateHazards", "updateDecoys", "processStructuralEvents", "updateEffects"]) game[method] = () => {};
+for (const method of ["syncGrappleTarget", "handleWeaponSwitch", "updateHuman", "updateBotPlanner", "updateBurst", "updateProjectiles", "updateHazards", "updateDecoys", "processStructuralEvents"]) game[method] = () => {};
 let respawnTime = 0;
 game.updateRespawns = dt => { respawnTime += dt; };
 Game.prototype.update.call(game, 1 / 60, .5);
@@ -168,8 +171,10 @@ assert.equal(game.matchTime, 9.5); assert.equal(respawnTime, .5);
 const actor = new THREE.Group(), child = new THREE.Object3D(); actor.add(child); child.position.x = 1;
 const interpolation = new RenderInterpolation(); interpolation.capture(new Set([actor])); actor.position.x = 4;
 Object.assign(game, { paused: false, state: "play", hideMatchLoadingAfterFrame: false, settings: {},
-  world: { updatePresentation() {} }, renderInterpolation: interpolation,
-  simulationTiming: { alpha: .5 }, updateCamera() {},
+  world: { updatePresentation() {} }, pendingResize: null, players: [], projectiles: [], hazards: [], decoys: [],
+  camera: new THREE.PerspectiveCamera(), renderInterpolation: interpolation,
+  simulationTiming: { alpha: .5 }, updateCamera() {}, updateDamageIndicators() {}, flushCombatAnimations() {},
+  combatVisuals: { update() {}, syncPresentation() {}, updateProjectile() {} },
   renderPipeline: { render() { assert.equal(actor.position.x, 2); throw Error("render rejected"); } }
 });
 assert.throws(() => Game.prototype.renderScene.call(game), /render rejected/);
@@ -239,7 +244,7 @@ cameraGame.world = { updatePresentation() {}, constrainCamera(pivot, desired, ra
 } };
 root.position.x = 2.5; cameraGame.camera.position.set(2.5, 1.65, -3.3);
 cameraGame.renderInterpolation.capture(new Set([root, cameraGame.camera]));
-root.position.x = 3.3; cameraGame.camera.position.x = 3.3; cameraGame.simulationTiming.accumulator = 0;
+root.position.x = 3.5; cameraGame.camera.position.x = 3.5; cameraGame.simulationTiming.accumulator = 0;
 for (const throws of [false, true]) {
   cameraGame.renderPipeline = { render() {
     assert.equal(cameraGame.cameraFirstPerson, true); assert.equal(rig.visible, false);
@@ -247,10 +252,12 @@ for (const throws of [false, true]) {
   } };
   if (throws) assert.throws(() => cameraGame.renderScene(), /camera submission failed/);
   else cameraGame.renderScene();
-  assert.equal(cameraGame.cameraFirstPerson, false); assert.equal(rig.visible, true);
-  assert.deepEqual(cameraGame.cameraClearance, { actual: 3.3, target: 3.3 });
-  assert.equal(local.position.x, 3.3);
   cameraGame.updateCamera(1 / 60);
+  assert.equal(cameraGame.cameraFirstPerson, false); assert.equal(rig.visible, true);
+  assert.ok(cameraGame.cameraClearance.actual > 3.2 && cameraGame.cameraClearance.actual < 3.5,
+    "rendered camera clearance moves smoothly toward the authoritative boom target");
+  assert.equal(cameraGame.cameraClearance.target, 3.5);
+  assert.equal(local.position.x, 3.5);
   assert.equal(cameraGame.cameraFirstPerson, false, "render collision cannot keep the next physics camera in first-person mode");
   assert.equal(rig.visible, true, "the authoritative third-person fighter stays visible");
 }

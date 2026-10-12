@@ -1,8 +1,10 @@
 import * as THREE from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { Fn, If, Loop, abs, cameraPosition, color, float, fog, fract, length, materialColor, materialOpacity, materialRoughness, max, min, mix, mx_noise_float, normalMap, normalViewGeometry, normalWorldGeometry, positionLocal, positionView, positionViewDirection, positionWorld, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
+import { Fn, If, Loop, abs, attribute, cameraPosition, color, diffuseColor, float, fog, fract, length, materialColor, materialOpacity, materialRoughness, max, min, mix, mx_noise_float, normalMap, normalViewGeometry, normalWorldGeometry, positionLocal, positionView, positionViewDirection, positionWorld, sin, smoothstep, time, uniform, uv, vec2, vec3 } from "three/tsl";
 import { ARENA_PORTAL_COOLDOWN_SECONDS, ARENA_PORTAL_PAIRS, ARENA_SPAWN_POINTS, MAP_THEMES, seededRandom, seedFromText, structuralTowerBlueprints } from "./gameData.js";
 import { surfaceTextures, surfaceMaps, projectSurfaceUVs } from "./surfaceTextures.js";
+import { createCloudAtmosphere } from "./cloudAtmosphere.js";
+import { addCityLife } from "./cityLife.js";
 
 const TAU = Math.PI * 2;
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -307,7 +309,6 @@ function bakeCoverSlats(slats) {
 
 // Three owns and reuses the scene's background mesh. Retain just the three
 // theme expressions instead of rebuilding a background shader on every rematch.
-const skyBackgrounds = new Map();
 function hazeNoise(p) {
   const cell = p.floor(), f = p.fract();
   const blend = f.mul(f).mul(vec2(3).sub(f.mul(2)));
@@ -316,58 +317,7 @@ function hazeNoise(p) {
     mix(hash(vec2(0, 1)), hash(vec2(1, 1)), blend.x), blend.y);
 }
 
-function skyBackground(theme) {
-  if (!skyBackgrounds.has(theme.id)) {
-    const clock = uniform(0), steps = uniform(12, "int");
-    const wind = vec3(clock.mul(.7), 0, clock.mul(.3));
-    const densityAt = point => {
-      const q = point.add(wind).mul(.006);
-      const shape = mx_noise_float(q).mul(.62).add(mx_noise_float(q.mul(2.07)).mul(.28))
-        .add(mx_noise_float(q.mul(4.13)).mul(.1)).mul(.5).add(.5);
-      return smoothstep(.46, .65, shape).mul(smoothstep(140, 159, point.y))
-        .mul(smoothstep(196, 220, point.y).oneMinus());
-    };
-    const up = normalWorldGeometry.y.max(0);
-    const direction = normalWorldGeometry;
-    const p = direction.xz.div(up.add(.28)).mul(3);
-    const cloud = hazeNoise(p).mul(.6).add(hazeNoise(p.mul(2.1)).mul(.28)).add(hazeNoise(p.mul(4.3)).mul(.12));
-    const ceiling = smoothstep(.22, .8, cloud);
-    const cyan = direction.dot(vec3(-.55, .28, -.78).normalize()).max(0).pow(9);
-    const pink = direction.dot(vec3(.8, .14, .55).normalize()).max(0).pow(15);
-    const cityGlow = color(0x125d85).mul(cyan.mul(.55)).add(color(0x642550).mul(pink.mul(.3)));
-    const distantSky = mix(color(0x02050c), color(0x081627), ceiling)
-      .add(cityGlow.mul(ceiling.mul(.7).add(.15))).add(color(0x0b2335).mul(up.mul(-5).exp().mul(.35)));
-    const sky = Fn(() => {
-      const transmittance = float(1).toVar(), scattered = vec3(0).toVar();
-      If(steps.greaterThan(0).and(direction.y.greaterThan(.06)), () => {
-        const start = float(140).sub(cameraPosition.y).max(0).div(up.max(.025));
-        const stride = float(220).sub(cameraPosition.y.max(140)).max(0).div(up.max(.025)).div(float(steps));
-        Loop({ start: 0, end: steps, type: "int", condition: "<" }, ({ i }) => {
-          const point = cameraPosition.add(direction.mul(start.add(float(i).add(.5).mul(stride)))).toVar();
-          const density = densityAt(point).toVar();
-          const extinction = density.mul(stride).mul(-.038).exp();
-          const lit = densityAt(point.add(vec3(-11, 20, 9))).mul(-2.5).exp();
-          const scattering = mix(color(0x173049), color(0x8dacc3), lit).mul(.18)
-            .add(cityGlow.mul(.14));
-          scattered.addAssign(scattering.mul(extinction.oneMinus()).mul(transmittance));
-          transmittance.mulAssign(extinction);
-        });
-      });
-      return mix(distantSky, distantSky.mul(transmittance).add(scattered), smoothstep(.06, .3, up));
-    })();
-    const shadow = Fn(() => {
-      const amount = float(1).toVar();
-      If(steps.greaterThan(0), () => {
-        const elevation = float(176).sub(positionWorld.y).max(0);
-        const point = positionWorld.add(vec3(elevation.mul(-.55), elevation, elevation.mul(.45)));
-        amount.assign(densityAt(point).mul(-.16).add(1));
-      });
-      return amount;
-    })();
-    skyBackgrounds.set(theme.id, { sky, shadow, clock, steps });
-  }
-  return skyBackgrounds.get(theme.id);
-}
+const skyBackground = createCloudAtmosphere;
 
 export class ArenaWorld {
   constructor(scene, seed = "BLAST-01", { deferBuild = false } = {}) {
@@ -414,7 +364,8 @@ export class ArenaWorld {
       .add(sin(p.y.sub(sin(p.x.mul(.83).sub(drift.mul(.73))))));
     const caustics = smoothstep(.035, .24, waves.abs()).oneMinus()
       .mul(normalWorldGeometry.y.max(0).pow(3)).mul(this.waterLightStrength);
-    this.waterLight = materialColor.mul(vec3(1).add(vec3(.55, 1.05, 1.15).mul(caustics)));
+    const macro = hazeNoise(positionWorld.xz.mul(.013).add(positionWorld.y.mul(.021)));
+    this.waterLight = materialColor.mul(mix(.82, 1.08, macro)).mul(vec3(1).add(vec3(.55, 1.05, 1.15).mul(caustics)));
     const wetPosition = positionLocal.xz.mul(.095);
     const pools = hazeNoise(wetPosition).mul(.75).add(hazeNoise(wetPosition.mul(3.1)).mul(.25));
     // Surface-local masks move with lifts and stay fixed as the camera moves.
@@ -432,7 +383,7 @@ export class ArenaWorld {
     const wave = vec2(sin(positionLocal.x.mul(1.7).add(drift)), sin(positionLocal.z.mul(2.1).sub(drift))).mul(.006);
     this.wetSurface = {
       clearcoat: 1, clearcoatNode: this.wetMask, clearcoatRoughnessNode: mix(.22, .065, this.wetMask),
-      roughnessNode: materialRoughness.mul(mix(1, .72, this.wetMask)),
+      roughnessNode: materialRoughness.mul(mix(.94, 1.06, macro)).mul(mix(1, .72, this.wetMask)),
       clearcoatNormalNode: normalMap(vec3(rippleDirection.add(wave).mul(.5).add(.5), 1))
     };
     this.cameraRaycaster = new THREE.Raycaster();
@@ -441,6 +392,9 @@ export class ArenaWorld {
     this.portals = [];
     this.sweepers = [];
     this.temporaryWalls = [];
+    this.temporaryWallPool = [];
+    this.ropeCandidates = Array.from({ length: 12 }, () => new THREE.Vector3());
+    this.ropeExtents = new Float64Array(6);
     this.structures = [];
     this.structuralParts = [];
     this.structuralChanges = [];
@@ -477,7 +431,7 @@ export class ArenaWorld {
     this.coverLightMask.colorSpace = THREE.SRGBColorSpace;
     this.coverLightMask.needsUpdate = true;
     this.textures.push(this.coverLightMask);
-    this.routeMaterials = this.districtColors.map((color) => new THREE.MeshBasicMaterial({
+    this.routeMaterials = this.districtColors.map((color) => new THREE.MeshBasicNodeMaterial({
       color: new THREE.Color(color).multiplyScalar(1.65),
       transparent: true,
       opacity: .42,
@@ -486,7 +440,8 @@ export class ArenaWorld {
       side: THREE.DoubleSide,
       toneMapped: false
     }));
-    this.lineMaterials = this.districtColors.map((color) => new THREE.LineBasicMaterial({
+    for (const route of this.routeMaterials) route.emissiveNode = diffuseColor.rgb.mul(.65);
+    this.lineMaterials = this.districtColors.map((color) => new THREE.LineBasicNodeMaterial({
       color,
       transparent: true,
       opacity: .32,
@@ -494,6 +449,7 @@ export class ArenaWorld {
       depthWrite: false,
       toneMapped: false
     }));
+    for (const line of this.lineMaterials) line.emissiveNode = diffuseColor.rgb.mul(1.6);
     this.coverMarkMaterials = this.districtColors.map(color => {
       const marking = material(0xffffff, color, 1, { roughness: .48, metalness: .38, emissiveIntensity: .3, envMapIntensity: .24 });
       marking.vertexColors = true;
@@ -537,11 +493,31 @@ export class ArenaWorld {
     this.decorativeDetails.push(mesh);
   }
 
-  updatePresentation(camera, reducedMotion = false) {
+  updatePresentation(camera, reducedMotion = false, dt = 0) {
     reducedMotion ||= this.graphicsEffects?.environmentMotion === false;
     this.reducedMotion = reducedMotion;
     this.atmosphereTime.value = reducedMotion ? 0 : this.time;
     this.atmosphere.clock.value = this.atmosphereTime.value;
+    const motionDt = reducedMotion ? 0 : Math.min(.1, Math.max(0, dt));
+    for (const rotor of this.rotors) {
+      rotor.object.rotation.x += motionDt * rotor.x;
+      rotor.object.rotation.y += motionDt * rotor.y;
+      rotor.object.rotation.z += motionDt * rotor.z;
+    }
+    for (const pulser of this.pulsers) {
+      const scale = pulser.base * (1 + Math.sin(this.atmosphereTime.value * pulser.speed + pulser.phase) * pulser.amplitude);
+      pulser.object.scale.setScalar(scale);
+    }
+    for (const portal of this.portals) {
+      portal.ring.rotation.z += motionDt * 1.8;
+      portal.inner.rotation.z -= motionDt * 1.15;
+      portal.ring.material.emissiveIntensity = .72 + Math.sin(this.atmosphereTime.value * 4) * .16;
+      portal.disc.material.opacity = .085 + Math.sin(this.atmosphereTime.value * 3.4) * .025;
+      portal.column.material.opacity = .055 + Math.sin(this.atmosphereTime.value * 2.6) * .018;
+    }
+    this.updateCityLife?.(motionDt);
+    this.syncStructuralDebrisPresentation();
+
     if (this.skylineLights) this.skylineLights.material.opacity = .15 + Math.sin(this.atmosphereTime.value * .42) * .015;
     const range = this.graphicsProfile?.detailDistance ?? 96;
     for (const mesh of this.decorativeDetails) {
@@ -566,6 +542,7 @@ export class ArenaWorld {
 
   *buildSteps() {
     this.createDebrisPool();
+    this.createTemporaryWallPool();
     yield;
     const random = seededRandom(seedFromText(this.seed));
     const structuralBlueprints = structuralTowerBlueprints(this.seed, random);
@@ -586,13 +563,6 @@ export class ArenaWorld {
     this.addDistrictLights();
     yield;
 
-    const grid = new THREE.GridHelper(this.size * 2, 44, this.theme.grid, 0x244b67);
-    grid.position.y = .018;
-    grid.material.opacity = .11;
-    grid.material.transparent = true;
-    grid.material.depthWrite = false;
-    this.group.add(grid);
-    yield;
 
     for (const [x, z, w, d] of [
       [0, -this.size, this.size * 2, 1.2], [0, this.size, this.size * 2, 1.2],
@@ -687,10 +657,13 @@ export class ArenaWorld {
     yield;
     this.addAtmosphere();
     yield;
+    addCityLife(this);
+    yield;
     this.batchDestructibleBodies();
     yield;
     this.buildObstacleIndex();
     yield;
+    this.batchStaticDecoration();
     this.freezeStaticTransforms();
   }
 
@@ -702,26 +675,35 @@ export class ArenaWorld {
     return x * 4096 + z;
   }
 
+  removeObstacleFromIndex(item) {
+    for (const key of item.obstacleCells || []) {
+      const cell = this.obstacleGrid.get(key);
+      const index = cell?.indexOf(item) ?? -1;
+      if (index >= 0) cell.splice(index, 1);
+      if (cell && !cell.length) this.obstacleGrid.delete(key);
+    }
+    if (item.obstacleCells) item.obstacleCells.length = 0;
+  }
+
+  indexObstacle(item) {
+    this.removeObstacleFromIndex(item);
+    if (item.removed || item.dynamic || this.dynamicObstacles.has(item)) return;
+    const cells = item.obstacleCells ||= [];
+    for (let x = this.obstacleCell(item.x - item.w / 2); x <= this.obstacleCell(item.x + item.w / 2); x++)
+      for (let z = this.obstacleCell(item.z - item.d / 2); z <= this.obstacleCell(item.z + item.d / 2); z++) {
+        const key = this.obstacleCellKey(x, z), cell = this.obstacleGrid.get(key);
+        if (cell) cell.push(item); else this.obstacleGrid.set(key, [item]);
+        cells.push(key);
+      }
+  }
+
   buildObstacleIndex() {
     this.obstacleGrid.clear();
     this.dynamicObstacles = new Set([
       ...this.movers.map((mover) => mover.obstacle),
       ...this.obstacles.filter((item) => item.dynamic)
     ]);
-    for (const item of this.obstacles) {
-      item.removed = false;
-      if (this.dynamicObstacles.has(item)) continue;
-      const minX = this.obstacleCell(item.x - item.w / 2);
-      const maxX = this.obstacleCell(item.x + item.w / 2);
-      const minZ = this.obstacleCell(item.z - item.d / 2);
-      const maxZ = this.obstacleCell(item.z + item.d / 2);
-      for (let x = minX; x <= maxX; x++) for (let z = minZ; z <= maxZ; z++) {
-        const key = this.obstacleCellKey(x, z);
-        const cell = this.obstacleGrid.get(key);
-        if (cell) cell.push(item);
-        else this.obstacleGrid.set(key, [item]);
-      }
-    }
+    for (const item of this.obstacles) { item.removed = false; this.indexObstacle(item); }
   }
 
   nearbyObstacles(minX, maxX, minZ, maxZ) {
@@ -748,6 +730,42 @@ export class ArenaWorld {
       found.push(item);
     }
     return found;
+  }
+
+  batchStaticDecoration() {
+    const dynamicRoots = new Set([
+      ...this.destructibles.map(item => item.mesh), ...this.movers.map(item => item.obstacle.mesh),
+      ...this.structures.map(item => item.landmark), ...this.rotors.map(item => item.object),
+      ...this.pulsers.map(item => item.object), ...this.boostPads.map(item => item.mesh)
+    ]);
+    const groups = new Map(), candidates = [...this.decorativeDetails];
+    this.group.traverse(object => { if (object.name === "Traversal markings" || object.name === "Readable platform silhouette") candidates.push(object); });
+    this.group.updateMatrixWorld(true);
+    for (const mesh of candidates) {
+      if (mesh.isInstancedMesh || (!mesh.isMesh && !mesh.isLineSegments) || !mesh.parent || Array.isArray(mesh.material)) continue;
+      let dynamic = false;
+      for (let parent = mesh; parent && parent !== this.group; parent = parent.parent) if (dynamicRoots.has(parent)) { dynamic = true; break; }
+      if (dynamic) continue;
+      const center = mesh.getWorldPosition(this.detailCenter);
+      const key = `${mesh.material.uuid}:${mesh.isLineSegments ? "line" : "mesh"}:${Object.keys(mesh.geometry.attributes).join(",")}`;
+      let entries = groups.get(key); if (!entries) groups.set(key, entries = []);
+      entries.push(mesh);
+    }
+    this.batchedDecorSources = [];
+    for (const entries of groups.values()) {
+      if (entries.length < 2) continue;
+      const pieces = entries.map(mesh => mesh.geometry.clone().applyMatrix4(mesh.matrixWorld));
+      const geometry = mergeGeometries(pieces, false); pieces.forEach(piece => piece.dispose());
+      if (!geometry) continue;
+      const tracked = entries.every(mesh => this.decorativeDetails.includes(mesh));
+      const batch = entries[0].isLineSegments ? new THREE.LineSegments(geometry, entries[0].material) : new THREE.Mesh(geometry, entries[0].material);
+      batch.name = "Batched static route decoration";
+      batch.renderOrder = entries[0].renderOrder; batch.receiveShadow = entries[0].receiveShadow;
+      this.group.add(batch);
+      for (const mesh of entries) { mesh.removeFromParent(); this.batchedDecorSources.push(mesh); const detailIndex = this.decorativeDetails.indexOf(mesh); if (detailIndex >= 0) this.decorativeDetails.splice(detailIndex, 1); }
+      if (tracked) this.trackDetail(batch);
+      else { batch.castShadow = false; batch.geometry.computeBoundingSphere(); }
+    }
   }
 
   freezeStaticTransforms() {
@@ -777,48 +795,19 @@ export class ArenaWorld {
   }
 
   addDistrictLights() {
-    const positions = [[-58, -58], [58, -58], [58, 58], [-58, 58]];
-    const pools = new THREE.InstancedMesh(
-      new THREE.PlaneGeometry(1, 1),
-      new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        map: this.glowTexture,
-        vertexColors: true,
-        transparent: true,
-        opacity: .12,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        toneMapped: false
-      }),
-      positions.length
-    );
-    const marker = new THREE.Object3D();
-    positions.forEach(([x, z], index) => {
-      marker.position.set(x, .022, z);
-      marker.rotation.set(-Math.PI / 2, 0, 0);
-      marker.scale.set(46, 46, 1);
-      marker.updateMatrix();
-      pools.setMatrixAt(index, marker.matrix);
-      pools.setColorAt(index, new THREE.Color(this.districtColors[index]));
+    // The district radiance and pool silhouettes are baked into the existing
+    // floor emission; the city PMREM supplies their reflected armor highlights.
+    const p = positionWorld.xz;
+    let pools = vec3(0);
+    [[-58, -58], [58, -58], [58, 58], [-58, 58]].forEach(([x, z], index) => {
+      const glow = length(p.sub(vec2(x, z))).div(23).oneMinus().max(0).pow(3).mul(.12);
+      pools = pools.add(color(this.districtColors[index]).mul(glow));
     });
-    pools.name = "District light pools";
-    pools.instanceMatrix.needsUpdate = true;
-    pools.instanceColor.needsUpdate = true;
-    pools.computeBoundingSphere();
-    this.group.add(pools);
-
-    // Four restrained pools give each route quadrant its own readable lighting hierarchy.
-    positions.forEach(([x, z], index) => {
-      const light = new THREE.PointLight(this.districtColors[index], 14, 64, 2);
-      light.name = `District ${index + 1} route light`;
-      light.position.set(x, 23, z);
-      light.castShadow = false;
-      this.group.add(light);
-    });
+    this.ground.material.emissiveNode = this.ground.material.emissiveNode.add(pools.mul(smoothstep(.9, .99, normalWorldGeometry.y)));
   }
 
   addGroundTreatment() {
-    const p = uv().sub(.5).mul(224);
+    const p = positionWorld.xz;
     const east = smoothstep(-3, 3, p.x);
     const south = smoothstep(-3, 3, p.y);
     const northColor = mix(color(this.districtColors[0]), color(this.districtColors[1]), east);
@@ -836,28 +825,15 @@ export class ArenaWorld {
       p.y.lessThan(0).select(-62, 62)
     );
     const orbit = smoothstep(.55, 1.25, abs(length(p.sub(districtCenter)).sub(23))).oneMinus();
-    const pulse = sin(time.mul(2.2).sub(length(p).mul(.11))).mul(.32).add(.68);
+    const pulse = sin(this.atmosphereTime.mul(2.2).sub(length(p).mul(.11))).mul(.32).add(.68);
     const route = max(axial, max(diagonal.mul(.55), orbit.mul(.72)));
     const routeLight = majorGrid.mul(.22).add(route.mul(.16));
     const routeColor = mix(district.mul(.68), vec3(1), routeLight);
     const alpha = fineGrid.mul(.03).add(majorGrid.mul(.085)).add(route.mul(.14).mul(pulse)).add(.025);
-    const material = new THREE.MeshBasicNodeMaterial({
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide
-    });
-    material.colorNode = routeColor;
-    material.opacityNode = alpha;
-    const overlay = new THREE.Mesh(
-      new THREE.PlaneGeometry(this.size * 2, this.size * 2),
-      material
-    );
-    overlay.name = "District route floor";
-    overlay.rotation.x = -Math.PI / 2;
-    overlay.position.y = .006;
-    overlay.receiveShadow = true;
-    this.group.add(overlay);
+    const gridCell = abs(fract(p.add(this.size).div(this.size * 2 / 44)).sub(.5));
+    const legacyGrid = smoothstep(.493, .5, max(gridCell.x, gridCell.y)).mul(.11);
+    this.ground.material.emissiveNode = routeColor.mul(alpha).add(color(this.theme.grid).mul(legacyGrid))
+      .mul(smoothstep(.9, .99, normalWorldGeometry.y));
   }
 
   addBoundaryBands() {
@@ -1835,6 +1811,7 @@ export class ArenaWorld {
     mesh.setColorAt(0, new THREE.Color(0xffffff));
     mesh.count = 0;
     mesh.name = "Pooled structural scrap";
+    mesh.frustumCulled = false;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.castShadow = false;
     mesh.receiveShadow = false;
@@ -1869,6 +1846,7 @@ export class ArenaWorld {
     this.dustMesh.setColorAt(0, new THREE.Color(0xffffff));
     this.dustMesh.count = 0;
     this.dustMesh.name = "Pooled structural dust volumes";
+    this.dustMesh.frustumCulled = false;
     this.dustMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.dustMesh.castShadow = false;
     this.dustMesh.receiveShadow = false;
@@ -1958,13 +1936,12 @@ export class ArenaWorld {
     if (this.dustMesh.instanceColor) this.dustMesh.instanceColor.needsUpdate = true;
   }
 
-  updateStructuralDebris(dt) {
+  updateStructuralDebris(dt, writeInstances = true) {
+    // Shard contacts drive structural landing events and stay deterministic in
+    // fixed steps. GPU matrices and decorative dust uploads occur once/render.
     const dummy = this.debrisDummy;
-    let changed = false, debrisCount = 0;
-    for (let index = 0; index < this.debrisParticles.length; index++) {
-      const particle = this.debrisParticles[index];
+    for (const particle of this.debrisParticles) {
       if (!particle.active) continue;
-      changed = true;
       particle.life -= dt;
       particle.visualLife = Math.max(0, particle.visualLife - dt);
       particle.velocity.y -= 22 * dt;
@@ -1972,72 +1949,65 @@ export class ArenaWorld {
       particle.rotation.addScaledVector(particle.spin, dt);
       dummy.position.copy(particle.position);
       dummy.rotation.set(particle.rotation.x, particle.rotation.y, particle.rotation.z);
-      dummy.scale.copy(particle.scale);
-      dummy.updateMatrix();
+      dummy.scale.copy(particle.scale); dummy.updateMatrix();
       const matrix = dummy.matrix.elements;
       const verticalHalfExtent = .5 * (Math.abs(matrix[1]) + Math.abs(matrix[5]) + Math.abs(matrix[9]));
       const floor = this.surfaceHeightAt(particle.position, particle.position.y + .2);
       if (particle.position.y < floor + verticalHalfExtent && particle.velocity.y < 0) {
         particle.position.y = floor + verticalHalfExtent;
-        if (!particle.contacted) {
-          particle.contacted = true;
-          particle.contactPosition.set(particle.position.x, floor, particle.position.z);
-        }
-        particle.velocity.y *= -.28;
-        particle.velocity.x *= .72;
-        particle.velocity.z *= .72;
-        particle.spin.multiplyScalar(.76);
+        if (!particle.contacted) { particle.contacted = true; particle.contactPosition.set(particle.position.x, floor, particle.position.z); }
+        particle.velocity.y *= -.28; particle.velocity.x *= .72; particle.velocity.z *= .72; particle.spin.multiplyScalar(.76);
       }
-      if (particle.life <= 0) {
-        particle.active = false;
-        this.debrisMesh.setMatrixAt(index, HIDDEN_INSTANCE);
-        continue;
+      if (particle.life <= 0) particle.active = false;
+    }
+    for (const particle of this.dustParticles) {
+      if (!particle.active) continue;
+      particle.life -= dt;
+      if (particle.life <= 0) { particle.active = false; continue; }
+      particle.velocity.multiplyScalar(Math.max(0, 1 - dt * .72));
+      particle.position.addScaledVector(particle.velocity, dt);
+    }
+    this.structuralPresentationDirty = true;
+    if (writeInstances) this.syncStructuralDebrisPresentation();
+  }
+
+  syncStructuralDebrisPresentation() {
+    if (!this.structuralPresentationDirty) return;
+    this.structuralPresentationDirty = false;
+    const dummy = this.debrisDummy;
+    let changed = false, debrisCount = 0;
+    for (let index = 0; index < this.debrisParticles.length; index++) {
+      const particle = this.debrisParticles[index];
+      if (!particle.active || particle.visualLife <= 0) {
+        if (particle.renderActive) { this.debrisMesh.setMatrixAt(index, HIDDEN_INSTANCE); changed = true; }
+        particle.renderActive = false; continue;
       }
-      if (particle.visualLife <= 0) {
-        this.debrisMesh.setMatrixAt(index, HIDDEN_INSTANCE);
-        continue;
-      }
+      particle.renderActive = true; changed = true;
       dummy.position.copy(particle.position);
+      dummy.rotation.set(particle.rotation.x, particle.rotation.y, particle.rotation.z);
       const fade = THREE.MathUtils.smoothstep(particle.visualLife / particle.maxVisualLife, 0, .55);
-      dummy.scale.copy(particle.scale).multiplyScalar(fade);
-      dummy.updateMatrix();
-      this.debrisMesh.setMatrixAt(index, dummy.matrix);
-      debrisCount = index + 1;
+      dummy.scale.copy(particle.scale).multiplyScalar(fade); dummy.updateMatrix();
+      this.debrisMesh.setMatrixAt(index, dummy.matrix); debrisCount = index + 1;
     }
     this.debrisMesh.count = debrisCount;
-    if (changed) {
-      this.debrisMesh.instanceMatrix.needsUpdate = true;
-      // Moving pooled instances invalidate the cached object-level culling bound.
-      this.debrisMesh.computeBoundingSphere();
-    }
-
+    if (changed) this.debrisMesh.instanceMatrix.needsUpdate = true;
     let dustChanged = false, dustCount = 0;
     for (let index = 0; index < this.dustParticles.length; index++) {
       const particle = this.dustParticles[index];
-      if (!particle.active) continue;
-      dustChanged = true;
-      particle.life -= dt;
-      if (particle.life <= 0) {
-        particle.active = false;
-        this.dustMesh.setMatrixAt(index, HIDDEN_INSTANCE);
-        continue;
+      if (!particle.active) {
+        if (particle.renderActive) { this.dustMesh.setMatrixAt(index, HIDDEN_INSTANCE); dustChanged = true; }
+        particle.renderActive = false; continue;
       }
-      particle.velocity.multiplyScalar(Math.max(0, 1 - dt * .72));
-      particle.position.addScaledVector(particle.velocity, dt);
+      particle.renderActive = true; dustChanged = true;
       const progress = 1 - particle.life / particle.maxLife;
       const envelope = Math.min(1, progress * 30) * Math.min(1, (1 - progress) / .32) ** .85;
       this.dustDummy.position.copy(particle.position);
       this.dustDummy.rotation.set(0, progress * 1.4, 0);
-      this.dustDummy.scale.copy(particle.scale).multiplyScalar((.85 + progress * 2.8) * envelope);
-      this.dustDummy.updateMatrix();
-      this.dustMesh.setMatrixAt(index, this.dustDummy.matrix);
-      dustCount = index + 1;
+      this.dustDummy.scale.copy(particle.scale).multiplyScalar((.85 + progress * 2.8) * envelope); this.dustDummy.updateMatrix();
+      this.dustMesh.setMatrixAt(index, this.dustDummy.matrix); dustCount = index + 1;
     }
     this.dustMesh.count = dustCount;
-    if (dustChanged) {
-      this.dustMesh.instanceMatrix.needsUpdate = true;
-      this.dustMesh.computeBoundingSphere();
-    }
+    if (dustChanged) this.dustMesh.instanceMatrix.needsUpdate = true;
   }
 
   structuralPartAt(position, radius = 0) {
@@ -2090,6 +2060,7 @@ export class ArenaWorld {
       fallDuration: .74,
       settleDuration: .26,
       movingParts: [],
+      platformEntries: [], previousPlatformTops: [], carriedPlayers: new Set(),
       crushedPlayers: new Set(),
       dropDistance: part.h,
       major: structure.major && part.structuralKind !== "platform",
@@ -2130,6 +2101,7 @@ export class ArenaWorld {
   removeStructuralPart(part) {
     if (!part || part.removed) return;
     part.removed = true;
+    this.removeObstacleFromIndex(part);
     part.dynamic = false;
     this.dynamicObstacles.delete(part);
     this.hideStructuralVisual(part);
@@ -2144,13 +2116,13 @@ export class ArenaWorld {
   }
 
   detachStructuralCollision(part) {
+    this.removeObstacleFromIndex(part);
     part.dynamic = false;
     this.dynamicObstacles.delete(part);
     for (const collection of [this.obstacles, this.platforms, this.structuralParts]) {
       const index = collection.indexOf(part);
       if (index >= 0) collection.splice(index, 1);
     }
-    this.buildObstacleIndex();
     this.invalidateGrappleTopology();
   }
 
@@ -2236,6 +2208,7 @@ export class ArenaWorld {
     if (failedIndex >= 0) structure.segments.splice(failedIndex, 1);
     this.syncStructuralLandmark(structure, change.landmarkFall?.startY);
     for (const movingPart of moving) {
+      this.removeObstacleFromIndex(movingPart);
       movingPart.dynamic = true;
       this.dynamicObstacles.add(movingPart);
       change.movingParts.push({
@@ -2307,12 +2280,11 @@ export class ArenaWorld {
       entry.part.visualOffset = null;
       entry.part.visualRotation = null;
       entry.part.visualScale = null;
-      if (!entry.part.removed) this.updateStructuralVisual(entry.part);
+      if (!entry.part.removed) { this.updateStructuralVisual(entry.part); this.indexObstacle(entry.part); }
     }
     const index = this.structuralChanges.indexOf(change);
     if (index >= 0) this.structuralChanges.splice(index, 1);
     structure.activeChange = null;
-    this.buildObstacleIndex();
     this.startNextStructuralFailure(structure);
   }
 
@@ -2378,21 +2350,23 @@ export class ArenaWorld {
         const pulse = .5 + Math.sin(this.time * 17 + seedFromText(part.structuralId) * .01) * .5;
         this.setStructuralWarningColor(part, progress, pulse);
         const shudder = (change.major ? .072 : .045) * Math.sin(this.time * 19 + seedFromText(part.structuralId)) * (.35 + progress * .65);
-        part.visualOffset = new THREE.Vector3(shudder, -progress * progress * (change.major ? .075 : .04), -shudder * .52);
-        part.visualRotation = new THREE.Euler(shudder * .004, 0, -shudder * .006 - progress * (change.major ? .003 : .0015));
+        (part.visualOffset ||= new THREE.Vector3()).set(shudder, -progress * progress * (change.major ? .075 : .04), -shudder * .52);
+        (part.visualRotation ||= new THREE.Euler()).set(shudder * .004, 0, -shudder * .006 - progress * (change.major ? .003 : .0015));
         this.updateStructuralVisual(part);
         if (change.elapsed >= change.warningDuration) this.beginStructuralFall(change);
         continue;
       }
 
       if (change.phase === "fragmenting") {
-        const majorFragments = (change.fragmentDebris || []).filter((particle) =>
-          particle.eventId === change.id && particle.majorFragment
-        );
-        const landed = majorFragments.filter((particle) =>
-          particle.eventId === change.id && particle.majorFragment && particle.contacted
-        );
-        if (!majorFragments.length || landed.length < Math.min(4, majorFragments.length)) continue;
+        let majorCount = 0, landedCount = 0;
+        const contactPosition = change.contactScratch ||= new THREE.Vector3();
+        contactPosition.set(0, 0, 0);
+        for (const particle of change.fragmentDebris || []) {
+          if (particle.eventId !== change.id || !particle.majorFragment) continue;
+          majorCount++;
+          if (particle.contacted) { landedCount++; contactPosition.add(particle.contactPosition); }
+        }
+        if (!majorCount || landedCount < Math.min(4, majorCount)) continue;
         part.removed = true;
         const platformIndex = change.structure.platformChunks.indexOf(part);
         if (platformIndex >= 0) change.structure.platformChunks.splice(platformIndex, 1);
@@ -2401,11 +2375,11 @@ export class ArenaWorld {
           Math.abs(change.structure.z - platform.z) <= platform.d / 2
         );
         if (!anchorSupported) this.removeStructuralAnchor(change.structure);
-        const contactPosition = landed.reduce((position, particle) => position.add(particle.contactPosition), new THREE.Vector3()).multiplyScalar(1 / landed.length);
+        contactPosition.multiplyScalar(1 / landedCount);
         this.spawnStructuralDust(contactPosition, change.structure.color, 18, part, `${change.id}:land`, true);
         this.frameStructureEvents.push({
           type: "land", id: `${change.id}:land`, structureId: change.structure.id,
-          attackerId: change.attackerId, position: contactPosition, color: change.structure.color,
+          attackerId: change.attackerId, position: contactPosition.clone(), color: change.structure.color,
           major: false, mass: part.w * part.d * part.h, dropDistance: Math.max(part.h, change.impactPosition.y - contactPosition.y),
           bounds: { x: part.x, z: part.z, w: part.w, d: part.d, h: part.h }
         });
@@ -2421,8 +2395,8 @@ export class ArenaWorld {
           ? -amplitude * Math.sin(progress / .3 * Math.PI)
           : amplitude * .52 * Math.sin(reboundProgress * Math.PI) * (1 - reboundProgress);
         for (const entry of change.movingParts) {
-          entry.part.visualOffset = new THREE.Vector3(0, bounce, 0);
-          entry.part.visualRotation = new THREE.Euler(bounce * .012, 0, -bounce * .018);
+          (entry.part.visualOffset ||= new THREE.Vector3()).set(0, bounce, 0);
+          (entry.part.visualRotation ||= new THREE.Euler()).set(bounce * .012, 0, -bounce * .018);
           this.updateStructuralVisual(entry.part);
         }
         if (change.landmarkFall) this.syncStructuralLandmark(change.structure, change.landmarkFall.endY + bounce);
@@ -2432,12 +2406,16 @@ export class ArenaWorld {
 
       const progress = Math.min(1, change.elapsed / change.fallDuration);
       const eased = progress * progress;
-      const platformEntries = change.movingParts.filter((entry) => entry.part.structuralKind === "platform");
-      const previousPlatformTops = platformEntries.map((entry) => entry.part.top);
-      const carriedPlayers = new Set();
+      const platformEntries = change.platformEntries ||= [];
+      const previousPlatformTops = change.previousPlatformTops ||= [];
+      const carriedPlayers = change.carriedPlayers ||= new Set();
+      platformEntries.length = previousPlatformTops.length = 0; carriedPlayers.clear();
+      for (const entry of change.movingParts) if (entry.part.structuralKind === "platform") {
+        platformEntries.push(entry); previousPlatformTops.push(entry.part.top);
+      }
       for (const entry of change.movingParts) {
         const lean = Math.sin(progress * Math.PI) * (change.major ? .012 : .007);
-        entry.part.visualRotation = new THREE.Euler(lean * .7, 0, -lean);
+        (entry.part.visualRotation ||= new THREE.Euler()).set(lean * .7, 0, -lean);
         this.moveStructuralPart(entry.part, entry.startBaseY - change.dropDistance * eased);
       }
       if (change.landmarkFall) {
@@ -2447,7 +2425,9 @@ export class ArenaWorld {
         this.syncStructuralLandmark(change.structure, change.landmarkFall.startY + (change.landmarkFall.endY - change.landmarkFall.startY) * eased);
       }
       if (change.structure.anchor && change.structure.platformChunks.length) {
-        change.structure.anchor.point.y = Math.max(...change.structure.platformChunks.map((platform) => platform.top)) + .6;
+        let highest = -Infinity;
+        for (const platform of change.structure.platformChunks) highest = Math.max(highest, platform.top);
+        change.structure.anchor.point.y = highest + .6;
         this.updateStructuralAnchor(change.structure.anchor);
       }
       platformEntries.forEach((entry, index) => this.updateStructuralCrush(change, players, previousPlatformTops[index], entry.part, carriedPlayers));
@@ -3052,40 +3032,54 @@ export class ArenaWorld {
     this.pulsers.push({ object: warningRing, base: 1, amplitude: .06, speed: 2.7, phase: x * .1 });
   }
 
+  createTemporaryWallPool() {
+    const capacity = 256; // >16 fighters x ceil(10s / 1.4s), including loader samples.
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const tint = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3).setUsage(THREE.DynamicDrawUsage);
+    const fade = new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1).setUsage(THREE.DynamicDrawUsage);
+    geometry.setAttribute("wallTint", tint); geometry.setAttribute("wallFade", fade);
+    const cell = abs(fract(uv().mul(vec2(12, 8))).sub(.5));
+    const grid = smoothstep(.42, .49, max(cell.x, cell.y));
+    const scan = sin(this.atmosphereTime.mul(3.2).sub(uv().y.mul(34))).mul(.5).add(.5);
+    const field = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+    field.colorNode = mix(color(0x06111b), attribute("wallTint", "vec3"), grid.mul(.72).add(scan.mul(.18)));
+    field.emissiveNode = diffuseColor.rgb.mul(.8);
+    field.opacityNode = grid.mul(.48).add(.16).mul(attribute("wallFade", "float"));
+    const mesh = new THREE.InstancedMesh(geometry, field, capacity);
+    mesh.name = "Pooled temporary force walls"; mesh.frustumCulled = false; mesh.castShadow = true; mesh.receiveShadow = true;
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    for (let index = 0; index < capacity; index++) {
+      mesh.setMatrixAt(index, HIDDEN_INSTANCE);
+      this.temporaryWallPool.push({ index, active: false });
+    }
+    mesh.count = 0; this.wallMesh = mesh; this.wallTint = tint; this.wallFade = fade;
+    this.wallMarker = new THREE.Object3D(); this.wallColor = new THREE.Color();
+    this.group.add(mesh);
+  }
+
   addTemporaryWall(position, direction, wallColor, lifetime = 10) {
+    const slot = this.temporaryWallPool.find(entry => !entry.active);
+    if (!slot) throw new Error("Temporary wall capacity exceeded");
     const alongX = Math.abs(direction.x) > Math.abs(direction.z);
     const baseY = this.surfaceHeightAt(position, position.y + 1);
-    const obstacle = this.addBox(
-      THREE.MathUtils.clamp(position.x, -this.size + 2, this.size - 2),
-      THREE.MathUtils.clamp(position.z, -this.size + 2, this.size - 2),
-      alongX ? 1.1 : 8,
-      alongX ? 8 : 1.1,
-      5.5,
-      wallColor,
-      false,
-      false,
-      baseY
-    );
-    obstacle.mesh.material.dispose();
-    const wallUv = uv().mul(vec2(alongX ? 2.4 : 12, 8));
-    const cell = abs(fract(wallUv).sub(.5));
-    const grid = smoothstep(.42, .49, max(cell.x, cell.y));
-    const scan = sin(time.mul(3.2).sub(uv().y.mul(34))).mul(.5).add(.5);
-    const fade = uniform(1);
-    const fieldMaterial = new THREE.MeshBasicNodeMaterial({
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      toneMapped: false
-    });
-    fieldMaterial.colorNode = mix(color(0x06111b), color(wallColor), grid.mul(.72).add(scan.mul(.18)));
-    fieldMaterial.opacityNode = grid.mul(.48).add(.16).mul(fade);
-    obstacle.mesh.material = fieldMaterial;
-    obstacle.dynamic = true;
-    this.dynamicObstacles.add(obstacle);
-    obstacle.mesh.updateMatrix();
-    obstacle.mesh.matrixAutoUpdate = false;
-    this.temporaryWalls.push({ obstacle, life: lifetime, fade });
+    const obstacle = {
+      x: THREE.MathUtils.clamp(position.x, -this.size + 2, this.size - 2),
+      z: THREE.MathUtils.clamp(position.z, -this.size + 2, this.size - 2),
+      w: alongX ? 1.1 : 8, d: alongX ? 8 : 1.1, h: 5.5, baseY, top: baseY + 5.5,
+      mesh: this.wallMesh, dynamic: true, destructible: false,
+      instanceVisuals: [{ mesh: this.wallMesh, index: slot.index }]
+    };
+    const marker = this.wallMarker;
+    marker.position.set(obstacle.x, baseY + 2.75, obstacle.z); marker.scale.set(obstacle.w, 5.5, obstacle.d); marker.updateMatrix();
+    this.wallMesh.setMatrixAt(slot.index, marker.matrix);
+    this.wallMesh.count = Math.max(this.wallMesh.count, slot.index + 1);
+    this.wallMesh.instanceMatrix.needsUpdate = true;
+    this.wallColor.set(wallColor); this.wallTint.setXYZ(slot.index, this.wallColor.r, this.wallColor.g, this.wallColor.b);
+    this.wallFade.setX(slot.index, 1); this.wallTint.needsUpdate = this.wallFade.needsUpdate = true;
+    slot.active = true;
+    this.obstacles.push(obstacle); this.dynamicObstacles.add(obstacle);
+    this.temporaryWalls.push({ obstacle, life: lifetime, slot });
+    this.invalidateGrappleTopology();
     return obstacle;
   }
 
@@ -3093,28 +3087,20 @@ export class ArenaWorld {
     this.time += dt;
     this.updateStructuralChanges(dt, players);
     this.updateFallingBoostPads(dt);
-    this.updateStructuralDebris(dt);
-    for (const rotor of this.rotors) {
-      const motionDt = this.reducedMotion ? 0 : dt;
-      rotor.object.rotation.x += motionDt * rotor.x;
-      rotor.object.rotation.y += motionDt * rotor.y;
-      rotor.object.rotation.z += motionDt * rotor.z;
-    }
-    for (const pulser of this.pulsers) {
-      const scale = pulser.base * (1 + Math.sin((this.reducedMotion ? 0 : this.time) * pulser.speed + pulser.phase) * pulser.amplitude);
-      pulser.object.scale.setScalar(scale);
-    }
+    this.updateStructuralDebris(dt, false);
     for (let index = this.temporaryWalls.length - 1; index >= 0; index--) {
       const wall = this.temporaryWalls[index];
       wall.life -= dt;
-      wall.fade.value = Math.min(1, wall.life * .5);
+      this.wallFade.setX(wall.slot.index, Math.max(0, Math.min(1, wall.life * .5)));
+      this.wallFade.needsUpdate = true;
       if (wall.life > 0) continue;
-      this.group.remove(wall.obstacle.mesh);
+      this.wallMesh.setMatrixAt(wall.slot.index, HIDDEN_INSTANCE);
+      this.wallMesh.instanceMatrix.needsUpdate = true;
+      wall.slot.active = false;
       this.obstacles.splice(this.obstacles.indexOf(wall.obstacle), 1);
       wall.obstacle.removed = true;
       this.dynamicObstacles.delete(wall.obstacle);
-      wall.obstacle.mesh.geometry.dispose();
-      wall.obstacle.mesh.material.dispose();
+      while (this.wallMesh.count && !this.temporaryWallPool[this.wallMesh.count - 1].active) this.wallMesh.count--;
       this.temporaryWalls.splice(index, 1);
       this.invalidateGrappleTopology();
     }
@@ -3141,13 +3127,6 @@ export class ArenaWorld {
       }
     }
 
-    for (const portal of this.portals) {
-      portal.ring.rotation.z += dt * 1.8;
-      portal.inner.rotation.z -= dt * 1.15;
-      portal.ring.material.emissiveIntensity = .72 + Math.sin(this.time * 4) * .16;
-      portal.disc.material.opacity = .085 + Math.sin(this.time * 3.4) * .025;
-      portal.column.material.opacity = .055 + Math.sin(this.time * 2.6) * .018;
-    }
     for (const player of players) {
       player.portalCooldown = Math.max(0, (player.portalCooldown || 0) - dt);
       player.sweeperCooldown = Math.max(0, (player.sweeperCooldown || 0) - dt);
@@ -3388,6 +3367,7 @@ export class ArenaWorld {
       this.obstacles.splice(this.obstacles.indexOf(item), 1);
       this.destructibles.splice(this.destructibles.indexOf(item), 1);
       item.removed = true;
+      this.removeObstacleFromIndex(item);
       this.invalidateGrappleTopology();
       removed += 1;
     }
@@ -3457,16 +3437,53 @@ export class ArenaWorld {
   grappleTarget(origin, direction) {
     if (this.disposed || !direction.lengthSq()) return null;
     const { surfaces, owners, transforms } = this.getGrappleTopology();
-    // Only collision surfaces need fresh transforms; decorative children are
-    // unrelated to these non-recursive raycasts. Moving surfaces stay current.
-    this.group.updateWorldMatrix(true, false, true);
-    for (const mesh of transforms) mesh.updateWorldMatrix(false, false, true);
     const ray = this.grappleRaycaster ||= new THREE.Raycaster(undefined, undefined, .05);
     ray.ray.origin.copy(origin);
     ray.ray.direction.copy(direction).normalize();
     const hits = this.grappleRayHits ||= [];
     hits.length = 0;
-    ray.intersectObjects(surfaces, false, hits);
+    this.group.updateWorldMatrix(true, false, true);
+    if (this.obstacleGrid?.size && this.collisionBox && this.group.matrixWorld.equals(this.grappleIdentity ||= new THREE.Matrix4())) {
+      // Slab rejection in the collision grid precedes exact face tests. A shared
+      // proxy tests only the selected structural instance, never the whole batch.
+      const end = (this.grappleRayEnd ||= new THREE.Vector3()).copy(origin).addScaledVector(ray.ray.direction, origin.length() + this.size * 6);
+      const proxy = this.grappleRayProxy ||= new THREE.Mesh();
+      const matrix = this.grappleQueryMatrix ||= new THREE.Matrix4();
+      const cast = (mesh, instanceId) => {
+        if (!mesh) return;
+        mesh.updateWorldMatrix(true, false, true);
+        const begin = hits.length;
+        if (instanceId === undefined) mesh.raycast(ray, hits);
+        else {
+          mesh.getMatrixAt(instanceId, matrix);
+          proxy.geometry = mesh.geometry; proxy.material = mesh.material;
+          proxy.matrixWorld.multiplyMatrices(mesh.matrixWorld, matrix);
+          proxy.raycast(ray, hits);
+          for (let index = begin; index < hits.length; index++) { hits[index].object = mesh; hits[index].instanceId = instanceId; }
+        }
+      };
+      if (this.ground) cast(this.ground);
+      for (const item of this.nearbyObstacles(Math.max(-this.size - 8, Math.min(origin.x, end.x) - 2), Math.min(this.size + 8, Math.max(origin.x, end.x) + 2), Math.max(-this.size - 8, Math.min(origin.z, end.z) - 2), Math.min(this.size + 8, Math.max(origin.z, end.z) + 2))) {
+        const padding = item.visualRotation ? Math.max(item.w, item.h, item.d) * .05 : .03;
+        const offset = item.visualOffset || (this.grappleZero ||= new THREE.Vector3());
+        this.collisionBox.min.set(item.x - item.w / 2 + offset.x - padding, item.baseY + offset.y - padding, item.z - item.d / 2 + offset.z - padding);
+        this.collisionBox.max.set(item.x + item.w / 2 + offset.x + padding, item.top + offset.y + padding, item.z + item.d / 2 + offset.z + padding);
+        if (!ray.ray.intersectsBox(this.collisionBox)) continue;
+        const visual = item.instanceVisuals?.find(entry => entry.mesh === item.mesh);
+        cast(item.mesh, visual?.index);
+      }
+      for (const collection of [this.anchors, this.boostPads]) for (const item of collection) {
+        if (item.removed || item.active === false) continue;
+        const visual = item.instanceVisuals?.find(entry => entry.mesh === item.mesh);
+        cast(item.mesh, visual?.index);
+      }
+      hits.sort((a, b) => a.distance - b.distance);
+    } else {
+      // Partial construction and small test fixtures can intentionally omit an index.
+      this.group.updateWorldMatrix(true, false, true);
+      for (const mesh of transforms) mesh.updateWorldMatrix(false, false, true);
+      ray.intersectObjects(surfaces, false, hits);
+    }
     for (const hit of hits) {
       const owner = owners.get(hit.object)?.get(hit.instanceId);
       const item = owner?.item, collection = owner?.collection;
@@ -3562,32 +3579,35 @@ export class ArenaWorld {
     if (!obstruction) return null;
     const { item, hit } = obstruction;
     const clearance = .3;
-    const xs = [item.x - item.w / 2 - clearance, item.x + item.w / 2 + clearance];
-    const ys = [Math.max(.12, item.baseY - clearance), item.top + clearance];
-    const zs = [item.z - item.d / 2 - clearance, item.z + item.d / 2 + clearance];
-    const candidates = [];
-    for (const x of xs) for (const y of ys) candidates.push(new THREE.Vector3(x, y, THREE.MathUtils.clamp(hit.z, zs[0], zs[1])));
-    for (const x of xs) for (const z of zs) candidates.push(new THREE.Vector3(x, THREE.MathUtils.clamp(hit.y, ys[0], ys[1]), z));
-    for (const y of ys) for (const z of zs) candidates.push(new THREE.Vector3(THREE.MathUtils.clamp(hit.x, xs[0], xs[1]), y, z));
+    const extents = this.ropeExtents ||= new Float64Array(6);
+    extents[0] = item.x - item.w / 2 - clearance; extents[1] = item.x + item.w / 2 + clearance;
+    extents[2] = Math.max(.12, item.baseY - clearance); extents[3] = item.top + clearance;
+    extents[4] = item.z - item.d / 2 - clearance; extents[5] = item.z + item.d / 2 + clearance;
+    const candidates = this.ropeCandidates ||= Array.from({ length: 12 }, () => new THREE.Vector3());
+    let candidateIndex = 0;
+    for (let x = 0; x < 2; x++) for (let y = 2; y < 4; y++) candidates[candidateIndex++].set(extents[x], extents[y], THREE.MathUtils.clamp(hit.z, extents[4], extents[5]));
+    for (let x = 0; x < 2; x++) for (let z = 4; z < 6; z++) candidates[candidateIndex++].set(extents[x], THREE.MathUtils.clamp(hit.y, extents[2], extents[3]), extents[z]);
+    for (let y = 2; y < 4; y++) for (let z = 4; z < 6; z++) candidates[candidateIndex++].set(THREE.MathUtils.clamp(hit.x, extents[0], extents[1]), extents[y], extents[z]);
 
     // The obstruction owns its hit point. Reuse only temporary collision data;
     // returned candidates must remain independent because the rope retains them.
     const delta = this.collisionDirection, box = this.collisionBox, ray = this.collisionRay, hitPoint = this.collisionHit;
     box.min.set(item.x - item.w / 2, item.baseY, item.z - item.d / 2);
     box.max.set(item.x + item.w / 2, item.top, item.z + item.d / 2);
-    const blockedByItem = (point) => {
-      delta.copy(point).sub(origin);
-      const length = delta.length();
-      if (length < .05) return false;
-      const contact = ray.set(origin, delta.multiplyScalar(1 / length)).intersectBox(box, hitPoint);
-      const contactDistance = contact ? origin.distanceTo(contact) : 0;
-      return Boolean(contact && contactDistance > .03 && contactDistance < length - .03);
-    };
     // Keep the original comparator arithmetic: reassociating its floating-point
     // distances can select the opposite side of a symmetric obstacle.
-    return candidates
-      .filter(point => point.distanceTo(origin) > .2 && !blockedByItem(point))
-      .sort((a, b) => origin.distanceTo(a) + a.distanceTo(target) - origin.distanceTo(b) - b.distanceTo(target))[0] || null;
+    let best = null;
+    for (const point of candidates) {
+      const candidateDistance = point.distanceTo(origin);
+      if (candidateDistance <= .2) continue;
+      delta.copy(point).sub(origin).multiplyScalar(1 / candidateDistance);
+      const contact = ray.set(origin, delta).intersectBox(box, hitPoint);
+      const contactDistance = contact ? origin.distanceTo(contact) : 0;
+      if (contact && contactDistance > .03 && contactDistance < candidateDistance - .03) continue;
+      if (!best || origin.distanceTo(point) + point.distanceTo(target) - origin.distanceTo(best) - best.distanceTo(target) < 0) best = point;
+    }
+    // Only the retained wrap escapes scratch storage.
+    return best?.clone() || null;
   }
 
   lineOfSight(a, b) {
@@ -3618,7 +3638,7 @@ export class ArenaWorld {
     this.scene.fogNode = this.previousFogNode;
     this.scene.remove(this.group);
     const resources = new Set(this.textures);
-    for (const root of [this.group, ...this.detachedDestructibleMeshes]) root.traverse((child) => {
+    for (const root of [this.group, ...this.detachedDestructibleMeshes, ...(this.batchedDecorSources || [])]) root.traverse((child) => {
       // Three owns one shared quad for every Sprite, including the next arena.
       if (!child.isSprite && child.geometry) resources.add(child.geometry);
       for (const material of Array.isArray(child.material) ? child.material : [child.material]) {

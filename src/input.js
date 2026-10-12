@@ -24,9 +24,38 @@ export const TOUCH_LOOK_GAIN = 3.5;
 
 export function touchLookDelta(fromX, fromY, toX, toY, gain = TOUCH_LOOK_GAIN) {
   return {
-    x: Math.max(-80, Math.min(80, toX - fromX)) * gain,
-    y: Math.max(-80, Math.min(80, toY - fromY)) * gain
+    x: Number.isFinite(toX - fromX) ? (toX - fromX) * gain : 0,
+    y: Number.isFinite(toY - fromY) ? (toY - fromY) * gain : 0
   };
+}
+
+// Preserve coalesced physical movement at low frame rates. A magnitude clamp
+// discards deliberate flicks; only malformed samples are rejected.
+export function pointerLookDelta(event) {
+  const samples = event.getCoalescedEvents?.();
+  let x = 0, y = 0;
+  for (const sample of samples?.length ? samples : [event]) {
+    if (Number.isFinite(sample.movementX)) x += sample.movementX;
+    if (Number.isFinite(sample.movementY)) y += sample.movementY;
+  }
+  return { x, y };
+}
+
+export function requestGamePointerLock(canvas) {
+  if (!canvas.requestPointerLock) return;
+  try {
+    const result = canvas.requestPointerLock({ unadjustedMovement: true });
+    result?.catch?.((error) => {
+      // Unsupported raw input may fall back; denied user gestures must not loop.
+      if (error?.name === "NotSupportedError") {
+        try { canvas.requestPointerLock()?.catch?.(() => {}); } catch {}
+      }
+    });
+  } catch (error) {
+    if (error?.name === "NotSupportedError" || error instanceof TypeError) {
+      try { canvas.requestPointerLock()?.catch?.(() => {}); } catch {}
+    }
+  }
 }
 
 export function touchMoveDelta(fromX, fromY, toX, toY, range = 72, deadZone = 8) {
@@ -93,8 +122,9 @@ export class InputManager {
         return;
       }
       if (document.pointerLockElement !== canvas) return;
-      this.mouse.movementX += Math.max(-80, Math.min(80, event.movementX));
-      this.mouse.movementY += Math.max(-80, Math.min(80, event.movementY));
+      const movement = pointerLookDelta(event);
+      this.mouse.movementX += movement.x;
+      this.mouse.movementY += movement.y;
     });
     document.addEventListener("pointerlockchange", () => {
       const wasLocked = this.mouse.locked;
@@ -128,7 +158,7 @@ export class InputManager {
     canvas.addEventListener("mousedown", (event) => {
       if (!this.shouldCapture()) return;
       if (document.pointerLockElement !== canvas) {
-        canvas.requestPointerLock?.();
+        requestGamePointerLock(canvas);
         event.preventDefault();
         return;
       }

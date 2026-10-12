@@ -1,27 +1,27 @@
 import { GRAPHICS_EFFECTS, normalizeGraphicsEffects } from './graphicsEffects.js';
 
-export const GRAPHICS_VERSION = 2;
+export const GRAPHICS_VERSION = 3;
 export const GRAPHICS_OPTIONS = {
-  renderScale: [.25, .5, .65, .75, 1], msaaSamples: [0, 4], shadowMapSize: [0, 512, 1024, 2048, 4096],
-  aoSamples: [8, 16, 32], ssrScale: [.5, 1], bloomScale: [.34, .5, 1],
+  renderScale: [.25, .5, .65, .75, 1], msaaSamples: [0], shadowMapSize: [0, 512, 1024, 2048, 4096],
+  aoSamples: [8, 16, 32], ssrScale: [.25, .5, 1], bloomScale: [.25, .34, .5, 1],
   combatQuality: [.25, .5, .75, 1], combatLights: [1, 2, 4], detailDistance: [24, 48, 72, 96],
   atmosphereCount: [0, 80, 150, 220], anisotropy: [4, 8, 16]
 };
 const high = { renderScale: .75, msaaSamples: 0, shadowMapSize: 2048, aoSamples: 16, ssrScale: .5,
   bloomScale: .5, combatQuality: 1, combatLights: 4, detailDistance: 96, atmosphereCount: 220, anisotropy: 16 };
 export const GRAPHICS_PRESETS = {
-  low: { ...high, renderScale: .5, shadowMapSize: 0, combatQuality: .25, combatLights: 1, detailDistance: 24, atmosphereCount: 0, anisotropy: 4 },
-  medium: { ...high, renderScale: .65, shadowMapSize: 1024, bloomScale: .34, combatQuality: .75, combatLights: 2, detailDistance: 72, atmosphereCount: 150, anisotropy: 8 },
+  low: { ...high, renderScale: .5, bloomScale: .25, shadowMapSize: 0, combatQuality: .25, combatLights: 1, detailDistance: 24, atmosphereCount: 0, anisotropy: 4 },
+  medium: { ...high, renderScale: .65, shadowMapSize: 1024, ssrScale: .25, bloomScale: .34, combatQuality: .75, combatLights: 2, detailDistance: 72, atmosphereCount: 150, anisotropy: 8 },
   high,
-  ultra: { ...high, renderScale: 1, msaaSamples: 4, shadowMapSize: 4096, aoSamples: 32 }
+  ultra: { ...high, renderScale: 1, msaaSamples: 0, shadowMapSize: 4096, aoSamples: 32 }
 };
 export const graphicsLevel = level => Object.hasOwn(GRAPHICS_PRESETS, level) ? level : 'high';
 
 export function presetEffects(level) {
   const effects = normalizeGraphicsEffects();
   for (const [key, effect] of Object.entries(GRAPHICS_EFFECTS)) {
-    if (level === 'low') effects[key] = ['wetSurfaces', 'waterCaustics', 'distanceHaze'].includes(key);
-    else if (level === 'medium' && effect.high) effects[key] = false;
+    if (level === 'low') effects[key] = ['bloom', 'wetSurfaces', 'waterCaustics', 'distanceHaze'].includes(key);
+    else if (level === 'medium' && effect.high) effects[key] = key === 'reflections';
   }
   return effects;
 }
@@ -38,6 +38,33 @@ export function applyGraphicsPreset(settings, level) {
   settings.graphicsOptions = { ...GRAPHICS_PRESETS[settings.graphics] };
   settings.graphicsEffects = presetEffects(settings.graphics);
   settings.motionBlur = settings.graphicsEffects.motionBlur ? 35 : 0;
+}
+
+// Adopt the new recipe only when the entire persisted v2 recipe is untouched.
+// Any explicit custom option, disabled effect, or blur value remains authoritative.
+export function migrateLegacyGraphicsPreset(settings, saved) {
+  if (saved?.graphicsVersion !== 2) return settings;
+  const level = graphicsLevel(saved.graphics);
+  const legacyOptions = { ...GRAPHICS_PRESETS[level] };
+  if (level === 'low') legacyOptions.bloomScale = .5;
+  if (level === 'medium') legacyOptions.ssrScale = .5;
+  if (level === 'ultra') legacyOptions.msaaSamples = 4;
+  const legacyEffects = normalizeGraphicsEffects();
+  for (const [key, effect] of Object.entries(GRAPHICS_EFFECTS)) {
+    if (level === 'low') legacyEffects[key] = ['wetSurfaces', 'waterCaustics', 'distanceHaze'].includes(key);
+    else if (level === 'medium' && effect.high) legacyEffects[key] = false;
+  }
+  const untouched = Object.entries(legacyOptions).every(([key, value]) => saved.graphicsOptions?.[key] === value)
+    && Object.entries(legacyEffects).every(([key, value]) => saved.graphicsEffects?.[key] === value)
+    && saved.motionBlur === (legacyEffects.motionBlur ? 35 : 0);
+  if (untouched) applyGraphicsPreset(settings, level);
+  // An old custom recipe can disable FXAA while still requesting 4x MSAA.
+  // Preserve that AA intent when replacing MSAA with reconstruction AA.
+  if (saved.graphicsOptions?.msaaSamples === 4) {
+    settings.graphicsOptions.msaaSamples = 0;
+    settings.graphicsEffects.antialiasing = true;
+  }
+  return settings;
 }
 
 export function isCustomGraphics(settings) {

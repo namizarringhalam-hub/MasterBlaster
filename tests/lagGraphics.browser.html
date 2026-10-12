@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Master Blaster integrated lag and graphics validation</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/src/styles.css">
+<div id="app"><canvas id="game-canvas"></canvas><div id="ui-root"></div></div>
+<div id="match-loading" hidden><span data-match-seed></span><span data-match-kind></span></div>
+<output id="validation-status" hidden></output>
+<script type="module">
+// Development fixture: the production engine remains the owner of startup,
+// simulation, rendering and cleanup. The host runner mutes before navigation.
+import { Vector3 } from 'three/webgpu';
+import { SoundBoard } from '../src/audio.js';
+import { WEAPONS } from '../src/gameData.js';
+import { applyGraphicsPreset } from '../src/graphicsPresets.js';
+const setVolume = SoundBoard.prototype.setVolume;
+SoundBoard.prototype.setVolume = function () { return setVolume.call(this, 0); };
+let seed = 928341;
+Math.random = () => { seed = Math.imul(seed, 1664525) + 1013904223 | 0; return (seed >>> 0) / 4294967296; };
+const errors = [], checks = [], samples = [];
+const validation = window.validation = { status: 'booting', errors, checks, samples };
+const reportError = error => { const message = String(error?.stack || error); validation.errorCount = (validation.errorCount || 0) + 1; if (errors.length < 20 && !errors.includes(message)) errors.push(message); };
+addEventListener('error', event => reportError(event.error || event.message));
+addEventListener('unhandledrejection', event => reportError(event.reason));
+const params = new URLSearchParams(location.search), fixtureURL = location.href;
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const assert = (value, message) => { if (!value) throw Error(message); };
+const wait = (condition, timeout = 120000) => new Promise((resolve, reject) => {
+  const started = performance.now();
+  const poll = () => {
+    if (errors.length) return reject(Error(errors.at(-1)));
+    if (condition()) return resolve();
+    if (performance.now() - started > timeout) return reject(Error(`Readiness watchdog ${timeout}ms: ${validation.status}`));
+    setTimeout(poll, 50);
+  }; poll();
+});
+const check = (name, value, details = {}) => { checks.push({ name, pass: Boolean(value), ...details }); assert(value, name); };
+performance.mark('blaster-shell-visible');
+try {
+  const { gameReady } = await import('../src/main.js');
+  const game = await gameReady;
+  game.setJourney = () => {};
+  history.replaceState(history.state, '', fixtureURL);
+  const renderer = game.renderer;
+  validation.backend = renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL';
+  const adapterInfo = renderer.backend.device?.adapterInfo;
+  validation.adapter = adapterInfo ? Object.fromEntries(['vendor', 'architecture', 'device', 'description'].map(key => [key, adapterInfo[key]])) : null;
+  renderer.backend.device?.addEventListener('uncapturederror', event => reportError(event.error));
+  let frozen = false, fixedCamera = false, renderedScenes = 0;
+  const update = game.update.bind(game), updateCamera = game.updateCamera.bind(game);
+  const renderScene = game.renderScene.bind(game);
+  game.renderScene = (...args) => { const result = renderScene(...args); if (result !== false) renderedScenes++; return result; };
+  game.update = (...args) => { if (!frozen) return update(...args); };
+  game.updateCamera = (...args) => { if (!fixedCamera) return updateCamera(...args); };
+  const memory = () => ({ ...renderer.info.memory, draws: renderer.info.render.drawCalls, sceneChildren: game.scene.children.length,
+    projectiles: game.projectiles.length, hazards: game.hazards.length, decoys: game.decoys.length });
+  const camera = () => { fixedCamera = true; game.camera.position.set(70, 47, 98); game.camera.lookAt(0, 25, 0); game.camera.updateMatrixWorld(true); game.sceneDirty = true; };
+  const active = () => { game.awaitingAudioGesture = false; game.audioCountdown = false; game.matchStartDelay = 0; game.paused = false; game.sound.stopMusic(); game.sound.setVolume(0); };
+  async function preset(quality) {
+    validation.status = `preset-${quality}`;
+    const first = renderedScenes;
+    applyGraphicsPreset(game.settings, quality); game.applyGraphicsSettings();
+    await wait(() => !game.pendingGraphics && !game.pendingGraphicsEffects && !game.pendingPipelineEffects && !game.pendingResize && !game.preparingGraphics);
+    await game.graphicsWarmup;
+    if (game.world) await wait(() => !game.sceneSettleFrames && (!game.paused || !game.sceneDirty) && renderedScenes - first >= (game.paused ? 1 : 32), 45000);
+    await renderer.backend.device?.queue.onSubmittedWorkDone();
+    check(`${quality} render graph`, game.renderPipeline.direct !== true, { memory: memory() });
+    validation.quality = quality;
+  }
+  async function start(quality = params.get('quality') || 'high') {
+    frozen = false; fixedCamera = false;
+    game.settings.loadout = ['napalm_launcher', 'shotgun', 'minigun', 'decoy_launcher', 'temporary_wall'];
+    game.settings.botCount = 15;
+    game.settings.matchSettings.training.botsStandStill = false;
+    game.settings.matchSettings.training.botsDontAttack = false;
+    game.mode = 'training'; game.seed = 'LAG-GRAPHICS-VALIDATION'; game.botDifficulty = 'veteran'; game.targetScore = 100000; game.timeLimitMinutes = 30;
+    await preset(quality);
+    validation.status = 'launching-real-match';
+    const began = performance.now();
+    await game.startMatch(null, true);
+    await wait(() => game.state === 'play' && game.matchFrameReady && !game.preparingMatch && !game.hideMatchLoadingAfterFrame);
+    active();
+    check('16 fighters start ready', game.players.length === 16 && game.players.every(player => player.alive), { startupMs: performance.now() - began });
+    check('requested renderer active', validation.backend === (params.get('renderer') === 'webgl' ? 'WebGL' : 'WebGPU'));
+    camera();
+    validation.status = 'ready';
+    return inspect();
+  }
+  function inspect() {
+    let nonFinite = 0, skinned = 0;
+    const geometries = new Map(), instanceArrays = new Set(), geometryArrays = new Set();
+    game.scene.traverse(object => {
+      if (!object.position.toArray().every(Number.isFinite) || !object.rotation.toArray().slice(0, 3).every(Number.isFinite)) nonFinite++;
+      if (object.isSkinnedMesh) skinned++;
+      if (object.geometry && !geometries.has(object.geometry)) {
+        const arrays = new Set(Object.values(object.geometry.attributes).map(attribute => attribute.array || attribute.data?.array));
+        if (object.geometry.index) arrays.add(object.geometry.index.array);
+        for (const array of arrays) if (array) geometryArrays.add(array);
+        geometries.set(object.geometry, { name: object.name, bytes: [...arrays].reduce((sum, array) => sum + (array?.byteLength || 0), 0) });
+      }
+      if (object.instanceMatrix?.array) instanceArrays.add(object.instanceMatrix.array);
+      if (object.instanceColor?.array) instanceArrays.add(object.instanceColor.array);
+    });
+    const gpuBuffers = new Map();
+    for (const [attribute, metadata] of renderer.info.memoryMap || []) {
+      if (!/attributes/i.test(metadata.type || '')) continue;
+      const source = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
+      const buffer = renderer.backend.get(source)?.buffer;
+      if (Number.isFinite(buffer?.size)) {
+        const known = gpuBuffers.get(buffer);
+        if (known) known.references++;
+        else gpuBuffers.set(buffer, { size: buffer.size, references: 1, name: source.name || attribute.name || '', type: metadata.type });
+      }
+    }
+    return { state: game.state, paused: game.paused, quality: game.settings.graphics, backend: validation.backend,
+      direct: game.renderPipeline.direct, fighters: game.players.length, skinned, nonFinite, memory: memory(), errors: [...errors], humanPosition: game.players[0]?.position.toArray(),
+      viewport: { width: innerWidth, height: innerHeight, scrollWidth: document.documentElement.scrollWidth },
+      graph: game.renderPipeline.profile, timing: game.performanceSample.snapshot(), largestGeometry: [...geometries.values()].sort((a,b) => b.bytes - a.bytes).slice(0,8),
+      sceneGeometryBytes: [...geometryArrays].reduce((sum,array) => sum + array.byteLength, 0), sceneInstanceBytes: [...instanceArrays].reduce((sum,array) => sum + array.byteLength, 0),
+      uniqueGpuBufferBytes: [...gpuBuffers.values()].reduce((sum,buffer) => sum + buffer.size, 0), uniqueGpuBufferCount: gpuBuffers.size,
+      largestGpuBuffers: [...gpuBuffers.values()].sort((a,b) => b.size - a.size).slice(0,12) };
+  }
+  async function sample(label, milliseconds = 4000) {
+    validation.status = `sampling-${label}`;
+    game.performanceSample = game.freshPerformanceSample();
+    const began = performance.now();
+    await wait(() => performance.now() - began >= milliseconds, milliseconds + 10000);
+    const timing = game.performanceSample.snapshot();
+    const result = { label, windowMs: performance.now() - began, quality: game.settings.graphics, backend: validation.backend,
+      timing, memory: memory(), frozen, camera: game.camera.position.toArray() };
+    samples.push(result);
+    check(`${label} finite foreground frames`, !document.hidden && timing.frames >= 30 && Number.isFinite(timing.p95Ms), { frames: timing.frames });
+    check(`${label} no direct fallback`, !game.renderPipeline.direct);
+    validation.status = 'ready';
+    return result;
+  }
+  async function stress() {
+    validation.status = 'combat-stress';
+    frozen = true;
+    const player = game.players[0], target = game.players[1];
+    if (!player.alive) { player.respawn(new Vector3(0, 2, 12)); game.respawnTimers[0] = 0; }
+    player.position.set(0, 2, 12); player.aim.set(0, .08, -1).normalize();
+    const before = memory();
+    for (let round = 0; round < 3; round++) for (const slot of [0, 1, 2, 3, 4]) {
+      player.switchSlot(slot); player.attackTimer = 0; player.reloadTimer = 0; player.ammo[player.weapon.id] = 100;
+      game.tryFire(player, true, false);
+    }
+    const shot = game.projectiles.find(value => value.weapon.id === 'napalm_launcher');
+    if (shot) { shot.mesh.position.set(-3, .25, 0); game.explode(shot); }
+    for (let index = 0; index < 4; index++) {
+      const point = new Vector3((index - 1.5) * 4, .2, 0);
+      game.spawnHazard(point, game.players[index], WEAPONS.napalm_launcher, new Vector3());
+      game.combatVisuals.impact(point, WEAPONS.rocket_launcher, player, { size: 3, explosive: true });
+    }
+    game.spawnDecoy(new Vector3(2, 0, 7), player, WEAPONS.decoy_launcher);
+    const wallsBefore = game.world.temporaryWalls.length;
+    for (let index = 0; index < 3; index++) game.world.addTemporaryWall(new Vector3(index * 5 - 5, .2, 18), new Vector3(0, 0, -1), WEAPONS.temporary_wall.color, 10);
+    check('projectile and hazard stress spawned', game.projectiles.length > before.projectiles && game.hazards.length > 0);
+    check('hologram spawned', game.decoys.length > 0);
+    check('temporary wall collision owners spawned', game.world.temporaryWalls.length === wallsBefore + 3);
+    if (!target.alive) target.respawn(new Vector3(3, 1, 9));
+    target.invulnerable = 0; target.spawnShield = 0;
+    game.damagePlayer(target, 10000, new Vector3(), player, WEAPONS.shotgun);
+    check('combat death', !target.alive);
+    game.updateRespawns(5);
+    check('combat respawn', target.alive);
+    player.loadout[4] = 'weapon_stealing_projectile'; player.switchSlot(4); player.updateWeaponModel();
+    const stolen = target.weapon.id;
+    game.stealWeapon(player, target, WEAPONS.weapon_stealing_projectile, 4);
+    check('weapon steal swaps actual loadout', player.loadout[4] === stolen && target.weapon.id === 'weapon_stealing_projectile');
+    for (let direction = 0; direction < 8 && !player.grapple; direction++) {
+      player.aim.set(Math.sin(direction * Math.PI / 4), .3, Math.cos(direction * Math.PI / 4)).normalize();
+      game.camera.position.copy(player.position).add(new Vector3(0, 2, 0)); game.camera.lookAt(game.camera.position.clone().add(player.aim)); game.camera.updateMatrixWorld(true);
+      game.toggleGrapple(player);
+    }
+    checks.push({ name: 'grapple acquired from scene ray', pass: Boolean(player.grapple) });
+    camera();
+    await delay(150);
+    check('stress transforms finite', inspect().nonFinite === 0);
+    await renderer.backend.device?.queue.onSubmittedWorkDone();
+    validation.stress = { before, after: memory(), grapple: Boolean(player.grapple) };
+    validation.status = 'stress-ready';
+    return inspect();
+  }
+  async function pauseCheck() {
+    frozen = false; active();
+    game.togglePause(); await delay(300);
+    const first = renderedScenes, time = game.world.time;
+    await delay(500);
+    const stable = renderedScenes === first && game.world.time === time;
+    checks.push({ name: 'pause holds simulation and render', pass: stable, renderFrames: renderedScenes - first });
+    game.togglePause(); active();
+    return { stable, renderFrames: renderedScenes - first };
+  }
+  async function rematch() {
+    validation.status = 'rematch'; frozen = false;
+    game.finishMatch(); await delay(150);
+    check('results shown', game.state === 'results' && Boolean(document.querySelector('[data-action="rematch"]')));
+    const oldPlayers = game.players.slice();
+    await game.startMatch(null, true);
+    await wait(() => game.state === 'play' && game.matchFrameReady && !game.preparingMatch && !game.hideMatchLoadingAfterFrame);
+    active(); camera();
+    check('rematch replaced fighters', game.players.length === 16 && oldPlayers.every(player => !player.group.parent));
+    validation.status = 'ready'; return inspect();
+  }
+  window.gameplayValidation = { game, start, preset, stress, sample, pauseCheck, rematch, inspect,
+    freeze: () => { frozen = true; camera(); }, unfreeze: () => { frozen = false; },
+    normalCamera: () => { fixedCamera = false; game.sceneDirty = true; },
+    stop: () => { game.paused = true; validation.status = errors.length ? 'failed' : 'passed'; } };
+  validation.status = 'booted';
+} catch (error) { errors.push(String(error.stack || error)); validation.status = 'failed'; }
+</script></html>

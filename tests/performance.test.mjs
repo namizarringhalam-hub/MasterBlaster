@@ -5,6 +5,8 @@ import { CombatVisuals, createProjectileVisual } from "../src/combatVisuals.js";
 import { WEAPONS, projectileStepCount } from "../src/gameData.js";
 import { Fighter } from "../src/player.js";
 import { ArenaWorld } from "../src/world.js";
+import { cloneMechaHologram } from "../src/mecha.js";
+import { emissiveEffectMaterial } from "../src/effectMaterials.js";
 import { PLAYER_TEXT } from "../PLAYER_TEXT.js";
 
 const botScene = new THREE.Scene();
@@ -27,6 +29,7 @@ const referenceTransform = new THREE.Object3D();
 for (const scale of [.65, 1.2, 1.8]) {
   bot.thrusterScale = scale;
   bot.update(0, new THREE.Vector3(), new THREE.Vector3(0, 0, 1), {}, { resolve: () => ({ grounded: true }), boostAt: () => null });
+  bot.updatePresentation(0);
   bot.thrusterLights.updateMatrix();
   assert.equal(bot.thrusterLights.scale.y, scale, "actual fighter update animates only the pair's local scale");
   assert.deepEqual(bot.thrusterLights.position.toArray(), [0, 1.356, -.402], "thrust cannot move the common anchor");
@@ -151,7 +154,10 @@ for (const endX of [2.25, 5, 5.5, 5.75]) {
 }
 assert.equal(wrapAllocations.Box3, 0, "wrap candidates reuse one existing collision box");
 assert.equal(wrapAllocations.Ray, 0, "wrap candidates reuse the existing collision ray");
-assert.equal(wrapAllocations.Vector3, 12, "only the twelve independently owned candidate points are allocated");
+assert.equal(wrapAllocations.Vector3, 17, "rope wrapping allocates its twelve reusable candidates plus collision and retained-point scratch");
+const retainedWrap = countedWrap.call(wrapFixture, wrapStart, wrapEnd);
+assert.ok(retainedWrap !== countedWrap.call(wrapFixture, wrapStart, wrapEnd), "retained wrap points stay independently owned across queries");
+assert.equal(wrapAllocations.Vector3, 19, "subsequent rope queries allocate one independent retained-point vector each");
 if (process.argv.includes("--bench-rope")) {
   const results = [];
   for (let batch = 0; batch < 6; batch++) for (const [name, method] of (batch % 2 ? [["current", ArenaWorld.prototype.ropeWrapPoint], ["legacy", legacyRopeWrapPoint]] : [["legacy", legacyRopeWrapPoint], ["current", ArenaWorld.prototype.ropeWrapPoint]])) {
@@ -246,129 +252,63 @@ rocket.traverse((child) => {
 secondRocket.traverse((child) => { if (child.isMesh) secondRocketGeometries.push(child.geometry); });
 assert.deepEqual(secondRocketGeometries, rocketGeometries, "repeat shots reuse immutable GPU geometry while retaining separate materials");
 
-const mainSource = fs.readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
+const mainSource = fs.readFileSync(new URL("../src/main.js", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+const createDecoyMeshMethod = mainSource.slice(mainSource.indexOf("\n  createDecoyMesh("), mainSource.indexOf("\n  spawnDecoy("));
 const decoyMethods = mainSource.slice(mainSource.indexOf("\n  spawnDecoy("), mainSource.indexOf("\n  damagePlayer("));
 const removeObjectMethod = mainSource.slice(mainSource.indexOf("\n  removeObject(object) {"), mainSource.indexOf("\n}\n\nconst game ="));
 const transientMethod = mainSource.slice(mainSource.indexOf("\n  clearTransientNetworkCombat() {"), mainSource.indexOf("\n  removeOwnedCombat("));
 const disposalMethod = mainSource.slice(mainSource.indexOf("\n  disposeAfterGraphicsWarmup("), mainSource.indexOf("\n  clearMatch("));
-const decoyHarness = new Function("THREE", `return new (class {${decoyMethods}${removeObjectMethod}${transientMethod}${disposalMethod}})();`)(THREE);
+const decoyHarness = new Function("THREE", "WEAPONS", "cloneMechaHologram", "emissiveEffectMaterial",
+  `return new (class {${createDecoyMeshMethod}${decoyMethods}${removeObjectMethod}${transientMethod}${disposalMethod}})();`)
+  (THREE, WEAPONS, cloneMechaHologram, emissiveEffectMaterial);
 Object.assign(decoyHarness, { scene: new THREE.Scene(), world: { surfaceHeightAt: () => 0 },
   decoys: [], projectiles: [], hazards: [], effects: [], decoyRenderAnchor: null, spawnBurst() {}, renderPipeline: { quality: "high", direct: false } });
-// Exercise the capsule housing as well as the shared head pivot in holograms.
+// Holograms share immutable armor buffers while owning separate animated skeletons.
 const decoyOwner = new Fighter(decoyHarness.scene, { id: "helmet-2", color: 0x129dba, accent: 0x6ff6ff }, ["blaster"], new THREE.Vector3());
+decoyOwner.rig.visible = false;
 const decoyDisposals = new Map();
 function trackDecoy(mesh) {
-  for (const name of ["Mecha left shin", "Mecha right shin", "Mecha left foot armor", "Mecha right foot armor", "Mecha left bracer and hand", "Mecha right bracer and hand"]) {
-    const clone = mesh.getObjectByName(name), source = decoyOwner.group.getObjectByName(name);
-    assert.ok(clone?.isMesh, "holograms retain all articulated armor batches");
-    assert.notEqual(clone.material, source.material);
-    assert.notEqual(clone.geometry, source.geometry);
-    for (const key of ["roughness", "clearcoat", "metalness"]) assert.equal(clone.material[key], source.material[key]);
-    for (const key of ["position", "normal", "uv", "color"]) assert.deepEqual(clone.geometry.attributes[key].array, source.geometry.attributes[key].array);
+  const ownedSkeletons = new Set();
+  mesh.traverse(child => { if (child.isSkinnedMesh) ownedSkeletons.add(child.skeleton); });
+  assert.equal(ownedSkeletons.size, decoyOwner.mechaSkinMeshes.length, "each rigid armor batch owns a clone skeleton");
+  for (const source of decoyOwner.mechaSkinMeshes) {
+    const clone = mesh.getObjectByName(source.name);
+    assert.ok(clone?.isSkinnedMesh, "holograms preserve each rigid armor batch");
+    assert.notEqual(clone.skeleton, source.skeleton, "pose state is independent between owner and decoy");
+    assert.equal(clone.geometry, source.geometry, "immutable batched geometry is shared across decoys");
+    assert.equal(clone.material, decoyHarness.decoyMaterial, "one hologram material is shared across all decoy batches");
   }
-  mesh.traverse(child => {
-    for (const resource of [child.geometry, ...(Array.isArray(child.material) ? child.material : [child.material])].filter(Boolean)) {
-      decoyDisposals.set(resource, 0);
-      resource.addEventListener("dispose", () => decoyDisposals.set(resource, decoyDisposals.get(resource) + 1));
-    }
-  });
+  for (const skeleton of ownedSkeletons) {
+    decoyDisposals.set(skeleton, 0);
+    const dispose = skeleton.dispose.bind(skeleton);
+    skeleton.dispose = () => { decoyDisposals.set(skeleton, decoyDisposals.get(skeleton) + 1); dispose(); };
+  }
+  return ownedSkeletons;
 }
-decoyOwner.helmet.rotation.x = -.18;
 decoyOwner.group.updateMatrixWorld(true);
 decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
-const firstDecoy = decoyHarness.decoys[0]; trackDecoy(firstDecoy.mesh);
-const frozenHead = firstDecoy.mesh.getObjectByName("Mecha helmet");
-for (const name of ["Mecha twin eye lenses", "Mecha helmet armor"]) {
-  const frozen = firstDecoy.mesh.getObjectByName(name), source = decoyOwner.group.getObjectByName(name);
-  assert.equal(frozen.parent, frozenHead, "a decoy preserves nested head ownership");
-  assert.deepEqual(frozen.matrix.elements, source.matrix.elements, "a decoy freezes the local head pose");
-  assert.notEqual(frozen.geometry, source.geometry);
-  assert.notEqual(frozen.material, source.material);
-  for (const attribute of ["position", "normal", "uv"]) assert.deepEqual(frozen.geometry.attributes[attribute].array, source.geometry.attributes[attribute].array);
+const firstDecoy = decoyHarness.decoys[0], firstSkeletons = trackDecoy(firstDecoy.mesh);
+assert.equal(firstDecoy.mesh.children[decoyOwner.group.children.indexOf(decoyOwner.rig)].visible, true,
+  "world decoys stay visible when the first-person camera hides their local owner's rig");
+decoyHarness.spawnDecoy(new THREE.Vector3(2, 0, 0), decoyOwner, WEAPONS.decoy_launcher);
+const secondDecoy = decoyHarness.decoys[1], secondSkeletons = trackDecoy(secondDecoy.mesh);
+for (const source of decoyOwner.mechaSkinMeshes) {
+  assert.notEqual(firstDecoy.mesh.getObjectByName(source.name).skeleton, secondDecoy.mesh.getObjectByName(source.name).skeleton,
+    "overlapping holograms never share mutable pose state");
 }
-decoyOwner.helmet.rotation.x = .18;
-assert.ok(Math.abs(frozenHead.rotation.x + .18) < 1e-12, "later owner aim cannot move its existing hologram's head");
-const thrusterSnapshot = firstDecoy.mesh.getObjectByName("Fighter thruster pair");
-assert.ok(thrusterSnapshot.isMesh && !thrusterSnapshot.isInstancedMesh, "a frozen decoy pair uses one ordinary draw without per-clone instance bindings");
-assert.notEqual(thrusterSnapshot.geometry, decoyOwner.thrusterLights.geometry);
-assert.deepEqual(thrusterSnapshot.geometry.index.array, decoyOwner.thrusterLights.geometry.index.array);
-for (const name of ["position", "normal", "uv"]) assert.deepEqual(thrusterSnapshot.geometry.attributes[name].array,
-  decoyOwner.thrusterLights.geometry.attributes[name].array, `decoy pair preserves exact ${name} data`);
-thrusterSnapshot.onAfterRender();
-assert.equal(firstDecoy.mesh.userData.decoyRendered, false, "a partially visible decoy cannot retain incomplete shader coverage");
-assert.ok(thrusterSnapshot.onAfterRender === THREE.Object3D.prototype.onAfterRender, "render marker removes its own per-draw work after first use");
-firstDecoy.mesh.traverse(child => { if (child.isMesh) child.onAfterRender(); });
-assert.equal(firstDecoy.mesh.userData.decoyRendered, true);
 decoyHarness.removeDecoy(firstDecoy);
-assert.ok(decoyHarness.decoyRenderAnchor === firstDecoy.mesh, "one removed decoy retains its already-compiled renderer resources");
-assert.equal(firstDecoy.mesh.parent, null, "the render anchor cannot draw");
-assert.equal(decoyHarness.decoys.length, 0, "the render anchor cannot become a gameplay target");
-assert.ok([...decoyDisposals.values()].every(count => count === 0), "last removal keeps bounded shader references alive");
-for (let i = 0; i < 2; i++) decoyHarness.spawnDecoy(new THREE.Vector3(i + 2, 0, 0), decoyOwner, WEAPONS.decoy_launcher);
-const [decoyA, decoyB] = decoyHarness.decoys;
-decoyA.life = 8; decoyB.life = 10;
-decoyHarness.updateDecoys(.1);
-assert.notEqual(decoyA.materials[0].material.opacity, decoyB.materials[0].material.opacity, "overlapping holograms retain independent flicker");
-assert.ok(decoyA.materials.every(({ material }, i) => material !== decoyB.materials[i].material), "visible decoys never alias mutated materials");
-trackDecoy(decoyA.mesh); trackDecoy(decoyB.mesh);
-decoyHarness.removeDecoy(decoyA); decoyHarness.removeDecoy(decoyA);
-assert.ok(decoyHarness.decoyRenderAnchor === firstDecoy.mesh, "retention stays bounded to one clone");
-decoyB.mesh.traverse(child => { if (child.isMesh) child.onAfterRender(); });
-decoyHarness.removeDecoy(decoyB);
-assert.ok(decoyHarness.decoyRenderAnchor === decoyB.mesh, "the latest complete render owns the anchor so current-tier pipelines survive");
-decoyHarness.clearTransientNetworkCombat(); decoyHarness.clearTransientNetworkCombat();
-assert.equal(decoyHarness.decoyRenderAnchor, null);
-assert.ok([...decoyDisposals.values()].every(count => count === 1), "all owned decoy resources dispose exactly once on cleanup");
-decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
-decoyHarness.removeDecoy(decoyHarness.decoys[0]);
-assert.equal(decoyHarness.decoyRenderAnchor, null, "an offscreen/unrendered first decoy must not occupy the sole shader anchor");
-for (const scale of [.65, 1.2, 1.8]) {
-  decoyOwner.thrusterLights.scale.y = scale;
-  decoyOwner.thrusterLights.updateMatrix();
-  decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
-  const snapshot = decoyHarness.decoys[0].mesh.getObjectByName("Fighter thruster pair");
-  snapshot.updateMatrix();
-  assert.deepEqual(snapshot.matrix.elements, decoyOwner.thrusterLights.matrix.elements, "a decoy freezes the full flame pose");
-  const frozenPositions = snapshot.geometry.attributes.position.array.slice();
-  decoyOwner.thrusterLights.scale.y = 9;
-  decoyOwner.thrusterLights.updateMatrix();
-  assert.equal(snapshot.scale.y, scale, "later owner thrust cannot move or resize the decoy's flames");
-  assert.deepEqual(snapshot.geometry.attributes.position.array, frozenPositions, "later owner thrust cannot change an existing decoy pose");
-  decoyHarness.clearTransientNetworkCombat();
-}
+assert.equal(decoyHarness.decoys.length, 1, "removing a hologram removes only its gameplay target");
+assert.ok([...firstSkeletons].every(skeleton => decoyDisposals.get(skeleton) === 1), "removed hologram releases its owned skeletons");
+assert.ok([...secondSkeletons].every(skeleton => decoyDisposals.get(skeleton) === 0), "the surviving clone keeps its pose state alive");
+decoyHarness.removeDecoy(secondDecoy);
+assert.equal(decoyHarness.decoys.length, 0);
+assert.ok([...decoyDisposals.values()].every(count => count === 1), "each cloned skeleton is disposed exactly once");
 const clearMatchMethod = mainSource.slice(mainSource.indexOf("\n  disposeAfterGraphicsWarmup("), mainSource.indexOf("\n  renderMain("));
-decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
-const oldTierDecoy = decoyHarness.decoys[0];
-oldTierDecoy.mesh.traverse(child => { if (child.isMesh) child.onAfterRender(); });
-decoyHarness.renderPipeline.quality = "medium";
-decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
-const currentTierDecoy = decoyHarness.decoys[1];
-currentTierDecoy.mesh.traverse(child => { if (child.isMesh) child.onAfterRender(); });
-decoyHarness.removeDecoy(currentTierDecoy);
-decoyHarness.removeDecoy(oldTierDecoy);
-assert.ok(decoyHarness.decoyRenderAnchor === currentTierDecoy.mesh, "late offscreen old-tier expiry cannot evict the current-tier cache");
-decoyHarness.renderPipeline.quality = "high";
-decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
-const mixedTierDecoy = decoyHarness.decoys[0];
-mixedTierDecoy.mesh.getObjectByName("Fighter thruster pair").onAfterRender();
-decoyHarness.renderPipeline.quality = "medium";
-mixedTierDecoy.mesh.traverse(child => { if (child.isMesh) child.onAfterRender(); });
-assert.equal(mixedTierDecoy.mesh.userData.decoyRendered, false, "partial coverage from different render contexts cannot combine into a complete anchor");
-decoyHarness.removeDecoy(mixedTierDecoy);
-assert.ok(decoyHarness.decoyRenderAnchor === currentTierDecoy.mesh);
-decoyHarness.clearTransientNetworkCombat();
 const cleanupMethods = new Function("clearTouchActions", "disposeGameplaySamples", `return (class {${clearMatchMethod}}).prototype;`)(() => {}, () => {});
 decoyHarness.clearMatch = cleanupMethods.clearMatch;
 decoyHarness.disposeAfterGraphicsWarmup = cleanupMethods.disposeAfterGraphicsWarmup;
 Object.assign(decoyHarness, { input: { releasePointer() {} }, touch: {}, hideNetworkReconnecting() {},
   sound: { stopAll() {} }, players: [], botTargets: new Map(), networkTargets: new Map(), networkRespawnRequests: new Map() });
-decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
-const matchAnchor = decoyHarness.decoys[0]; trackDecoy(matchAnchor.mesh);
-matchAnchor.mesh.getObjectByName("Fighter thruster pair").onAfterRender();
-matchAnchor.mesh.traverse(child => { if (child.isMesh) child.onAfterRender(); });
-decoyHarness.removeDecoy(matchAnchor);
-decoyHarness.spawnDecoy(new THREE.Vector3(), decoyOwner, WEAPONS.decoy_launcher);
-trackDecoy(decoyHarness.decoys[0].mesh);
 decoyHarness.world = null;
 decoyHarness.hideMatchLoadingAfterFrame = true;
 decoyHarness.clearMatch(); decoyHarness.clearMatch();
@@ -376,8 +316,6 @@ assert.equal(decoyHarness.hideMatchLoadingAfterFrame, false, "match teardown can
 decoyHarness.hideMatchLoadingAfterFrame = true;
 decoyHarness.clearMatch(true);
 assert.equal(decoyHarness.hideMatchLoadingAfterFrame, false, "preserving reconnect identity cannot preserve a previous arena's loader completion");
-assert.equal(decoyHarness.decoyRenderAnchor, null);
-assert.ok([...decoyDisposals.values()].every(count => count === 1), "match teardown releases active and retained clones exactly once");
 const menuSource = mainSource.slice(mainSource.indexOf("\n  renderMain("), mainSource.indexOf("\n  renderSetup("));
 const menuMethod = new Function("ui", "TEXT", "menuAtmosphereMarkup", `return ({${menuSource}}).renderMain;`)({}, PLAYER_TEXT, () => "");
 const frameSource = mainSource.slice(mainSource.indexOf("\n  frame(time) {"), mainSource.indexOf("\n  updateFrameInput() {"));
@@ -423,7 +361,7 @@ updateProjectiles.call({
 }, 1 / 60);
 assert.equal(spatialQueries, 6, "112 projectiles request only the nearest six spatial audio calculations");
 assert.deepEqual(activeLoops.sort(), Array.from({ length: 6 }, (_, index) => `shot-${index}`), "the audible projectile identities are unchanged");
-assert.equal(projectileVisualUpdates, 112, "every projectile keeps its full visual update");
+assert.equal(projectileVisualUpdates, 0, "fixed-step projectile simulation leaves cosmetic batching to the once-per-render presentation pass");
 shots.forEach((shot, index) => {
   assert.ok(Math.abs(shot.mesh.position.x - index - 1 / 60) < 1e-10, "all projectile movement remains simulated");
   assert.equal(shot.age, 1 / 60);
@@ -485,7 +423,7 @@ const pipelineSource = fs.readFileSync(new URL("../src/renderPipeline.js", impor
 assert.match(mainSource, /selectNearestAudio\([\s\S]*?this\.projectiles, listener\.position, 6/, "projectile audio uses a bounded nearest-six selector");
 assert.match(mainSource, /new Worker\(new URL\("\.\/botPlanner\.worker\.js"[\s\S]*?updateBotPlanner\(dt\)/, "batched bot target planning runs off the render thread when workers are available");
 assert.doesNotMatch(mainSource, /renderer\.compileAsync/, "no unowned async compilation may recreate disposed match resources");
-assert.match(mainSource, /const rendered = this\.matchFramePending \? false : this\.renderScene\(\);[\s\S]*?hideMatchLoadingAfterFrame && rendered/, "the loading screen stays until the selected pipeline submits its first frame");
+assert.ok(/const rendered = hidden \|\| this\.matchFramePending \|\|[\s\S]*?: this\.renderScene\(active \?[\s\S]*?if \(this\.hideMatchLoadingAfterFrame && rendered\)/.test(mainSource), "hidden or pending frames cannot submit; the loading screen stays until the selected pipeline submits its first frame");
 assert.match(mainSource, /dataset\.drawCalls[\s\S]*?dataset\.geometries[\s\S]*?dataset\.longTasks[\s\S]*?dataset\.budget/, "live frame telemetry exposes draw, memory, long-task, and performance-budget health");
 const projectileUpdateStart = mainSource.indexOf("\n  updateProjectiles(dt) {");
 assert.doesNotMatch(mainSource.slice(projectileUpdateStart, mainSource.indexOf("\n  bounceProjectile(", projectileUpdateStart)), /\.filter\(|\.sort\(/, "projectile simulation avoids full-list allocation and sorting every frame");
@@ -494,7 +432,7 @@ assert.match(playerSource, /this\.desiredMove\.copy\(move\)/, "fighters reuse mo
 assert.match(worldSource, /nearbyObstacles\([\s\S]*?obstacleGrid/, "arena collisions use the spatial broad phase");
 assert.match(mainSource, /!child\.geometry\?\.userData\?\.sharedProjectile/, "shared projectile GPU buffers survive individual shot cleanup");
 assert.match(pipelineSource, /aoPass\.samples\.value = this\.options\.aoSamples/, "ambient occlusion uses the validated sample setting");
-assert.match(pipelineSource, /bloomPass\.setResolutionScale\(this\.options\.bloomScale\)/, "bloom uses the actual resolution API");
+assert.match(pipelineSource, /bloomPass\.setResolutionScale\(this\.options\.renderScale \* this\.options\.bloomScale\)/, "bloom scale composes with the scene render scale");
 assert.ok([visuals.flashOuter, visuals.flashInner, visuals.tracerOuter, visuals.tracerInner, visuals.ringOuter, visuals.ringInner, visuals.sparkLayer]
   .every((layer) => layer.isInstancedMesh && layer.matrixAutoUpdate === false), "pooled GPU effect layers keep one static object transform and one instanced draw per family");
 

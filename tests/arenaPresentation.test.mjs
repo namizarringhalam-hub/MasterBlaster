@@ -51,7 +51,7 @@ for (const level of ["high", "medium", "low", "high"]) {
   assert.equal(detail.visible, false, "hidden details do not chatter at the boundary");
   assert.equal(world.lightShafts.count, level === "low" ? 0 : level === "medium" ? 2 : 4);
   assert.equal(world.waterLightStrength.value, level === "low" ? .35 : level === "medium" ? .7 : 1);
-  assert.equal(world.atmosphere.steps.value, level === "low" ? 0 : level === "medium" ? 6 : 12, "cloud ray march is bounded by quality");
+  assert.equal(world.atmosphere.steps.value, level === "low" ? 0 : level === "medium" ? 6 : 12, "cached cloud presentation retains the selected quality state");
 }
 assert.equal(world.ground.material.colorNode, world.waterLight);
 assert.equal(world.ground.material.clearcoatNode, world.wetMask, "puddles use an opaque dielectric coating on the existing surface");
@@ -76,6 +76,7 @@ world.update(.1, []);
 assert.deepEqual(world.rotors.map(({object}) => object.rotation.toArray()), rotorPose, "reduced motion freezes decorative machinery");
 world.updatePresentation(camera, false);
 world.update(.1, []);
+world.updatePresentation(camera, false, .1);
 assert.notDeepEqual(world.rotors.map(({object}) => object.rotation.toArray()), rotorPose, "machinery resumes without affecting mover simulation");
 assert.ok(world.platforms.every(item => item.mesh.visible), "distance quality cannot remove playable decks");
 const maps = surfaceTextures("CONCRETE-QA", 28, false, "concrete");
@@ -89,14 +90,16 @@ assert.equal(world.scene.fogNode, world.previousFogNode, "match cleanup restores
 const hero = new Fighter(new THREE.Scene(), { id: "back-glow", color: 0x227799, accent: 0x55ddff }, ["blaster"], new THREE.Vector3());
 const floor = { resolve(p) { p.y = 0; return { grounded: true }; }, boostAt: () => null };
 const look = new THREE.Vector3(0, 0, 1);
-for (let frame = 0; frame < 60; frame++) hero.update(1 / 60, look, look, {}, floor);
+for (let frame = 0; frame < 60; frame++) { hero.update(1 / 60, look, look, {}, floor); hero.updatePresentation(1 / 60); }
 assert.ok(hero.backGlow > .8 && hero.backHaloMaterial.opacity > .35, "movement lights the rear silhouette");
-for (let frame = 0; frame < 150; frame++) hero.update(1 / 60, new THREE.Vector3(), look, {}, floor);
+for (let frame = 0; frame < 150; frame++) { hero.update(1 / 60, new THREE.Vector3(), look, {}, floor); hero.updatePresentation(1 / 60); }
 assert.ok(hero.backGlow < .01, "stopping smoothly dims the glow");
 hero.grounded = false; hero.velocity.y = 12;
 hero.update(.1, new THREE.Vector3(), look, {}, { resolve: () => ({ grounded: false }), boostAt: () => null });
+hero.updatePresentation(.1);
 assert.ok(hero.backGlow > .4, "vertical movement also lights the back");
 hero.alive = false; hero.deathTimer = 1.4; hero.updateDeath(.1);
+hero.updatePresentation(.1);
 assert.equal(hero.backHaloMaterial.opacity, 0);
 hero.respawn(new THREE.Vector3()); assert.equal(hero.backGlow, 0); assert.equal(hero.backVentMaterial.opacity, .12);
 assert.equal(hero.backHaloMaterial.depthWrite, false); assert.equal(hero.backHaloMaterial.depthTest, true);

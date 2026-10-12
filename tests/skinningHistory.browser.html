@@ -1,0 +1,62 @@
+<!doctype html><meta charset="utf-8"><link rel="icon" href="data:,"><title>Skinning velocity regression</title>
+<script type="module">
+import * as THREE from 'three/webgpu';
+import { mrt, output, vec4, velocity } from 'three/tsl';
+import { clone } from 'three/addons/utils/SkeletonUtils.js';
+window.skinningValidation = { done: false };
+try {
+  const forceWebGL = new URLSearchParams(location.search).has('webgl');
+  const renderer = new THREE.WebGPURenderer({ forceWebGL, antialias: false });
+  renderer.setSize(128, 128); document.body.append(renderer.domElement); await renderer.init();
+  const target = new THREE.RenderTarget(128, 128, { count: 2, type: THREE.FloatType });
+  target.textures[0].name = 'output'; target.textures[1].name = 'velocity';
+  renderer.setRenderTarget(target); renderer.setMRT(mrt({ output, velocity: vec4(velocity, 0, 1) }));
+  const scene = new THREE.Scene(), camera = new THREE.OrthographicCamera(-4, 4, 4, -4, .1, 20);
+  camera.position.z = 8; camera.updateMatrixWorld(true);
+  const group = new THREE.Group(), root = new THREE.Bone(), hinge = new THREE.Bone();
+  hinge.position.x = 1; root.add(hinge); group.add(root); scene.add(group);
+  const positions = [], indices = [], weights = [];
+  for (const [bone, center] of [[0, -1], [1, 1]]) for (const [x, y] of [[-.45,-.45],[.45,-.45],[.45,.45],[-.45,-.45],[.45,.45],[-.45,.45]]) {
+    positions.push(center+x,y,0); indices.push(bone,0,0,0); weights.push(1,0,0,0);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(indices,4));
+  geometry.setAttribute('skinWeight', new THREE.Float32BufferAttribute(weights,4));
+  const material = new THREE.MeshBasicNodeMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+  const mesh = new THREE.SkinnedMesh(geometry, material); group.add(mesh); scene.updateMatrixWorld(true);
+  const skeleton = new THREE.Skeleton([root, hinge]); mesh.bind(skeleton);
+  const hologram = clone(group); hologram.position.y = 2; scene.add(hologram);
+  const hologramMesh = hologram.children.find(child => child.isSkinnedMesh);
+  const render = () => new Promise((resolve, reject) => renderer.setAnimationLoop(() => {
+    renderer.setAnimationLoop(null);
+    try { renderer.render(scene,camera); resolve(); } catch(error) { reject(error); }
+  }));
+  await renderer.compileAsync(scene,camera); await render(); await render();
+  const full = (skin,bone) => skin.matrixWorld.clone().multiply(skin.bindMatrixInverse)
+    .multiply(new THREE.Matrix4().fromArray(skin.skeleton.boneMatrices,bone*16)).multiply(skin.bindMatrix);
+  const cases = [];
+  async function measure(name, change) {
+    const previous = [mesh,hologramMesh].map(skin => [0,1].map(bone => full(skin,bone)));
+    change(); await render();
+    const data = await renderer.readRenderTargetPixelsAsync(target,0,0,128,128,1);
+    for (const [skinIndex,skin] of [mesh,hologramMesh].entries()) for (const bone of [0,1]) {
+      const current = full(skin,bone), center = new THREE.Vector3(bone ? 1.2 : -1, .12, 0).applyMatrix4(current).project(camera);
+      const x = Math.floor((center.x+1)*64), y = Math.floor((1-center.y)*64);
+      const readY = renderer.backend.isWebGPUBackend ? y : 127-y;
+      const worldPixel = new THREE.Vector3((x+.5)/64-1,1-(y+.5)/64,center.z).unproject(camera);
+      const before = worldPixel.clone().applyMatrix4(current.clone().invert()).applyMatrix4(previous[skinIndex][bone]).project(camera);
+      const now = worldPixel.clone().project(camera), expected = [now.x-before.x,now.y-before.y];
+      const offset = (readY*128+x)*4, actual = [data[offset],data[offset+1]];
+      const error = Math.max(...actual.map((v,i)=>Math.abs(v-expected[i])));
+      cases.push({ name, skin: skinIndex ? 'hologram':'fighter', bone, expected, actual, error });
+      if (!(data[offset+3] > .9 && error < .003)) throw Error('Velocity readback mismatch: '+JSON.stringify(cases.at(-1)));
+    }
+  }
+  await measure('root translation',()=>{group.position.x+=1;hologram.position.x-=.5;});
+  await measure('root and hinge rotation',()=>{group.rotation.z=.2;hinge.rotation.z=.5;hologram.rotation.z=-.15;hologram.children[0].children[0].rotation.z=-.35;});
+  await measure('stationary next frame',()=>{});
+  window.skinningValidation = { done:true, webgpu:renderer.backend.isWebGPUBackend===true, cases };
+  target.dispose(); renderer.dispose();
+} catch(error) { window.skinningValidation = { done:true,error:error.stack }; console.error(error); }
+</script>

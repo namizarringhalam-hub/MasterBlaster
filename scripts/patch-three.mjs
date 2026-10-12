@@ -56,16 +56,80 @@ export function patchObserverCache(source) {
   return source.replace(matrixOriginal, matrixReplacement);
 }
 
+// AttachedBindMode refreshes bindMatrixInverse when the mesh moves. The prior
+// bone palette must be paired with the prior mesh bind transforms, not today's
+// inverse (which otherwise counts root motion twice). Keep this per mesh:
+// material-consolidated skins share skeletons, but can have distinct bindings.
+export const skinningOriginal = "\treturn getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );";
+export const skinningState = `const _previousSkinningMatrices = new WeakMap(); // Master Blaster: previous bind transforms
+
+function getPreviousSkinningMatrices( mesh, frameId ) {
+
+	let state = _previousSkinningMatrices.get( mesh );
+	if ( state === undefined ) {
+		state = {
+			frameId,
+			currentBindMatrix: mesh.bindMatrix.clone(),
+			currentBindMatrixInverse: mesh.bindMatrixInverse.clone(),
+			previousBindMatrix: mesh.bindMatrix.clone(),
+			previousBindMatrixInverse: mesh.bindMatrixInverse.clone()
+		};
+		_previousSkinningMatrices.set( mesh, state );
+	} else if ( state.frameId !== frameId ) {
+		state.previousBindMatrix.copy( state.currentBindMatrix );
+		state.previousBindMatrixInverse.copy( state.currentBindMatrixInverse );
+		state.currentBindMatrix.copy( mesh.bindMatrix );
+		state.currentBindMatrixInverse.copy( mesh.bindMatrixInverse );
+		state.frameId = frameId;
+	}
+	return state;
+
+}
+
+`;
+export const skinningReplacement = `	// Shader programs can be reused by meshes with different skeletons.
+	const previousBones = buffer( data.previousBoneMatrices, 'mat4', skeleton.bones.length ).onObjectUpdate( ( { object } ) => {
+		const drawSkeleton = object?.isSkinnedMesh ? object.skeleton : skinnedMesh.skeleton;
+		let drawData = _previousBoneMatricesData.get( drawSkeleton );
+		if ( drawData === undefined ) {
+			const previousBoneMatrices = new Float32Array( drawSkeleton.boneMatrices );
+			drawData = { previousBoneMatrices, node: buffer( previousBoneMatrices, 'mat4', drawSkeleton.bones.length ) };
+			_previousBoneMatricesData.set( drawSkeleton, drawData );
+		}
+		return drawData.previousBoneMatrices;
+	} );
+	const previousBind = uniform( 'mat4' ).onObjectUpdate( ( { object, frameId } ) =>
+		getPreviousSkinningMatrices( object?.isSkinnedMesh ? object : skinnedMesh, frameId ).previousBindMatrix );
+	const previousInverse = uniform( 'mat4' ).onObjectUpdate( ( { object, frameId } ) =>
+		getPreviousSkinningMatrices( object?.isSkinnedMesh ? object : skinnedMesh, frameId ).previousBindMatrixInverse );
+	return getSkinnedPosition( previousBones, positionPrevious, previousBind, previousInverse, skinIndexNode, skinWeightNode );`;
+export function patchSkinningHistory(source) {
+  if (source.includes(skinningReplacement)) {
+    assert.equal(source.split(skinningReplacement).length, 2, "duplicate Three skinning patch");
+    assert.equal(source.split(skinningState).length, 2, "missing/duplicate Three skinning state");
+    assert.ok(!source.includes(skinningOriginal), "mixed patched/unpatched Three skinning");
+    return source;
+  }
+  assert.equal(source.split(skinningOriginal).length, 2, "Three skinning source changed; revalidate previous bind transforms");
+  const declaration = "function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode ) {";
+  assert.equal(source.split(declaration).length, 2, "Three skinning declaration changed");
+  assert.ok(!source.includes(skinningState), "mixed Three skinning state");
+  return source.replace(declaration, skinningState + declaration).replace(skinningOriginal, skinningReplacement);
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const root = new URL("../node_modules/three/", import.meta.url);
   assert.equal(JSON.parse(readFileSync(new URL("package.json", root))).version, "0.185.1", "Three version changed; revalidate/remove the pinned corrections");
   // Validate every target before mechanically rewriting any installed file.
-  const patches = ["src/renderers/common/Geometries.js", "src/materials/nodes/manager/NodeMaterialObserver.js", "build/three.webgpu.js", "build/three.webgpu.nodes.js"].map(path => {
+  const patches = ["src/renderers/common/Geometries.js", "src/materials/nodes/manager/NodeMaterialObserver.js", "src/nodes/accessors/Skinning.js", "build/three.webgpu.js", "build/three.webgpu.nodes.js"].map(path => {
     const url = new URL(path, root), source = readFileSync(url, "utf8");
-    let patched = path.includes("NodeMaterialObserver") ? source : patchGeometryDisposal(source);
-    if (!path.includes("Geometries")) patched = patchObserverCache(patched);
+    const bundled = path.startsWith("build/");
+    let patched = source;
+    if (bundled || path.includes("Geometries")) patched = patchGeometryDisposal(patched);
+    if (bundled || path.includes("NodeMaterialObserver")) patched = patchObserverCache(patched);
+    if (bundled || path.includes("Skinning")) patched = patchSkinningHistory(patched);
     return { url, source, patched };
   });
   for (const { url, source, patched } of patches) if (source !== patched) writeFileSync(url, patched);
-  console.log("Three 0.185.1 geometry cleanup and observer cache corrections verified.");
+  console.log("Three 0.185.1 geometry cleanup, observer cache and skinning history corrections verified.");
 }

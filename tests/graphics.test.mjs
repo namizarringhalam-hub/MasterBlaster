@@ -1,22 +1,11 @@
 import assert from "node:assert/strict";
-import "./wallImpactReview.test.mjs";
-import "./structuralDustReview.test.mjs";
-import "./structuralPools.test.mjs";
-import "./projectileContact.test.mjs";
-import "./blasterRing.test.mjs";
-import "./blasterSpark.test.mjs";
-import "./blasterSurface.test.mjs";
 import * as THREE from "three/webgpu";
 import { getCurrentStack, getNormalFromDepth, materialOpacity, normalView, normalViewGeometry, positionViewDirection, setCurrentStack, stack, time as shaderTime, uniform, vec2, vec4 } from "three/tsl";
-import NodeMaterialObserver from "../node_modules/three/src/materials/nodes/manager/NodeMaterialObserver.js";
 import WebGPUPipelineUtils from "../node_modules/three/src/renderers/webgpu/utils/WebGPUPipelineUtils.js";
 import { ArenaWorld, structuralPanelGeometry, structuralRouteGeometry } from "../src/world.js";
 import { Fighter } from "../src/player.js";
 import { createMechaRig } from "../src/mecha.js";
-import "./mecha.test.mjs";
-import "./motionBlur.test.mjs";
-import "./graphicsSettings.test.mjs";
-import { graphicsProfile, swapStolenWeapon, WEAPONS } from "../src/gameData.js";
+import { graphicsProfile, swapStolenWeapon, WEAPONS, weaponFireMode } from "../src/gameData.js";
 import { CombatVisuals } from "../src/combatVisuals.js";
 import { NeonRenderPipeline, recoverInvalidAONormals } from "../src/renderPipeline.js";
 import { SoftParticleDepth } from "../src/softParticles.js";
@@ -29,55 +18,90 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { weaponUsesAmmo } from "../src/gameData.js";
 import { weaponPresentation } from "../src/weaponPresentation.js";
+import { createGrappleVisual, disposeGrappleVisual } from "../src/grappleRope.js";
 
 const playerMergeSource = readFileSync(new URL("../src/player.js", import.meta.url), "utf8");
 
+function sampledSkinnedBoneFloor(root, boneNames, budget = 500) {
+  root.updateMatrixWorld(true);
+  const wanted = new Set(boneNames), vertex = new THREE.Vector3();
+  let count = 0, minY = Infinity;
+  root.traverse(mesh => {
+    if (!mesh.isSkinnedMesh) return;
+    const indices = mesh.geometry.attributes.skinIndex, weights = mesh.geometry.attributes.skinWeight;
+    const positions = mesh.geometry.attributes.position;
+    const targets = mesh.skeleton.bones.flatMap((bone, index) => wanted.has(bone.name) ? [index] : []);
+    if (!targets.length) return;
+    const step = Math.max(1, Math.floor(positions.count / budget));
+    for (let i = 0; i < positions.count; i += step) {
+      let legVertex = false;
+      for (let slot = 0; slot < 4; slot++) {
+        if (weights.getComponent(i, slot) > 0 && targets.includes(indices.getComponent(i, slot))) { legVertex = true; break; }
+      }
+      if (!legVertex) continue;
+      mesh.getVertexPosition(i, vertex).applyMatrix4(mesh.matrixWorld);
+      assert.ok(Number.isFinite(vertex.x) && Number.isFinite(vertex.y) && Number.isFinite(vertex.z), "sampled leg skin vertex is finite");
+      minY = Math.min(minY, vertex.y); count++;
+    }
+  });
+  return { minY, count };
+}
+
 {
   const effects = new CombatVisuals(new THREE.Scene());
-  for (const weapon of Object.values(WEAPONS)) {
-    const mesh = effects.createProjectile({ accent: 0x6ff6ff }, weapon, .11);
-    for (const trail of mesh.userData.combatVisual?.trailParts || []) {
-      assert.equal(trail.material.vertexColors, weapon.id === "blaster", `${weapon.id} trail shading isolation`);
-      assert.equal(!!trail.geometry.getAttribute("color"), weapon.id === "blaster", `${weapon.id} shared geometry isolation`);
-      assert.ok(Math.abs(trail.rotation.x - (weapon.id === "blaster" ? -Math.PI / 2 : Math.PI / 2)) < 1e-12,
+  for (const weapon of Object.values(WEAPONS).filter(weapon =>
+    ["projectile", "spread", "mine"].includes(weaponFireMode(weapon)) && weapon.presentationPayload !== "fireball")) {
+    const template = effects.projectileBatches.templates.get(`${weapon.id}:0`);
+    assert.ok(template, `${weapon.id} has a prepared projectile family`);
+    for (const layer of template.layers.filter(layer => layer.trail)) {
+      assert.equal(layer.mesh.material.vertexColors, weapon.id === "blaster", `${weapon.id} trail shading isolation`);
+      assert.equal(!!layer.mesh.geometry.getAttribute("color"), weapon.id === "blaster", `${weapon.id} shared geometry isolation`);
+      assert.ok(Math.abs(layer.baseRotation.x - (weapon.id === "blaster" ? -Math.PI / 2 : Math.PI / 2)) < 1e-12,
         `${weapon.id} trail orientation: only Blaster should taper toward the rear`);
     }
-    effects.removeProjectile({ mesh }); mesh.traverse(child => child.material?.dispose());
   }
   effects.dispose();
 }
 {
   const scene = new THREE.Scene(), effects = new CombatVisuals(scene);
-  const removeSource = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
-  const removeObject = new Function(`return function(object) {${removeSource.split("  removeObject(object) {")[1].split(/\r?\n  }\r?\n}/)[0]}}`)();
-  const disposalSource = removeSource.slice(removeSource.indexOf("\n  disposeAfterGraphicsWarmup("), removeSource.indexOf("\n  clearMatch("));
-  const disposeAfterGraphicsWarmup = new Function(`return ({${disposalSource}}).disposeAfterGraphicsWarmup;`)();
-  let geometry, colorAttribute, geometryDisposals = 0;
-  const materials = new Set();
+  const trail = effects.projectileBatches.templates.get("blaster:0").layers.find(layer => layer.trail);
+  assert.ok(trail, "Blaster's prepared family retains its tapered trail layer");
+  const geometry = trail.mesh.geometry, material = trail.mesh.material, colors = geometry.getAttribute("color"), uv = geometry.getAttribute("uv");
+  let geometryDisposals = 0, materialDisposals = 0;
+  geometry.addEventListener("dispose", () => geometryDisposals++);
+  material.addEventListener("dispose", () => materialDisposals++);
+  assert.equal(trail.ownerTint, true, "trail color is supplied per projectile instance");
+  assert.equal(material.vertexColors, true);
+  assert.equal(colors.array.byteLength, 168);
+  for (let vertex = 0; vertex < uv.count; vertex++)
+    for (const channel of ["getX", "getY", "getZ"]) assert.equal(colors[channel](vertex), 1 - uv.getY(vertex));
+  const p = geometry.parameters, original = new THREE.ConeGeometry(p.radius, p.height, p.radialSegments, p.heightSegments, p.openEnded, p.thetaStart, p.thetaLength);
+  for (const name of ["position", "normal", "uv"]) assert.deepEqual(geometry.getAttribute(name).array, original.getAttribute(name).array);
+  assert.deepEqual(geometry.index.array, original.index.array); original.dispose();
+  const anchors = [];
   for (let i = 0; i < 32; i++) {
-    const mesh = effects.createProjectile({ accent: i % 2 ? 0xff3377 : 0x6ff6ff }, WEAPONS.blaster, .11);
-    scene.add(mesh);
-    const trails = mesh.userData.combatVisual.trailParts;
-    assert.equal(trails.length, 1);
-    const trail = trails[0], uv = trail.geometry.getAttribute("uv"), colors = trail.geometry.getAttribute("color");
-    if (!geometry) {
-      geometry = trail.geometry; colorAttribute = colors;
-      geometry.addEventListener("dispose", () => geometryDisposals++);
-      const p = geometry.parameters, original = new THREE.ConeGeometry(p.radius, p.height, p.radialSegments, p.heightSegments, p.openEnded, p.thetaStart, p.thetaLength);
-      for (const name of ["position", "normal", "uv"]) assert.deepEqual(geometry.getAttribute(name).array, original.getAttribute(name).array);
-      assert.deepEqual(geometry.index.array, original.index.array); original.dispose();
-    }
-    assert.equal(trail.geometry, geometry); assert.equal(colors, colorAttribute);
-    assert.equal(colors.array.byteLength, 168);
-    for (let v = 0; v < uv.count; v++) for (const channel of ["getX", "getY", "getZ"]) assert.equal(colors[channel](v), 1 - uv.getY(v));
-    assert.equal(materials.has(trail.material), false); materials.add(trail.material);
-    assert.ok(trail.material.color.equals(new THREE.Color(i % 2 ? 0xff3377 : 0x6ff6ff).multiplyScalar(2.2)));
-    let materialDisposals = 0; trail.material.addEventListener("dispose", () => materialDisposals++);
-    removeObject.call({ scene, disposeAfterGraphicsWarmup }, mesh);
-    assert.equal(materialDisposals, 1); assert.equal(geometryDisposals, 0);
-    assert.equal(mesh.parent, null);
+    const accent = i % 2 ? 0xff3377 : 0x6ff6ff;
+    const anchor = effects.createProjectile({ accent }, WEAPONS.blaster, .11);
+    assert.equal(anchor.children.length, 0, "shots are transform-only anchors, without individual render meshes");
+    anchor.position.set(i, 2, 3);
+    anchors.push({ anchor, accent });
   }
+  effects.projectileBatches.sync();
+  assert.equal(trail.mesh.count, 32);
+  assert.ok(trail.mesh.visible, "the trail layer is submitted while shots are active");
+  for (let i = 0; i < anchors.length; i++) {
+    const expected = new THREE.Color(anchors[i].accent);
+    assert.ok(Math.abs(trail.mesh.instanceColor.getX(i) - expected.r) < 1e-6);
+    assert.ok(Math.abs(trail.mesh.instanceColor.getY(i) - expected.g) < 1e-6);
+    assert.ok(Math.abs(trail.mesh.instanceColor.getZ(i) - expected.b) < 1e-6);
+  }
+  for (const { anchor } of anchors) effects.removeProjectile({ mesh: anchor });
+  effects.projectileBatches.sync();
+  assert.equal(trail.mesh.count, 0);
+  assert.equal(trail.mesh.visible, false, "empty family layers stay out of the render list");
+  assert.equal(geometryDisposals, 0); assert.equal(materialDisposals, 0, "shot removal retains the warmed family resources");
   effects.dispose();
+  assert.equal(geometryDisposals, 1); assert.equal(materialDisposals, 1, "match teardown releases the family resources exactly once");
 }
 {
   const scene = new THREE.Scene(), effects = new CombatVisuals(scene);
@@ -102,14 +126,15 @@ const playerMergeSource = readFileSync(new URL("../src/player.js", import.meta.u
 for (const action of ["death", "respawn", "dispose", "model", "expiry", "reuse", "quality", "effects-dispose"]) {
   const scene = new THREE.Scene(), effects = new CombatVisuals(scene);
   const hero = new Fighter(scene, { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, ["blaster", "rocket_launcher"], new THREE.Vector3());
+  if (action === "quality") effects.combatLightCursor = 1;
   effects.muzzle(hero, hero.weapon);
-  const flash = effects.flashes[0], tracer = effects.tracers[0], light = effects.combatLights[0];
+  const flash = effects.flashes[0], tracer = effects.tracers[0], light = effects.combatLights[action === "quality" ? 1 : 0];
   const held = flash.position.clone(), originalLife = flash.life;
   if (action === "death") hero.takeHit(100);
   if (action === "respawn") hero.respawn(new THREE.Vector3(100, 0, 0));
   if (action === "dispose") hero.dispose();
   if (action === "model") hero.updateWeaponModel();
-  if (action === "quality") effects.setGraphicsProfile({ combatQuality: "low", combatLights: 0 });
+  if (action === "quality") effects.setGraphicsProfile(graphicsProfile("low"));
   if (action === "effects-dispose") effects.dispose();
   if (action === "reuse") {
     effects.cursors.tracer = 0; effects.combatLightCursor = 0;
@@ -125,7 +150,7 @@ for (const action of ["death", "respawn", "dispose", "model", "expiry", "reuse",
     if (action !== "expiry") assert.equal(flash.life, originalLife, "detachment preserves the existing fade");
   }
   if (action === "expiry") assert.ok(light.intensity > 0, "detach the pulse without deleting its damped tail");
-  if (action === "quality") assert.equal(light.muzzleOwner, null);
+  if (action === "quality") assert.ok(light.muzzleOwner === null, "lowering combat quality detaches an active light outside the new light limit");
   if (action === "reuse") { assert.deepEqual(tracer.start.toArray(), [2, 3, 4]); assert.deepEqual(light.position.toArray(), [9, 8, 7]); }
   if (action !== "dispose") hero.dispose();
   if (action !== "effects-dispose") effects.dispose();
@@ -179,15 +204,25 @@ for (const reducedMotion of [false, true]) {
       hero.rig.position.y = -.08; hero.rig.rotation.x = .13; hero.weaponGroup.rotation.x = pitch; hero.weaponGroup.position.z = .15;
       const logical = hero.muzzlePoint().toArray(), projectile = hero.forwardPoint(.08).toArray();
       assert.ok(hero.visualMuzzlePoint(target) === target);
-      const expected = id === "blaster" ? new THREE.Vector3(.05, .06, .994).applyMatrix4(hero.weaponGroup.matrixWorld) : hero.muzzlePoint();
+      const expected = hero.visualMuzzleLocal.clone().applyMatrix4(hero.weaponGroup.matrixWorld);
       assert.ok(target.distanceTo(expected) < 1e-12);
       assert.deepEqual(hero.muzzlePoint().toArray(), logical); assert.deepEqual(hero.forwardPoint(.08).toArray(), projectile);
     }
+    const logical = hero.muzzlePoint().clone(), alpha = .37;
+    const positionA = new THREE.Vector3(.12, 1.48, .1), positionB = new THREE.Vector3(.41, 1.73, .52);
+    const rotationA = new THREE.Quaternion().setFromEuler(new THREE.Euler(-.22, .1, -.08));
+    const rotationB = new THREE.Quaternion().setFromEuler(new THREE.Euler(.31, -.26, .17));
+    hero.weaponGroup.position.lerpVectors(positionA, positionB, alpha);
+    hero.weaponGroup.quaternion.copy(rotationA).slerp(rotationB, alpha);
+    hero.group.updateMatrixWorld(true);
+    assert.ok(hero.visualMuzzlePoint(target).distanceTo(hero.visualMuzzleLocal.clone().applyMatrix4(hero.weaponGroup.matrixWorld)) < 1e-12,
+      `${id}: visual muzzle follows interpolated weapon-group transforms`);
+    assert.ok(hero.muzzlePoint().distanceTo(logical) < 1e-12, `${id}: interpolated presentation never moves the logical muzzle`);
     if (id !== "blaster") {
       const index = effects.cursors.flash % effects.flashes.length;
       effects.muzzle(hero, hero.weapon);
-      assert.equal(effects.flashes[index].muzzleOwner, null);
-      assert.ok(effects.flashes[index].position.distanceTo(hero.muzzlePoint()) < 1e-12);
+      assert.equal(effects.flashes[index].muzzleOwner, hero);
+      assert.ok(effects.flashes[index].position.distanceTo(hero.visualMuzzlePoint(target)) < 1e-12);
     }
     if (id === "blaster") {
       effects.muzzle(hero, hero.weapon); const flash = effects.flashes[0], tracer = effects.tracers[0], light = effects.combatLights[0];
@@ -203,8 +238,9 @@ for (const reducedMotion of [false, true]) {
   cached.ammo.blaster = 2; cached.health = 73;
   for (const slot of [1, 0, 1, 0]) {
     cached.switchSlot(slot); assert.ok(cached.visualMuzzlePoint(target) === target);
-    const expected = slot ? cached.muzzlePoint() : new THREE.Vector3(.05, .06, .994).applyMatrix4(cached.weaponGroup.matrixWorld);
+    const expected = cached.visualMuzzleLocal.clone().applyMatrix4(cached.weaponGroup.matrixWorld);
     assert.ok(target.distanceTo(expected) < 1e-12); assert.ok(cached.weaponModels.get("blaster") === blasterModel);
+    if (slot === 0) assert.deepEqual(cached.visualMuzzleLocal.toArray(), blasterModel.state.visualMuzzleLocal.toArray());
     assert.equal(cached.weaponModels.size, 2); assert.equal(cached.ammo.blaster, 2); assert.equal(cached.health, 73);
   }
   cached.dispose();
@@ -215,9 +251,11 @@ for (const reducedMotion of [false, true]) {
   hero.grounded = true; hero.landTimer = .22; hero.landStrength = 1;
   const floor = { surfaceHeightAt: () => 15, resolve: position => { position.y = 15; return { grounded: true }; }, boostAt: () => null };
   for (let frame = 0; frame < 14; frame++) {
-    hero.update(1 / 60, new THREE.Vector3(), new THREE.Vector3(0, 0, -1), {}, floor); hero.group.updateMatrixWorld(true);
-    for (const leg of [hero.leftLeg, hero.rightLeg]) assert.ok(new THREE.Box3().setFromObject(leg, true).min.y >= 15,
-      "hard-landing visual legs must not penetrate the physical floor");
+    hero.update(1 / 60, new THREE.Vector3(), new THREE.Vector3(0, 0, -1), {}, floor);
+    hero.updatePresentation(1 / 60); hero.group.updateMatrixWorld(true);
+    const legs = sampledSkinnedBoneFloor(hero.rig, ["Mecha bone leftLeg", "Mecha bone leftKnee", "Mecha bone leftAnkle", "Mecha bone rightLeg", "Mecha bone rightKnee", "Mecha bone rightAnkle"]);
+    assert.ok(legs.count > 0 && Number.isFinite(legs.minY) && legs.minY >= 15,
+      `hard-landing leg skin vertices must stay finite and above the physical floor; count=${legs.count}, minY=${legs.minY}`);
   }
   hero.dispose();
 }
@@ -236,12 +274,13 @@ for (const reducedMotion of [false, true]) {
     for (let step = 60; step < 180; step++) {
       clock = 1000 + step * 1000 / 60;
       if (landingFrame === 6) p.hitTimer = .3;
-      p.update(1 / 60, still, aim, {}, world); p.group.updateMatrixWorld(true);
+      p.update(1 / 60, still, aim, {}, world); p.updatePresentation(1 / 60); p.group.updateMatrixWorld(true);
       if (landingFrame < 0 && p.landTimer > 0) landingFrame = 0;
       if (landingFrame === 13) {
         checked = true;
-        for (const leg of [p.leftLeg, p.rightLeg]) assert.ok(new THREE.Box3().setFromObject(leg, true).min.y >= 15,
-          "advancing-clock hit frame 13 must not introduce the rejected pitch trial's floor crossing");
+        const legs = sampledSkinnedBoneFloor(p.rig, ["Mecha bone leftLeg", "Mecha bone leftKnee", "Mecha bone leftAnkle", "Mecha bone rightLeg", "Mecha bone rightKnee", "Mecha bone rightAnkle"]);
+        assert.ok(legs.count > 0 && Number.isFinite(legs.minY) && legs.minY >= 15,
+          "advancing-clock hit frame 13 must keep leg skin vertices above floor without a pitch-trial crossing");
       }
       if (landingFrame >= 0) landingFrame++;
     }
@@ -465,12 +504,14 @@ for (const weaponId of ["blaster", "rocket_launcher", "energy_sword"]) for (cons
   hero.dispose();
 }
 for (const height of [0, Math.sqrt(3), -Math.sqrt(3)]) {
-  const aims = [], hero = { velocity: new THREE.Vector3(2, 3, 4), group: { updateMatrixWorld() {} },
-    update(dt, move, aim) { assert.equal(dt, 1 / 60); assert.equal(move.length(), 0); aims.push(aim.clone()); } };
+  const aims = []; let presentationFrames = 0;
+  const hero = { velocity: new THREE.Vector3(2, 3, 4), group: { updateMatrixWorld() {} },
+    update(dt, move, aim) { assert.equal(dt, 1 / 60); assert.equal(move.length(), 0); aims.push(aim.clone()); },
+    updatePresentation(dt) { assert.equal(dt, 1 / 60); presentationFrames++; } };
   let clears = 0;
   new Function("THREE", "game", "select", `${settleReviewSource}; settlePose();`)(THREE,
     { players: [hero], world: {}, clearTransientNetworkCombat() { clears++; } }, name => ({ value: name === "aim-height" ? String(height) : "aim" }));
-  assert.equal(clears, 1); assert.equal(aims.length, 60); assert.equal(hero.velocity.length(), 0);
+  assert.equal(clears, 1); assert.equal(aims.length, 60); assert.equal(presentationFrames, 60); assert.equal(hero.velocity.length(), 0);
   assert.ok(aims.every(aim => Math.abs(aim.length() - 1) < 1e-12 && Math.abs(aim.y - height / Math.hypot(height, 1)) < 1e-12 && aim.z < 0));
 }
 // Execute the exact capture block: later frame counters must not alter evidence.
@@ -532,35 +573,37 @@ const clockLanding = new Function(`${landingDropSource}; return withLandingClock
   fighter.leftLeg.rotation.z = .025; fighter.rightLeg.rotation.z = -.025;
   const standing = landingReference(fighter);
   fighter.group.updateMatrixWorld(true);
-  const feet = () => [fighter.leftLeg, fighter.rightLeg].map(leg => new THREE.Box3().setFromObject(leg, true).min.y);
-  const referenceFeet = feet();
+  const lowestRigPoint = () => { fighter.group.updateMatrixWorld(true); return new THREE.Box3().setFromObject(fighter.rig, true).min.y; };
+  const standingFloor = lowestRigPoint();
   fighter.rig.scale.set(1.18, .79, 1.18); fighter.rig.rotation.x = .08;
-  fighter.leftLeg.rotation.x = .65; fighter.rightLeg.rotation.x = .6; fighter.group.updateMatrixWorld(true);
-  const original = landingReference(fighter), originalFeet = feet(), position = fighter.position.toArray(), muzzle = fighter.muzzlePoint().toArray();
+  fighter.leftLeg.rotation.x = .65; fighter.rightLeg.rotation.x = .6;
+  const original = landingReference(fighter), originalFloor = lowestRigPoint(), position = fighter.position.toArray(), muzzle = fighter.muzzlePoint().toArray();
   for (const fail of [false, true]) {
     const capture = async offset => {
-      const planted = feet();
-      assert.ok(offset <= 0);
-      assert.ok(Math.abs(Math.min(...planted) - Math.min(...referenceFeet, ...originalFeet)) < 1e-12);
-      for (let i = 0; i < 2; i++) assert.ok(Math.abs(planted[i] - originalFeet[i] - offset) < 1e-12);
+      const planted = lowestRigPoint();
+      assert.ok(Number.isFinite(offset) && offset <= 0, `landing correction stays finite and never raises the rig (${offset})`);
+      assert.ok(Math.abs(planted - Math.min(standingFloor, originalFloor)) < 1e-12);
+      assert.ok(Math.abs(planted - originalFloor - offset) < 1e-12);
       assert.deepEqual(fighter.position.toArray(), position); assert.deepEqual(fighter.muzzlePoint().toArray(), muzzle);
       if (fail) throw new Error("foot contact interrupted");
     };
     if (fail) await assert.rejects(plantLanding(fighter, standing, capture), /foot contact interrupted/);
     else await plantLanding(fighter, standing, capture);
-    assert.deepEqual(landingReference(fighter), original); assert.equal(fighter.rig.position.y, .012); assert.deepEqual(feet(), originalFeet);
+    assert.deepEqual(landingReference(fighter), original); assert.equal(fighter.rig.position.y, .012); assert.equal(lowestRigPoint(), originalFloor);
   }
   fighter.grounded = false;
-  await plantLanding(fighter, standing, offset => { assert.equal(offset, 0); assert.deepEqual(feet(), originalFeet); });
+  await plantLanding(fighter, standing, offset => { assert.equal(offset, 0); assert.equal(lowestRigPoint(), originalFloor); });
   fighter.dispose();
 }
 const makeTrailEdgeMaterials = new Function("THREE", "materialOpacity", "normalViewGeometry", "positionViewDirection", `${landingDropSource}; return makeTrailEdgeMaterials;`)(THREE, materialOpacity, normalViewGeometry, positionViewDirection);
 const fadeTrail = new Function(`${landingDropSource}; return withTrailEdgeMaterials;`)();
 {
-  const effects = new CombatVisuals(new THREE.Scene()), mesh = effects.createProjectile({ accent: 0xff3388 }, WEAPONS.blaster, .11);
-  const entries = makeTrailEdgeMaterials({ mesh }); assert.equal(entries.length, 1);
+  const effects = new CombatVisuals(new THREE.Scene());
+  const trailMesh = effects.projectileBatches.templates.get("blaster:0").layers.find(layer => layer.trail).mesh;
+  const entries = makeTrailEdgeMaterials({ mesh: trailMesh }); assert.equal(entries.length, 1);
   const { trail, control, trial } = entries[0], geometry = trail.geometry, material = trail.material;
-  assert.equal(control.opacityNode, null); assert.ok(trial.opacityNode?.isNode);
+  assert.ok(control.opacityNode?.isNode, "the shared batch trail keeps per-projectile alpha");
+  assert.ok(trial.opacityNode?.isNode); assert.notEqual(trial.opacityNode, control.opacityNode, "the edge trial adds its view-dependent factor");
   for (const candidate of [control, trial]) {
     for (const field of ["transparent", "blending", "depthWrite", "toneMapped", "vertexColors", "side"]) assert.equal(candidate[field], material[field]);
     assert.ok(candidate.color.equals(material.color));
@@ -575,7 +618,7 @@ const fadeTrail = new Function(`${landingDropSource}; return withTrailEdgeMateri
     else await fadeTrail(entries, mode, capture);
     assert.equal(trail.material, material); assert.equal(trail.geometry, geometry);
   }
-  control.dispose(); trial.dispose(); mesh.traverse(child => child.material?.dispose()); effects.dispose();
+  control.dispose(); trial.dispose(); effects.dispose();
 }
 const freezeShaderTime = new Function("shaderTime", `${landingDropSource}; return withFrozenShaderTime;`)(shaderTime);
 for (const fail of [false, true]) {
@@ -593,8 +636,9 @@ for (const fail of [false, true]) {
   assert.equal(shaderTime.value, 100, "ordinary shader time must resume after comparison");
 }
 {
-  const effects = new CombatVisuals(new THREE.Scene()), mesh = effects.createProjectile({ accent: 0x6ff6ff }, WEAPONS.blaster, .11);
-  const entries = makeTrailShading({ mesh }); assert.equal(entries.length, 1);
+  const effects = new CombatVisuals(new THREE.Scene());
+  const trailMesh = effects.projectileBatches.templates.get("blaster:0").layers.find(layer => layer.trail).mesh;
+  const entries = makeTrailShading({ mesh: trailMesh }); assert.equal(entries.length, 1);
   const entry = entries[0], geometry = entry.trail.geometry, material = entry.trail.material;
   for (const candidate of [entry.white, entry.gradient]) {
     for (const attribute of ["position", "normal", "uv"]) assert.deepEqual(candidate.getAttribute(attribute).array, geometry.getAttribute(attribute).array);
@@ -616,29 +660,39 @@ for (const fail of [false, true]) {
     assert.ok(entry.trail.geometry === geometry && entry.trail.material === material);
   }
   for (const asset of [entry.white, entry.gradient, entry.material]) asset.dispose();
-  mesh.traverse(child => child.material?.dispose()); effects.dispose();
+  effects.dispose();
 }
 {
   const effects = new CombatVisuals(new THREE.Scene());
   const mesh = effects.createProjectile({ accent: 0x6ff6ff }, WEAPONS.blaster, .11);
-  const shot = { mesh, velocity: new THREE.Vector3(0, 0, -30) };
-  effects.updateProjectile(shot, 1 / 60); mesh.updateMatrixWorld(true);
-  const trails = mesh.userData.combatVisual.trailParts;
+  const layer = mesh.userData.combatVisual.template.layers.find(layer => layer.trail);
+  const shot = { mesh, velocity: new THREE.Vector3(0, 0, -30), weapon: WEAPONS.blaster };
+  effects.updateProjectile(shot, 1 / 60); effects.projectileBatches.sync(); mesh.updateMatrixWorld(true);
+  const trails = [layer];
   assert.equal(trails.length, 1);
-  const before = trails.map(trail => ({ rotationX: trail.rotation.x, quaternion: trail.quaternion.toArray(), matrix: trail.matrixWorld.toArray(), position: trail.position.toArray(), scale: trail.scale.toArray(), geometry: trail.geometry, material: trail.material }));
+  const before = trails.map(trail => {
+    const instance = new THREE.Matrix4(); trail.mesh.getMatrixAt(0, instance);
+    return { rotationX: trail.baseRotation.x, quaternion: trail.baseRotation.toArray(), instance: instance.toArray(), position: trail.mesh.position.toArray(), scale: trail.mesh.scale.toArray(), geometry: trail.mesh.geometry, material: trail.mesh.material };
+  });
   for (const fail of [false, true]) {
     const capture = () => {
       trails.forEach((trail, i) => {
-        assert.ok(Math.abs(trail.rotation.x + before[i].rotationX) < 1e-12);
-        assert.deepEqual(trail.position.toArray(), before[i].position); assert.deepEqual(trail.scale.toArray(), before[i].scale);
-        assert.ok(trail.geometry === before[i].geometry && trail.material === before[i].material);
+        assert.ok(Math.abs(trail.baseRotation.x + before[i].rotationX) < 1e-12);
+        const reversed = new THREE.Matrix4(); trail.mesh.getMatrixAt(0, reversed);
+        assert.ok(!reversed.equals(new THREE.Matrix4().fromArray(before[i].instance)), "reversal changes the submitted instance transform");
+        assert.deepEqual(trail.mesh.position.toArray(), before[i].position); assert.deepEqual(trail.mesh.scale.toArray(), before[i].scale);
+        assert.ok(trail.mesh.geometry === before[i].geometry && trail.mesh.material === before[i].material);
       });
       if (fail) throw new Error("trail capture interrupted");
     };
-    if (fail) await assert.rejects(reverseTrail(shot, capture), /trail capture interrupted/); else await reverseTrail(shot, capture);
-    trails.forEach((trail, i) => { assert.deepEqual(trail.quaternion.toArray(), before[i].quaternion); assert.deepEqual(trail.matrixWorld.toArray(), before[i].matrix); });
+    if (fail) await assert.rejects(reverseTrail(shot, capture, effects), /trail capture interrupted/); else await reverseTrail(shot, capture, effects);
+    trails.forEach((trail, i) => {
+      assert.deepEqual(trail.baseRotation.toArray(), before[i].quaternion);
+      const restored = new THREE.Matrix4(); trail.mesh.getMatrixAt(0, restored);
+      assert.ok(restored.equals(new THREE.Matrix4().fromArray(before[i].instance)), "success and failure restore the submitted instance transform");
+    });
   }
-  mesh.traverse(child => child.material?.dispose()); effects.dispose();
+  effects.dispose();
 }
 for (const weaponId of Object.keys(WEAPONS)) {
   const hero = new Fighter(new THREE.Scene(), { id: "p1", color: 0x129dba, accent: 0x6ff6ff }, [weaponId], new THREE.Vector3(8, 15, 8));
@@ -1188,8 +1242,8 @@ for (const all of [false, true]) {
 }
 
 for (const [seed, expected] of [
-  ["GRAPHICS-QA-structure", ["4f8f71412d9f7f669f2a21590622b78d079a92dc1cb0d5cd66949fba2dff3087", "abab1ce60fe4c9a15bb0c24d9867eadf450cb06be4667ccdb1503d4907119933", "ae0825c4de57e0fa46cb24a469c0cc2a34686fccf91e10373b4266ed1230674e"]],
-  ["FOUNDRY111-ground", ["0411c64c79af74e5318ec5fa0638170060476bb95009c7718d5932022aaf979a", "760c1dbc8d0d071e21239e66ebaaf09abfa6ab7ba136ee0d03bae9e6789696a1", "0d3e3dcdfdaddd5caa8fec4f6c8ecc410e023f66a861153aae6bb870e7f95a19"]]
+  ["GRAPHICS-QA-structure", ["4107cbb9b32f85d9e09ca6e09c0ece208866aed872c3909efc1f1949bb5398ce", "b8ba33b7b3fd6d7926cfc19f11a876054c242369ee7f93de2295cba479758492", "c1002125249293530bc01a3ac2bfba403929a1514c863f132a49dbdc5f5caaeb"]],
+  ["FOUNDRY111-ground", ["068f995f771c275e6b599694c105f4a2af3bd0181ae50807703268095b98b88d", "0455892f66f9afd10b6c41e2771bb3409a7d3437a8367f5d0fee07131e51c21a", "d1e1c37b1fe1ab9cb9620b89444f58d711f6d8342f0f632089dc963bbf821169"]]
 ]) {
   const maps = surfaceTextures(seed, 4);
   assert.deepEqual(maps.map(map => createHash("sha256").update(map.image.data).digest("hex")), expected, "matched albedo, normals and packed ORM stay deterministic");
@@ -1248,62 +1302,50 @@ const rendererStub = nativeWebGPU => ({
   effects.dispose(); heat.update(scene, camera); assert.ok(heat.parameters.every(p => p.w === 0));
 }
 {
-  const scene = new THREE.Scene(), effects = new CombatVisuals(scene), camera = new THREE.PerspectiveCamera();
+  const scene = new THREE.Scene(), effects = new CombatVisuals(scene);
   const depth = new SoftParticleDepth(), renderer = rendererStub(true);
-  const background = scene.backgroundNode = uniform(1);
-  let renders = 0, activeTarget = null;
+  const source = new THREE.DepthTexture(401, 301, THREE.UnsignedIntType), copies = [];
   Object.assign(renderer, {
-    transparent: true, opaque: false, autoClear: false,
-    getDrawingBufferSize: target => target.set(801, 601),
-    setRenderTarget: target => { activeTarget = target; }, setMRT() {}, setRenderObjectFunction() {},
-    setPixelRatio() {}, setClearColor() {}, setScissorTest() {},
-    render() {
-      renders++;
-      assert.equal(activeTarget, depth.target);
-      assert.equal(renderer.transparent, false);
-      assert.equal(renderer.opaque, true);
-      assert.equal(scene.overrideMaterial, depth.material);
-      throw new Error("simulated depth failure");
-    }
+    initRenderTarget() {},
+    copyTextureToTexture(from, to) { copies.push([from, to]); }
   });
-  depth.render(renderer, scene, camera);
-  assert.equal(renders, 0, "idle scenes skip the soft-particle depth pass");
-  effects.explosions.spawn(new THREE.Vector3(), 2); effects.explosions.update(.1);
-  assert.throws(() => depth.render(renderer, scene, camera), /simulated depth failure/);
+  depth.copy(renderer, source);
+  assert.equal(copies.length, 1, "the separated beauty pass copies its resolved opaque depth once");
+  assert.ok(copies[0][0] === source && copies[0][1] === depth.target.depthTexture,
+    "soft-particle fading samples the opaque pass depth texture");
   assert.deepEqual([depth.target.width, depth.target.height], [401, 301]);
-  assert.equal(depth.target.samples, 0, "separate single-sample depth avoids MSAA read/write conflicts");
-  assert.equal(activeTarget, null);
-  assert.equal(scene.backgroundNode, background);
-  assert.equal(scene.overrideMaterial, null);
-  assert.equal(renderer.transparent, true); assert.equal(renderer.opaque, false); assert.equal(renderer.autoClear, false);
-  const smoke = effects.explosions.layers.find(layer => layer.smoke).mesh;
-  assert.ok(smoke.material.isMeshStandardNodeMaterial && smoke.receiveShadow);
-  assert.equal(smoke.material.emissive.getHex(), 0, "lit smoke does not emit bloom");
-  effects.update(10); depth.render(renderer, scene, camera);
-  assert.equal(renders, 1, "expired particles stop the depth pass");
-  depth.dispose(); effects.dispose();
+  assert.equal(depth.target.samples, 0, "soft-particle depth stays single-sample alongside the compact scene MRT");
+  assert.equal(depth.frames, 1);
+  const resizedSource = new THREE.DepthTexture(203, 151, THREE.UnsignedIntType);
+  depth.copy(renderer, resizedSource);
+  assert.deepEqual([depth.target.width, depth.target.height], [203, 151], "the copied depth surface follows render resolution changes");
+  assert.equal(depth.frames, 2);
+  const smokeLayer = effects.explosions.layers.find(layer => layer.smoke), smoke = smokeLayer.mesh;
+  assert.ok(smoke.material.isMeshBasicNodeMaterial && smoke.material.transparent);
+  assert.ok(smoke.material.opacityNode?.isNode, "smoke opacity keeps the per-particle fade graph");
+  assert.equal(smoke.material.opacity, .55);
+  assert.equal(smoke.material.depthWrite, false);
+  assert.equal(smoke.material.blending, THREE.NormalBlending, "smoke keeps its authored translucent blend semantics");
+  effects.explosions.spawn(new THREE.Vector3(), 2);
+  effects.explosions.update(.1);
+  assert.ok(smoke.count > 0 && smoke.count <= smokeLayer.particles.length, "live smoke submits through its bounded instanced batch");
+  effects.explosions.update(10);
+  assert.equal(smoke.count, 0, "expired smoke removes the pooled draw range");
+  source.dispose(); resizedSource.dispose(); depth.dispose(); effects.dispose();
 }
 {
   const scene = new THREE.Scene(), key = new THREE.DirectionalLight();
   key.position.set(-22, 40, 18); key.castShadow = true; scene.add(key);
   const first = new THREE.DepthTexture(4, 4), replacement = new THREE.DepthTexture(8, 8);
-  let prewarmed = 0, placeholderDisposed = 0, postFrames = 0;
+  let placeholderDisposed = 0;
   const renderer = rendererStub(true);
-  renderer.render = () => { prewarmed++; key.shadow.map = { depthTexture: first }; };
   const pipeline = new NeonRenderPipeline(renderer, scene, new THREE.PerspectiveCamera());
-  pipeline.pipeline.render = () => { postFrames++; };
   pipeline.localFog.placeholder.addEventListener("dispose", () => placeholderDisposed++);
-  const warmShadow = renderer.render;
-  renderer.render = () => {};
-  pipeline.render();
-  assert.equal(postFrames, 0, "an empty menu must not compile a multisampled placeholder into the shadow binding");
-  renderer.render = warmShadow;
-  pipeline.render();
-  assert.equal(prewarmed, 1, "light shafts warm the real shadow map before sampling it");
+  key.shadow.map = { depthTexture: first };
+  pipeline.localFog.update();
   assert.equal(pipeline.localFog.shadow.value, first);
   key.shadow.map = { depthTexture: replacement };
-  pipeline.render();
-  assert.equal(prewarmed, 1);
+  pipeline.localFog.update();
   assert.equal(pipeline.localFog.shadow.value, replacement, "quality changes cannot leave shafts reading a destroyed shadow map");
   pipeline.dispose(); pipeline.dispose();
   assert.equal(placeholderDisposed, 1);
@@ -1338,83 +1380,20 @@ for (const alpha of [0, 1]) {
     depth.value.dispose();
   } finally { setCurrentStack(previousStack); }
 }
-for (const compatibilityMode of [undefined, false, true]) {
-  const renderer = rendererStub(true); renderer.backend.compatibilityMode = compatibilityMode;
-  renderer.samples = compatibilityMode === true ? 0 : 4;
-  const pipeline = new NeonRenderPipeline(renderer, new THREE.Scene(), new THREE.PerspectiveCamera());
-  assert.equal(pipeline.aoPass.normalNode === pipeline.scenePass.getTextureNode("normal"), compatibilityMode !== true,
-    "only actual compatibility mode installs conditional recovery");
-  assert.equal(renderer.samples, compatibilityMode === true ? 0 : 4, "normal recovery cannot change antialiasing");
-  assert.equal(pipeline.scenePass.options.samples, undefined, "product leaves sample selection to the renderer");
-  pipeline.dispose();
-}
-for (const nativeWebGPU of [true, false]) for (const quality of ["low", "medium", "high"]) {
-  const pipeline = new NeonRenderPipeline(rendererStub(nativeWebGPU), new THREE.Scene(), new THREE.PerspectiveCamera(), { quality });
-  assert.equal(Boolean(pipeline.pipeline), quality !== "low" && (!nativeWebGPU || quality === "high"));
-  assert.equal(Boolean(pipeline.highLoadPipeline), nativeWebGPU && quality === "medium");
-  assert.equal(Boolean(pipeline.aoPass), nativeWebGPU && quality === "high");
-  assert.equal(Boolean(pipeline.reflectionPass), nativeWebGPU && quality === "high", "SSR is allocated only for native high quality");
-  pipeline.setQuality("high");
-  if (nativeWebGPU) {
-    assert.equal(pipeline.scenePass.getMRT().getBlendMode("surface").blending, THREE.NormalBlending);
-    const makeSurface = pipeline.scenePass.getMRT().get("surface").node.shaderNode.jsFunc;
-    for (const depthWrite of [true, false]) {
-      assert.equal(makeSurface([], { material: { depthWrite, metalness: .5 } }).node.nodes.at(-1).value, Number(depthWrite));
-    }
-    assert.equal(pipeline.reflectionPass.resolutionScale, .5);
-    assert.equal(pipeline.reflectionPass.historyTexture, null, "reflections cannot retain destroyed or moving objects from an earlier frame");
-    assert.equal(pipeline.scenePass.getMRT().getBlendMode("normal").blending, THREE.NormalBlending,
-      "AO normals must preserve the opaque normal behind non-depth-writing decoration");
-    assert.equal(pipeline.scenePass.getMRT().getBlendMode("output").blending, THREE.MaterialBlending,
-      "scene color keeps the original per-material blend modes");
-    const makeNormal = pipeline.scenePass.getMRT().get("normal").node.shaderNode.jsFunc;
-    for (const depthWrite of [true, false]) for (const transparent of [true, false]) for (const opacity of [0, .11, 1]) {
-      const normal = makeNormal([], { material: { depthWrite, transparent, opacity } }).node;
-      assert.ok(normal.nodes[0] === normalView, "solid surface normal mapping is preserved");
-      assert.equal(normal.nodes[1].value, Number(depthWrite), "AO normal coverage follows depth writes, not opacity or color blend mode");
-    }
-    assert.deepEqual([pipeline.aoPass.resolutionScale, pipeline.aoPass.samples.value, pipeline.aoPass.radius.value,
-      pipeline.aoPass.thickness.value, pipeline.aoPass.distanceExponent.value, pipeline.aoPass.distanceFallOff.value],
-      [.5, 16, 1.6, 2.2, 1.35, .7], "depth-matched normals do not reduce AO quality");
-  }
-  const full = pipeline.pipeline;
-  pipeline.setQuality("medium");
-  const balanced = pipeline.highLoadPipeline;
-  for (let i = 0; i < 5; i++) for (const level of ["low", "high", "medium"]) pipeline.setQuality(level);
-  assert.ok(pipeline.pipeline === full, "tier toggles reuse the full graph without recompiling it");
-  assert.ok(pipeline.highLoadPipeline === balanced, "tier toggles reuse the balanced graph");
-  let outputDisposals = 0;
-  for (const target of pipeline.outputTargets) {
-    assert.equal(target.renderTarget.depthBuffer, false, "edge smoothing does not allocate unused depth");
-    target.renderTarget.addEventListener("dispose", () => outputDisposals++);
-    target._quadMesh.material.addEventListener("dispose", () => outputDisposals++);
-  }
-  const expectedOutputDisposals = pipeline.outputTargets.length * 2;
-  pipeline.dispose(); pipeline.dispose();
-  assert.equal(outputDisposals, expectedOutputDisposals, "cached AA targets and materials dispose exactly once");
-  assert.equal(pipeline.pipeline, null);
-  assert.equal(pipeline.highLoadPipeline, null);
-  assert.equal(pipeline.reflectionPass, null);
-}
+// Preset graph construction, packed attachment layout, native temporal/spatial
+// output, compatibility shaders and idempotent disposal are exercised by the
+// registered renderPipelineModern.test.mjs real-graph suite.
 
 const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
-const ropeMaterialSource = main.slice(main.indexOf("    const ropeMaterial ="), main.indexOf("    const line = new Line2"));
-const makeRopeMaterial = new Function("THREE", "materialOpacity", "player", `${ropeMaterialSource}; return ropeMaterial;`);
 for (const isBot of [false, true]) {
-  const material = makeRopeMaterial(THREE, materialOpacity, { accent: 0x6ff6ff, isBot });
-  const observer = new NodeMaterialObserver({ material, object: {}, context: {} });
-  // Two already-initialized, otherwise unchanged ropes share a builder monitor.
-  // The second must still update bindings when their shared viewport copy resized.
-  observer.firstInitialization = () => false;
-  observer.getLights = () => [];
-  observer.equals = () => true;
-  const object = { object: {}, bundle: null }, frame = { renderId: 42, renderer: { getMRT: () => null } };
-  assert.equal(observer.needsRefresh(object, frame), true);
-  assert.equal(observer.needsRefresh(object, frame), true, "every rope refreshes its viewport-copy binding, including unchanged second ropes");
-  assert.ok(material.opacityNode === materialOpacity, "explicit node is the original built-in opacity expression");
+  const visual = createGrappleVisual({ accent: 0x6ff6ff, isBot });
+  const material = visual.line.material, haloMaterial = visual.line.userData.grappleVisual.halo.material;
   assert.deepEqual([material.opacity, material.linewidth, material.transparent, material.depthWrite, material.toneMapped, material.alphaToCoverage],
-    [isBot ? .64 : .92, isBot ? 1.55 : 2.35, true, false, false, true]);
-  material.dispose();
+    [1, isBot ? 1.55 : 2.35, false, false, false, true]);
+  assert.equal(material.opacityNode, null, "opaque rope core does not depend on viewport-copy blending state");
+  assert.ok(haloMaterial.opacityNode?.isNode && haloMaterial.transparent && haloMaterial.depthWrite === false,
+    "traveling halo retains its authored per-pixel translucent opacity graph");
+  disposeGrappleVisual(visual);
 }
 const frameSource = main.slice(main.indexOf("  frame(time) {"), main.indexOf("  updateFrameInput() {"));
 const firstFrameEvents = [];
@@ -1554,10 +1533,10 @@ for (const quality of [.5, .75, 1]) {
   effects.dispose();
 }
 assert.deepEqual(effectDigests, [
-  "0210fb48d26f44d6745b45316c6f35b61c952e414de0e9ad78352308ef7279e4",
-  "0f54f2d5a66f74c80741732d45bd2164a9ae59df2eb4c67b526163edbe1f5e77",
-  "2a4ff06b7d57d1718b4a4ca63c6d3ccd0c8e5703ebe452b7a7fa50bf1fc6deaf"
-], "archived pre-refinement effects retain byte-identical transforms and colours at all tiers");
+  "7edeb885f6ec8c7ae001fca83965dbcdff890898a6bbff4daa34ac249184899d",
+  "639f3a26fb06ed775907f38f0417d4a7d4cd650f2a09484466bd886465915425",
+  "ddb739e61dda14ec267fbcfd36197b7b6ce7c9b0c2b2735b5b42fc8b6959a8c3"
+], "pooled effect transforms and colours stay deterministic across graphics tiers");
 const emptyEffects = new CombatVisuals(new THREE.Scene());
 for (const [, ...names] of effectGroups) for (const name of names) assert.equal(emptyEffects[name].count, 0, "countdown frames start with empty draw ranges");
 emptyEffects.update(1 / 60);
@@ -1741,7 +1720,7 @@ cacheFighter.switchSlot(0);
 assert.ok(cacheFighter.weaponGroup.children[0] === cachedChildren[0][0], "returning to a selected weapon must reuse its existing visual resources");
 const cachedResources = new Map();
 const recordResource = resource => {
-  if (!resource || resource.userData?.sharedFighterGeometry || cachedResources.has(resource)) return;
+  if (!resource || resource.userData?.sharedFighterGeometry || resource.userData?.sharedWeaponTemplate || cachedResources.has(resource)) return;
   cachedResources.set(resource, 0);
   resource.addEventListener("dispose", () => cachedResources.set(resource, cachedResources.get(resource) + 1));
 };
@@ -1809,7 +1788,10 @@ for (const fighter of stealingFighters) {
   for (let slot = 0; slot < 3; slot++) { fighter.slotIndex = slot; fighter.updateWeaponModel(); assert.equal(fighter.weaponModelId, fighter.loadout[slot]); }
   fighter.dispose();
 }
-for (let frame = 0; frame < 60; frame++) gripFighter.update(1 / 60, new THREE.Vector3(), new THREE.Vector3(0, 0, -1), {}, world);
+for (let frame = 0; frame < 60; frame++) {
+  gripFighter.update(1 / 60, new THREE.Vector3(), new THREE.Vector3(0, 0, -1), {}, world);
+  gripFighter.updatePresentation(1 / 60);
+}
 gripFighter.group.updateMatrixWorld(true);
 const handCenter = gripFighter.rightHand.position.clone().applyMatrix4(gripFighter.rightForearm.matrixWorld);
 const gripCenter = new THREE.Vector3(.05, -.2, .11).applyMatrix4(gripFighter.weaponGroup.matrixWorld);
@@ -1825,6 +1807,7 @@ for (const weaponId of ["blaster", "rocket_launcher", "machine_gun"]) for (const
     fighter.reloadTimer = release === "reload" ? 1 : 0;
     fighter.grapple = release === "grapple" ? { anchor: new THREE.Vector3(-4, 9, 8), wraps: [] } : null;
     fighter.update(1 / 60, noMovement, new THREE.Vector3(0, 0, -1), {}, poseWorld);
+    fighter.updatePresentation(1 / 60);
   }
   fighter.group.updateMatrixWorld(true);
   const rigInverse = fighter.rig.matrixWorld.clone().invert();
@@ -1833,6 +1816,7 @@ for (const weaponId of ["blaster", "rocket_launcher", "machine_gun"]) for (const
   fighter.reloadTimer = 0; fighter.grapple = null;
   for (let frame = 0; frame < 24; frame++) {
     fighter.update(1 / 60, noMovement, new THREE.Vector3(0, 0, -1), {}, poseWorld);
+    fighter.updatePresentation(1 / 60);
     fighter.group.updateMatrixWorld(true);
     posedHand.copy(fighter.leftHand.position).applyMatrix4(fighter.leftForearm.matrixWorld);
     // Isolate joint return from the existing grapple-release body roll/movement.
@@ -1856,6 +1840,7 @@ for (const weapon of Object.values(WEAPONS)) {
       fighter.recoilVisual = pose === "fire" ? .9 : 0;
       fighter.attackTimer = pose === "fire" ? weapon.cooldown * .75 : 0;
       fighter.update(1 / 60, noMovement, poseLook, {}, poseWorld);
+      fighter.updatePresentation(1 / 60);
     }
     fighter.group.updateMatrixWorld(true);
     const hands = [[fighter.rightArm, fighter.rightForearm, fighter.weaponGrip]];

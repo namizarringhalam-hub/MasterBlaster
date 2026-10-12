@@ -1,6 +1,6 @@
 import TEXT, { formatText } from "./playerText.js";
 import { normalizeGraphicsEffects } from "./graphicsEffects.js";
-import { GRAPHICS_VERSION, graphicsLevel, normalizeGraphicsOptions, presetEffects } from "./graphicsPresets.js";
+import { migrateLegacyGraphicsPreset, GRAPHICS_VERSION, graphicsLevel, normalizeGraphicsOptions, presetEffects } from "./graphicsPresets.js";
 import { clampMatchMinutes } from "./multiplayerProtocol.js";
 
 const SAVE_KEY = "master-blaster-settings";
@@ -193,7 +193,7 @@ export const RECOMMENDED_LOADOUT = ["blaster", "shotgun", "machine_gun", "rocket
 export function graphicsProfile(level = "high", coarsePointer = false, deviceScale = 1, options) {
   const resolved = graphicsLevel(level), profile = normalizeGraphicsOptions(options, resolved);
   return { level: resolved, ...profile,
-    pixelRatio: Math.min(Math.max(.5, Number(deviceScale) || 1), 1.65) * profile.renderScale };
+    pixelRatio: Math.min(Math.max(.5, Number(deviceScale) || 1), 1.65) };
 }
 
 function validLoadout(value) {
@@ -392,10 +392,10 @@ export function loadSettings() {
     const effects = presetEffects(graphics);
     // Migrate old tier preferences without enabling formerly unavailable effects.
     for (const key of Object.keys(effects)) if (typeof saved.graphicsEffects?.[key] === 'boolean'
-      && (saved.graphicsVersion === GRAPHICS_VERSION || saved.graphicsEffects[key] === false)) effects[key] = saved.graphicsEffects[key];
-    const graphicsOptions = normalizeGraphicsOptions(saved.graphicsVersion === GRAPHICS_VERSION ? saved.graphicsOptions : null, graphics);
+      && ((saved.graphicsVersion === GRAPHICS_VERSION || saved.graphicsVersion === 2) || saved.graphicsEffects[key] === false)) effects[key] = saved.graphicsEffects[key];
+    const graphicsOptions = normalizeGraphicsOptions((saved.graphicsVersion === GRAPHICS_VERSION || saved.graphicsVersion === 2) ? saved.graphicsOptions : null, graphics);
     const motionBlur = Number.isFinite(saved.motionBlur) ? Math.max(0, Math.min(100, saved.motionBlur)) : (effects.motionBlur ? 35 : 0);
-    return { ...defaults(), ...saved, graphics, graphicsVersion: GRAPHICS_VERSION, graphicsOptions, motionBlur, graphicsEffects: effects, loadout, loadoutPresets, matchSettingsVersion: MATCH_SETTINGS_VERSION, matchSettings };
+    return migrateLegacyGraphicsPreset({ ...defaults(), ...saved, graphics, graphicsVersion: GRAPHICS_VERSION, graphicsOptions, motionBlur, graphicsEffects: effects, loadout, loadoutPresets, matchSettingsVersion: MATCH_SETTINGS_VERSION, matchSettings }, saved);
   } catch {
     return defaults();
   }

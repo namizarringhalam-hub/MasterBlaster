@@ -7,25 +7,30 @@ import WebGPUAttributeUtils from "../node_modules/three/src/renderers/webgpu/uti
 import WebGLAttributeUtils from "../node_modules/three/src/renderers/webgl-fallback/utils/WebGLAttributeUtils.js";
 
 const combatLayers = effects => [effects.flashOuter, effects.flashInner, effects.tracerOuter, effects.tracerInner,
-  effects.ringOuter, effects.ringInner, effects.surfaceFront, effects.surfaceCore, effects.sparkLayer, effects.bloodLayer,
+  effects.flameLayer, effects.ringOuter, effects.ringInner, effects.surfaceFront, effects.surfaceCore, effects.sparkLayer, effects.bloodLayer,
   ...effects.fireballLayerList];
 const attributes = mesh => [mesh.instanceMatrix, mesh.instanceColor,
-  mesh.geometry.getAttribute("particleAlpha"), mesh.geometry.getAttribute("particlePhase")].filter(Boolean);
+  mesh.geometry.getAttribute("particleAlpha"), mesh.geometry.getAttribute("particlePhase"),
+  mesh.geometry.getAttribute("particleAge")].filter(Boolean);
 const layers = effects => [...combatLayers(effects), ...effects.explosions.layers.map(layer => layer.mesh)];
 const bytes = array => Buffer.from(array.buffer, array.byteOffset, array.byteLength);
 const point = new THREE.Vector3(2, 3, -4), end = new THREE.Vector3(7, 5, 8), normal = new THREE.Vector3(0, 1, 0);
 const owner = { color: 0x42adff, accent: 0xf53f71, aim: end.clone().sub(point).normalize(),
   forwardPoint: () => point.clone() };
+const camera = new THREE.PerspectiveCamera(); camera.position.set(8, 6, 12); camera.lookAt(point);
 
-// Captured before the upload-only change: all 47 weapons, three volleys, every
-// buffer including hidden slots, stable draw counts, three tiers and both motion modes.
+// G3/G4 visual baseline: rotated petal flashes, flame-stream quads, short hot
+// explosion flashes, ground shock rings, temperature-ramped streaks and dark
+// smoke. Includes particleAge and flameLayer plus the post-interpolation sync
+// that presents fireballs and camera-facing particles. All weapons, three
+// volleys, every buffer including hidden slots, three tiers and both motion modes.
 const expected = {
-  "0.5:false": "ab1aec2876cd0c25f82d589957d94ed1e7e63991d5040d7fb1051d8925ad00be",
-  "0.5:true": "2ed4a171e118bce5a3081ed9975247d195a4bebc1627f13a1087096cbae54143",
-  "0.75:false": "091db5c3414167b2ce3849102e039754c05bf2d7ff78120679a8379b3433c6c6",
-  "0.75:true": "bc3006ebb6629de7f7fc6bb9d1b335bd3e64bd44af98efc0f35730f36d741c15",
-  "1:false": "2a7d0da324287c70e5cce8666d1b598a25ac2c54a045a04de0f687728cfe6e2f",
-  "1:true": "7c2c4555f644aaccd30b8c9fb76464eefa4affa333d96b6e3d99eee68320e45a"
+  "0.5:false": "281785974c888214f968ad5812b175dbc055815f6a7559735f3821a8ca4da344",
+  "0.5:true": "5438f53d1a49328a3e9555ae78d4d888b751565caf3df86afa9e83a54efe661f",
+  "0.75:false": "54bfd5748a0c7185d5963534c5868bfb8bc4b48595f6ad920a4e5763e9992748",
+  "0.75:true": "ff319a415100e5c55fd8d6e377c6f2421745bd36f2e8c9ea86237618f940de5b",
+  "1:false": "3fb679ac12146705530b99550b168851abcd86b0c4f4cb839bc905769c309d2b",
+  "1:true": "16cb9a00612f0a9e4e36c22bd7c3af2bdf98ab7fdcd5829425d14f1683b91280"
 };
 for (const quality of [.5, .75, 1]) for (const reducedMotion of [false, true]) {
   const effects = new CombatVisuals(new THREE.Scene(), { quality, reducedMotion });
@@ -44,6 +49,7 @@ for (const quality of [.5, .75, 1]) for (const reducedMotion of [false, true]) {
     for (const dt of [1 / 60, 1 / 60, .13, 1.5, 10]) {
       for (const anchor of effects.fireballs) effects.updateProjectile({ mesh: anchor }, dt);
       effects.update(dt);
+      effects.syncPresentation(camera);
       for (const mesh of layers(effects)) {
         hash.update(String(mesh.count));
         for (const attribute of attributes(mesh)) hash.update(bytes(attribute.array));
@@ -185,8 +191,10 @@ for (const backendName of ["webgpu", "webgl"]) {
   burst.impact(new THREE.Vector3(1, 2, 3), WEAPONS.rocket_launcher, owner, { size: 2, explosive: true, normal, ground: true });
   burst.update(1 / 60);
   for (const mesh of layers(burst)) burstGpu.draw(mesh);
-  assert.equal(burstGpu.bytes, 3_820, "active prefixes upload only the exact burst's matrix/color/alpha/phase bytes");
+  const ageBytes = burst.explosions.layers.reduce((sum, layer) => sum + layer.mesh.count * layer.age.itemSize * layer.age.array.BYTES_PER_ELEMENT, 0);
+  assert.equal(ageBytes, 124, "31 drawn explosion particles each add one Float32 age for erosion and cheap smoke lighting");
+  assert.equal(burstGpu.bytes, 3_820 + ageBytes, "active prefixes upload only the exact burst's matrix/color/alpha/phase/age bytes");
   assert.ok(burstGpu.bytes < 85_248 / 20, "the paired burst reduces upload bytes by more than 95%");
   burst.dispose();
 }
-console.log("Particle upload baseline bytes/counts, sparse expiry, zero-count reuse, skipped renders and real WebGPU/WebGL range uploads passed (85,248 -> 3,820 bytes for the paired rocket burst).");
+console.log("Particle upload G3/G4 baseline bytes/counts, sparse expiry, zero-count reuse, skipped renders and real WebGPU/WebGL range uploads passed (85,248 -> 3,944 bytes, including 124 age bytes, for the paired rocket burst).");

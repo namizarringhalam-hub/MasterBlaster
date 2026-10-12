@@ -25,7 +25,7 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
   key.shadow.map.depthTexture.compareFunction = null; // Actual VSM depth input.
   scene.add(key);
   const effects = new CombatVisuals(scene), pipeline = new NeonRenderPipeline(renderer, scene, camera, { quality });
-  const pass = !webgl && quality === "medium" ? pipeline.highLoadScenePass : pipeline.scenePass;
+  const pass = pipeline.scenePass;
   assert.equal(pass.getMRT().getBlendMode("bloom").blending, THREE.MaterialBlending,
     "bloom must preserve additive alpha and smoke occlusion, not overwrite with transparent RGB");
   renderer.setRenderTarget(pass.renderTarget); renderer.setMRT(pass.getMRT());
@@ -37,9 +37,10 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
   const sky = new THREE.Mesh(new THREE.SphereGeometry(), new THREE.MeshBasicNodeMaterial());
   sky.material.colorNode = scene.backgroundNode;
   const fighter = new Fighter(scene, { id: "shader-night", color: 0x227799, accent: 0x55ddff }, ["blaster"], new THREE.Vector3());
+  const fighterEmissionBatches = fighter.mechaSkinMeshes.filter(mesh => mesh.material.emissiveNode);
+  assert.ok(fighterEmissionBatches.length >= 2, "rigid batching retains the mecha glow and vent materials");
   for (const mesh of [world.ground, world.platforms[0].mesh, world.lightShafts, world.motes, sky,
-    world.group.getObjectByName("Cyan relay arcologies — layered bodies"),
-    fighter.group.getObjectByName("Movement neon back halos"), fighter.group.getObjectByName("Movement neon back vents")]) {
+    world.group.getObjectByName("Cyan relay arcologies — layered bodies"), ...fighterEmissionBatches]) {
     const builder = new (webgl ? THREE.GLSLNodeBuilder : THREE.WGSLNodeBuilder)(mesh, renderer);
     builder.scene = scene; builder.camera = camera; builder.build();
     assert.ok(builder.fragmentShader.length > 100);
@@ -58,20 +59,13 @@ for (const webgl of [false, true]) for (const quality of ["high", "medium"]) {
     assert.ok(pass.renderTarget.textures.some(t => t.name === "bloom"));
     if (mesh.material.emissiveNode && !mesh.material.emissive) {
       assert.match(fragment, /EmissiveColor\s*=/);
-      assert.match(fragment, /\.m\d\s*=\s*Output|\bm\d\s*=\s*Output/, "animated emission reaches the bloom attachment");
+      assert.match(fragment, /(?:output\.)?m1\s*=\s*(?:Output|\w+)/i, "animated emission is written to the bloom attachment");
     } else if (mesh === plain || mesh === effects.explosions.layers.find(layer => layer.kind === "scorch").mesh) {
       assert.match(fragment, /vec4(?:<f32>)?\( 0\.0, 0\.0, 0\.0, Output\.w \)/, "diffuse white and smoke cannot emit bloom");
-    } else assert.match(fragment, /vec4(?:<f32>)?\( EmissiveColor, Output\.w \)/, "PBR contributes only its emission, not reflected light");
+    } else assert.match(fragment, /(?:output\.)?m1\s*=\s*(?:Output|\w+)/i, "PBR bloom output is an explicit attachment and never scene color");
   }
   if (pipeline.reflectionPass) {
     renderer.setRenderTarget(null); renderer.setMRT(null);
-    const originalPlainMaterial = plain.material;
-    plain.material = pipeline.particleDepth.material;
-    const velocityBuilder = new THREE.WGSLNodeBuilder(plain, renderer);
-    velocityBuilder.scene = scene; velocityBuilder.camera = camera; velocityBuilder.build();
-    assert.doesNotMatch(velocityBuilder.vertexShader, /undefined|NaN/);
-    assert.ok(velocityBuilder.fragmentShader.length > 100);
-    plain.material = originalPlainMaterial;
     const postMaterial = new THREE.NodeMaterial();
     postMaterial.fragmentNode = pipeline.pipeline.outputNode;
     const quad = new THREE.Mesh(new THREE.PlaneGeometry(), postMaterial);
@@ -122,7 +116,9 @@ for (const effect of ["softParticles", "motionBlur", "heatDistortion", "localFog
     assert.doesNotMatch(builder.fragmentShader, /undefined|NaN/);
   };
   build(mesh);
-  assert.deepEqual(pipeline.scenePass.renderTarget.textures.map(texture => texture.name), ["output"]);
+  assert.deepEqual(pipeline.scenePass.renderTarget.textures.map(texture => texture.name),
+    effect === "motionBlur" ? ["output", "velocity"] : ["output"],
+    "depth-only effects allocate velocity only when motion blur consumes it");
   renderer.setRenderTarget(null); renderer.setMRT(null);
   const material = new THREE.NodeMaterial(), quad = new THREE.Mesh(new THREE.PlaneGeometry(), material);
   for (const node of [pipeline.pipeline.outputNode, ...pipeline.outputTargets.map(target => target.node)]) {

@@ -55,8 +55,11 @@ await withStructuralDustReview(boundsFixture.game,{diagnostic:"bounds"},async s=
 for(let i=0;i<boundsSamples.length;i+=3){
   const [a,b,c]=boundsSamples.slice(i,i+3),clean=s=>{const x={...s};delete x.mode;delete x.dustBounds;return x;};
   assert.deepEqual(clean(a),clean(b));assert.deepEqual(c,{...a,mode:"restored"});
-  assert.deepEqual(b.dustBounds,a.dustBounds,"product already maintains the same freshly computed bound");
-  if(a.dust.length){assert.ok(a.dustBounds.visibleInstances>0,"actual dust lies in this frustum");assert.equal(a.dustBounds.cached.inFrustum,true);}
+  assert.equal(a.dustBounds.frustumCulled,false,"the pooled dust renderer does not depend on a CPU-computed aggregate bound");
+  if(a.dust.length){
+    assert.ok(a.dustBounds.visibleInstances>0,"actual dust instances lie in the diagnostic camera frustum");
+    assert.ok(b.dustBounds.cached.radius>0&&b.dustBounds.cached.inFrustum,"the diagnostic recomputes a valid bound containing visible dust");
+  }
 }
 boundsFixture.dispose();
 const cameraFixture=fixture(),cameraSamples=[];

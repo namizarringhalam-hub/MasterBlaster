@@ -1,14 +1,11 @@
 import * as THREE from "three/webgpu";
-import { materialOpacity } from "three/tsl";
 import { GRAPHICS_EFFECTS, normalizeGraphicsEffects, graphicsEffectUnavailable } from "./graphicsEffects.js";
 import { GRAPHICS_PRESETS, GRAPHICS_OPTIONS, applyGraphicsPreset, isCustomGraphics } from "./graphicsPresets.js";
-import { LIGHTING, fitArenaShadow, setupEnvironment } from "./lighting.js";
-import { Line2 } from "three/addons/lines/webgpu/Line2.js";
+import { LIGHTING, ArenaShadowRig, fitArenaShadow, setupEnvironment } from "./lighting.js";
 import { SoundBoard } from "./audio.js";
-import { createHazardVisual } from "./hazardVisuals.js";
 import { CombatVisuals } from "./combatVisuals.js";
 import { ArenaWorld } from "./world.js";
-import { Fighter, PROJECTILE_SPAWN_OFFSET, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraCollisionFirstPerson, cameraRelative, damageIndicatorAngle, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reconcileRemotePosition, reticleAim } from "./player.js";
+import { Fighter, prewarmWeaponTemplates, PROJECTILE_SPAWN_OFFSET, applyGrapplePhysics, applyWeaponStatus, boostGrappleRelease, cameraCollisionFirstPerson, cameraRelative, damageIndicatorAngle, directionFromKeys, directionFromTouch, flameConeFactor, grappleSightline, projectileTouchesPlayer, reconcileRemotePosition, reticleAim } from "./player.js";
 import { InputManager, clearTouchActions, deliberateTouchTap, updateOrbit } from "./input.js";
 import { clampMatchMinutes, DEFAULT_LOADOUT, excessOwnedProjectiles, graphicsProfile, LOADOUT_PRESET_COUNT, loadSettings, projectileLifetime, projectileStepCount, RECOMMENDED_LOADOUT, saveSettings, swapStolenWeapon, topScoreIndices, weaponFireMode, weaponUsesAmmo, WEAPON_GROUPS, WEAPONS } from "./gameData.js";
 import { botFireChance, botRemoteChargeAction, botWeaponPolicy, chooseBotSlot, clampBotCount, safestSpawn, shouldBotPlaceWall } from "./botBrain.js";
@@ -16,7 +13,7 @@ import { NeonRenderPipeline } from "./renderPipeline.js";
 import { combatMusicIntensity } from "./musicScore.js";
 import { MultiplayerClient } from "./multiplayer.js";
 import { advanceRespawnRetry, respawnDisposition, serverRemainingSeconds, uniquePlayersById } from "./multiplayerProtocol.js";
-import { createGrappleRopeGeometry, updateGrappleRopeGeometry } from "./grappleRope.js";
+import { createGrappleVisual, updateGrappleVisual, disposeGrappleVisual } from "./grappleRope.js";
 import TEXT, { formatText } from "./playerText.js";
 import { GlobalMultiplayer } from "./globalMultiplayer.js";
 import "./loadoutArmory.css";
@@ -29,6 +26,9 @@ import { preparationProgress } from "./resourceProgress.js";
 import { setJourney } from "./journeys.js";
 import { FrameTiming } from "./frameTiming.js";
 import { SimulationTiming, RenderInterpolation } from "./simulationTiming.js";
+import { RemoteSnapshots } from "./remoteSnapshots.js";
+import { cloneMechaHologram } from "./mecha.js";
+import { emissiveEffectMaterial } from "./effectMaterials.js";
 
 const canvas = document.querySelector("#game-canvas");
 const ui = document.querySelector("#ui-root");
@@ -126,11 +126,12 @@ class BlasterBattle {
       samples: this.graphics.msaaSamples,
       alpha: false,
       forceWebGL: this.forceWebGL,
-      powerPreference: "high-performance"
+      powerPreference: "high-performance",
+      trackTimestamp: new URLSearchParams(location.search).has("profile")
     });
     this.renderer.setPixelRatio(this.graphics.pixelRatio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMapping = THREE.AgXToneMapping;
     this.renderer.toneMappingExposure = LIGHTING.exposure;
     this.renderer.shadowMap.enabled = true;
     // Both backends use WebGPURenderer's node-based shadow pipeline.
@@ -170,6 +171,19 @@ class BlasterBattle {
     this.hazardTarget = new THREE.Vector3();
     this.hazardOffset = new THREE.Vector3();
     this.hazardPush = new THREE.Vector3();
+    this.hitscanRay = new THREE.Ray();
+    this.hitscanSphere = new THREE.Sphere();
+    this.hitscanPoint = new THREE.Vector3();
+    this.hitscanResults = [];
+    this.hitscanEntries = Array.from({ length: 64 }, () => ({ target: null, distance: 0 }));
+    this.attackScratch = { origin: new THREE.Vector3(), direction: new THREE.Vector3(), point: new THREE.Vector3(), offset: new THREE.Vector3(), push: new THREE.Vector3(), from: new THREE.Vector3(), end: new THREE.Vector3(), hitTargets: new Set(), targets: [] };
+    this.presentationTime = 0;
+    this.damageFlash = 0;
+    this.impactPulse = 0;
+    this.cameraKick = new THREE.Vector3();
+    this.pendingCombatFeedback = new Map();
+    this.feedbackAnimations = new Map();
+    this.sceneDirty = true;
     this.sound = new SoundBoard();
     this.sound.occlusionTest = (position) => Boolean(this.world?.ropeBlocked?.(this.camera.position, position));
     this.sound.setVolume(this.settings.volume);
@@ -187,8 +201,6 @@ class BlasterBattle {
     this.projectiles = [];
     this.hazards = [];
     this.decoys = [];
-    this.decoyRenderAnchor = null;
-    this.effects = [];
     this.combatVisuals = null;
     this.respawnTimers = [];
     this.scores = [];
@@ -217,6 +229,7 @@ class BlasterBattle {
     this.privateLobby = null;
     this.privateStartTimer = 0;
     this.networkTargets = new Map();
+    this.remoteSnapshots = new Map();
     this.networkEndsAt = 0;
     this.networkRecovering = false;
     this.networkRespawnRequests = new Map();
@@ -296,6 +309,7 @@ class BlasterBattle {
     key.shadow.mapSize.set(this.graphics.shadowMapSize || 512, this.graphics.shadowMapSize || 512);
     key.shadow.bias = LIGHTING.shadowBias;
     key.shadow.normalBias = LIGHTING.shadowNormalBias;
+    this.shadowRig = new ArenaShadowRig(key, { mapSize: this.graphics.shadowMapSize || 512 });
     this.scene.add(key, key.target);
     const rim = new THREE.DirectionalLight(0x91bfff, .62);
     rim.position.set(22, 15, -25);
@@ -360,6 +374,7 @@ class BlasterBattle {
   }
 
   resize(immediate = false) {
+    this.sceneDirty = true;
     const size = { width: Math.max(1, innerWidth), height: Math.max(1, innerHeight), pixelRatio: this.graphics.pixelRatio };
     this.camera.aspect = size.width / size.height;
     this.camera.updateProjectionMatrix();
@@ -375,6 +390,7 @@ class BlasterBattle {
       this.keyLight.castShadow = this.graphics.shadowMapSize > 0;
       const shadowSize = this.graphics.shadowMapSize || 512;
       if (this.keyLight.shadow.mapSize.x !== shadowSize) this.keyLight.shadow.mapSize.set(shadowSize, shadowSize);
+      this.shadowRig?.setMapSize(shadowSize);
     }
     if (this.pendingGraphicsEffects) {
       this.pendingGraphicsEffects = false;
@@ -404,7 +420,9 @@ class BlasterBattle {
   }
 
   rebuildRenderPipeline() {
-    this.renderPipeline?.dispose();
+    this.sceneDirty = true;
+    const previous = this.renderPipeline;
+    if (previous) this.disposeAfterGraphicsWarmup(() => previous.dispose());
     this.renderer.setRenderTarget(null);
     this.renderPipeline = new NeonRenderPipeline(this.renderer, this.scene, this.camera, {
       reducedMotion: this.settings.reducedMotion,
@@ -414,6 +432,32 @@ class BlasterBattle {
       coarsePointer: this.coarsePointer,
       quality: this.graphics.level
     });
+    if (this.world) this.prepareRenderPipeline(this.renderPipeline);
+  }
+
+  prepareRenderPipeline(pipeline) {
+    const world = this.world;
+    const valid = () => this.renderPipeline === pipeline && this.world === world && !this.pendingPipelineEffects;
+    // Native pipeline compilation skips unready draws. A paused scene must
+    // finish discovery before its single dirty frame can become the held image.
+    this.preparingGraphics = true;
+    const pending = (this.graphicsWarmup || Promise.resolve()).catch(() => {}).then(async () => {
+      if (!valid()) return;
+      this.shadowRig?.update(this.camera);
+      pipeline.resetHistory();
+      await pipeline.prepareRender(valid);
+      await this.renderer.backend.device?.queue.onSubmittedWorkDone();
+      if (valid()) pipeline.resetHistory();
+    }).catch(error => {
+      if (valid()) this.showRendererFailure(error.message || TEXT.errors.graphicsReset);
+    }).finally(() => {
+      if (this.graphicsWarmup !== pending) return;
+      this.preparingGraphics = false;
+      this.sceneDirty = true;
+      this.simulationFrameActive = false;
+    });
+    this.graphicsWarmup = pending;
+    return pending;
   }
 
   applyGraphicsEffects() {
@@ -439,10 +483,9 @@ class BlasterBattle {
           ${Object.keys(GRAPHICS_PRESETS).map(value => `<option value="${value}" ${this.settings.graphics === value ? "selected" : ""}>${TEXT.settings.options.graphics[value]}</option>`).join("")}
           <option value="custom" disabled hidden>${text.custom}</option>
         </select></label>
-        ${Object.entries(GRAPHICS_OPTIONS).map(([key, values]) => `<label>${text.options[key]}<select data-graphics-option="${key}">
+        ${Object.entries(GRAPHICS_OPTIONS).filter(([, values]) => values.length > 1).map(([key, values]) => `<label>${text.options[key]}<select data-graphics-option="${key}">
           ${values.map(value => `<option value="${value}" ${this.settings.graphicsOptions[key] === value ? 'selected' : ''}>${value === 0 ? text.off : ['renderScale', 'ssrScale', 'bloomScale', 'combatQuality'].includes(key) ? value * 100 + '%' : value}</option>`).join('')}
         </select></label>`).join('')}
-        <p data-msaa-reload hidden>${text.reloadNote} <button type="button" data-action="reload-page">${text.reload}</button></p>
         <small>${text.aaNote}</small>
       </details>
       ${Object.entries(text.groups).map(([group, label]) => `<details ${group === 'rendering' ? 'open' : ''}><summary>${label}</summary>
@@ -467,8 +510,6 @@ class BlasterBattle {
       select.value = custom ? 'custom' : this.settings.graphics;
     }
     for (const input of ui.querySelectorAll('[data-graphics-option]')) input.value = this.settings.graphicsOptions[input.dataset.graphicsOption];
-    const reload = ui.querySelector('[data-msaa-reload]');
-    if (reload) reload.hidden = this.renderer.samples === this.settings.graphicsOptions.msaaSamples;
     for (const input of ui.querySelectorAll('[data-graphics-effect]')) {
       const key = input.dataset.graphicsEffect, reason = graphicsEffectUnavailable(key, context);
       input.disabled = Boolean(reason);
@@ -492,7 +533,7 @@ class BlasterBattle {
       const option = input.dataset.graphicsOption, value = Number(input.value);
       if (!GRAPHICS_OPTIONS[option].includes(value)) return false;
       this.settings.graphicsOptions[option] = value;
-      if (option !== 'msaaSamples') this.applyGraphicsSettings();
+      this.applyGraphicsSettings();
     } else if (["graphics", "reducedMotion", "motionBlur"].includes(input.dataset.setting)) {
       const setting = input.dataset.setting;
       this.settings[setting] = setting === "reducedMotion" ? input.checked : setting === "motionBlur" ? Number(input.value) : input.value;
@@ -522,6 +563,13 @@ class BlasterBattle {
   }
 
   clearMatch(preserveNetwork = false) {
+    this.sceneDirty = true;
+    this.remoteSnapshots?.clear();
+    this.pendingCombatFeedback?.clear();
+    for (const animation of this.feedbackAnimations?.values() || []) animation.cancel();
+    this.feedbackAnimations?.clear();
+    this.damageFlash = this.impactPulse = this.presentationTime = 0;
+    this.cameraKick?.set(0, 0, 0);
     this.simulationTiming?.reset();
     this.renderInterpolation?.clear();
     this.interpolationTargets?.clear();
@@ -545,6 +593,9 @@ class BlasterBattle {
     this.privateStartTimer = 0;
     this.networkRecovering = false;
     this.hideNetworkReconnecting();
+    const decoyMaterial = this.decoyMaterial;
+    this.removeObject(this.decoyWarmup); this.decoyWarmup = null; this.decoyMaterial = null;
+    this.disposeAfterGraphicsWarmup(() => decoyMaterial?.dispose());
     const visuals = this.combatVisuals, preparation = this.matchPreparation, world = this.world;
     this.disposeAfterGraphicsWarmup(() => {
       visuals?.dispose();
@@ -556,6 +607,8 @@ class BlasterBattle {
     for (const player of this.players) {
       this.sound.stopOwner(player.id);
       this.releaseGrapple(player, false, true);
+      const grappleVisual = player.grappleVisual;
+      if (grappleVisual) this.disposeAfterGraphicsWarmup(() => disposeGrappleVisual(grappleVisual));
       this.disposeAfterGraphicsWarmup(() => player.dispose());
     }
     for (const shot of this.projectiles) {
@@ -564,15 +617,11 @@ class BlasterBattle {
     }
     for (const hazard of this.hazards) this.removeObject(hazard.mesh);
     for (const decoy of this.decoys) this.removeObject(decoy.mesh);
-    this.removeObject(this.decoyRenderAnchor);
-    this.decoyRenderAnchor = null;
-    for (const effect of this.effects) this.removeObject(effect.mesh);
     this.world = null;
     this.players = [];
     this.projectiles = [];
     this.hazards = [];
     this.decoys = [];
-    this.effects = [];
     this.botTargets.clear();
     this.botPlanPending = false;
     this.networkTargets.clear();
@@ -1511,18 +1560,15 @@ class BlasterBattle {
   }
 
   clearTransientNetworkCombat() {
+    this.remoteSnapshots?.clear();
     while (this.projectiles.length) this.removeProjectile(this.projectiles.length - 1);
     for (const hazard of this.hazards) {
       this.sound.updateHazardLoop(hazard.audioId, hazard.weapon, false);
       this.removeObject(hazard.mesh);
     }
     for (const decoy of this.decoys) this.removeObject(decoy.mesh);
-    this.removeObject(this.decoyRenderAnchor);
-    this.decoyRenderAnchor = null;
-    for (const effect of this.effects) this.removeObject(effect.mesh);
     this.hazards = [];
     this.decoys = [];
-    this.effects = [];
   }
 
   removeOwnedCombat(player, silent = false) {
@@ -1627,11 +1673,11 @@ class BlasterBattle {
     const fighterCount = welcome?.players.length || 1 + clampBotCount(this.settings.botCount);
     // Player-count optimizations batch equivalent geometry; the selected graphics
     // tier remains unchanged at maximum room capacity.
-    this.renderPipeline.setHighLoadMode(fighterCount >= 13);
     const prepared = this.gameplayPreparation?.take(this.seed);
     if (!prepared) this.gameplayPreparation?.cancel();
     this.matchPreparation = prepared;
     this.world = prepared?.world || new ArenaWorld(this.scene, this.seed);
+    this.shadowRig?.registerWorld(this.world.group);
     fitArenaShadow(this.keyLight, this.world);
     this.world.setGraphicsProfile(this.graphics, this.renderer.getMaxAnisotropy());
     if (welcome?.structuralState) {
@@ -1693,11 +1739,15 @@ class BlasterBattle {
     this.preparingMatch = true;
     try {
       for (const player of this.players) {
+        this.prepareGrappleVisual(player);
         await prepareFighterWeapons(player, () => valid() && this.players.includes(player));
         if (!valid()) return;
+        this.shadowRig?.registerFighter(player.group);
       }
+      this.decoyWarmup = this.createDecoyMesh(this.players[0]);
+      this.decoyWarmup.visible = false; this.scene.add(this.decoyWarmup);
       if (!await warmFighterWeapons(this, this.players,
-        [this.world.group, this.combatVisuals.group, ...this.players.map(player => player.group)], valid)) return;
+        [this.world.group, this.combatVisuals.group, this.decoyWarmup, ...this.players.flatMap(player => [player.group, player.grappleVisual.line])], valid)) return;
     } catch (error) {
       if (!valid()) return;
       this.setMatchLoading(false);
@@ -1769,9 +1819,11 @@ class BlasterBattle {
       this.sound.stopOwner(id);
       this.releaseGrapple(current.player, false, true);
       this.removeOwnedCombat(current.player);
+      if (current.player.grappleVisual) this.disposeAfterGraphicsWarmup(() => disposeGrappleVisual(current.player.grappleVisual));
       current.player.group.removeFromParent();
       this.disposeAfterGraphicsWarmup(() => current.player.dispose());
       this.networkTargets.delete(id);
+      this.remoteSnapshots?.delete(id);
     }
     let rosterChanged = ordered.length !== this.players.length;
     this.players = ordered.map((data, index) => {
@@ -1779,6 +1831,8 @@ class BlasterBattle {
       if (!fighter) {
         const spawn = this.authoritativeNetworkPosition(data, index);
         fighter = this.createOnlineFighter(data, spawn);
+        this.prepareGrappleVisual(fighter);
+        this.shadowRig?.registerFighter(fighter.group);
         rosterChanged = true;
       }
       fighter.isBot = Boolean(data.bot);
@@ -1794,8 +1848,8 @@ class BlasterBattle {
       fighter.networkRespawnSpawnIndex = Number.isInteger(data.respawnSpawnIndex) ? data.respawnSpawnIndex : -1;
       fighter.ammo = { ...fighter.ammo, ...data.ammo };
       if (data.alive !== false || lifeAdvanced) this.networkRespawnRequests.delete(fighter.id);
-      if (fighter.networkRemote) this.networkTargets.set(fighter.id, data);
-      else this.networkTargets.delete(fighter.id);
+      if (fighter.networkRemote) this.setRemoteTarget(fighter, data, message.serverTime, true);
+      else { this.networkTargets.delete(fighter.id); this.remoteSnapshots?.delete(fighter.id); }
       return fighter;
     });
     this.scores = ordered.map((data) => data.score ?? prior.get(data.id)?.score ?? 0);
@@ -1833,7 +1887,7 @@ class BlasterBattle {
         }
         player.networkLifeSequence = lifeSequence;
         player.networkRespawnId = String(data.respawnId || player.networkRespawnId || "");
-        this.networkTargets.set(player.id, data);
+        this.setRemoteTarget(player, data, message.serverTime, reconcilesLife);
         if (data.ammo) player.ammo = { ...player.ammo, ...data.ammo };
       }
       this.applyNetworkScores(message.scores);
@@ -1974,6 +2028,12 @@ class BlasterBattle {
     const spawns = this.world.spawnPoints();
     const safeSpawnIndex = Number.isInteger(spawnIndex) && spawnIndex >= 0 ? spawnIndex % spawns.length : 0;
     player.respawn(spawns[safeSpawnIndex]);
+    if (!this.controlsNetworkPlayer(player)) this.setRemoteTarget(player, {
+      position: { x: player.position.x, y: player.position.y, z: player.position.z },
+      velocity: { x: 0, y: 0, z: 0 }, aim: { x: player.aim.x, y: player.aim.y, z: player.aim.z },
+      grounded: true, health: player.health, slotIndex: player.slotIndex, lifeSequence
+    }, message.serverTime, true);
+    else this.remoteSnapshots?.delete(player.id);
     player.ammo = { ...player.ammo, ...message.ammo };
     player.networkPositionDirty = true;
     if (index === 0) {
@@ -2125,6 +2185,7 @@ class BlasterBattle {
   togglePause() {
     if (this.state !== "play") return;
     this.paused = !this.paused;
+    this.sceneDirty = true;
     this.simulationTiming?.reset();
     this.renderInterpolation?.clear();
     this.simulationFrameActive = false;
@@ -2211,19 +2272,18 @@ class BlasterBattle {
       this.sound.updateAmbience({ danger, speed });
     }
     for (const player of this.players) {
-      const localPlayer = player === local;
-      const spatial = this.audioSpatial(player.position, localPlayer, localPlayer ? 1 : .34, player.id);
-      this.sound.updateFighter(player.id, {
-        ...spatial, alive: player.alive, grounded: player.grounded,
-        speed: Math.hypot(player.velocity.x, player.velocity.z), verticalSpeed: player.velocity.y,
-        reloading: player.reloadTimer > 0, weapon: player.weapon, boosted: player.boosted,
-        slowed: player.slowTimer > 0,
-        lowAmmo: player.ammo[player.weapon.id] > 0 && player.ammo[player.weapon.id] <= Math.max(1, Math.ceil(player.weapon.ammo * .2))
-      });
-      this.sound.updateGrappleLoop(player.id, Boolean(player.grapple), {
-        ...spatial, tension: player.grapple ? clamp(player.position.distanceTo(player.grapple.anchor) / Math.max(1, player.grapple.ropeLength) - .72, 0, 1) : 0,
-        speed: player.velocity.length()
-      });
+      const state = player.audioState ||= {};
+      state.position = player.position; state.local = player === local;
+      state.volume = state.local ? 1 : .34; state.ownerId = player.id;
+      state.alive = player.alive; state.grounded = player.grounded;
+      state.speed = Math.hypot(player.velocity.x, player.velocity.z); state.verticalSpeed = player.velocity.y;
+      state.reloading = player.reloadTimer > 0; state.weapon = player.weapon; state.boosted = player.boosted;
+      state.slowed = player.slowTimer > 0;
+      state.lowAmmo = player.ammo[player.weapon.id] > 0 && player.ammo[player.weapon.id] <= Math.max(1, Math.ceil(player.weapon.ammo * .2));
+      this.sound.updateFighter(player.id, state);
+      state.tension = player.grapple ? clamp(player.position.distanceTo(player.grapple.anchor) / Math.max(1, player.grapple.ropeLength) - .72, 0, 1) : 0;
+      state.speed = player.velocity.length();
+      this.sound.updateGrappleLoop(player.id, Boolean(player.grapple), state);
     }
     const audibleHazards = selectNearestAudio(
       this.hazards, local.position, 4, null,
@@ -2239,6 +2299,7 @@ class BlasterBattle {
   frame(time) {
     if (this.matchStartQueued || this.preparingGraphics || this.preparingMatch) return;
     this.commitResize();
+    if (this.preparingGraphics) return;
     this.timer.update(time);
     const rawDt = Math.max(0, this.timer.getDelta());
     if (!globalThis.document?.hidden && this.state === "play" && !this.hideMatchLoadingAfterFrame && this.input.tapped("Escape")) {
@@ -2262,7 +2323,19 @@ class BlasterBattle {
     }
     const updateMs = (performance.now?.() || 0) - updateStarted;
     const renderStarted = performance.now?.() || 0;
-    const rendered = this.matchFramePending ? false : this.renderScene();
+    const hidden = Boolean(globalThis.document?.hidden);
+    const holdScene = this.paused || this.state === "results" || hidden;
+    // TAA needs actual renderer frames to cover its jitter cycle. Settle only
+    // after a visible held image changes, then stop all scene rendering again.
+    if (!holdScene) this.sceneSettleFrames = 0;
+    else if (!hidden && this.sceneDirty) this.sceneSettleFrames = this.renderPipeline?.temporal ? 32 : 0;
+    const settling = !hidden && this.sceneSettleFrames > 0;
+    const rendered = hidden || this.matchFramePending || (holdScene && !this.sceneDirty && !settling && !this.hideMatchLoadingAfterFrame)
+      ? false : this.renderScene(active ? (continuing ? rawDt : Math.min(rawDt, 1 / 60)) : 0);
+    if (rendered) {
+      this.sceneDirty = false;
+      if (settling) this.sceneSettleFrames--;
+    }
     const renderMs = (performance.now?.() || 0) - renderStarted;
     if (this.hideMatchLoadingAfterFrame && rendered) {
       if (this.matchFrameReady) {
@@ -2291,6 +2364,8 @@ class BlasterBattle {
     ({ yaw: this.cameraYaw, pitch: this.cameraPitch } = updateOrbit(this.cameraYaw, this.cameraPitch, look.x, look.y));
     if (this.input.tapped("KeyF")) this.cameraFirstPersonRequested = !this.cameraFirstPersonRequested;
     this.input.pressed?.delete("KeyF");
+    // Update the view ray immediately; positional following happens once at render.
+    this.updateCamera(0);
   }
 
   advanceSimulation(elapsed) {
@@ -2304,7 +2379,6 @@ class BlasterBattle {
       this.simulationTiming.advance(elapsed, (dt, realDt) => {
         const objects = this.interpolationTargets;
         objects.clear();
-        if (this.camera) objects.add(this.camera);
         for (const player of this.players || []) if (player.group) objects.add(player.group);
         for (const items of [this.projectiles, this.hazards, this.decoys]) for (const item of items || []) if (item.mesh) objects.add(item.mesh);
         for (const mover of this.world?.movers || []) if (mover.obstacle.mesh) objects.add(mover.obstacle.mesh);
@@ -2324,8 +2398,6 @@ class BlasterBattle {
 
   update(dt, realDt = dt) {
     if (this.paused || this.hideMatchLoadingAfterFrame) return;
-    // Keep the player camera following input while combat waits to start/reconnect.
-    if (this.awaitingAudioGesture || this.matchStartDelay > 0 || this.audioCountdown || this.networkRecovering) this.updateCamera(dt);
     if (this.awaitingAudioGesture) {
       if (!this.simulationBatch) { this.updateAudio(dt); this.updateHud(); }
       return;
@@ -2384,8 +2456,6 @@ class BlasterBattle {
     this.updateDecoys(dt);
     this.processStructuralEvents();
     for (const player of this.players) this.syncGrappleTarget(player);
-    this.updateEffects(dt);
-    this.combatVisuals?.update(dt);
     this.updateRespawns(realDt);
     for (const player of this.players) if (player.trainingStandStill && player.alive) this.lockTrainingBot(player);
     if (!this.simulationBatch) { this.updateAudio(dt); this.updateHud(); }
@@ -2407,7 +2477,6 @@ class BlasterBattle {
 
   updateHuman(dt) {
     const player = this.players[0];
-    this.updateCamera(dt);
     if (!player.alive) {
       this.sound.updateWeaponLoop(player.id, player.weapon, false);
       this.sound.stopChargeLoop(player.id);
@@ -2455,18 +2524,28 @@ class BlasterBattle {
     player.networkVelocity ||= new THREE.Vector3();
     player.networkAim ||= new THREE.Vector3(0, 0, 1);
     player.networkMove ||= new THREE.Vector3();
-    if (target.position) player.networkPosition.set(target.position.x, target.position.y, target.position.z);
-    if (target.velocity) player.networkVelocity.set(target.velocity.x, target.velocity.y, target.velocity.z);
-    if (target.aim) player.networkAim.set(target.aim.x, target.aim.y, target.aim.z).normalize();
+    const sampled = this.remoteSnapshots?.get(player.id)?.sample() || target;
+    if (sampled.position) player.networkPosition.set(sampled.position.x, sampled.position.y, sampled.position.z);
+    if (sampled.velocity) player.networkVelocity.set(sampled.velocity.x, sampled.velocity.y, sampled.velocity.z);
+    if (sampled.aim) player.networkAim.set(sampled.aim.x, sampled.aim.y, sampled.aim.z).normalize();
     player.networkMove.copy(player.networkVelocity).setY(0);
     if (player.networkMove.lengthSq() > .01) player.networkMove.normalize();
     if (Number.isInteger(target.slotIndex) && target.slotIndex !== player.slotIndex) player.switchSlot(target.slotIndex);
     player.update(dt, player.networkMove, player.networkAim, { reducedMotion: this.settings.reducedMotion }, this.world);
-    const blend = 1 - Math.exp(-14 * dt);
+    const blend = this.remoteSnapshots?.get(player.id)?.samples.length ? 1 : 1 - Math.exp(-14 * dt);
     reconcileRemotePosition(player, player.networkPosition, blend, this.world);
     player.velocity.lerp(player.networkVelocity, blend);
-    player.grounded = Boolean(target.grounded);
+    player.grounded = Boolean(sampled.grounded);
     player.health = target.health ?? player.health;
+  }
+
+  setRemoteTarget(player, state, serverTime, reset = false) {
+    this.networkTargets.set(player.id, state);
+    this.remoteSnapshots ||= new Map();
+    let buffer = this.remoteSnapshots.get(player.id);
+    if (!buffer) this.remoteSnapshots.set(player.id, buffer = new RemoteSnapshots());
+    if (reset) buffer.reset();
+    buffer.push(state, serverTime);
   }
 
   updateBotPlanner(dt) {
@@ -2656,6 +2735,15 @@ class BlasterBattle {
     );
   }
 
+  prepareGrappleVisual(player) {
+    if (!player.grappleVisual) {
+      player.grappleVisual = createGrappleVisual(player);
+      player.grappleVisual.line.visible = false;
+      this.scene.add(player.grappleVisual.line);
+    }
+    return player.grappleVisual;
+  }
+
   toggleGrapple(player) {
     if (!player.alive) return;
     if (player.grapple) return this.releaseGrapple(player, true);
@@ -2669,27 +2757,9 @@ class BlasterBattle {
       return;
     }
     this.sound.play("grappleFire", null, this.audioSpatial(start, local, local ? 1 : .34, player.id));
-    const geometry = createGrappleRopeGeometry();
-    updateGrappleRopeGeometry(geometry, [start, anchor]);
-    const ropeMaterial = new THREE.Line2NodeMaterial({
-      color: new THREE.Color(player.accent).multiplyScalar(1.65),
-      linewidth: player.isBot ? 1.55 : 2.35,
-      transparent: true,
-      opacity: player.isBot ? .64 : .92,
-      // Keep Three's normal opacity, but mark the built-in viewport sampler as
-      // dynamic so unchanged ropes also refresh bindings after a resize.
-      opacityNode: materialOpacity,
-      depthWrite: false,
-      toneMapped: false,
-      alphaToCoverage: true
-    });
-    const line = new Line2(geometry, ropeMaterial);
-    line.frustumCulled = false;
-    const hook = new THREE.Mesh(new THREE.OctahedronGeometry(.22), new THREE.MeshBasicMaterial({ color: player.color, toneMapped: false }));
-    hook.name = "Grapple hook";
-    hook.scale.y = 1.4;
+    const { line, hook } = this.prepareGrappleVisual(player);
     hook.position.copy(anchor);
-    line.add(hook);
+    line.visible = true;
     this.scene.add(line);
     player.grapple = { anchor, target, line, hook, wraps: [], ropeLength: Math.max(5, start.distanceTo(anchor) * .92), pullSpeed: 0, launchLift: true };
     const direction = anchor.clone().sub(start).normalize();
@@ -2730,9 +2800,6 @@ class BlasterBattle {
     player.grapple.wraps = wraps;
     if (wraps.length !== previousWrapCount) this.sound.play("grappleWrap", null, this.audioSpatial(player.position, player === this.players[0], player === this.players[0] ? .8 : .25, player.id));
     applyGrapplePhysics(player, dt, reelFaster);
-    const ropePoints = [chest, ...wraps, player.grapple.anchor];
-    updateGrappleRopeGeometry(player.grapple.line.geometry, ropePoints);
-    player.grapple.hook.position.copy(player.grapple.anchor);
   }
 
   releaseGrapple(player, boost = false, silent = false) {
@@ -2935,13 +3002,7 @@ class BlasterBattle {
         }
       }
       landing.y = this.world.surfaceHeightAt(landing, landing.y + 2) + .06;
-      const telegraph = new THREE.Mesh(
-        new THREE.RingGeometry(.55, 1.05, 28),
-        new THREE.MeshBasicMaterial({ color: weapon.color, transparent: true, opacity: .56, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false })
-      );
-      telegraph.rotation.x = -Math.PI / 2;
-      telegraph.position.copy(landing);
-      telegraph.renderOrder = 6;
+      const telegraph = this.combatVisuals.createMortarRing(weapon, landing);
       this.scene.add(telegraph);
       shot.telegraph = telegraph;
     }
@@ -2949,21 +3010,33 @@ class BlasterBattle {
   }
 
   hitscanTargets(player, start, direction, distance) {
-    const ray = new THREE.Ray(start, direction);
-    const hit = new THREE.Vector3();
-    return [...this.players, ...this.decoys]
-      .filter((target) => target !== player && target.alive)
-      .map((target) => {
-        let nearest = Infinity;
-        const samples = target.isDecoy ? [[1.05, target.radius]] : [[.55, target.radius * .72], [1.2, target.radius], [2.08, target.radius * .72]];
-        for (const [height, radius] of samples) {
-          const sphere = new THREE.Sphere(target.position.clone().add(new THREE.Vector3(0, height, 0)), radius);
-          if (ray.intersectSphere(sphere, hit)) nearest = Math.min(nearest, start.distanceTo(hit));
-        }
-        return { target, distance: nearest };
-      })
-      .filter((entry) => entry.distance > .02 && entry.distance < distance)
-      .sort((a, b) => a.distance - b.distance);
+    const ray = this.hitscanRay ||= new THREE.Ray();
+    const sphere = this.hitscanSphere ||= new THREE.Sphere();
+    const hit = this.hitscanPoint ||= new THREE.Vector3();
+    const results = this.hitscanResults ||= [];
+    const entries = this.hitscanEntries ||= [];
+    results.length = 0;
+    ray.set(start, direction);
+    const count = this.players.length + this.decoys.length;
+    for (let index = 0; index < count; index++) {
+      const target = index < this.players.length ? this.players[index] : this.decoys[index - this.players.length];
+      if (target === player || !target.alive) continue;
+      let nearest = Infinity;
+      for (let sample = 0; sample < (target.isDecoy ? 1 : 3); sample++) {
+        sphere.center.copy(target.position);
+        sphere.center.y += target.isDecoy ? 1.05 : sample === 0 ? .55 : sample === 1 ? 1.2 : 2.08;
+        sphere.radius = target.radius * (target.isDecoy || sample === 1 ? 1 : .72);
+        if (ray.intersectSphere(sphere, hit)) nearest = Math.min(nearest, start.distanceTo(hit));
+      }
+      if (!(nearest > .02 && nearest < distance)) continue;
+      const entry = entries[results.length] ||= { target: null, distance: 0 };
+      entry.target = target; entry.distance = nearest;
+      let insert = results.length;
+      results.push(entry);
+      while (insert > 0 && results[insert - 1].distance > nearest) { results[insert] = results[insert - 1]; insert--; }
+      results[insert] = entry;
+    }
+    return results;
   }
 
   fireHitscan(player, weapon, direction) {
@@ -3046,57 +3119,65 @@ class BlasterBattle {
   }
 
   fireChain(player, weapon) {
-    const origin = player.forwardPoint(.9);
-    const allTargets = [...this.players, ...this.decoys]
-      .filter((target) => target !== player && target.alive);
-    const candidates = allTargets
-      .filter((target) => {
-        const end = target.position.clone().add(new THREE.Vector3(0, 1.05, 0));
-        const offset = end.clone().sub(origin);
-        return offset.length() <= weapon.reach && offset.normalize().dot(player.aim) > .45 && !this.world.ropeBlocked(origin, end);
-      });
-    let from = origin;
-    const hitTargets = new Set();
+    const scratch = this.attackScratch;
+    const origin = scratch.origin.copy(player.position); origin.y += 1.25; origin.addScaledVector(player.aim, .9);
+    const from = scratch.from.copy(origin), point = scratch.point, offset = scratch.offset;
+    const hitTargets = scratch.hitTargets; hitTargets.clear();
+    let initialHit = false;
     for (let jump = 0; jump < weapon.chains; jump++) {
-      let remaining = (jump === 0 ? candidates : allTargets).filter((target) => {
-        if (hitTargets.has(target)) return false;
-        const point = target.position.clone().add(new THREE.Vector3(0, 1.05, 0));
-        return (jump === 0 || point.distanceTo(from) <= 14) && !this.world.ropeBlocked(from, point);
-      });
-      if (!remaining.length) break;
-      remaining.sort((a, b) => a.position.distanceToSquared(from) - b.position.distanceToSquared(from));
-      const target = remaining.shift();
-      if (jump > 0 && target.position.distanceTo(from) > 14) break;
+      let target = null, nearest = Infinity;
+      for (let index = 0, total = this.players.length + this.decoys.length; index < total; index++) {
+        const candidate = index < this.players.length ? this.players[index] : this.decoys[index - this.players.length];
+        if (candidate === player || !candidate.alive || hitTargets.has(candidate)) continue;
+        point.copy(candidate.position); point.y += 1.05;
+        offset.copy(point).sub(jump === 0 ? origin : from);
+        if (offset.lengthSq() > (jump === 0 ? weapon.reach ** 2 : 14 ** 2)) continue;
+        if (jump === 0 && offset.normalize().dot(player.aim) <= .45) continue;
+        if (this.world.ropeBlocked(from, point)) continue;
+        const distance = candidate.position.distanceToSquared(from);
+        if (distance < nearest) { target = candidate; nearest = distance; }
+      }
+      if (!target || (jump > 0 && nearest > 14 ** 2)) break;
+      initialHit = true;
       const head = jump === 0 ? aimedHeadContact(target, origin, player.aim) : null;
-      const end = head ? new THREE.Vector3(head.x, head.y, head.z) : target.position.clone().add(new THREE.Vector3(0, 1.05, 0));
+      const end = scratch.end;
+      if (head) end.set(head.x, head.y, head.z);
+      else { end.copy(target.position); end.y += 1.05; }
       this.spawnTracer(from, end, weapon, player, .18);
-      this.damageTarget(target, Math.ceil(weapon.damage * Math.pow(.72, jump)), target.position.clone().sub(from).normalize().multiplyScalar(weapon.recoil * 1.5), player, weapon, { point: end, source: from });
-      hitTargets.add(target);
-      from = end;
+      const push = scratch.push.copy(target.position).sub(from).normalize().multiplyScalar(weapon.recoil * 1.5);
+      this.damageTarget(target, Math.ceil(weapon.damage * Math.pow(.72, jump)), push, player, weapon, { point: end, source: from });
+      hitTargets.add(target); from.copy(end);
     }
-    if (!candidates.length) {
+    if (!initialHit) {
       const surface = this.world.grapplePoint(origin, player.aim);
       if (surface && origin.distanceTo(surface) <= weapon.reach) this.damageTerrain(surface, weapon, player);
-      this.spawnTracer(origin, origin.clone().addScaledVector(player.aim, 8), weapon, player, .1);
+      this.spawnTracer(origin, scratch.end.copy(origin).addScaledVector(player.aim, 8), weapon, player, .1);
     }
   }
 
   fireFlame(player, weapon) {
-    const origin = player.muzzlePoint(new THREE.Vector3());
-    const direction = player.aim.clone().normalize();
+    const scratch = this.attackScratch;
+    const origin = player.muzzlePoint(scratch.origin);
+    const direction = scratch.direction.copy(player.aim).normalize();
     const surface = this.world.grapplePoint(origin, direction);
     const visibleReach = Math.min(weapon.reach, surface ? origin.distanceTo(surface) : weapon.reach);
     this.combatVisuals?.flameStream(origin, direction, weapon, player, visibleReach);
     if (surface && origin.distanceTo(surface) <= weapon.reach) this.damageTerrain(surface, weapon, player);
-
-    for (const target of [...this.players, ...this.decoys]) {
+    // Damage may remove a decoy. Keep the current attack's recipients stable
+    // without allocating a fresh spread array for every flame tick.
+    const targets = scratch.targets ||= [];
+    targets.length = 0;
+    for (const target of this.players) targets.push(target);
+    for (const target of this.decoys) targets.push(target);
+    for (const target of targets) {
       if (target === player || !target.alive) continue;
-      const head = aimedHeadContact(target, origin, direction);
-      const targetPoint = head ? new THREE.Vector3(head.x, head.y, head.z) : target.position.clone().add(new THREE.Vector3(0, 1.05, 0));
-      const factor = flameConeFactor(origin, direction, targetPoint, target.radius, weapon.reach, weapon.coneAngle);
-      if (factor <= 0 || this.world.ropeBlocked(origin, targetPoint)) continue;
-      const push = direction.clone().multiplyScalar(weapon.recoil * 1.7);
-      this.damageTarget(target, weapon.damage * factor, push, player, weapon, { point: targetPoint, source: origin });
+      const head = aimedHeadContact(target, origin, direction), point = scratch.point;
+      if (head) point.set(head.x, head.y, head.z);
+      else { point.copy(target.position); point.y += 1.05; }
+      const factor = flameConeFactor(origin, direction, point, target.radius, weapon.reach, weapon.coneAngle);
+      if (factor <= 0 || this.world.ropeBlocked(origin, point)) continue;
+      const push = scratch.push.copy(direction).multiplyScalar(weapon.recoil * 1.7);
+      this.damageTarget(target, weapon.damage * factor, push, player, weapon, { point, source: origin });
     }
   }
 
@@ -3151,12 +3232,6 @@ class BlasterBattle {
       shot.age += dt;
       shot.life -= dt;
       const explosive = Boolean(shot.weapon.radius);
-      if (shot.telegraph) {
-        const pulse = 1 + Math.sin(shot.age * 10) * .16;
-        shot.telegraph.scale.setScalar(pulse);
-        shot.telegraph.rotation.z += dt * 1.4;
-      }
-
       if (shot.mine) {
         shot.mesh.rotation.y += dt * 2;
         const target = this.findProjectileTarget(shot, true);
@@ -3265,7 +3340,6 @@ class BlasterBattle {
       } else if (shot.attachedTarget?.alive) {
         shot.mesh.position.copy(shot.attachedTarget.position).add(shot.attachedOffset);
       }
-      this.combatVisuals?.updateProjectile(shot, dt);
       if (shot.life <= 0) {
         this.finishProjectile(index, shot);
       }
@@ -3337,6 +3411,7 @@ class BlasterBattle {
   explode(shot) {
     const position = shot.mesh.position.clone();
     const visualRadius = shot.weapon.visualRadius ?? shot.weapon.radius;
+    this.addCameraImpact(position, Math.min(1, visualRadius / 9));
     for (const target of [...this.players, ...this.decoys]) {
       if (!target.alive) continue;
       const targetPoint = target.position.clone();
@@ -3428,7 +3503,7 @@ class BlasterBattle {
       .filter(({ hazard }) => hazard.owner === owner && hazard.weapon.id === weapon.id);
     if (ownerHazards.length >= (weapon.maxActiveHazards || 2)) this.removeHazard(ownerHazards[0].index);
     if (this.hazards.length >= 24) this.removeHazard(0);
-    const { mesh, radius: hazardRadius, instances, fadeMaterials } = createHazardVisual(weapon);
+    const { mesh, radius: hazardRadius, instances, fadeMaterials } = this.combatVisuals.createHazard(weapon);
     const hazardPosition = position.clone();
     if (weapon.hazard === "napalm") hazardPosition.y = this.world.surfaceHeightAt(hazardPosition, position.y + 2) + .12;
     else hazardPosition.y = Math.max(.18, position.y);
@@ -3450,10 +3525,6 @@ class BlasterBattle {
       hazard.life -= dt;
       hazard.tick -= dt;
       hazard.elapsed += dt;
-      const cameraDistance = this.camera.position.distanceTo(hazard.mesh.position);
-        const proximityFade = clamp((cameraDistance - 2) / 7, .025, 1);
-      for (const entry of hazard.fadeMaterials || []) entry.material.opacity = entry.baseOpacity * proximityFade;
-      hazard.mesh.rotation.y += dt * (hazard.weapon.hazard === "tornado" ? 2.6 : hazard.weapon.hazard === "black_hole" ? -1.4 : .4);
       if (hazard.weapon.hazard === "tornado" && hazard.velocity.lengthSq()) {
         const previous = hazard.previousPosition.copy(hazard.mesh.position);
         const next = hazard.nextPosition.copy(previous).addScaledVector(hazard.velocity, dt);
@@ -3466,23 +3537,6 @@ class BlasterBattle {
           if (this.world.projectileHit(probeZ, .8)) hazard.velocity.z *= -1;
         } else hazard.mesh.position.copy(next);
       }
-      if (hazard.instances?.kind === "flame") {
-        const { mesh, dummy, bases, phases } = hazard.instances;
-        for (let flameIndex = 0; flameIndex < bases.length; flameIndex++) {
-          const flicker = 1 + Math.sin(hazard.elapsed * 11 + phases[flameIndex]) * .22;
-          dummy.position.copy(bases[flameIndex]);
-          dummy.rotation.set(0, phases[flameIndex], 0);
-          dummy.scale.set(flicker, .78 + flicker * .42, flicker);
-          dummy.updateMatrix();
-          mesh.setMatrixAt(flameIndex, dummy.matrix);
-        }
-        mesh.instanceMatrix.needsUpdate = true;
-      } else if (hazard.instances?.kind === "ribbon") {
-        hazard.instances.mesh.rotation.y += dt * 1.8;
-        hazard.instances.mesh.scale.y = 1 + Math.sin(hazard.elapsed * 5) * .035;
-      }
-      const pulse = 1 + Math.sin(hazard.life * 7) * .08;
-      hazard.mesh.scale.setScalar(pulse);
       if (hazard.tick <= 0) {
         hazard.tick = .22;
         for (const player of this.players) {
@@ -3515,53 +3569,45 @@ class BlasterBattle {
     }
   }
 
-  spawnDecoy(position, owner, weapon) {
-    const mesh = owner.group.clone(true);
-    const materials = [];
-    mesh.traverse((child) => {
-      if (child.geometry) child.geometry = child.geometry.clone();
-      if (!child.material) return;
-      const source = Array.isArray(child.material) ? child.material : [child.material];
-      const clones = source.map((entry) => {
-        const clone = entry.clone();
-        const wasVisible = clone.opacity > .01;
-        clone.transparent = true;
-        clone.opacity = wasVisible ? .48 : 0;
-        clone.depthWrite = false;
-        clone.color?.setHex?.(weapon.color);
-        clone.emissive?.setHex?.(weapon.color);
-        if ("emissiveIntensity" in clone) clone.emissiveIntensity = 1.15;
-        materials.push({ material: clone, baseOpacity: clone.opacity });
-        return clone;
-      });
-      child.material = Array.isArray(child.material) ? clones : clones[0];
-      child.castShadow = false;
-      child.receiveShadow = false;
-    });
-    mesh.userData.decoyRendered = false;
-    mesh.userData.decoyPendingMeshes = 0;
-    mesh.userData.decoyRenderContext = null;
-    mesh.userData.decoyMixedContext = false;
+  createDecoyMesh(owner) {
+    this.decoyMaterial ||= emissiveEffectMaterial({ color: WEAPONS.decoy_launcher.color,
+      transparent: true, opacity: .48, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+    // SkeletonUtils duplicates pose ownership, while all immutable geometry and
+    // the prewarmed hologram material remain shared for the entire match.
+    const mesh = cloneMechaHologram(owner.group);
+    // The local camera can hide its owner's body; a world decoy is still visible.
+    const rigIndex = owner.group.children.indexOf(owner.rig);
+    if (rigIndex >= 0) mesh.children[rigIndex].visible = true;
+    const skeletons = new Set();
     mesh.traverse(child => {
-      if (!child.isMesh) return;
-      mesh.userData.decoyPendingMeshes++;
-      child.onAfterRender = () => {
-        const context = `${this.renderPipeline?.quality}:${Boolean(this.renderPipeline?.direct)}`;
-        if (mesh.userData.decoyRenderContext === null) mesh.userData.decoyRenderContext = context;
-        else if (mesh.userData.decoyRenderContext !== context) mesh.userData.decoyMixedContext = true;
-        mesh.userData.decoyRendered = --mesh.userData.decoyPendingMeshes === 0 && !mesh.userData.decoyMixedContext;
-        child.onAfterRender = THREE.Object3D.prototype.onAfterRender;
-      };
+      if (child.isSkinnedMesh) skeletons.add(child.skeleton);
+      if (!child.material) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      if (materials.every(material => material.colorWrite === false || material.opacity <= .01)) child.visible = false;
+      child.material = this.decoyMaterial;
+      child.castShadow = child.receiveShadow = false;
+      child.onAfterRender = THREE.Object3D.prototype.onAfterRender;
     });
+    let released = false;
+    mesh.userData.releaseVisual = () => {
+      if (released) return;
+      released = true; mesh.removeFromParent();
+      this.disposeAfterGraphicsWarmup(() => { for (const skeleton of skeletons) skeleton.dispose(); });
+    };
+    return mesh;
+  }
+
+  spawnDecoy(position, owner, weapon) {
+    const mesh = this.createDecoyMesh(owner);
     const feet = position.clone();
     feet.y = this.world.surfaceHeightAt(feet, position.y + 1);
-    mesh.position.copy(feet);
-    mesh.scale.multiplyScalar(.96);
+    mesh.position.copy(feet); mesh.visible = true; mesh.scale.multiplyScalar(.96);
     this.scene.add(mesh);
     this.decoys.push({
       id: `decoy-${Math.random().toString(36).slice(2)}`,
       isDecoy: true, alive: true, health: 55, radius: .72,
-      owner, weapon, mesh, materials, position: feet, life: weapon.decoyDuration
+      owner, weapon, mesh, position: feet, life: weapon.decoyDuration,
+      initialYaw: mesh.rotation.y, visualAge: 0
     });
     this.spawnBurst(mesh.position.clone().add(new THREE.Vector3(0, 1.2, 0)), weapon.color, 10);
   }
@@ -3570,9 +3616,6 @@ class BlasterBattle {
     for (let index = this.decoys.length - 1; index >= 0; index--) {
       const decoy = this.decoys[index];
       decoy.life -= dt;
-      decoy.mesh.rotation.y += dt * 1.4;
-      const flicker = .76 + Math.sin(decoy.life * 9) * .24;
-      for (const { material, baseOpacity } of decoy.materials) material.opacity = baseOpacity * flicker;
       if (decoy.life <= 0) this.removeDecoy(decoy);
     }
   }
@@ -3581,16 +3624,7 @@ class BlasterBattle {
     const index = this.decoys.indexOf(decoy);
     if (index < 0) return;
     decoy.alive = false;
-    // Keep the latest fully-rendered clone off-scene until match cleanup. Disposing
-    // the last decoy otherwise drops Three's transparent shader references and
-    // recompiles them on the next shot. Visible decoys still clone fresh poses
-    // and own their independently animated materials; retention is bounded to one.
-    const context = `${this.renderPipeline?.quality}:${Boolean(this.renderPipeline?.direct)}`;
-    if (decoy.mesh.userData.decoyRendered && decoy.mesh.userData.decoyRenderContext === context) {
-      this.removeObject(this.decoyRenderAnchor);
-      this.scene.remove(decoy.mesh);
-      this.decoyRenderAnchor = decoy.mesh;
-    } else this.removeObject(decoy.mesh);
+    this.removeObject(decoy.mesh);
     this.decoys.splice(index, 1);
   }
 
@@ -3622,8 +3656,7 @@ class BlasterBattle {
     if (attacker === this.players[0]) {
       if (headshot && target !== attacker && this.hud.headshot) {
         this.hud.headshot.textContent = TEXT.hud.headshot;
-        this.hud.headshot.classList.remove("visible");
-        void this.hud.headshot.offsetWidth;
+        this.queueCombatAnimation("headshot");
         this.hud.headshot.classList.add("visible");
         clearTimeout(this.headshotTimer);
         this.headshotTimer = setTimeout(() => {
@@ -3633,8 +3666,8 @@ class BlasterBattle {
           this.hud.reticle.classList.remove("headshot-hit");
         }, 900);
       }
+      this.queueCombatAnimation(killed ? "elimination" : "hit");
       this.hud.reticle.classList.remove("hit", "elimination");
-      void this.hud.reticle.offsetWidth;
       this.hud.reticle.classList.add(killed ? "elimination" : "hit");
       this.hud.reticle.classList.toggle("headshot-hit", headshot);
       this.sound.play(killed ? "elimination" : "hitConfirm");
@@ -3650,16 +3683,7 @@ class BlasterBattle {
     }
     if (target === this.players[0]) {
       if (!killed) this.sound.play("damage", weapon, { local: true });
-      const damageColor = "#ff4668";
-      this.hud.damageVignette.style.setProperty("--damage-color", damageColor);
-      this.hud.damageVignette.classList.remove("visible");
-      void this.hud.damageVignette.offsetWidth;
-      this.hud.damageVignette.classList.add("visible");
-      clearTimeout(this.damageVignetteTimer);
-      this.damageVignetteTimer = setTimeout(
-        () => this.hud?.damageVignette?.classList.remove("visible"),
-        this.settings.reducedMotion ? 120 : 520
-      );
+      this.damageFlash = Math.max(this.damageFlash || 0, this.settings.reducedMotion ? .16 : .78);
       this.addDamageIndicator(target, attacker, context);
     }
     if (!killed || !attacker || attacker === target) return;
@@ -3673,6 +3697,33 @@ class BlasterBattle {
     line.append(source, document.createTextNode(`  ${weapon?.name || TEXT.hud.impact}  `), victim);
     this.hud.combatLog.prepend(line);
     while (this.hud.combatLog.children.length > 4) this.hud.combatLog.lastElementChild.remove();
+  }
+
+  queueCombatAnimation(kind) {
+    this.pendingCombatFeedback ||= new Map();
+    if (kind === "headshot") this.pendingCombatFeedback.set("headshot", kind);
+    else if (kind === "elimination" || this.pendingCombatFeedback.get("reticle") !== "elimination") this.pendingCombatFeedback.set("reticle", kind);
+  }
+
+  flushCombatAnimations() {
+    if (!this.pendingCombatFeedback?.size) return;
+    this.feedbackAnimations ||= new Map();
+    for (const [channel, kind] of this.pendingCombatFeedback) {
+      const element = channel === "headshot" ? this.hud?.headshot : this.hud?.reticle;
+      this.feedbackAnimations.get(channel)?.cancel();
+      if (!element?.animate) continue;
+      if (channel === "reticle") {
+        element.classList.remove("hit", "elimination"); element.classList.add(kind);
+      }
+      const reduced = this.settings.reducedMotion;
+      const frames = channel === "headshot"
+        ? reduced ? [{ opacity: 1 }, { opacity: 1, offset: .8 }, { opacity: 0 }]
+          : [{ opacity: 0, transform: "translate(-50%, 14px) scale(.65)" }, { opacity: 1, transform: "translate(-50%, -3px) scale(1.12)", offset: .12 }, { opacity: 1, transform: "translate(-50%, 0) scale(1)", offset: .65 }, { opacity: 0, transform: "translate(-50%, -14px) scale(.94)" }]
+        : reduced ? [{ opacity: .6 }, { opacity: 1 }]
+          : [{ transform: "translate(-50%, -50%) scale(1)" }, { transform: kind === "elimination" ? "translate(-50%, -50%) rotate(45deg) scale(1.45)" : "translate(-50%, -50%) scale(.68)", offset: .45 }, { transform: "translate(-50%, -50%) scale(1)" }];
+      this.feedbackAnimations.set(channel, element.animate(frames, { duration: channel === "headshot" ? 900 : kind === "elimination" ? 280 : 160, easing: "ease-out" }));
+    }
+    this.pendingCombatFeedback.clear();
   }
 
   addDamageIndicator(target, attacker, context = {}, now = performance.now()) {
@@ -3728,9 +3779,22 @@ class BlasterBattle {
       this.combatVisuals?.burst(center, 0xff315f, level === "full" ? 10 : 5, { family: "blood", direction, force: level === "full" ? 8 : 5.5 });
       this.combatVisuals?.blood(center, direction, level === "full" ? .82 : .54);
     }
-    if (!this.settings.reducedMotion && this.settings.shake > 0 && target === this.players[0]) {
-      this.camera.position.x += (Math.random() - .5) * this.settings.shake * .006;
-    }
+    if (target === this.players[0]) this.addCameraImpact(attacker?.position || center, .35);
+  }
+
+  addCameraImpact(position, strength = 1) {
+    const local = this.players[0];
+    if (!local || this.settings.reducedMotion) return;
+    const distance = local.position.distanceTo(position);
+    const amount = Math.min(1, strength) * Math.max(0, 1 - distance / 32);
+    this.impactPulse = Math.max(this.impactPulse || 0, amount);
+    if (!this.cameraKick || !(this.settings.shake > 0)) return;
+    const direction = this.damageDirection.copy(position).sub(local.position);
+    const angle = Math.atan2(direction.x, direction.z) - this.cameraYaw;
+    const kick = amount * Math.min(1, this.settings.shake / 100) * .035;
+    this.cameraKick.x = clamp(this.cameraKick.x - kick * (.5 + Math.abs(Math.cos(angle))), -.06, .06);
+    this.cameraKick.y = clamp(this.cameraKick.y + kick * Math.sin(angle), -.045, .045);
+    this.cameraKick.z = clamp(this.cameraKick.z - kick * Math.sin(angle) * .6, -.025, .025);
   }
 
   spawnBurst(position, color, count) {
@@ -3778,28 +3842,6 @@ class BlasterBattle {
         this.combatVisuals?.impact(event.position, STRUCTURAL_COLLAPSE, owner, { size: event.major ? 3.8 : 2.25, explosive: true });
         for (const point of visualPoints) this.combatVisuals?.burst(point, 0x7e8d97, event.major ? 12 : 7, { family: "dust", force: event.major ? 8 : 5 });
         this.sound.playStructural("land", this.audioSpatial(event.position, false, 1, event.attackerId || "world"), scale);
-      }
-    }
-  }
-
-  updateEffects(dt) {
-    for (let index = this.effects.length - 1; index >= 0; index--) {
-      const effect = this.effects[index];
-      effect.life -= dt;
-      if (effect.beam) {
-        effect.mesh.material.opacity *= .72;
-      } else if (effect.ring) {
-        const scale = THREE.MathUtils.lerp(effect.mesh.scale.x, effect.maxScale, dt * 9);
-        effect.mesh.scale.setScalar(scale);
-        effect.mesh.material.opacity *= .9;
-      } else {
-        effect.velocity.y -= 12 * dt;
-        effect.mesh.position.addScaledVector(effect.velocity, dt);
-        effect.mesh.scale.multiplyScalar(1 - dt * 1.4);
-      }
-      if (effect.life <= 0) {
-        this.removeObject(effect.mesh);
-        this.effects.splice(index, 1);
       }
     }
   }
@@ -3900,11 +3942,6 @@ class BlasterBattle {
     const activeReloading = player.reloadTimer > 0 && player.reloadWeaponId === activeWeapon.id;
     setText(this.hud.activeWeaponAmmo, activeReloading ? TEXT.hud.reloading : !weaponUsesAmmo(activeWeapon) ? TEXT.hud.readyNoReload : `${player.ammo[activeWeapon.id]}/${activeWeapon.ammo}`);
     this.hud.scoreboard.classList.toggle("visible", this.input.down("Tab"));
-    const motion = this.settings.reducedMotion ? 0 : clamp((player.velocity.length() - 14) / 30, 0, 1);
-    const grappleBlur = player.grapple && this.graphics.level !== "low" ? motion * (["high", "ultra"].includes(this.graphics.level) ? 3.2 : 1.7) : 0;
-    setStyle(this.hud.motionVignette, "--motion", motion.toFixed(3));
-    setStyle(this.hud.motionVignette, "--environment-blur", `${grappleBlur.toFixed(2)}px`);
-    this.hud.motionVignette.classList.toggle("grappling", Boolean(player.grapple));
     if (!player.alive) {
       const seconds = Math.max(0, Math.ceil(this.respawnTimers[0] || 0));
       const cause = formatText(TEXT.hud.eliminatedBy, { name: this.localEliminatorName || TEXT.hud.environment });
@@ -3955,6 +3992,7 @@ class BlasterBattle {
     if (this.state !== "play") return;
     this.state = "results";
     this.paused = true;
+    this.sceneDirty = true;
     this.input.releasePointer();
     for (const player of this.players) {
       this.sound.stopOwner(player.id);
@@ -4019,28 +4057,78 @@ class BlasterBattle {
     if (!this.settings.reducedMotion) this.camera.rotateZ(clamp(-player.velocity.dot(right) * .0024, -.035, .035));
   }
 
-  renderScene() {
+  renderScene(dt = 0) {
     if (!this.world || this.pendingResize) return false;
+    dt = Number.isFinite(dt) ? Math.max(0, Math.min(dt, .25)) : 0;
     const interpolate = this.state === "play" && !this.paused && !this.hideMatchLoadingAfterFrame && this.renderInterpolation?.transforms.size;
-    const rig = this.players?.[0]?.rig, rigVisible = rig?.visible;
-    const firstPerson = this.cameraFirstPerson;
-    const cameraActual = this.cameraClearance?.actual, cameraTarget = this.cameraClearance?.target;
     if (interpolate) this.renderInterpolation.apply(this.simulationTiming.alpha);
     try {
-      if (interpolate) this.updateCamera(0); // Mouse view responds on every rendered frame.
-      else if (this.state !== "play" || this.paused) this.updateCamera();
+      this.updateCamera(dt);
+      for (const player of this.players || []) {
+        player.updatePresentation?.(dt);
+        if (player.shadowWeaponId !== player.weaponModelId) {
+          this.shadowRig?.registerFighter(player.group);
+          player.shadowWeaponId = player.weaponModelId;
+        }
+        if (dt > 0 && player.presentationAlive !== undefined && player.presentationAlive && !player.alive) this.combatVisuals?.fighterDeath(player.position, player.accent);
+        player.presentationAlive = player.alive;
+        player.damageSmokeTime = Math.max(0, (player.damageSmokeTime || 0) - dt);
+        if (dt > 0 && player.alive && player.health < 30 && player.damageSmokeTime === 0) {
+          player.damageSmokeTime = .28;
+          this.combatVisuals?.damageSmoke(player.position, player.accent);
+        }
+      }
+      if (this.cameraKick && !this.settings.reducedMotion) {
+        this.camera.rotateX(this.cameraKick.x); this.camera.rotateY(this.cameraKick.y); this.camera.rotateZ(this.cameraKick.z);
+        this.cameraKick.multiplyScalar(Math.exp(-dt * 16));
+      }
+      this.shadowRig?.update(this.camera);
       this.updateDamageIndicators();
-      if (this.combatVisuals?.fireballs?.size) this.combatVisuals.updateFireballs();
-      this.world?.updatePresentation(this.camera, this.settings.reducedMotion);
+      this.flushCombatAnimations();
+      this.presentationTime = (this.presentationTime || 0) + dt;
+      for (const shot of this.projectiles || []) {
+        this.combatVisuals?.updateProjectile(shot, dt);
+        if (shot.telegraph) {
+          shot.telegraph.scale.setScalar(1 + Math.sin(shot.age * 10) * .16);
+          shot.telegraph.rotation.z = shot.age * 1.4;
+        }
+      }
+      for (const hazard of this.hazards || []) {
+        hazard.visualAge = (hazard.visualAge || 0) + dt;
+        hazard.mesh.rotation.y = hazard.visualAge * (hazard.weapon.hazard === "tornado" ? 2.6 : hazard.weapon.hazard === "black_hole" ? -1.4 : .4);
+        hazard.mesh.scale.setScalar(1 + Math.sin(hazard.life * 7) * .08);
+      }
+      if (this.decoyMaterial) this.decoyMaterial.opacity = .48 * (.76 + Math.sin(this.presentationTime * 9) * .24);
+      for (const decoy of this.decoys || []) {
+        decoy.visualAge = (decoy.visualAge || 0) + dt;
+        decoy.mesh.rotation.y = (decoy.initialYaw || 0) + decoy.visualAge * 1.4;
+      }
+      if (dt > 0) this.combatVisuals?.update(dt);
+      this.combatVisuals?.syncPresentation(this.camera);
+      for (const player of this.players || []) if (player.grapple) {
+        const grapple = player.grapple;
+        grapple.renderChest ||= new THREE.Vector3();
+        grapple.renderPoints ||= [];
+        const chest = player.grappleHandPoint ? player.grappleHandPoint(grapple.renderChest) : grapple.renderChest.copy(player.position);
+        if (!player.grappleHandPoint) chest.y += 1.4;
+        const points = grapple.renderPoints; points.length = 0; points.push(chest);
+        for (const wrap of grapple.wraps) points.push(wrap);
+        points.push(grapple.anchor);
+        let length = 0;
+        for (let i = 1; i < points.length; i++) length += points[i].distanceTo(points[i - 1]);
+        updateGrappleVisual(grapple.line, points, this.camera, { slack: Math.max(0, grapple.ropeLength - length), dt, reducedMotion: this.settings.reducedMotion });
+      }
+      this.world?.updatePresentation(this.camera, this.settings.reducedMotion, dt);
+      const local = this.players?.[0];
+      const speed = local?.velocity.length() || 0;
+      this.renderPipeline.updatePresentation?.({ speed, motion: clamp((speed - 14) / 30, 0, 1), damage: this.damageFlash || 0, impact: this.impactPulse || 0, time: this.presentationTime, active: this.state === "play" && !this.paused });
       this.renderPipeline.render();
+      this.damageFlash = (this.damageFlash || 0) * Math.exp(-dt * 7);
+      this.impactPulse = (this.impactPulse || 0) * Math.exp(-dt * 12);
       return true;
     } finally {
       if (interpolate) {
         this.renderInterpolation.restore();
-        // Render-only collision/hiding must not latch into the next physics step.
-        this.cameraFirstPerson = firstPerson;
-        if (rig) rig.visible = rigVisible;
-        if (this.cameraClearance) { this.cameraClearance.actual = cameraActual; this.cameraClearance.target = cameraTarget; }
       }
     }
   }
@@ -4053,6 +4141,8 @@ class BlasterBattle {
       preparationProgress("audio");
       await this.sound.prepareResources((done, total) => preparationProgress("audio", done, total));
       preparationProgress("graphics");
+      prewarmWeaponTemplates();
+      await backgroundYield();
       for (const texture of sharedSurfaceTextures()) {
         this.renderer.initTexture(texture);
         await backgroundYield();
@@ -4111,6 +4201,11 @@ class BlasterBattle {
 
   removeObject(object) {
     if (!object) return;
+    if (object.userData?.releaseVisual) {
+      object.userData.releaseVisual();
+      object.removeFromParent();
+      return;
+    }
     this.scene.remove(object);
     this.disposeAfterGraphicsWarmup(() => {
       object.traverse?.((child) => {

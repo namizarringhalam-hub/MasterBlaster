@@ -1,6 +1,102 @@
 import * as THREE from "three/webgpu";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 import { resourceURL } from "./resourceURLs.js";
+import { CSMShadowNode } from "three/addons/csm/CSMShadowNode.js";
+
+export const SHADOW_LAYERS = Object.freeze({ world: 1, fighterProxy: 2, nearSilhouette: 3 });
+
+// Two spatial cascades share the existing key light; no extra BRDF or brighter
+// illumination. The near map sees actual armor and the far map sees only the
+// coarse fighter proxy. Explicit layer masks also keep proxies out of MRT depth.
+export class ArenaShadowRig extends CSMShadowNode {
+  constructor(light, { mapSize = 1024, nearDistance = 46, maxFar = 340 } = {}) {
+    super(light, { cascades: 2, mode: "custom", maxFar, lightMargin: 110,
+      customSplitsCallback: (_count, near, far, target) => target.push(Math.min(.9, Math.max(.02, (nearDistance - near) / (far - near))), 1) });
+    this.mapSize = mapSize;
+    this.nearDistance = nearDistance;
+    light.shadow.shadowNode = this;
+  }
+
+  _init(builder) {
+    super._init(builder);
+    // CSM places each light relative to its camera-frustum slice. The near/far
+    // inherited from fitArenaShadow describe the old fixed arena light instead
+    // and clip receivers after a camera heading change. Include the full slice
+    // diagonal and the above-arena caster margin in each cascade's depth range.
+    for (const light of this.lights) {
+      light.shadow.camera.near = .1;
+      light.shadow.camera.far = this.maxFar * 2 + this.lightMargin * 2;
+      light.shadow.camera.updateProjectionMatrix();
+    }
+    this.lights[0].shadow.camera.layers.set(SHADOW_LAYERS.world);
+    this.lights[0].shadow.camera.layers.enable(SHADOW_LAYERS.nearSilhouette);
+    this.lights[1].shadow.camera.layers.set(SHADOW_LAYERS.world);
+    this.lights[1].shadow.camera.layers.enable(SHADOW_LAYERS.fighterProxy);
+    this.setMapSize(this.mapSize);
+    // A Low -> High switch can create CSM while gameplay is paused. Seed the
+    // first maps during setup, before any child shadow node renders them.
+    this.camera.updateMatrixWorld(true);
+    this.updateBefore();
+  }
+
+  setMapSize(mapSize) {
+    this.mapSize = mapSize;
+    for (const light of this.lights) {
+      if (light.shadow.mapSize.x === mapSize) continue;
+      light.shadow.mapSize.set(mapSize, mapSize);
+      // ShadowNode owns both its primary and VSM targets and resizes them in
+      // updateShadow(). Keep the public map reference intact for fog sampling.
+      light.shadow.needsUpdate = true;
+    }
+  }
+
+  registerWorld(root) {
+    root.traverse(object => { if (object.isMesh) object.layers.enable(SHADOW_LAYERS.world); });
+  }
+
+  registerFighter(root) {
+    root.traverse(object => {
+      if (!object.isMesh) return;
+      if (object.name === "Fighter shadow proxy") {
+        object.layers.set(SHADOW_LAYERS.fighterProxy);
+        object.castShadow = true; object.receiveShadow = false;
+      } else if (object.material && !object.material.transparent && object.material.colorWrite !== false) {
+        object.layers.enable(SHADOW_LAYERS.nearSilhouette);
+        object.layers.disable(SHADOW_LAYERS.world);
+        object.castShadow = true;
+      }
+    });
+  }
+
+  update(camera) {
+    if (!this.camera) return;
+    const signature = camera.projectionMatrix.elements.join(",");
+    if (signature !== this.projectionSignature) {
+      this.projectionSignature = signature; this.updateFrustums();
+    }
+    // The dependency graph can schedule the child shadow maps before the CSM
+    // node's own update. Position the cascades before starting that graph.
+    camera.updateMatrixWorld(true);
+    this.updateBefore();
+  }
+
+  updateBefore(frame) {
+    if (!this.light.parent) return;
+    super.updateBefore(frame);
+    // CSM repositions its lightweight lights during node updates, after the
+    // scene's matrix traversal. ShadowNode immediately reads matrixWorld when
+    // rendering each map, so publish these transforms in the same frame.
+    for (const light of this.lights) {
+      light.updateMatrixWorld(true);
+      light.target.updateMatrixWorld(true);
+    }
+  }
+
+  dispose() {
+    for (const node of this._shadowNodes) node.dispose();
+    super.dispose();
+  }
+}
 
 export const LIGHTING = {
   // Set to "/assets/textures/equirectangular.hdr" after adding the asset under public/.

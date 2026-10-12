@@ -323,7 +323,7 @@ for (const event of ["uiHover", "weaponSelect", "jump", "empty", "grappleMiss", 
   assert.match(mainSource, new RegExp(`sound\\.play\\(.*?"${event}"`), `${event} is wired into live game/menu flow`);
 }
 assert.match(mainSource, /setListener\(this\.camera\.position/, "the audio listener follows the camera");
-assert.match(mainSource, /updateFighter\(player\.id,[\s\S]*?reloading: player\.reloadTimer > 0/, "fighter state transitions drive reload, landing, death, and respawn cues");
+assert.match(mainSource, /state\.alive = player\.alive; state\.grounded = player\.grounded;[\s\S]*?state\.reloading = player\.reloadTimer > 0;[\s\S]*?updateFighter\(player\.id, state\)/, "reused fighter state drives reload, landing, death, and respawn cues");
 assert.match(mainSource, /const impactWeapon = WEAPONS\[shot\.weapon\.sourceWeaponId\] \|\| shot\.weapon;[\s\S]*?playImpact\(impactWeapon, this\.audioSpatial\(position/, "explosions use canonical rendered impact samples with listener-relative position and distance");
 assert.match(mainSource, /playStructural\("warning"[\s\S]*?playStructural\("break"[\s\S]*?playStructural\("land"/, "tower failures use distinct spatial warning, fracture/fall, and landing cues");
 assert.match(mainSource, /Math\.cbrt\(Math\.max\(1, event\.mass[\s\S]*?event\.dropDistance/, "structural audio and effects scale from the actual broken mass and drop instead of the whole tower label");

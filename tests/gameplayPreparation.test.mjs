@@ -180,17 +180,18 @@ const compileRenderer = {
   getOutputBufferType: () => THREE.HalfFloatType,
   async compileAsync(object, view, context) {
     assert.equal(currentTarget, target); assert.equal(currentMRT, mrt);
+    assert.equal(target.samples, 0, "WebGL warmup compiles the scene pass's single-sample target, not the renderer's MSAA setting");
     assert.equal(view, camera); assert.equal(context, scene);
     assert.ok(object.isMesh); compiled++; compileValid = false;
   }
 };
-const pass = { renderTarget: target, getMRT: () => mrt };
+const pass = { options: { samples: 0 }, renderTarget: target, getMRT: () => mrt };
 const pipeline = { renderer: compileRenderer, scenePass: pass, scene, camera, nativeWebGPU: false, renderQuality: "medium" };
 const root = new THREE.Group(); root.add(new THREE.Mesh(), new THREE.Mesh());
 await NeonRenderPipeline.prototype.prepareScene.call(pipeline, [root], () => compileValid);
 assert.equal(compiled, 1, "WebGL compilation observes cancellation between objects");
 assert.equal(currentTarget, originalTarget); assert.equal(currentMRT, originalMRT);
-assert.equal(target.samples, 4);
+assert.equal(target.samples, pass.options.samples);
 compileRenderer.compileAsync = async () => { throw Error("shader failure"); };
 await assert.rejects(NeonRenderPipeline.prototype.prepareScene.call(pipeline, [root]), /shader failure/);
 assert.equal(currentTarget, originalTarget); assert.equal(currentMRT, originalMRT);

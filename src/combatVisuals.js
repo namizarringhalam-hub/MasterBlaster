@@ -1,11 +1,13 @@
 import * as THREE from "three/webgpu";
 import { materialOpacity, uv } from "three/tsl";
 import { weaponPresentation } from "./weaponPresentation.js";
-import { seededRandom } from "./gameData.js";
+import { seededRandom, WEAPONS } from "./gameData.js";
 import { surfaceMaps } from "./surfaceTextures.js";
-import { emissiveEffectMaterial } from "./effectMaterials.js";
+import { emissiveEffectMaterial, muzzlePetalGeometry, muzzlePetalOpacity, ribbonOpacity, ribbonEmission, flameStreamGeometry, flameOpacity } from "./effectMaterials.js";
 import { ExplosionParticles } from "./explosionParticles.js";
 import { queueParticlePrefix } from "./particleUploads.js";
+import { ProjectileBatches } from "./projectileBatches.js";
+import { HazardVisualPool } from "./hazardVisuals.js";
 
 const clamp = THREE.MathUtils.clamp;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -28,6 +30,11 @@ const FIRE_TONGUES = [
   ["flameA", 0, 0, 3.4, .72, 0],
   ["flameB", .54, .24, 2.45, .46, 2.1],
   ["flameC", -.5, -.18, 2.15, .4, 4.3]
+];
+const FLAME_STREAMS = [
+  { length: 1, side: 0, lift: .035, width: .13 },
+  { length: .78, side: -.12, lift: .1, width: .105 },
+  { length: .62, side: .14, lift: -.045, width: .09 }
 ];
 export const FIREBALL_INSTANCE_CAPACITY = 4096;
 const PROJECTILE_GEOMETRIES = new Map();
@@ -102,6 +109,7 @@ function addTail(group, radius, length, material) {
 function addScreenTrail(group, radius, length, color) {
   const trailMaterial = glowMaterial(.82);
   trailMaterial.color.copy(color).multiplyScalar(HDR_GLOW);
+  trailMaterial.userData.projectileOwnerTint = true;
   return addTail(group, Math.max(.08, radius), length, trailMaterial);
 }
 
@@ -204,6 +212,7 @@ export function createProjectileVisual(weapon, owner, collisionRadius = .11, { m
     if (!identity) {
       identity = glowMaterial(.72);
       identity.color.copy(shotIdentity).multiplyScalar(HDR_GLOW);
+      identity.userData.projectileOwnerTint = true;
     }
     return identity;
   };
@@ -391,7 +400,7 @@ export class CombatVisuals {
     this.random = seededRandom(0x51f15e);
     this.scene = scene;
     this.reducedMotion = reducedMotion;
-    this.quality = clamp(quality, .5, 1);
+    this.quality = clamp(quality, .25, 1);
     this.group = new THREE.Group();
     this.group.name = "Combat visuals";
     scene.add(this.group);
@@ -402,19 +411,24 @@ export class CombatVisuals {
     const sparkCapacity = 512;
     this.flashes = slots(flashCapacity);
     this.tracers = slots(tracerCapacity);
+    this.group.userData.flameHeat = this.tracers;
     this.rings = slots(ringCapacity);
     this.sparks = slots(sparkCapacity);
     const bloodCapacity = 48;
     this.bloodDecals = slots(bloodCapacity);
     this.cursors = { flash: 0, tracer: 0, ring: 0, spark: 0, blood: 0 };
 
-    this.flashOuter = instancedLayer(new THREE.ConeGeometry(1, 1, 6, 1, true), flashCapacity, .42);
-    this.flashInner = instancedLayer(new THREE.ConeGeometry(1, 1, 6), flashCapacity, 1);
-    this.tracerOuter = instancedLayer(new THREE.CylinderGeometry(1, 1, 1, 6, 1, true), tracerCapacity, .44);
-    this.tracerOuter.material.blending = THREE.NormalBlending;
-    this.tracerOuter.material.opacity = .62;
+    this.flashOuter = instancedLayer(muzzlePetalGeometry(), flashCapacity, .55, muzzlePetalOpacity);
+    this.flashInner = instancedLayer(muzzlePetalGeometry(), flashCapacity, 1, muzzlePetalOpacity);
+    this.flashOuter.material.side = this.flashInner.material.side = THREE.DoubleSide;
+    this.tracerOuter = instancedLayer(new THREE.PlaneGeometry(2, 1), tracerCapacity, .44, ribbonOpacity);
+    this.tracerOuter.material.side = THREE.DoubleSide;
     this.tracerOuter.renderOrder = 7;
-    this.tracerInner = instancedLayer(new THREE.CylinderGeometry(1, 1, 1, 6), tracerCapacity, .96);
+    this.tracerInner = instancedLayer(new THREE.PlaneGeometry(2, 1), tracerCapacity, .96, ribbonOpacity);
+    this.tracerInner.material.side = THREE.DoubleSide;
+    this.tracerInner.material.emissiveNode = ribbonEmission;
+    this.flameLayer = instancedLayer(flameStreamGeometry(), tracerCapacity, .7, flameOpacity);
+    this.flameLayer.material.side = THREE.DoubleSide;
     this.ringOuter = instancedLayer(new THREE.TorusGeometry(1, .052, 5, 24), ringCapacity, .34);
     this.ringInner = instancedLayer(new THREE.TorusGeometry(1, .026, 4, 24), ringCapacity, .78);
     this.surfaceFront = instancedLayer(new THREE.PlaneGeometry(2, 2), ringCapacity, .34, SURFACE_FRONT_OPACITY);
@@ -436,7 +450,7 @@ export class CombatVisuals {
     }
     this.bloodLayer.instanceMatrix.needsUpdate = true;
     this.bloodLayer.instanceColor.needsUpdate = true;
-    this.group.add(this.flashOuter, this.flashInner, this.tracerOuter, this.tracerInner, this.ringOuter, this.ringInner, this.surfaceFront, this.surfaceCore, this.sparkLayer, this.bloodLayer);
+    this.group.add(this.flashOuter, this.flashInner, this.tracerOuter, this.tracerInner, this.flameLayer, this.ringOuter, this.ringInner, this.surfaceFront, this.surfaceCore, this.sparkLayer, this.bloodLayer);
 
     // Four recycled lights preserve spatial continuity during crossfire without
     // multiplying illumination by fighter count.
@@ -480,6 +494,19 @@ export class CombatVisuals {
       this.fireballGroup.add(layer);
     }
     this.group.add(this.fireballGroup);
+    this.projectileBatches = new ProjectileBatches(this.group, WEAPONS, createProjectileVisual);
+    this.hazardPool = new HazardVisualPool(this.group, WEAPONS);
+    this.mortarRings = instancedLayer(new THREE.RingGeometry(.55, 1.05, 28), 64, .56);
+    this.mortarRings.material.side = THREE.DoubleSide; this.mortarRings.renderOrder = 6; this.group.add(this.mortarRings);
+    this.mortarActive = new Set(); this.mortarFree = [];
+    for (let i = 0; i < 64; i++) {
+      const anchor = new THREE.Object3D(); anchor.userData.tint = new THREE.Color();
+      anchor.userData.releaseVisual = () => {
+        if (!this.mortarActive.delete(anchor)) return;
+        anchor.removeFromParent(); this.mortarFree.push(anchor);
+      };
+      this.mortarFree.push(anchor);
+    }
 
     this.matrix = new THREE.Matrix4();
     this.quaternion = new THREE.Quaternion();
@@ -493,7 +520,10 @@ export class CombatVisuals {
     this.fireRise = new THREE.Vector3();
     this.fireBack = new THREE.Vector3();
     this.offset = new THREE.Vector3();
+    this.flameForward = new THREE.Vector3(); this.flameRight = new THREE.Vector3(); this.flameRise = new THREE.Vector3();
+    this.flameEnd = new THREE.Vector3(); this.flameTint = new THREE.Color(); this.flameWeaponTint = new THREE.Color();
     this.effectTime = 0;
+    this.camera = null;
   }
 
   setReducedMotion(reducedMotion) {
@@ -514,7 +544,7 @@ export class CombatVisuals {
       this.attachProjectileLight(anchor, weapon);
       return anchor;
     }
-    const mesh = createProjectileVisual(weapon, owner, radius, options);
+    const mesh = this.projectileBatches.acquire(owner, weapon, radius, options);
     this.attachProjectileLight(mesh, weapon);
     return mesh;
   }
@@ -532,6 +562,7 @@ export class CombatVisuals {
 
   removeProjectile(shot) {
     if (shot?.mesh?.userData?.combatVisual?.instancedFireball) this.fireballs.delete(shot.mesh);
+    if (shot?.mesh?.userData?.combatVisual?.instancedProjectile) this.projectileBatches.release(shot.mesh);
     for (const light of this.projectileLights) if (light.userData.projectile === shot?.mesh) {
       light.userData.projectile = null; light.intensity = 0;
     }
@@ -553,6 +584,11 @@ export class CombatVisuals {
       : moving ? shot.velocity.length() * dt : 0;
     if (!visual.lastPosition) visual.lastPosition = new THREE.Vector3();
     visual.lastPosition.copy(shot.mesh.position);
+    if (visual.instancedProjectile) {
+      visual.moving = moving; visual.travel = visual.hasLastPosition ? travel : moving ? shot.velocity.length() * dt : 0;
+      visual.hasLastPosition = true;
+      return;
+    }
     for (const tail of visual.trailParts) {
       const { axis, length, offset, screen } = tail.userData.trail;
       const visibleLength = moving ? Math.max(length, travel + .28) : length * .12;
@@ -580,10 +616,10 @@ export class CombatVisuals {
     const profile = weaponPresentation(weapon);
     slot.life = slot.maxLife = this.reducedMotion ? .075 : profile.precision ? .15 : profile.tempo === "heavy" ? .135 : profile.rapid ? .115 : .1;
     slot.position = owner.visualMuzzlePoint?.(slot.position || new THREE.Vector3()) || owner.muzzlePoint?.(slot.position || new THREE.Vector3()) || owner.forwardPoint(.9);
-    this.bindMuzzle(slot, weapon.id === "blaster" ? owner : null, slot.position);
+    this.bindMuzzle(slot, owner, slot.position);
     slot.direction = (slot.direction || new THREE.Vector3()).copy(direction).normalize();
     slot.weaponColor = (slot.weaponColor || new THREE.Color()).set(weapon.color);
-    slot.ownerColor = (slot.ownerColor || new THREE.Color()).copy(ownerColor(owner, weapon));
+    slot.ownerColor = (slot.ownerColor || new THREE.Color()).set(owner?.accent ?? owner?.color ?? weapon.color);
     slot.profile = profile;
     slot.closeRapid = isCloseRapid(profile, weapon);
     slot.length = profile.muzzleLength * (.94 + profile.signature * .12);
@@ -712,19 +748,15 @@ export class CombatVisuals {
 
   flameStream(origin, direction, weapon, owner, distance) {
     if (!origin || !direction?.lengthSq() || distance <= .05) return;
-    const forward = direction.clone().normalize();
-    const right = new THREE.Vector3().crossVectors(forward, UP);
+    const forward = this.flameForward.copy(direction).normalize();
+    const right = this.flameRight.crossVectors(forward, UP);
     if (right.lengthSq() < .01) right.set(1, 0, 0);
     else right.normalize();
-    const rise = new THREE.Vector3().crossVectors(right, forward).normalize();
-    const ownerTint = ownerColor(owner, weapon);
-    const streams = [
-      { length: 1, side: 0, lift: .035, width: .13 },
-      { length: .78, side: -.12, lift: .1, width: .105 },
-      { length: .62, side: .14, lift: -.045, width: .09 }
-    ];
-    for (const stream of streams) {
-      const end = origin.clone().addScaledVector(forward, distance * stream.length);
+    const rise = this.flameRise.crossVectors(right, forward).normalize();
+    const ownerTint = this.flameTint.set(owner?.accent ?? owner?.color ?? weapon.color);
+    this.flameWeaponTint.set(weapon.color);
+    for (const stream of FLAME_STREAMS) {
+      const end = this.flameEnd.copy(origin).addScaledVector(forward, distance * stream.length);
       end.addScaledVector(right, distance * stream.side).addScaledVector(rise, distance * stream.lift);
       this.addTracer(origin, end, weapon, owner, .1, stream.width);
     }
@@ -738,7 +770,7 @@ export class CombatVisuals {
       spark.position.addScaledVector(right, (this.random() - .5) * distance * fraction * .18);
       spark.position.addScaledVector(rise, (this.random() - .35) * distance * fraction * .11);
       spark.velocity = (spark.velocity || new THREE.Vector3()).copy(forward).multiplyScalar(2 + this.random() * 3).addScaledVector(rise, 1.2 + this.random() * 2.4);
-      spark.color = (spark.color || new THREE.Color()).copy(index % 3 ? new THREE.Color(weapon.color) : ownerTint);
+      spark.color = (spark.color || new THREE.Color()).copy(index % 3 ? this.flameWeaponTint : ownerTint);
       spark.size = .11 + fraction * .12;
       spark.family = "flame";
       spark.directional = false;
@@ -754,7 +786,7 @@ export class CombatVisuals {
     slot.start = (slot.start || new THREE.Vector3()).copy(start);
     slot.end = (slot.end || new THREE.Vector3()).copy(end);
     slot.weaponColor = (slot.weaponColor || new THREE.Color()).set(weapon.color);
-    slot.ownerColor = (slot.ownerColor || new THREE.Color()).copy(ownerColor(owner, weapon));
+    slot.ownerColor = (slot.ownerColor || new THREE.Color()).set(owner?.accent ?? owner?.color ?? weapon.color);
     slot.profile = profile;
     slot.closeRapid = isCloseRapid(profile, weapon);
     slot.width = Math.max(width, profile.trailWidth * .52)
@@ -781,7 +813,7 @@ export class CombatVisuals {
     ring.position = (ring.position || new THREE.Vector3()).copy(position);
     ring.normal = (ring.normal || new THREE.Vector3()).copy(normal || (!explosive && owner?.aim) || UP).normalize();
     ring.weaponColor = (ring.weaponColor || new THREE.Color()).set(weapon.color);
-    ring.ownerColor = (ring.ownerColor || new THREE.Color()).copy(ownerColor(owner, weapon));
+    ring.ownerColor = (ring.ownerColor || new THREE.Color()).set(owner?.accent ?? owner?.color ?? weapon.color);
     ring.size = size * (.78 + profile.impactScale * .22);
     ring.family = family;
     ring.profile = profile;
@@ -900,8 +932,14 @@ export class CombatVisuals {
   }
 
   setGraphicsProfile(profile) {
-    this.quality = profile.combatQuality;
-    this.lightLimit = profile.combatLights;
+    this.quality = clamp(profile.combatQuality, .25, 1);
+    this.lightLimit = clamp(profile.combatLights, 1, 4);
+    // Change the actual light signature only behind graphics warmup. Unused
+    // profile slots are absent from traversal, not zero-intensity BRDF work.
+    for (let i = 0; i < 4; i++) for (const light of [this.combatLights[i], this.projectileLights[i]]) {
+      if (i < this.lightLimit) this.combatLightGroup.add(light);
+      else { light.removeFromParent(); light.intensity = 0; light.userData.projectile = null; }
+    }
     for (let i = this.lightLimit; i < this.combatLights.length; i++) {
       this.combatLights[i].intensity = 0;
       this.combatLights[i].userData.life = 0;
@@ -914,13 +952,12 @@ export class CombatVisuals {
     this.explosions.update(dt);
     for (let i = 0; i < this.projectileLights.length; i++) {
       const light = this.projectileLights[i], projectile = light.userData.projectile;
-      if (!projectile?.parent || i >= (this.lightLimit ?? 4)) {
+      if ((!projectile?.parent && !this.fireballs.has(projectile)) || i >= (this.lightLimit ?? 4)) {
         light.intensity = 0; light.userData.projectile = null; continue;
       }
       projectile.getWorldPosition(light.position);
       light.intensity = this.reducedMotion ? .65 : 4.5;
     }
-    this.updateFireballs();
     this.updateFlashes(dt);
     this.updateTracers(dt);
     this.updateRings(dt);
@@ -932,6 +969,39 @@ export class CombatVisuals {
       this.followMuzzle(light, light.userData.life > 0);
       light.intensity = THREE.MathUtils.damp(light.intensity, light.userData.life > 0 ? light.intensity : 0, 26, dt);
     }
+  }
+
+  createHazard(weapon) { return this.hazardPool.acquire(weapon); }
+
+  damageSmoke(position, accent = 0xffb457) {
+    this.explosions.damageSmoke(position, .42, this.reducedMotion);
+    this.burst(position, accent, 2, { force: 1.5 });
+  }
+
+  fighterDeath(position, accent = 0xffb457) {
+    this.explosions.spawn(position, 1.2, this.quality, this.reducedMotion, accent);
+    this.burst(position, accent, 12, { force: 5 });
+  }
+
+  createMortarRing(weapon, position) {
+    const anchor = this.mortarFree.pop();
+    if (!anchor) throw new Error("Mortar telegraph capacity exhausted (64)");
+    anchor.position.copy(position); anchor.rotation.set(-Math.PI / 2, 0, 0); anchor.scale.setScalar(1);
+    anchor.userData.tint.set(weapon.color); this.mortarActive.add(anchor); return anchor;
+  }
+
+  // Call after render interpolation. Lifetimes remain exclusively in update().
+  syncPresentation(camera) {
+    this.camera = camera;
+    this.projectileBatches.sync(); this.updateFireballs();
+    this.hazardPool.sync(camera, this.effectTime, this.reducedMotion);
+    let index = 0;
+    for (const anchor of this.mortarActive) {
+      anchor.updateMatrix(); this.mortarRings.setMatrixAt(index, anchor.matrix);
+      this.mortarRings.setColorAt(index++, anchor.userData.tint);
+    }
+    this.mortarRings.count = index; this.markUpdated(this.mortarRings);
+    this.updateFlashes(0); this.updateTracers(0); this.explosions.update(0, camera);
   }
 
   updateFireballs() {
@@ -1035,6 +1105,7 @@ export class CombatVisuals {
       const fade = clamp(slot.life / slot.maxLife, 0, 1);
       const flicker = .9 + Math.sin((1 - fade) * 18 + slot.profile.signature * 9) * .1;
       this.quaternion.setFromUnitVectors(UP, slot.direction);
+      this.quaternion.multiply(this.twistQuaternion.setFromAxisAngle(UP, slot.profile.signature * Math.PI * 2));
       this.position.copy(slot.position).addScaledVector(slot.direction, slot.length * .5);
       this.scale.set(slot.width * 1.8 * fade * flicker, slot.length, slot.width * 1.8 * fade * flicker);
       this.matrix.compose(this.position, this.quaternion, this.scale);
@@ -1051,7 +1122,7 @@ export class CombatVisuals {
   }
 
   updateTracers(dt) {
-    let dirty = false, count = 0;
+    let dirty = false, count = 0, flameCount = 0;
     for (let index = 0; index < this.tracers.length; index++) {
       const slot = this.tracers[index];
       slot.life -= dt;
@@ -1060,6 +1131,7 @@ export class CombatVisuals {
         if (slot.visible) {
           this.tracerOuter.setMatrixAt(index, HIDDEN);
           this.tracerInner.setMatrixAt(index, HIDDEN);
+          this.flameLayer.setMatrixAt(index, HIDDEN);
           slot.visible = false;
           dirty = true;
         }
@@ -1071,7 +1143,7 @@ export class CombatVisuals {
       const fade = clamp(slot.life / slot.maxLife, 0, 1);
       this.direction.copy(slot.end).sub(slot.start);
       const length = this.direction.length();
-      this.direction.multiplyScalar(1 / length);
+      this.direction.multiplyScalar(1 / Math.max(.001, length));
       this.quaternion.setFromUnitVectors(UP, this.direction);
       const flame = slot.profile.delivery === "flame";
       const melee = slot.profile.delivery === "melee";
@@ -1080,6 +1152,14 @@ export class CombatVisuals {
         : slot.profile.delivery === "beam" ? .88 + Math.sin((1 - fade) * 22 + slot.profile.signature * 7) * .12 : 1;
       const visibleLength = flame ? length * (.68 + fade * .28) : length;
       this.position.copy(slot.start).addScaledVector(this.direction, visibleLength * .5);
+      if (this.camera) {
+        this.normal.subVectors(this.camera.position, this.position).normalize();
+        this.fireSide.crossVectors(this.direction, this.normal);
+        if (this.fireSide.lengthSq() < .0001) this.fireSide.set(1, 0, 0);
+        else this.fireSide.normalize();
+        this.normal.crossVectors(this.fireSide, this.direction).normalize();
+        this.matrix.makeBasis(this.fireSide, this.direction, this.normal); this.quaternion.setFromRotationMatrix(this.matrix);
+      }
       this.scale.set(slot.width * slot.outerWidth * fade * beamPulse, visibleLength, slot.width * slot.outerWidth * fade * beamPulse);
       this.matrix.compose(this.position, this.quaternion, this.scale);
       this.tracerOuter.setMatrixAt(index, this.matrix);
@@ -1087,12 +1167,20 @@ export class CombatVisuals {
       this.scale.set(slot.width * innerWidth * fade, visibleLength * (flame ? .9 : 1), slot.width * innerWidth * fade);
       this.matrix.compose(this.position, this.quaternion, this.scale);
       this.tracerInner.setMatrixAt(index, this.matrix);
+      if (flame) {
+        flameCount = index + 1;
+        this.scale.set(slot.width * 3.4 * fade, visibleLength, 1);
+        this.matrix.compose(this.position, this.quaternion, this.scale); this.flameLayer.setMatrixAt(index, this.matrix);
+        this.flameLayer.setColorAt(index, this.color.copy(slot.weaponColor).lerp(FIRE_HOT, fade * .5).multiplyScalar(1.6));
+        this.tracerOuter.setMatrixAt(index, HIDDEN); this.tracerInner.setMatrixAt(index, HIDDEN);
+      } else this.flameLayer.setMatrixAt(index, HIDDEN);
       this.tracerOuter.setColorAt(index, this.color.copy(slot.ownerColor).multiplyScalar(.28 + fade * .16));
       const hotMix = flame ? .18 : melee ? .28 : slot.closeRapid ? .72 : slot.profile.payload === "gravity" ? .42 : slot.profile.precision ? .84 : slot.profile.energy ? .68 : .58;
       this.tracerInner.setColorAt(index, this.color.copy(slot.weaponColor).lerp(WHITE, hotMix).multiplyScalar(.74 + fade * .26));
     }
     this.tracerOuter.count = this.tracerInner.count = count;
-    if (dirty) this.markUpdated(this.tracerOuter, this.tracerInner);
+    this.flameLayer.count = flameCount;
+    if (dirty) this.markUpdated(this.tracerOuter, this.tracerInner, this.flameLayer);
   }
 
   updateRings(dt) {

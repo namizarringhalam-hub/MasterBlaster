@@ -1,0 +1,153 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Master Blaster render pipeline validation</title><link rel="icon" href="data:,">
+<style>body{margin:0;background:#060b11;color:#d0e9f3;font:13px monospace}canvas{width:640px;height:360px}pre{white-space:pre-wrap}</style>
+<canvas id="view"></canvas><pre id="result">Preparing renderer…</pre>
+<script type="module">
+import * as THREE from 'three/webgpu';
+import { NeonRenderPipeline } from '../src/renderPipeline.js';
+import { softParticleFade } from '../src/softParticles.js';
+import { ArenaShadowRig, fitArenaShadow } from '../src/lighting.js';
+import { float, vec3 } from 'three/tsl';
+const results = [], errors = [];
+const originalError = console.error;
+console.error = (...args) => { errors.push(args.map(String).join(' ')); originalError(...args); };
+window.addEventListener('error', event => errors.push(String(event.error || event.message)));
+window.addEventListener('unhandledrejection', event => errors.push(String(event.reason)));
+window.validation = { status: 'running', results, errors };
+try {
+  const renderer = new THREE.WebGPURenderer({ canvas: document.querySelector('canvas'),
+    forceWebGL: new URLSearchParams(location.search).has('webgl') });
+  renderer.setSize(640, 360, false); renderer.setPixelRatio(1);
+  renderer.toneMapping = THREE.AgXToneMapping; renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.VSMShadowMap;
+  await renderer.init();
+  window.validation.nativeWebGPU = renderer.backend.isWebGPUBackend === true;
+  renderer.backend.device?.addEventListener('uncapturederror', event => errors.push(String(event.error)));
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0x071322);
+  let matrixTraversals = 0;
+  const updateSceneMatrices = scene.updateMatrixWorld.bind(scene);
+  scene.updateMatrixWorld = (...args) => { matrixTraversals++; return updateSceneMatrices(...args); };
+  scene.add(new THREE.HemisphereLight(0xcdefff, 0x050811, 1.4));
+  let key = new THREE.DirectionalLight(0xcce8ff, 3);
+  key.position.set(-3, 7, 4); key.castShadow = true; key.shadow.mapSize.set(256, 256); scene.add(key);
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(15, .2, 15), new THREE.MeshStandardMaterial({ color: 0x132632, metalness: .8, roughness: .2 }));
+  floor.receiveShadow = true; floor.position.y = -.1; scene.add(floor);
+  const box = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2, 1.4), new THREE.MeshStandardMaterial({ color: 0x2c586a, emissive: 0x0088ff, emissiveIntensity: 3, roughness: .2, metalness: .7 }));
+  box.castShadow = true; box.position.y = 1; scene.add(box);
+  const particle = new THREE.Mesh(new THREE.PlaneGeometry(2.5, 2.5), new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false }));
+  particle.material.colorNode = vec3(.2, .8, 1); particle.material.opacityNode = float(.4).mul(softParticleFade());
+  particle.position.set(1, .8, 1); scene.add(particle);
+  const camera = new THREE.PerspectiveCamera(55, 640 / 360, .1, 80); camera.position.set(5, 4, 7); camera.lookAt(0, 1, 0);
+  let opaqueDraws = 0;
+  box.onBeforeRender = (_renderer, _scene, renderCamera) => { if (renderCamera === camera) opaqueDraws++; };
+  for (const quality of ['low', 'medium', 'high', 'ultra']) {
+    const pipeline = new NeonRenderPipeline(renderer, scene, camera, { quality, motionBlur: 35 });
+    await pipeline.prepareRender();
+    for (let i = 0; i < 8; i++) {
+      box.position.x = Math.sin(i * .1) * .1;
+      pipeline.updatePresentation({ motion: .5, impact: i === 3 ? .5 : 0, damage: .1, time: i / 60 });
+      pipeline.render();
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    }
+    renderer.setSize(512, 288, false); opaqueDraws = 0; matrixTraversals = 0; pipeline.render();
+    if (opaqueDraws !== 1) throw Error('Expected exactly one main opaque submission, got ' + opaqueDraws);
+    if (pipeline.scenePass.transparentMRT && matrixTraversals !== 1) throw Error('Separated passes repeated the whole scene matrix traversal: ' + matrixTraversals);
+    if (scene.matrixWorldAutoUpdate !== true) throw Error('Scene matrix ownership was not restored');
+    await renderer.backend.device?.queue.onSubmittedWorkDone();
+    results.push({ quality, direct: pipeline.direct, temporal: !!pipeline.temporal, spatial: !!pipeline.spatial,
+      canvas: [renderer.domElement.width, renderer.domElement.height],
+      scene: [pipeline.scenePass?.renderTarget.width, pipeline.scenePass?.renderTarget.height],
+      copies: pipeline.particleDepth?.frames || 0, fogReady: pipeline.localFog?.ready.value, opaqueDraws, matrixTraversals,
+      attachments: pipeline.scenePass?.renderTarget.textures.map(t => t.name),
+      errors: errors.length });
+    pipeline.dispose(); renderer.setSize(640, 360, false);
+    if (errors.length || results.at(-1).direct) throw Error('Pipeline validation failed for ' + quality);
+  }
+  if (renderer.backend.isWebGPUBackend) {
+    key.shadow.map?.dispose(); scene.remove(key);
+    key = new THREE.DirectionalLight(0xcce8ff, 3);
+    key.position.set(-22, 40, 18); key.castShadow = true; scene.add(key, key.target);
+    fitArenaShadow(key, { size: 112, height: 78 });
+    const shadows = new ArenaShadowRig(key, { mapSize: 256 });
+    shadows.registerWorld(scene);
+    for (const object of [floor, box, particle]) object.material.needsUpdate = true;
+    const pipeline = new NeonRenderPipeline(renderer, scene, camera, { quality: 'high', effects: { antialiasing: false } });
+    await pipeline.prepareRender();
+    if (key.shadow.map !== null || pipeline.localFog.ready.value !== 1
+      || pipeline.localFog.shadowBindings.some((binding, index) => binding.texture.value !== shadows.lights[index].shadow.map.depthTexture)) throw Error('Fog did not bind both actual CSM cascades');
+    window.validation.cascadedFogReady = true;
+    const originalCameraPosition = camera.position.clone(), originalCameraQuaternion = camera.quaternion.clone();
+    const originalFov = camera.fov, originalFar = camera.far;
+    // Keep a shadow receiver visible for all arena-scale headings. Three only
+    // schedules a light's shadow graph when a visible receiver consumes it.
+    floor.scale.set(40, 1, 40);
+    camera.fov = 62; camera.far = 800; camera.updateProjectionMatrix();
+    let coveredFogSamples = 0;
+    for (const heading of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+      camera.position.set(0, 5, 10);
+      camera.lookAt(camera.position.clone().add(new THREE.Vector3(Math.sin(heading), 0, Math.cos(heading))));
+      camera.updateMatrixWorld(true); shadows.update(camera);
+      await new Promise(resolve => requestAnimationFrame(resolve)); pipeline.render();
+      for (const [x, y] of [[0, 0], [-.9, -.9], [.9, -.9], [-.9, .9], [.9, .9]]) {
+        const ray = new THREE.Vector3(x, y, .5).unproject(camera).sub(camera.position).normalize();
+        for (const distance of [1, 5, 20, 45, 46, 60, 64]) {
+          const point = camera.position.clone().addScaledVector(ray, distance);
+          const viewDepth = -point.clone().applyMatrix4(camera.matrixWorldInverse).z;
+          const selected = viewDepth <= pipeline.localFog.cascadeSplit.value ? 0 : 1;
+          const binding = pipeline.localFog.shadowBindings[selected];
+          const sample = point.applyMatrix4(binding.matrix.value);
+          if (binding.texture.value !== shadows.lights[selected].shadow.map.depthTexture
+            || !sample.toArray().every(value => value > 0 && value < 1)) {
+            window.validation.csmDebug = { light: shadows.lights[selected].position.toArray(),
+              world: new THREE.Vector3().setFromMatrixPosition(shadows.lights[selected].matrixWorld).toArray(),
+              shadowCamera: shadows.lights[selected].shadow.camera.position.toArray(),
+              camera: shadows.camera.position.toArray(), frame: renderer._nodes?.nodeFrame?.frameId,
+              sameCamera: shadows.camera === camera, split: pipeline.localFog.cascadeSplit.value };
+            throw Error(`Uncovered actual CSM fog receiver heading=${heading} ray=${x},${y} distance=${distance} cascade=${selected} sample=${sample.toArray()}`);
+          }
+          coveredFogSamples++;
+        }
+      }
+    }
+    window.validation.coveredFogSamples = coveredFogSamples;
+    const retainedMaps = shadows.lights.map(light => light.shadow.map);
+    shadows.setMapSize(512); await new Promise(resolve => requestAnimationFrame(resolve)); pipeline.render();
+    if (shadows.lights.some((light, index) => light.shadow.map !== retainedMaps[index] || light.shadow.map.width !== 512
+      || pipeline.localFog.shadowBindings[index].texture.value !== light.shadow.map.depthTexture)) throw Error('CSM map resize detached live fog binding');
+    window.validation.cascadedFogResize = true;
+    camera.position.copy(originalCameraPosition); camera.quaternion.copy(originalCameraQuaternion);
+    floor.scale.set(1, 1, 1);
+    camera.fov = originalFov; camera.far = originalFar; camera.updateProjectionMatrix(); shadows.update(camera); pipeline.render();
+    const pass = pipeline.scenePass;
+    for (const name of ['normal', 'velocity']) {
+      const index = pass.renderTarget.textures.findIndex(t => t.name === name);
+      particle.visible = true; pass.updateBefore({renderer});
+      const withSmoke = await renderer.readRenderTargetPixelsAsync(pass.renderTarget, 0, 0, pass.renderTarget.width, pass.renderTarget.height, index);
+      particle.visible = false; pass.updateBefore({renderer});
+      const withoutSmoke = await renderer.readRenderTargetPixelsAsync(pass.renderTarget, 0, 0, pass.renderTarget.width, pass.renderTarget.height, index);
+      if (withSmoke.some((value, i) => value !== withoutSmoke[i])) throw Error('Transparent particles replaced opaque ' + name + ' data');
+    }
+    window.validation.transparentSurfacePreserved = true;
+    const render = renderer.render;
+    renderer.render = function (...args) {
+      if (args[0] === scene && this.opaque === false && this.transparent === true) throw Error('expected transparent pass failure');
+      return render.apply(this, args);
+    };
+    let failureRestored = false;
+    try { pass.updateBefore({ renderer }); }
+    catch (error) { if (error.message !== 'expected transparent pass failure') throw error; failureRestored = true; }
+    finally { renderer.render = render; }
+    if (!failureRestored || scene.matrixWorldAutoUpdate !== true
+      || pass.renderTarget.textures.some(texture => texture.name === 'preservedVelocity')) throw Error('Pass failure did not restore scene/attachment ownership');
+    window.validation.passFailureRestored = true;
+    // Direct attachment readbacks above do not present the restored camera.
+    // Finish on an actual new frame so the captured canvas is useful visually.
+    particle.visible = true;
+    await new Promise(resolve => requestAnimationFrame(resolve)); pipeline.render();
+    await renderer.backend.device?.queue.onSubmittedWorkDone();
+    pipeline.dispose(); shadows.dispose();
+  }
+  window.validation.status = 'passed';
+} catch (error) {
+  errors.push(String(error.stack || error)); window.validation.status = 'failed';
+}
+document.querySelector('#result').textContent = JSON.stringify(window.validation, null, 2);
+</script></html>

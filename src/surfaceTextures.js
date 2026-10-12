@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu";
-import { surfaceTextureData } from "./surfaceTextureData.js";
+import { surfaceTextureData, surfaceTextureResolution } from "./surfaceTextureData.js";
 import { backgroundYield } from "./resourceVersion.js";
 
 const preparedData = new Map();
@@ -63,7 +63,7 @@ export function sharedSurfaceTextures() {
 // Matched albedo/normal/ORM channels: recessed seams, bevel highlights and
 // fine brushed grain. Geometry, collision and structural IDs remain untouched.
 export function surfaceTextures(seed, repeat, machined = false, finish = "metal") {
-  const size = 256;
+  const size = surfaceTextureResolution(seed);
   const key = JSON.stringify([seed, machined, finish]);
   const buffers = preparedData.get(key) || surfaceTextureData(seed, machined, finish);
   return buffers.map((data, index) => {

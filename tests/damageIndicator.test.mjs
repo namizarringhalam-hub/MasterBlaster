@@ -154,7 +154,7 @@ function fixture() {
   game.world = { drainStructuralEvents: () => [{ type: "crush", player: target, attackerId: attacker.id }] };
   game.processStructuralEvents();
   assert.equal(visible().length, 0, "structural collapse cannot indicate the remote player who destroyed the building as its damage bearing");
-  assert.equal(game.hud.damageVignette.classList.contains("visible"), true, "environmental damage still provides ordinary hit feedback");
+  assert.equal(game.damageFlash, .78, "environmental damage still drives the in-engine hit flash without inventing an incoming bearing");
 }
 
 {

@@ -252,7 +252,7 @@ export const PLAYER_TEXT = {
     title: "Settings",
     groups: { feedback: "Combat feedback", sound: "Sound & volume" },
     graphicsPanel: {
-      title: "Graphics", live: "All changes save automatically. Presets apply defaults; individual adjustments show Custom. Changes apply live, except MSAA, which needs a reload. Changes may pause rendering while shaders compile.",
+      title: "Graphics", live: "All changes save automatically. Presets apply defaults; individual adjustments show Custom. Changes apply live and may briefly pause rendering while shaders compile.",
       back: "← BACK", reset: "RESTORE PRESET DEFAULTS", custom: "Custom", detail: "Resolution & detail",
       off: "Off", reload: "APPLY MSAA & RELOAD", reloadNote: "MSAA change pending. Reloading ends the current match.",
       options: { renderScale: "Render resolution", msaaSamples: "MSAA samples (reload required)", shadowMapSize: "Shadow map size",
@@ -262,14 +262,14 @@ export const PLAYER_TEXT = {
       groups: { rendering: "Lighting & rendering", world: "World & atmosphere", motion: "Motion & animation" },
       reasons: { webgpu: "Requires WebGPU", shadows: "Enable a shadow map first", reduced: "Disabled by Reduce motion", fallback: "Unavailable in graphics recovery mode" },
       effects: {
-        antialiasing: "Antialiasing · FXAA edge smoothing", bloom: "Bloom & glow", reflections: "Screen-space reflections",
+        antialiasing: "Antialiasing - temporal or spatial edge smoothing", bloom: "Bloom & glow", reflections: "Screen-space reflections",
         ambientOcclusion: "Ambient occlusion", contactShadows: "Contact shadows", localFog: "Volumetric fog & light shafts",
         softParticles: "Soft particle intersections", heatDistortion: "Explosion heat shimmer", motionBlur: "Cinematic motion blur",
         environmentMotion: "Wind & decorative motion", mechaMotion: "Mecha inertia & helmet motion", weaponMotion: "Weapon recoil & reload animation",
         wetSurfaces: "Wet surfaces & puddles", waterCaustics: "Surface light ripples", clouds: "Volumetric clouds & cloud shadows",
         horizonMist: "Horizon mist", atmosphericMotes: "Atmospheric particles", distanceHaze: "Distance haze", impactMarks: "Impact & scorch marks"
       },
-      aaNote: "FXAA smooths the finished image. MSAA smooths geometry and uses more GPU memory. Resolution percentages apply to each image dimension.",
+      aaNote: "Antialiasing uses temporal reconstruction with WebGPU and spatial smoothing with WebGL. Saved MSAA settings use the new antialiasing method. Render resolution scales each dimension; the final image stays at display resolution.",
       motionStrength: "Motion blur intensity"
     },
     labels: {
@@ -290,11 +290,11 @@ export const PLAYER_TEXT = {
       dynamicRange: { wide: "wide", standard: "standard", night: "night" }
     },
     graphicsDescriptions: {
-      low: "50% resolution, no shadows or post effects, reduced cosmetic motion and particles. Full arena and immediate combat cues.",
-      medium: "65% resolution, 1K shadows, FXAA and reduced-resolution bloom. Balanced particles and lights.",
-      high: "75% resolution, 2K shadows, FXAA and full WebGPU effects, including reflections and ambient occlusion.",
-      ultra: "Native resolution, 4× MSAA plus FXAA, 4K shadows and 32-sample ambient occlusion. Maximum quality with a substantial performance cost.",
-      note: "Resolution uses device pixel ratio capped at 1.65 before scaling. WebGL supports bloom and FXAA; advanced effects require WebGPU. Performance depends on your hardware and the scene."
+      low: "50% render resolution with spatial upscaling and a soft neon glow. No shadows, with reduced cosmetic motion and particles. Full arena and immediate combat cues.",
+      medium: "65% render resolution, 1K shadows, temporal antialiasing, glow and quarter-resolution WebGPU reflections. Balanced particles and lights.",
+      high: "75% render resolution, 2K shadows, temporal antialiasing and full WebGPU effects, including reflections, ambient occlusion and light shafts.",
+      ultra: "Native render resolution, temporal antialiasing, 4K shadows and 32-sample ambient occlusion. Maximum detail with a substantial performance cost.",
+      note: "Display resolution uses device pixel ratio capped at 1.65. WebGL uses spatial upscaling and supports glow and edge smoothing; advanced effects require WebGPU. Performance depends on your hardware and the scene."
     }
   },
 

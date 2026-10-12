@@ -5,7 +5,7 @@ import { ArenaWorld } from "../src/world.js";
 import { graphicsProfile } from "../src/gameData.js";
 
 // Deterministic shard/shrink baseline: matrix/color bytes and physical fields
-// stay repeatable across pool reuse and bound refresh.
+// stay repeatable across pool reuse while disabling per-frame bounds scans.
 const goldenWorld=new ArenaWorld(new THREE.Scene(),"POOL-BOUNDS");
 const initialDustColors=goldenWorld.dustMesh.instanceColor;
 assert.ok(initialDustColors,"dust color layout exists before any render or collapse");
@@ -44,9 +44,7 @@ for(const tier of ["low","medium","high"]){
     for(const [mesh,pool] of pairs){
       const active=pool.flatMap((p,i)=>p.active?[i]:[]);
       assert.equal(mesh.count,active.length?active.at(-1)+1:0,"draw tail retains sparse stable slot indices");
-      const actual=mesh.boundingSphere,geometry=mesh.geometry.boundingSphere,matrix=new THREE.Matrix4();
-      for(const index of active){mesh.getMatrixAt(index,matrix);const s=geometry.clone().applyMatrix4(matrix);
-        assert.ok(actual.center.distanceTo(s.center)+s.radius<=actual.radius+1e-6,"cached bound contains every moving/expanding instance extent");}
+      assert.equal(mesh.frustumCulled,false,"moving pools never rely on stale instance bounds");
     }
   };
   world.updateStructuralDebris(.1);assert.equal(refreshes,0,"idle update does no bound work");
@@ -55,8 +53,9 @@ for(const tier of ["low","medium","high"]){
     world.spawnStructuralDebris(point,0xc468ff,4,bounds,"wrapped"+cycle);
     world.spawnStructuralDust(point,0xc468ff,4,bounds,"wrapped"+cycle);
     world.updateStructuralDebris(1/60);verify();assert.equal(world.dustMesh.count,128);
-    const first=world.dustMesh.boundingSphere.clone();world.updateStructuralDebris(.5);verify();
-    assert.ok(!world.dustMesh.boundingSphere.equals(first),"bounds refresh as particles move and expand");
+    const first=world.dustMesh.instanceMatrix.array.slice();world.updateStructuralDebris(.5);verify();
+    assert.notDeepEqual(world.dustMesh.instanceMatrix.array,first,"moving and expanding particles continue to update visually");
+    assert.equal(refreshes,0,"visible movement never rescans the entire particle pool");
     for(const [,pool] of pairs){pool[126].life=pool[127].life=.001;}
     world.updateStructuralDebris(.01);verify();assert.equal(world.dustMesh.count,2);assert.equal(world.debrisMesh.count,2);
     world.updateStructuralDebris(20);verify();

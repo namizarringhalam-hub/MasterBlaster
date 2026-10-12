@@ -682,25 +682,34 @@ export class SoundBoard {
 
   _trackContinuous(source, metadata = {}) { this.continuousSources.set(source, { priority: 0, nodes: [source], ...metadata }); }
   _evictForPriority(priority, requesterGroup = "sfx") {
-    const musicCount = [...this.activeVoices].filter((voice) => voice.group === "music").length;
-    const candidates = [
-      ...[...this.activeVoices].filter((voice) => !(requesterGroup !== "music" && voice.group === "music" && musicCount <= 8)).map((voice) => ({ kind: "active", source: voice.source, priority: voice.priority || 0, voice })),
-      ...[...this.continuousSources].map(([source, metadata]) => ({ kind: "continuous", source, priority: metadata?.priority || 0 })),
-      ...[...this.fadingSources].map(([source, metadata]) => ({ kind: "fading", source, priority: metadata?.priority || 0 }))
-    ].sort((a, b) => a.priority - b.priority);
-    const weakest = candidates[0];
-    if (!weakest || weakest.priority >= priority) return false;
-    if (weakest.kind === "active") {
-      this.activeVoices.delete(weakest.voice);
-      for (const node of weakest.voice.nodes || [weakest.source]) try { node.disconnect?.(); } catch {}
+    let musicCount = 0;
+    if (requesterGroup !== "music") for (const voice of this.activeVoices) if (voice.group === "music") musicCount++;
+    let weakestPriority = priority, source = null, kind = "", selectedVoice = null;
+    for (const voice of this.activeVoices) {
+      if (requesterGroup !== "music" && voice.group === "music" && musicCount <= 8) continue;
+      if ((voice.priority || 0) >= weakestPriority) continue;
+      weakestPriority = voice.priority || 0; source = voice.source; kind = "active"; selectedVoice = voice;
     }
-    else if (weakest.kind === "continuous") return this._preemptContinuous(weakest.source);
+    for (const [candidate, metadata] of this.continuousSources) {
+      if ((metadata?.priority || 0) >= weakestPriority) continue;
+      weakestPriority = metadata?.priority || 0; source = candidate; kind = "continuous";
+    }
+    for (const [candidate, metadata] of this.fadingSources) {
+      if ((metadata?.priority || 0) >= weakestPriority) continue;
+      weakestPriority = metadata?.priority || 0; source = candidate; kind = "fading";
+    }
+    if (!source) return false;
+    if (kind === "active") {
+      this.activeVoices.delete(selectedVoice);
+      for (const node of selectedVoice.nodes || [source]) try { node.disconnect?.(); } catch {}
+    }
+    else if (kind === "continuous") return this._preemptContinuous(source);
     else {
-      const metadata = this.fadingSources.get(weakest.source);
-      this.fadingSources.delete(weakest.source);
-      for (const node of metadata?.nodes || [weakest.source]) try { node.disconnect?.(); } catch {}
+      const metadata = this.fadingSources.get(source);
+      this.fadingSources.delete(source);
+      for (const node of metadata?.nodes || [source]) try { node.disconnect?.(); } catch {}
     }
-    try { weakest.source.stop(this.context?.currentTime || 0); } catch {}
+    try { source.stop(this.context?.currentTime || 0); } catch {}
     return true;
   }
   _countFade(source, seconds, priority = 0, nodes = [source]) {
@@ -1064,7 +1073,9 @@ export class SoundBoard {
   updateFighter(id, state = {}) {
     if (!id) return;
     const previous = this.fighterStates.get(id);
-    const spatial = { ...state, actorId: id };
+    const spatial = previous?.spatial || {};
+    Object.assign(spatial, state);
+    spatial.actorId = id;
     if (previous) {
       if (previous.alive && state.alive === false) this.play("death", null, spatial);
       else if (!previous.alive && state.alive) this.play("respawn", null, spatial);
@@ -1083,7 +1094,10 @@ export class SoundBoard {
       this.play("footstep", null, { ...spatial, strength: clamp(state.speed / 24), volume: state.local ? .9 : .3 });
       spatial.nextStep = now + stepPeriod;
     } else spatial.nextStep = previous?.nextStep || 0;
-    this.fighterStates.set(id, { ...state, nextStep: spatial.nextStep });
+    const record = previous || { spatial };
+    Object.assign(record, state);
+    record.nextStep = spatial.nextStep;
+    this.fighterStates.set(id, record);
   }
 
   startAmbience(theme = "foundry") {

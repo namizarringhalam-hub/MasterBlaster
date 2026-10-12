@@ -210,7 +210,7 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
     if (turn) hero.aim.set(0, 0, -1); // No second shot, trajectory or pose change.
     let flightFrames = 0;
     for (; flightFrames < 90 && !impact; flightFrames++) {
-      game.updateProjectiles(1 / 60); game.updateEffects(1 / 60); visuals.update(1 / 60);
+      game.updateProjectiles(1 / 60); visuals.update(1 / 60); visuals.syncPresentation(game.camera);
       if (!impact && !game.projectiles.length) throw Error("Projectile vanished without a wall impact");
     }
     if (!impact || game.projectiles.length || Math.abs(impact.position[0] - wallX) > .3)
@@ -246,7 +246,7 @@ export async function withWallImpactReview(game, { oblique = false, turn = false
       lights: visuals.combatLights.map(light => ({ position: light.position.toArray(), intensity: light.intensity, life: light.userData.life })),
       cameraMatrix: game.camera.matrixWorld.toArray(), projection: game.camera.projectionMatrix.toArray() });
     for (let frame = 0; frame <= 90; frame++) {
-      if (frame) { game.updateEffects(1 / 60); visuals.update(1 / 60); }
+      if (frame) { visuals.update(1 / 60); visuals.syncPresentation(game.camera); }
       if ((sparkBirth !== "off" ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 22, 23, 24, 26, 90] : ringDissipation === "off" ? [0, 1, 2, 4, 8, 16, 90] : [0, 1, 2, 4, 8, 16, 20, 22, 23, 24, 26, 90]).includes(frame)) await capture(state(frame));
     }
     // Production lights damp asymptotically; preserve their real decay instead

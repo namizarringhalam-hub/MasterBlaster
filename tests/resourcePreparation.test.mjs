@@ -242,7 +242,7 @@ const launch = Object.assign(Object.create(Game.prototype), {
     gameplayRequests++;
     return new Promise((resolve, reject) => { resolveGameplay = resolve; rejectGameplay = reject; });
   },
-  renderPipeline: { setHighLoadMode() { builds++; throw Error("arena reached"); } }
+  freshPerformanceSample() { builds++; throw Error("arena reached"); }
 });
 const cancelled = launch.startMatch(null, true);
 assert.equal(builds, 0, "launch waits for shared resource preparation");

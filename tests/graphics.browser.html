@@ -623,7 +623,7 @@ function settlePose() {
   reviewAim.set(0, Number(select("aim-height").value), -1).normalize();
   hero.velocity.set(0, 0, 0);
   hero.reloadTimer = 0; hero.reloadWeaponId = null; hero.attackTimer = 0; hero.recoilVisual = 0;
-  for (let i = 0; i < 60; i++) hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
+  for (let i = 0; i < 60; i++) { hero.update(1 / 60, stillMove, reviewAim, {}, game.world); hero.updatePresentation(1 / 60); }
   poseReview = { requested: pose, reloadAccepted: null, additionalReacquireFrames: 0 };
   if (pose === "boost") {
     const pad = game.world.boostPads[Number(select("boost-pad").value)];
@@ -632,7 +632,7 @@ function settlePose() {
     let launched = false;
     // The production Fighter/world physics owns launch, flight and plume animation.
     for (let i = 0; i < 30; i++) {
-      hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
+      hero.update(1 / 60, stillMove, reviewAim, {}, game.world); hero.updatePresentation(1 / 60);
       launched ||= hero.boosted;
     }
     if (!launched || hero.grounded || hero.velocity.y <= 0) throw new Error("Production boost ascent not reached");
@@ -642,7 +642,7 @@ function settlePose() {
     hero.position.y += 8; hero.grounded = false;
     let peakScale = 0, captured = false;
     for (let i = 0; i < 180; i++) {
-      hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
+      hero.update(1 / 60, stillMove, reviewAim, {}, game.world); hero.updatePresentation(1 / 60);
       if (!hero.grounded || hero.landTimer <= 0) continue;
       if (hero.thrusterScale < peakScale) {
         poseReview.exhaustLanding = { sampledFrames: i + 1, peakScale, capturedScale: hero.thrusterScale,
@@ -656,7 +656,7 @@ function settlePose() {
     hero.position.y += 8; hero.grounded = false;
     let landed = false, afterTimer = 0, captured = false;
     for (let i = 0; i < 180; i++) {
-      hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
+      hero.update(1 / 60, stillMove, reviewAim, {}, game.world); hero.updatePresentation(1 / 60);
       landed ||= hero.grounded && hero.landStrength === 1 && hero.landTimer > 0;
       if (!landed || !hero.grounded) continue;
       if (hero.landTimer <= 0) afterTimer++;
@@ -673,7 +673,7 @@ function settlePose() {
     let previousAngle = hero.leftLeg.rotation.x, previousDelta = 0, captured = false, maxHorizontalCorrection = 0;
     for (let i = 0; i < 180; i++) {
       const beforeX = hero.position.x, beforeZ = hero.position.z;
-      hero.update(1 / 60, move, reviewAim, { jump: pose === "landing" && i === 0 }, game.world);
+      hero.update(1 / 60, move, reviewAim, { jump: pose === "landing" && i === 0 }, game.world); hero.updatePresentation(1 / 60);
       maxHorizontalCorrection = Math.max(maxHorizontalCorrection, Math.hypot(hero.position.x - beforeX - hero.velocity.x / 60, hero.position.z - beforeZ - hero.velocity.z / 60));
       if (pose.startsWith("gait-") && maxHorizontalCorrection > .001) throw new Error("Locomotion review route obstructed");
       const angle = hero.leftLeg.rotation.x, delta = angle - previousAngle;
@@ -692,17 +692,17 @@ function settlePose() {
     hero.ammo[hero.weapon.id] = Math.max(0, hero.weapon.ammo - 1);
     poseReview.reloadAccepted = hero.reload();
     if (poseReview.reloadAccepted) {
-      for (let i = 0; i < 20; i++) hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
+      for (let i = 0; i < 20; i++) { hero.update(1 / 60, stillMove, reviewAim, {}, game.world); hero.updatePresentation(1 / 60); }
       if (pose.startsWith("reacquire-")) {
         // Exercise real reload completion and support-hand easing; no pose overrides.
-        for (let i = 0; hero.reloadTimer > 0 && i <= Math.ceil(hero.weapon.reload * 60); i++) hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
+        for (let i = 0; hero.reloadTimer > 0 && i <= Math.ceil(hero.weapon.reload * 60); i++) { hero.update(1 / 60, stillMove, reviewAim, {}, game.world); hero.updatePresentation(1 / 60); }
         poseReview.additionalReacquireFrames = pose === "reacquire-early" ? 3 : 12;
-        for (let i = 0; i < poseReview.additionalReacquireFrames; i++) hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
+        for (let i = 0; i < poseReview.additionalReacquireFrames; i++) { hero.update(1 / 60, stillMove, reviewAim, {}, game.world); hero.updatePresentation(1 / 60); }
       }
     }
   } else if (pose === "fire") {
     hero.ammo[hero.weapon.id] = hero.weapon.ammo; game.tryFire(hero, true);
-    for (let i = 0; i < 3; i++) hero.update(1 / 60, stillMove, reviewAim, {}, game.world);
+  for (let i = 0; i < 3; i++) { hero.update(1 / 60, stillMove, reviewAim, {}, game.world); hero.updatePresentation(1 / 60); }
     game.clearTransientNetworkCombat(); // This selector captures the pose, not frozen projectile VFX.
   }
   hero.group.updateMatrixWorld(true);
@@ -984,13 +984,35 @@ async function withTranslatedMuzzle(event, delta, effects, capture) {
     return await capture();
   } finally { positions.forEach((position, i) => position.copy(originals[i])); slots.forEach((slot, i) => { slot.muzzleOwner = owners[i]; }); effects.update(0); }
 }
-async function withReversedTrail(projectile, capture) {
-  const trails = projectile?.mesh.userData.combatVisual?.trailParts || [];
-  const rotations = trails.map(trail => trail.quaternion.clone());
+function projectileTrailLayers(projectile, visuals) {
+  const shot = projectile?.mesh;
+  const individual = shot?.userData.combatVisual?.trailParts;
+  if (individual) return individual.map(mesh => ({ mesh }));
+  if (shot?.isInstancedMesh) return [{ mesh: shot }];
+  const template = shot?.userData.combatVisual?.template;
+  if (template) return template.layers.filter(layer => layer.trail);
+  const weaponId = projectile?.weapon?.id || projectile?.weaponId;
+  return visuals?.projectileBatches.templates.get(`${weaponId}:0`)?.layers.filter(layer => layer.trail) || [];
+}
+async function withReversedTrail(projectile, capture, visuals) {
+  const layers = projectileTrailLayers(projectile, visuals);
+  const rotations = layers.map(layer => layer.baseRotation?.clone() || layer.mesh.quaternion.clone());
   try {
-    trails.forEach(trail => { trail.rotation.x *= -1; trail.updateWorldMatrix(true, false); });
+    layers.forEach(layer => {
+      if (layer.baseRotation) layer.baseRotation.x *= -1;
+      else layer.mesh.rotation.x *= -1;
+      layer.mesh.updateWorldMatrix(true, false);
+    });
+    visuals?.projectileBatches.sync();
     return await capture();
-  } finally { trails.forEach((trail, i) => { trail.quaternion.copy(rotations[i]); trail.updateWorldMatrix(true, false); }); }
+  } finally {
+    layers.forEach((layer, i) => {
+      if (layer.baseRotation) layer.baseRotation.copy(rotations[i]);
+      else layer.mesh.quaternion.copy(rotations[i]);
+      layer.mesh.updateWorldMatrix(true, false);
+    });
+    visuals?.projectileBatches.sync();
+  }
 }
 function landingReference(fighter) {
   return { scale: fighter.rig.scale.clone(), rotation: fighter.rig.quaternion.clone(),
@@ -999,15 +1021,15 @@ function landingReference(fighter) {
 async function withLandingContact(fighter, standing, capture) {
   if (!fighter.grounded) return capture(0);
   const legs = [fighter.leftLeg, fighter.rightLeg], current = landingReference(fighter), y = fighter.rig.position.y;
-  const feet = () => { fighter.group.updateMatrixWorld(true); return legs.map(leg => new THREE.Box3().setFromObject(leg, true).min.y); };
-  const actualFeet = feet();
+  const lowestRigPoint = () => { fighter.group.updateMatrixWorld(true); return new THREE.Box3().setFromObject(fighter.rig, true).min.y; };
+  const actualFloor = lowestRigPoint();
   try {
     fighter.rig.scale.copy(standing.scale); fighter.rig.quaternion.copy(standing.rotation);
     legs.forEach((leg, i) => leg.quaternion.copy(standing.legs[i]));
-    const standingFeet = feet(); // Keep this frame's idle bob and physical root position.
+    const standingFloor = lowestRigPoint(); // Keep this frame's idle bob and physical root position.
     fighter.rig.scale.copy(current.scale); fighter.rig.quaternion.copy(current.rotation);
     legs.forEach((leg, i) => leg.quaternion.copy(current.legs[i]));
-    const offset = Math.min(0, Math.min(...standingFeet) - Math.min(...actualFeet));
+    const offset = Math.min(0, standingFloor - actualFloor);
     fighter.rig.position.y = y + offset; fighter.group.updateMatrixWorld(true);
     return await capture(offset);
   } finally {
@@ -1015,10 +1037,10 @@ async function withLandingContact(fighter, standing, capture) {
     legs.forEach((leg, i) => leg.quaternion.copy(current.legs[i])); fighter.group.updateMatrixWorld(true);
   }
 }
-function makeTrailEdgeMaterials(projectile) {
-  return (projectile.mesh.userData.combatVisual?.trailParts || []).map(trail => {
+function makeTrailEdgeMaterials(projectile, visuals) {
+  return projectileTrailLayers(projectile, visuals).map(({ mesh: trail }) => {
     const control = new THREE.MeshBasicNodeMaterial().copy(trail.material), trial = control.clone();
-    trial.opacityNode = materialOpacity.mul(normalViewGeometry.dot(positionViewDirection).abs().smoothstep(0, .35).mul(.8).add(.2));
+    trial.opacityNode = (control.opacityNode || materialOpacity).mul(normalViewGeometry.dot(positionViewDirection).abs().smoothstep(0, .35).mul(.8).add(.2));
     return { trail, control, trial };
   });
 }
@@ -1088,8 +1110,8 @@ async function runStructuralDustReview() {
   } catch (error) { cameraReview.error = String(error); }
   finally { cameraReview.running = false; cameraReview.shell = false; controls.forEach(([c, disabled]) => { c.disabled = disabled; }); }
 }
-function makeTrailShading(projectile) {
-  return (projectile.mesh.userData.combatVisual?.trailParts || []).map(trail => {
+function makeTrailShading(projectile, visuals) {
+  return projectileTrailLayers(projectile, visuals).map(({ mesh: trail }) => {
     const white = trail.geometry.clone(), gradient = trail.geometry.clone(), material = trail.material.clone();
     for (const geometry of [white, gradient]) {
       geometry.userData.sharedProjectile = false;
@@ -1134,9 +1156,10 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
   cameraReview.transition = transition;
   cameraReview.transitionKind = transition ? "pose-branch-control-before-update" : null;
   let reviewStep = 0;
-  const stepHero = (move, actions) => transition
-    ? withLandingClock(1000 + reviewStep++ * 1000 / 60, () => hero.update(1 / 60, move, reviewAim, actions, game.world))
-    : hero.update(1 / 60, move, reviewAim, actions, game.world);
+  const stepHero = (move, actions) => {
+    const update = () => { hero.update(1 / 60, move, reviewAim, actions, game.world); hero.updatePresentation(1 / 60); };
+    return transition ? withLandingClock(1000 + reviewStep++ * 1000 / 60, update) : update();
+  };
   const trailReview = muzzle?.endsWith("-tail"), shadeReview = muzzle?.endsWith("-shade"), edgeReview = muzzle?.endsWith("-edge"), followMuzzle = trailReview || shadeReview || edgeReview || muzzle?.endsWith("-follow"), neutralMuzzle = muzzle?.startsWith("neutral");
   const clearShot = () => {
     game.clearTransientNetworkCombat();
@@ -1197,7 +1220,7 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
       } else if (shadeReview) {
         await withTrailShading(trailShading, "white", () => capture("white-vertex-control", 0, landingFrame));
         await withTrailShading(trailShading, "gradient", () => capture("gradient-trial", 0, landingFrame));
-      } else if (trailReview) await withReversedTrail(game.projectiles[0], () => capture("reversed-tail", 0, landingFrame));
+} else if (trailReview) await withReversedTrail(game.projectiles[0], () => capture("reversed-tail", 0, landingFrame), game.combatVisuals);
       else if (muzzle) await withTranslatedMuzzle(muzzleEvent, followMuzzle ? muzzleEvent.initialPositions : muzzleDelta, game.combatVisuals, () => capture(followMuzzle ? "previous-snapshot" : "previous-logical-origin", 0, landingFrame));
       else if (hero.landTimer > 0) await withPreviousLandingDrop(hero, drop => capture("previous-drop", drop, landingFrame));
       else await capture("previous-drop", 0, landingFrame);
@@ -1235,8 +1258,8 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
             hero.attackTimer = 0; hero.ammo[hero.weapon.id] = hero.weapon.ammo;
             game.tryFire(hero, true, false); game.combatVisuals.update(0);
             if (game.projectiles.length !== 1) throw new Error("Landing shot did not create one projectile");
-            if (shadeReview) trailShading = makeTrailShading(game.projectiles[0]);
-            if (edgeReview) trailEdgeMaterials = makeTrailEdgeMaterials(game.projectiles[0]);
+if (shadeReview) trailShading = makeTrailShading(game.projectiles[0], game.combatVisuals);
+if (edgeReview) trailEdgeMaterials = makeTrailEdgeMaterials(game.projectiles[0], game.combatVisuals);
             if (muzzle) {
               const effects = game.combatVisuals;
               if (new THREE.Vector3(0, 0, 1).transformDirection(hero.weaponGroup.matrixWorld).dot(hero.aim) < .95)
@@ -1251,7 +1274,7 @@ async function runLandingReview(sequence = false, fallHeight = 0, shot = false, 
             }
             for (let shotFrame = 0; shotFrame < (followMuzzle ? 31 : muzzle ? 9 : 3); shotFrame++) {
               if (shotFrame) {
-                if (muzzle) { hero.update(1 / 60, stillMove, reviewAim, {}, game.world); hero.group.updateMatrixWorld(true); }
+                if (muzzle) { hero.update(1 / 60, stillMove, reviewAim, {}, game.world); hero.updatePresentation(1 / 60); hero.group.updateMatrixWorld(true); }
                 game.updateProjectiles(1 / 60); game.combatVisuals.update(1 / 60);
               }
               // Ordinary projectiles receive their heading in the first real update.

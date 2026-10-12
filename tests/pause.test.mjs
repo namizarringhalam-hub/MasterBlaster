@@ -20,9 +20,9 @@ for (const mode of ["training", "quick", "private", "global"]) {
     clearMatch() { this.multiplayer = null; }, setMatchLoading() {},
     prepareResources: async () => {},
     prepareGameplayResources: async () => {},
+    freshPerformanceSample() { throw arenaReached; },
     connectOnlineMatch: async () => { connections++; return { phase: "lobby" }; },
-    renderPrivateLobby: () => "online lobby",
-    renderPipeline: { setHighLoadMode() { throw arenaReached; } }
+    renderPrivateLobby: () => "online lobby"
   });
   if (local) await assert.rejects(game.startMatch(null, true), error => error === arenaReached);
   else assert.equal(await game.startMatch(null, true), "online lobby");
@@ -39,7 +39,7 @@ for (const mode of ["training", "quick", "private", "global"]) {
     showModal() {}, closeModal() {}, bindUi() {}, trainingControlsMarkup: () => "",
     updateBot: () => { game.botSteps++; }, botSteps: 0, awaitingAudioGesture: false
   });
-  for (const method of ["syncGrappleTarget", "handleWeaponSwitch", "updateHuman", "updateBotPlanner", "updateBurst", "updateProjectiles", "updateHazards", "updateDecoys", "processStructuralEvents", "updateEffects", "updateRespawns", "updateAudio", "updateHud"]) game[method] = () => {};
+for (const method of ["syncGrappleTarget", "handleWeaponSwitch", "updateHuman", "updateBotPlanner", "updateBurst", "updateProjectiles", "updateHazards", "updateDecoys", "processStructuralEvents", "updateRespawns", "updateAudio", "updateHud"]) game[method] = () => {};
   game.togglePause();
   for (let i = 0; i < 1000; i++) game.update(.033, .25);
   assert.equal(game.matchTime, 90);

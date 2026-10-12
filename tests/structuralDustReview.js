@@ -148,7 +148,12 @@ export async function withStructuralDustReview(game, { gameplay = false, diagnos
     if(!world.queueStructuralFailure(part,hero.id))throw Error("Genuine structural failure was not accepted");
     const sampleFrames=new Set([0,15,60,180,360,540]);let completed=false;
     for(frame=1;frame<=900;frame++){
-      world.update(1/60,[]);game.processStructuralEvents();game.updateEffects(1/60);v.update(1/60);
+      world.update(1/60,[]);game.processStructuralEvents();v.update(1/60);v.syncPresentation(game.camera);
+      if(diagnostic==="bounds"&&!gameplay){
+        const dust=world.dustParticles.find(p=>p.active);
+        if(dust){game.camera.position.copy(dust.position).add(new THREE.Vector3(0,2,8));game.camera.lookAt(dust.position);game.camera.updateMatrixWorld(true);}
+      }
+      world.updatePresentation(game.camera,false,1/60);
       if(firstDustFrame>=0&&sampleFrames.has(frame-firstDustFrame))await sample((frame-firstDustFrame)/60);
       if(firstDustFrame>=0&&frame-firstDustFrame>540&&!world.structuralChanges.length&&!world.dustParticles.some(p=>p.active)&&!world.debrisParticles.some(p=>p.active)){
         if(!cohorts.some(c=>c.landing))throw Error("Real landing-generated dust was not observed");

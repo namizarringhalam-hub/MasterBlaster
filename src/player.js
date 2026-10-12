@@ -6,11 +6,12 @@ import { weaponUsesAmmo, WEAPONS } from "./gameData.js";
 import { weaponPresentation } from "./weaponPresentation.js";
 import { createMechaRig } from "./mecha.js";
 import { surfaceMaps, projectSurfaceUVs } from "./surfaceTextures.js";
-import { combatShotOrigin, headContact } from "./headshots.js";
+import { headContact } from "./headshots.js";
 
 const clamp = THREE.MathUtils.clamp;
 export const PROJECTILE_SPAWN_OFFSET = .08;
 const roundedParts = new Map();
+const weaponTemplates = new Map();
 
 export function torsoGeometry() {
   const geometry = new THREE.CapsuleGeometry(.39, .68, 4, 8).translate(0, 1.25, 0);
@@ -196,7 +197,7 @@ export function kneeTaperGeometry(original) {
 }
 
 function disposeGeometry(geometry) {
-  if (!geometry?.userData?.sharedFighterGeometry) geometry?.dispose();
+  if (!geometry?.userData?.sharedFighterGeometry && !geometry?.userData?.sharedWeaponTemplate) geometry?.dispose();
 }
 
 function material(color, emissive = 0, options = {}) {
@@ -346,6 +347,124 @@ function disposeChildren(group) {
   for (const entry of materials) entry.dispose();
 }
 
+// Gameplay uses weaponMuzzleDistance and aim; visual effects must instead
+// originate from the actual authored barrel, nozzle, or melee tip.  These are
+// intentional local art anchors, never a bounds-derived approximation.
+const AUTHORED_VISUAL_MUZZLES = Object.freeze({
+  blaster: [.05, .06, .994], shotgun: [.05, .08, 1.15], machine_gun: [.05, .06, 1.15],
+  rocket_launcher: [.05, .06, 1.18], grenade_launcher: [.05, .06, .994], mine: [.04, .215, .2],
+  railgun: [.05, .08, 1.37], plasma_cannon: [.05, .07, 1.16], submachine_gun: [.05, .05, 1.02],
+  minigun: [.05, .06, 1.15], plasma_repeater: [.05, .06, .994], needle_launcher: [.05, .06, .994],
+  burst_rifle: [.05, .06, .994], flamethrower: [.05, .06, 1.4], cluster_grenade: [.05, .06, .994],
+  sticky_launcher: [.05, .06, .994], remote_explosive: [.04, .227, .2], mortar: [.05, .08, 1.26],
+  bouncing_bomb: [.05, .06, .994], napalm_launcher: [.05, .06, 1.18], implosion_bomb: [.05, .06, .994],
+  laser_beam: [.05, .06, 1.235], charged_energy_rifle: [.05, .08, 1.37], arc_lightning: [.05, .07, 1.17],
+  pulse_cannon: [.05, .07, 1.16], gravity_beam: [.05, .06, 1.17], disintegration_weapon: [.05, .06, 1.27],
+  black_hole_generator: [.05, .07, 1.07], freeze_gun: [.05, .06, .994], fireball: [.05, .04, 1.085],
+  teleport_projectile: [.05, .06, .994], drill_missile: [.05, .06, 1.17], boomerang_blade: [.05, .11, .72],
+  ricochet_cannon: [.05, .06, .994], gravity_grenade: [.05, .06, .994], tornado_generator: [.05, .07, 1.145],
+  temporary_wall: [.05, .06, .994], decoy_launcher: [.05, .06, .994], weapon_stealing_projectile: [.05, .06, 1.02],
+  grapple_disrupting_pulse: [.05, .07, 1.135], hammer: [.06, .04, 1.48], punch_glove: [.06, .1, .96],
+  chainsaw: [.06, .04, 1.66]
+});
+
+function authoredVisualMuzzle(weapon, target = new THREE.Vector3()) {
+  const staticAnchor = AUTHORED_VISUAL_MUZZLES[weapon.id];
+  if (staticAnchor) return target.fromArray(staticAnchor);
+  const reachScale = Math.min(1.5, weapon.reach / 3.5);
+  if (weapon.id === "spear") return target.set(.06, .04, 1.76 * reachScale + .31);
+  const bladeLength = (weapon.id === "knife" ? .62 : weapon.id === "shock_baton" ? .92 : 1.12) * reachScale;
+  return target.set(.06, .04, .43 + bladeLength * .85);
+}
+
+function addVisualMuzzleAnchor(fighter) {
+  const anchor = new THREE.Object3D();
+  anchor.name = "Weapon visual muzzle anchor";
+  anchor.position.copy(authoredVisualMuzzle(fighter.weapon));
+  anchor.userData.weaponTemplatePart = "muzzle";
+  fighter.weaponGroup.add(anchor);
+  fighter.weaponMuzzleAnchor = anchor;
+  fighter.visualMuzzleLocal = anchor.position.clone();
+}
+
+function cloneTemplateMaterials(root) {
+  const clones = new Map();
+  root.traverse(child => {
+    if (!child.material) return;
+    const source = Array.isArray(child.material) ? child.material : [child.material];
+    const copied = source.map(material => {
+      if (!clones.has(material)) clones.set(material, material.clone());
+      return clones.get(material);
+    });
+    child.material = Array.isArray(child.material) ? copied : copied[0];
+  });
+  return clones;
+}
+
+function cacheWeaponModel(fighter) {
+  fighter.weaponModels.set(fighter.weapon.id, {
+    group: new THREE.Group(), grip: fighter.weaponGrip.clone(), supportGrip: fighter.weaponSupportGrip.clone(),
+    spinnerRotation: fighter.weaponSpinner?.quaternion.clone(), pistonPosition: fighter.weaponPiston?.position.clone(),
+    state: { weaponGlowMaterial: fighter.weaponGlowMaterial, weaponSpinner: fighter.weaponSpinner, weaponPiston: fighter.weaponPiston,
+      weaponMagazine: fighter.weaponMagazine, weaponMagazineHome: fighter.weaponMagazineHome, weaponMagazineRotation: fighter.weaponMagazineRotation,
+      weaponHasSupportGrip: fighter.weaponHasSupportGrip, weaponMuzzleDistance: fighter.weaponMuzzleDistance,
+      visualMuzzleLocal: fighter.visualMuzzleLocal?.clone(), weaponMuzzleAnchor: fighter.weaponMuzzleAnchor }
+  });
+}
+
+function instantiateWeaponTemplate(fighter, template) {
+  const instance = template.group.clone(true);
+  cloneTemplateMaterials(instance);
+  let glow = null, spinner = null, piston = null, magazine = null, muzzleAnchor = null;
+  instance.traverse(child => {
+    if (child.userData.weaponTemplatePart === "spinner") spinner = child;
+    if (child.userData.weaponTemplatePart === "piston") piston = child;
+    if (child.userData.weaponTemplatePart === "magazine") magazine = child;
+    if (child.userData.weaponTemplatePart === "muzzle") muzzleAnchor = child;
+    for (const material of child.material ? (Array.isArray(child.material) ? child.material : [child.material]) : []) {
+      if (material.userData.weaponTemplateRole === "glow") glow = material;
+    }
+  });
+  fighter.weaponGrip.copy(template.grip);
+  fighter.weaponSupportGrip.copy(template.supportGrip);
+  fighter.weaponHasSupportGrip = template.weaponHasSupportGrip;
+  fighter.weaponMuzzleDistance = template.weaponMuzzleDistance;
+  fighter.visualMuzzleLocal = template.visualMuzzleLocal.clone();
+  fighter.weaponMuzzleAnchor = muzzleAnchor;
+  fighter.weaponGlowMaterial = glow;
+  fighter.weaponSpinner = spinner;
+  fighter.weaponPiston = piston;
+  fighter.weaponMagazine = magazine;
+  fighter.weaponMagazineHome = magazine?.position.clone();
+  fighter.weaponMagazineRotation = magazine?.rotation.clone();
+  fighter.weaponGroup.add(...instance.children);
+  cacheWeaponModel(fighter);
+}
+
+function publishWeaponTemplate(fighter) {
+  const { weapon } = fighter;
+  fighter.weaponGlowMaterial.userData.weaponTemplateRole = "glow";
+  if (fighter.weaponSpinner) fighter.weaponSpinner.userData.weaponTemplatePart = "spinner";
+  if (fighter.weaponPiston) fighter.weaponPiston.userData.weaponTemplatePart = "piston";
+  if (fighter.weaponMagazine) fighter.weaponMagazine.userData.weaponTemplatePart = "magazine";
+  const template = {
+    group: fighter.weaponGroup.clone(true),
+    grip: fighter.weaponGrip.clone(), supportGrip: fighter.weaponSupportGrip.clone(),
+    weaponHasSupportGrip: fighter.weaponHasSupportGrip, weaponMuzzleDistance: fighter.weaponMuzzleDistance,
+    visualMuzzleLocal: fighter.visualMuzzleLocal.clone()
+  };
+  template.group.traverse(child => {
+    if (child.geometry) child.geometry.userData.sharedWeaponTemplate = true;
+  });
+  weaponTemplates.set(weapon.id, template);
+  const materialClones = cloneTemplateMaterials(fighter.weaponGroup);
+  fighter.weaponGlowMaterial = materialClones.get(fighter.weaponGlowMaterial);
+}
+
+export function weaponTemplateCount() {
+  return weaponTemplates.size;
+}
+
 export class Fighter {
   constructor(scene, config, loadout, position, isBot = false) {
     this.scene = scene;
@@ -395,6 +514,10 @@ export class Fighter {
     this.previousVisualVelocity = new THREE.Vector3();
     this.weaponKick = { value: 0, velocity: 0 };
     this.weaponSpinSpeed = 0;
+    this.presentationTime = 0;
+    this.presentationReducedMotion = false;
+    this.respawnScanTime = 0;
+    this.deathPresentationRevision = 0;
     this.deathTimer = 0;
     this.gaitPhase = 0;
     this.grounded = true;
@@ -506,6 +629,11 @@ export class Fighter {
       disposeChildren(model.group);
       this.weaponModels.delete(id);
     }
+    const template = weaponTemplates.get(weapon.id);
+    if (template) {
+      instantiateWeaponTemplate(this, template);
+      return;
+    }
     const glow = material(weapon.color, weapon.color, { emissiveIntensity: .25, roughness: .3, metalness: .25, clearcoat: .15 });
     glow.color.multiplyScalar(.32);
     const paint = material(new THREE.Color(weapon.color).lerp(new THREE.Color(0x303840), .72), 0,
@@ -586,13 +714,9 @@ export class Fighter {
       this.weaponMagazineRotation = this.weaponMagazine?.rotation.clone();
       mergeRigidMeshes(this.weaponGroup, [this.weaponSpinner, this.weaponPiston, this.weaponMagazine]);
       combineMaterialBatches(this.weaponGroup, [this.weaponSpinner, this.weaponPiston, this.weaponMagazine]);
-      this.weaponModels.set(weapon.id, {
-        group: new THREE.Group(), grip: this.weaponGrip.clone(), supportGrip: this.weaponSupportGrip.clone(),
-        spinnerRotation: this.weaponSpinner?.quaternion.clone(), pistonPosition: this.weaponPiston?.position.clone(),
-        state: { weaponGlowMaterial: this.weaponGlowMaterial, weaponSpinner: this.weaponSpinner, weaponPiston: this.weaponPiston,
-          weaponMagazine: this.weaponMagazine, weaponMagazineHome: this.weaponMagazineHome, weaponMagazineRotation: this.weaponMagazineRotation,
-          weaponHasSupportGrip: this.weaponHasSupportGrip, weaponMuzzleDistance: this.weaponMuzzleDistance }
-      });
+      addVisualMuzzleAnchor(this);
+      publishWeaponTemplate(this);
+      cacheWeaponModel(this);
     };
     if (weapon.type === "mine" || weapon.type === "remote") {
       if (weapon.type === "mine") {
@@ -1099,9 +1223,12 @@ export class Fighter {
 
   updateDeath(dt) {
     if (this.alive || this.deathTimer <= 0) return;
-    this.backHaloMaterial.opacity = 0;
-    this.backVentMaterial.opacity = 0;
     this.deathTimer = Math.max(0, this.deathTimer - dt);
+    if (this.deathTimer === 0) this.group.visible = false;
+  }
+
+  updateDeathPresentation() {
+    if (this.alive || this.deathTimer <= 0) return;
     const progress = 1 - this.deathTimer / 1.4;
     const side = Number(String(this.id).match(/\d+/)?.[0] || 1) % 2 ? 1 : -1;
     const burst = Math.sin(progress * Math.PI);
@@ -1118,7 +1245,24 @@ export class Fighter {
 
     this.identityRing.material.opacity = .62 * fade;
     this.identityBeacon.material.opacity = fade;
-    if (this.deathTimer === 0) this.group.visible = false;
+    this.backHaloMaterial.opacity = 0;
+    this.backVentMaterial.opacity = 0;
+    this.deathFragments.visible = true;
+    this.deathFragmentMaterial.opacity = .72 * fade;
+    this.deathBlast.visible = progress < .62;
+    this.deathBlastMaterial.opacity = Math.max(0, .9 * (1 - progress * 1.6));
+    this.deathBlast.scale.setScalar(1 + progress * 7);
+    const matrix = this.presentationMatrix, vector = this.presentationVector;
+    for (let index = 0; index < this.deathFragmentSeeds.length; index++) {
+      const seed = this.deathFragmentSeeds[index];
+      vector.copy(seed).multiplyScalar(progress * (1.6 + (index % 3) * .35));
+      vector.y += progress * progress * -1.8;
+      matrix.makeTranslation(vector.x, vector.y + 1.25, vector.z);
+      matrix.scale(this.presentationFragmentScale.setScalar(1 - progress * .45));
+      this.deathFragments.setMatrixAt(index, matrix);
+    }
+    this.deathFragments.instanceMatrix.needsUpdate = true;
+    this.syncMechaSkeleton?.();
   }
 
   respawn(position) {
@@ -1174,6 +1318,10 @@ export class Fighter {
     this.previousVisualVelocity.set(0, 0, 0);
     this.weaponKick.value = this.weaponKick.velocity = 0;
     this.weaponSpinSpeed = 0;
+    this.respawnScanTime = .72;
+    this.deathFragments.visible = false;
+    this.deathBlast.visible = false;
+    this.damageSparks.visible = false;
     this.hitStagger = 1;
     this.grapple = null;
     this.ledgeContact = null;
@@ -1181,10 +1329,6 @@ export class Fighter {
 
   update(dt, move, look, actions, world) {
     if (!this.alive) return;
-    if (this.supportGripProgress === 0) {
-      this.supportArmStart.copy(this.leftArm.quaternion);
-      this.supportForearmStart.copy(this.leftForearm.quaternion);
-    }
     const wasGrounded = this.grounded;
     this.attackTimer = Math.max(0, this.attackTimer - dt);
     const reloading = this.reloadTimer > 0;
@@ -1196,7 +1340,6 @@ export class Fighter {
     this.hitTimer = Math.max(0, this.hitTimer - dt);
     this.slowTimer = Math.max(0, this.slowTimer - dt);
     this.landTimer = Math.max(0, this.landTimer - dt);
-    this.recoilVisual = THREE.MathUtils.damp(this.recoilVisual, 0, 8, dt);
 
     if (look.lengthSq() > .001) this.aim.copy(look).normalize();
     if (actions.jump && this.grounded) {
@@ -1251,27 +1394,50 @@ export class Fighter {
       this.grounded = false;
     }
 
-    const angle = Math.atan2(this.aim.x, this.aim.z);
-    // Visual inertia follows acceleration/braking without changing collisions,
-    // aiming or feet: the existing grounded leg solver runs after the lean.
-    const ax = (this.velocity.x - this.previousVisualVelocity.x) / Math.max(dt, .0001);
-    const az = (this.velocity.z - this.previousVisualVelocity.z) / Math.max(dt, .0001);
+    // Fixed updates own only deterministic gameplay.  The full articulated
+    // rig is sampled once in updatePresentation() after interpolation.
+    // The root yaw is a lightweight authoritative transform: interpolation
+    // restores group transforms after each render, so leaving this in the
+    // presentation pass would prevent it ever converging at high refresh.
+    this.group.rotation.y = THREE.MathUtils.damp(this.group.rotation.y, Math.atan2(this.aim.x, this.aim.z), 15, dt);
+    // The global preference suppresses all optional motion. Per-category
+    // controls remain independent: turning body motion off must not freeze a
+    // separately enabled spinner, reload, or weapon recoil presentation.
+    this.presentationReducedMotion = Boolean(actions.reducedMotion || this.graphicsEffects?.mechaMotion === false);
+    this.presentationWeaponReducedMotion = Boolean(actions.reducedMotion || this.graphicsEffects?.weaponMotion === false);
+    this.presentationDirty = true;
+  }
+
+  updatePresentation(dt) {
+    const presentationDt = Math.max(0, Number.isFinite(dt) ? dt : 0);
+    if (!this.alive) {
+      this.updateDeathPresentation();
+      return;
+    }
+    if (this.supportGripProgress === 0) {
+      this.supportArmStart.copy(this.leftArm.quaternion);
+      this.supportForearmStart.copy(this.leftForearm.quaternion);
+    }
+    this.presentationTime += presentationDt;
+    this.recoilVisual = THREE.MathUtils.damp(this.recoilVisual, 0, 8, presentationDt);
+    const ax = (this.velocity.x - this.previousVisualVelocity.x) / Math.max(presentationDt, .0001);
+    const az = (this.velocity.z - this.previousVisualVelocity.z) / Math.max(presentationDt, .0001);
     this.previousVisualVelocity.copy(this.velocity);
-    if (actions.reducedMotion || this.graphicsEffects?.mechaMotion === false) {
+    if (this.presentationReducedMotion) {
       this.bodyPitchSpring.value = this.bodyPitchSpring.velocity = 0;
       this.bodyRollSpring.value = this.bodyRollSpring.velocity = 0;
     } else {
-      advanceSpring(this.bodyPitchSpring, clamp(-(ax * this.aim.x + az * this.aim.z) * .0015, -.07, .07), dt);
-      advanceSpring(this.bodyRollSpring, clamp(-(ax * this.aim.z - az * this.aim.x) * .00125, -.06, .06), dt);
+      advanceSpring(this.bodyPitchSpring, clamp(-(ax * this.aim.x + az * this.aim.z) * .0015, -.07, .07), presentationDt);
+      advanceSpring(this.bodyRollSpring, clamp(-(ax * this.aim.z - az * this.aim.x) * .00125, -.06, .06), presentationDt);
     }
-    this.group.rotation.y = THREE.MathUtils.damp(this.group.rotation.y, angle, 15, dt);
-    const time = performance.now() * .009;
+    const time = this.presentationTime * .54;
+    const moving = this.controlMove.lengthSq() > .001;
     const horizontalSpeed = Math.hypot(this.velocity.x, this.velocity.z);
     const locomotion = clamp(horizontalSpeed / 9, 0, 1);
     const grappled = Boolean(this.grapple);
     this.locomotionVisual = THREE.MathUtils.damp(this.locomotionVisual || 0,
-      this.grounded && !grappled ? locomotion : 0, 10, dt);
-    if (this.grounded && !grappled) this.gaitPhase = (this.gaitPhase + dt * (4 + horizontalSpeed * .72) * this.locomotionVisual) % (Math.PI * 2);
+      this.grounded && !grappled ? locomotion : 0, 10, presentationDt);
+    if (this.grounded && !grappled) this.gaitPhase = (this.gaitPhase + presentationDt * (4 + horizontalSpeed * .72) * this.locomotionVisual) % (Math.PI * 2);
     const gait = Math.sin(this.gaitPhase);
     const landing = this.landTimer > 0
       ? this.landStrength * Math.sin((1 - this.landTimer / .22) * Math.PI)
@@ -1381,7 +1547,7 @@ export class Fighter {
 
     const overheadPitch = meleeMotion === "overhead" ? -attackSwing * 1.05 : 0;
     const thrustMotion = ["thrust", "stab", "punch"].includes(meleeMotion) ? attackSwing : 0;
-    const weaponReducedMotion = actions.reducedMotion || this.graphicsEffects?.weaponMotion === false;
+    const weaponReducedMotion = this.presentationWeaponReducedMotion;
     if (weaponReducedMotion) this.weaponKick.value = this.weaponKick.velocity = 0;
     const kick = weaponReducedMotion ? this.recoilVisual * .05 : clamp(advanceSpring(this.weaponKick, 0, dt, 24, .74), -.02, .22);
     const reloadProgress = reloadingPose ? 1 - clamp(this.reloadTimer / this.weapon.reload, 0, 1) : 0;
@@ -1457,6 +1623,29 @@ export class Fighter {
     this.identityBeacon.position.y = 2.82 + Math.sin(time * .7) * .04;
     this.identityBeacon.material.opacity = hit ? 1 : .86 + pulse * .12;
     this.identityBeacon.scale.set(.78, 1.32, .52).multiplyScalar((hit ? 1.18 : 1) * (1 + pulse * .06));
+
+    const critical = this.health > 0 && this.health < 30;
+    this.damageSparks.visible = critical;
+    this.damageSparkMaterial.opacity = critical ? .42 + Math.sin(time * 10) * .22 : 0;
+    if (critical) {
+      const matrix = this.presentationMatrix, vector = this.presentationVector;
+      for (let index = 0; index < this.damageSparks.count; index++) {
+        const phase = time * (2.5 + index * .17) + index * 2.4;
+        vector.set(Math.cos(phase) * (.28 + (index % 2) * .12), 1.3 + Math.sin(phase * 1.7) * .38,
+          .18 + Math.sin(phase) * .24);
+        matrix.makeTranslation(vector.x, vector.y, vector.z);
+        this.damageSparks.setMatrixAt(index, matrix);
+      }
+      this.damageSparks.instanceMatrix.needsUpdate = true;
+    }
+    this.respawnScanTime = Math.max(0, this.respawnScanTime - presentationDt);
+    const scan = this.respawnScanTime / .72;
+    this.respawnHologram.visible = scan > 0;
+    this.respawnScanMaterial.opacity = scan * .46;
+    this.respawnScanLine.position.y = .18 + (1 - scan) * 2.1;
+    this.respawnScanLine.scale.setScalar(1 + (1 - scan) * .65);
+    this.syncMechaSkeleton?.();
+    this.presentationDirty = false;
   }
 
   forwardPoint(distance) {
@@ -1464,16 +1653,20 @@ export class Fighter {
   }
 
   visualMuzzlePoint(target = new THREE.Vector3()) {
-    if (this.weapon.id !== "blaster") return this.muzzlePoint(target);
+    const anchor = this.weaponMuzzleAnchor;
+    if (anchor) {
+      anchor.updateWorldMatrix(true, false);
+      return anchor.getWorldPosition(target);
+    }
     this.weaponGroup.updateWorldMatrix(true, false);
-    return target.set(.05, .06, .994).applyMatrix4(this.weaponGroup.matrixWorld);
+    return target.copy(this.visualMuzzleLocal || this.weaponGrip).applyMatrix4(this.weaponGroup.matrixWorld);
   }
 
   muzzlePoint(target = new THREE.Vector3()) {
     const flatLength = Math.hypot(this.aim.x, this.aim.z);
     const rightX = flatLength > .001 ? this.aim.z / flatLength : Math.cos(this.group.rotation.y);
     const rightZ = flatLength > .001 ? -this.aim.x / flatLength : -Math.sin(this.group.rotation.y);
-    target.copy(this.position).add(new THREE.Vector3(0, 1.43, 0)).addScaledVector(this.aim, this.weaponMuzzleDistance || .92);
+    target.set(this.position.x, this.position.y + 1.43, this.position.z).addScaledVector(this.aim, this.weaponMuzzleDistance || .92);
     target.x += rightX * .5;
     target.z += rightZ * .5;
     return target;
@@ -1484,6 +1677,11 @@ export class Fighter {
     this.scene.remove(this.group);
     for (const model of this.weaponModels.values()) disposeChildren(model.group);
     this.weaponModels.clear();
+    // Material batching gives every rigid armour skin this same skeleton.
+    // Dispose its lazily-created GPU bone texture once, before releasing the
+    // meshes; decoy clones deliberately keep independent skeleton ownership.
+    this.mechaSkeleton?.dispose();
+    this.mechaSkeleton = null;
     const geometries = new Set();
     const materials = new Set();
     this.group.traverse((child) => {
@@ -1495,6 +1693,34 @@ export class Fighter {
     for (const geometry of geometries) disposeGeometry(geometry);
     for (const entry of materials) entry.dispose();
   }
+
+  grappleHandPoint(target = new THREE.Vector3()) {
+    // Hands are compact local descriptors, not Object3Ds.  They live at the
+    // end of their forearm so that gameplay can retain its simple arm solver.
+    const hand = this.leftHand && this.leftForearm ? this.leftHand : this.rightHand;
+    const forearm = hand === this.leftHand ? this.leftForearm : this.rightForearm;
+    if (!hand || !forearm) {
+      target.copy(this.position);
+      target.y += 1.4;
+      return target;
+    }
+    forearm.updateWorldMatrix(true, false);
+    return target.copy(hand.position).applyMatrix4(forearm.matrixWorld);
+  }
+}
+
+// Called from the loading phase, not during combat.  The temporary fighter is
+// only a model authoring surface: published templates retain immutable geometry
+// while every real fighter receives its own mutable materials and joints.
+export function prewarmWeaponTemplates() {
+  const weaponIds = Object.keys(WEAPONS);
+  if (weaponTemplates.size === weaponIds.length) return weaponTemplates.size;
+  const scene = new THREE.Scene();
+  const preview = new Fighter(scene, { id: "weapon-template-prewarm", name: "template", color: 0x1a9ec6, accent: 0x73f4ff },
+    weaponIds, new THREE.Vector3(), true);
+  for (let index = 1; index < weaponIds.length; index++) preview.switchSlot(index);
+  preview.dispose();
+  return weaponTemplates.size;
 }
 
 export const GRAPPLE_SPEED_CAP = 48;
@@ -1615,36 +1841,52 @@ export function aimWithSpread(aim, spread, random = Math.random) {
     .normalize();
 }
 
-export function reticleAim(player, cameraOrigin, cameraDirection, world, targets, surface = undefined) {
-  const direction = cameraDirection.clone().normalize();
-  const ray = new THREE.Ray(cameraOrigin, direction);
+const reticleDirection = new THREE.Vector3();
+const reticlePoint = new THREE.Vector3();
+const reticleHit = new THREE.Vector3();
+const reticleCenter = new THREE.Vector3();
+const reticleFallback = new THREE.Vector3();
+const reticleRay = new THREE.Ray();
+const reticleSphere = new THREE.Sphere();
+
+export function reticleAim(player, cameraOrigin, cameraDirection, world, targets, surface = undefined, target = null) {
+  // Callers that need to retain more than one result can still supply their
+  // own target.  Normal gameplay reuses a per-fighter result every tick.
+  target ||= player.reticleAimScratch ||= new THREE.Vector3();
+  const direction = reticleDirection.copy(cameraDirection).normalize();
+  const ray = reticleRay.set(cameraOrigin, direction);
   // undefined keeps standalone callers compatible; null reuses a known miss.
   if (surface === undefined) surface = world.grapplePoint(cameraOrigin, direction);
   let distance = surface ? cameraOrigin.distanceTo(surface) : 520;
-  let point = surface || cameraOrigin.clone().addScaledVector(direction, distance);
+  const point = reticlePoint;
+  if (surface) point.copy(surface); else point.copy(cameraOrigin).addScaledVector(direction, distance);
   let selectedTarget = null;
-  const hit = new THREE.Vector3();
+  const hit = reticleHit;
 
   // Exact ray intersections only: this corrects third-person parallax without aim assist.
   for (const target of targets) {
     if (target === player || !target.alive) continue;
-    const samples = target.isDecoy ? [[1.05, target.radius]] : [[.55, target.radius * .72], [1.2, target.radius], [2.08, target.radius * .72]];
-    for (const [height, radius] of samples) {
-      const sphere = new THREE.Sphere(target.position.clone().add(new THREE.Vector3(0, height, 0)), radius);
+    const samples = target.isDecoy ? 1 : 3;
+    for (let index = 0; index < samples; index++) {
+      const height = target.isDecoy ? 1.05 : index === 0 ? .55 : index === 1 ? 1.2 : 2.08;
+      const radius = target.isDecoy || index === 1 ? target.radius : target.radius * .72;
+      const sphere = reticleSphere.set(reticleCenter.set(target.position.x, target.position.y + height, target.position.z), radius);
       if (!ray.intersectSphere(sphere, hit)) continue;
       const hitDistance = cameraOrigin.distanceTo(hit);
       if (hitDistance >= distance) continue;
       distance = hitDistance;
-      point = hit.clone();
+      point.copy(hit);
       selectedTarget = target;
     }
   }
 
   const weapon = player.weapon || {};
-  const origin = combatShotOrigin(player, weapon, direction);
-  const aim = point.clone().sub(new THREE.Vector3(player.position.x, origin.y, player.position.z));
+  const muzzle = weapon.hitscan || weapon.type === "flame";
+  const flat = Math.hypot(direction.x, direction.z);
+  const originY = player.position.y + (muzzle ? 1.43 : weapon.type === "melee" ? 1.15 : 1.25);
+  const aim = target.copy(point).sub(reticleFallback.set(player.position.x, originY, player.position.z));
   if (selectedTarget && aim.dot(direction) <= 0 && selectedTarget.position.distanceToSquared(player.position) < selectedTarget.radius ** 2) {
-    aim.copy(selectedTarget.position).add(new THREE.Vector3(0, 1.2, 0)).sub(new THREE.Vector3(player.position.x, origin.y, player.position.z));
+    aim.copy(selectedTarget.position).addScaledVector(reticleCenter.set(0, 1, 0), 1.2).sub(reticleFallback.set(player.position.x, originY, player.position.z));
   }
   // The shoulder muzzle is half a metre to the right of the firing line.
   // Solve its yaw exactly so close headshots converge on the camera hit point.
