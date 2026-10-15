@@ -1,5 +1,7 @@
 # Master Blaster LCP experiment report
 
+> Historical experiment snapshot. On 15 October 2026, user-selected priority-only rollback 14935a1 superseded the combined deployment below. See [current diagnosis](lcp-priority-diagnosis-report.md).
+
 15 October 2026. Five valid official PSI Mobile audits per condition, 25 total,
 on the same deployed game release. The diagnostic trace is separate from scores.
 

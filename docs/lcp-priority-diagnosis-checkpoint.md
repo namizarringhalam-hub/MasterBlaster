@@ -89,3 +89,6 @@ Historical experiment receipts remain in lcp-experiment-report.md/results.json.
   to ship a different body typeface. Extra finite frame/visibility/LoAF probes
   help distinguish frame scheduling from a font or app delay; no source cause
   will be inferred from a probe-induced or uncorrelated gap.
+
+- Phase 4 complete: six fresh scored reports. Priority 2254/2269/2254ms; body-fallback 2205/1832/2194ms (median 2194; two target misses). Remote headline geometry/node match; fallback font ready 228.7ms,RAF 192.2→1208.8,H1 1272,LoAF 992.7ms with blocking 0. Cause unproven; no font-blocking/JS cause inferred.
+- Investigation report/results saved. Cleanup removes generator/probes and retires26 exact URLs, preserves priority-only. Build/hosting passes; livecleanup verification and finalcommit/push remain. Next unfinished technical step: obtain original cold mobile trace for pre-paint frame gap,then responsive artwork/late analytics independently.

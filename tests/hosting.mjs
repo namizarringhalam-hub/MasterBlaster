@@ -76,12 +76,19 @@ assert.ok(headingFonts.every(tag => tag.includes('fetchpriority="high"')), "head
 assert.ok(headingFonts.every(tag => preloadTags.indexOf(tag) < preloadTags.indexOf(menuArtwork)), "heading fonts are discovered before decorative artwork");
 assert.ok(menuArtwork && !menuArtwork.includes('fetchpriority="high"'), "decorative artwork cannot outrank the heading through an explicit high hint");
 assert.doesNotMatch(deployedHtml, /data-heading-subset|Master Blaster Hero|data:font\/woff2/, "experimental font embedding is reverted");
-assert.doesNotMatch(deployedHtml, /lcp-experiment|lcp-probe-results|noindex/, "temporary measurement pages cannot alter the canonical homepage");
-for (const path of ["priority", "diagnostic/priority"]) {
-  const diagnostic = await worker.fetch(new Request(`https://masterblaster.se/lcp-diagnosis-20261015/${path}/`), { ASSETS: clientAssets });
-  assert.equal(diagnostic.status, 200);
-  assert.equal(diagnostic.headers.get("cache-control"), "no-store");
-  assert.equal(diagnostic.headers.get("x-robots-tag"), "noindex");
+assert.doesNotMatch(deployedHtml, /lcp-experiment|lcp-diagnosis|lcp-probe-results|noindex/, "temporary measurement pages cannot alter the canonical homepage");
+for (const dir of ["dist", "dist/client"]) {
+  assert.ok(!(await readdir(dir)).includes("lcp-diagnosis-20261015"), "retired diagnosis pages are no longer generated");
+}
+const retiredDiagnosisVariants = ["priority", "shell", "no-blur", "still", "body-preload", "no-analytics", "image-low", "image-css", "analytics-async", "boot-low", "no-art", "unused-art", "body-fallback"];
+for (const candidate of retiredDiagnosisVariants) {
+  for (const prefix of ["", "diagnostic/"]) {
+    for (const query of ["", "?retired=1"]) {
+      const retired = await worker.fetch(new Request(`https://masterblaster.se/lcp-diagnosis-20261015/${prefix}${candidate}/${query}`), { ASSETS: clientAssets });
+      assert.equal(retired.status, 301, "all 26 retired diagnosis routes redirect instead of serving cached variants");
+      assert.equal(retired.headers.get("location"), `https://masterblaster.se/${query}`, "retirement preserves query strings");
+    }
+  }
 }
 for (const candidate of ["baseline", "priority", "fonts", "spacing", "combined"]) {
   for (const prefix of ["", "diagnostic/"]) {

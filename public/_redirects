@@ -15,6 +15,34 @@
 /lcp-experiment/diagnostic/spacing/ / 301
 /lcp-experiment/diagnostic/combined/ / 301
 
+# Retire the follow-up LCP diagnosis pages and instrumented copies.
+/lcp-diagnosis-20261015/priority/ / 301
+/lcp-diagnosis-20261015/shell/ / 301
+/lcp-diagnosis-20261015/no-blur/ / 301
+/lcp-diagnosis-20261015/still/ / 301
+/lcp-diagnosis-20261015/body-preload/ / 301
+/lcp-diagnosis-20261015/no-analytics/ / 301
+/lcp-diagnosis-20261015/image-low/ / 301
+/lcp-diagnosis-20261015/image-css/ / 301
+/lcp-diagnosis-20261015/analytics-async/ / 301
+/lcp-diagnosis-20261015/boot-low/ / 301
+/lcp-diagnosis-20261015/no-art/ / 301
+/lcp-diagnosis-20261015/unused-art/ / 301
+/lcp-diagnosis-20261015/body-fallback/ / 301
+/lcp-diagnosis-20261015/diagnostic/priority/ / 301
+/lcp-diagnosis-20261015/diagnostic/shell/ / 301
+/lcp-diagnosis-20261015/diagnostic/no-blur/ / 301
+/lcp-diagnosis-20261015/diagnostic/still/ / 301
+/lcp-diagnosis-20261015/diagnostic/body-preload/ / 301
+/lcp-diagnosis-20261015/diagnostic/no-analytics/ / 301
+/lcp-diagnosis-20261015/diagnostic/image-low/ / 301
+/lcp-diagnosis-20261015/diagnostic/image-css/ / 301
+/lcp-diagnosis-20261015/diagnostic/analytics-async/ / 301
+/lcp-diagnosis-20261015/diagnostic/boot-low/ / 301
+/lcp-diagnosis-20261015/diagnostic/no-art/ / 301
+/lcp-diagnosis-20261015/diagnostic/unused-art/ / 301
+/lcp-diagnosis-20261015/diagnostic/body-fallback/ / 301
+
 # These are passive game screen URLs, not separate public content pages.
 # Allow refreshes without turning missing files or arbitrary paths into the game.
 /quick-play / 200

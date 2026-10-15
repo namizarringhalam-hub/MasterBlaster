@@ -426,6 +426,82 @@
         "imageCompletionMs": 227,
         "documentImageCompletionBeforeHeading": true
       }
+    ],
+    "bodyFontRemote": [
+      {
+        "variant": "priority",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-diagnostic-priority/ftjscl4hnk?form_factor=mobile",
+        "headlineRect": [
+          12,
+          118,
+          388,
+          150.52
+        ],
+        "nodeId": 1,
+        "fontCompletionMs": [
+          107.9,
+          109.5,
+          109.7,
+          192.9
+        ],
+        "imageCompletionMs": 117.1,
+        "fontsLoadingDoneMs": 223,
+        "demandedFontsReadyObservedMs": 223.2,
+        "lcpCandidateMs": 256,
+        "framesMs": [
+          114.2,
+          147.6,
+          164.3,
+          247.6,
+          280.9,
+          314.3,
+          330.9,
+          364.3,
+          397.6,
+          430.9
+        ],
+        "visibility": "visible, focused at probe start; no visibility change reported",
+        "engineReadyMs": 3301.35
+      },
+      {
+        "variant": "body-fallback",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-diagnostic-body-fallback/7053itioca?form_factor=mobile",
+        "headlineRect": [
+          12,
+          118,
+          388,
+          150.52
+        ],
+        "nodeId": 1,
+        "barlowCompletionMs": [
+          99.8,
+          101.6
+        ],
+        "interCompletionsBeforeLcp": [],
+        "imageCompletionMs": 91.1,
+        "fontsLoadingDoneMs": 228,
+        "demandedFontsReadyObservedMs": 228.7,
+        "lcpCandidateMs": 1272,
+        "framesMs": [
+          108.9,
+          192.2,
+          1208.8,
+          1258.8,
+          1308.8,
+          1358.8,
+          1408.9,
+          1458.8,
+          1508.8,
+          1558.8
+        ],
+        "visibility": "visible, focused at probe start; no visibility change reported",
+        "longAnimationFrame": {
+          "startMs": 220.7,
+          "durationMs": 992.7,
+          "blockingMs": 0
+        },
+        "limitation": "Long frame with zero reported blocking does not identify rendering, GPU, browser/environment or probe cause. No measured font or JavaScript long-task explanation for the whole gap. Instrumented pages not scored comparisons."
+      }
     ]
   },
   "phase2": {
@@ -916,5 +992,117 @@
       -151
     ],
     "limitation": "Both exclusion pages change the visible background and are diagnostic only. Unused preloads may have different browser scheduling than CSS-used requests; distinguish request/resource processing from visible image rendering, not a proven network-only number."
+  },
+  "phase4": {
+    "commit": "aaff961",
+    "release": "467b56191fe363450eca0c8b68901d2eff80f7c60ceee308e2aa23e2d88c7b60",
+    "method": "Three exploratory matched pairs with common body_round query, reversed start order round2. Fresh capture timestamps/metrics verified; no fresh result excluded. Scored copies contain no probe.",
+    "runs": [
+      {
+        "round": 1,
+        "variant": "priority",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-priority/98m5t7zmua?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/priority/?body_round=1",
+        "reportCreatedAt": "2026-10-15T13:43:08+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:43+02:00",
+        "performance": 97,
+        "fcpMs": 1676,
+        "lcpMs": 2254,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 2875
+      },
+      {
+        "round": 1,
+        "variant": "body-fallback",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-body-fallback/ers0nzm8f0?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/body-fallback/?body_round=1",
+        "reportCreatedAt": "2026-10-15T13:43:08+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:43+02:00",
+        "performance": 98,
+        "fcpMs": 1675,
+        "lcpMs": 2205,
+        "tbtMs": 0,
+        "cls": 0,
+        "speedIndexMs": 2607
+      },
+      {
+        "round": 2,
+        "variant": "priority",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-priority/efkfx9xp9g?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/priority/?body_round=2",
+        "reportCreatedAt": "2026-10-15T13:43:40+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:43+02:00",
+        "performance": 97,
+        "fcpMs": 1688,
+        "lcpMs": 2269,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 2588
+      },
+      {
+        "round": 2,
+        "variant": "body-fallback",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-body-fallback/kwcyuqn2e9?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/body-fallback/?body_round=2",
+        "reportCreatedAt": "2026-10-15T13:43:39+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:43+02:00",
+        "performance": 99,
+        "fcpMs": 1680,
+        "lcpMs": 1832,
+        "tbtMs": 0,
+        "cls": 0,
+        "speedIndexMs": 1680
+      },
+      {
+        "round": 3,
+        "variant": "priority",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-priority/q1ts3573ti?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/priority/?body_round=3",
+        "reportCreatedAt": "2026-10-15T13:44:11+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:44+02:00",
+        "performance": 97,
+        "fcpMs": 1680,
+        "lcpMs": 2254,
+        "tbtMs": 36,
+        "cls": 0.001,
+        "speedIndexMs": 2602
+      },
+      {
+        "round": 3,
+        "variant": "body-fallback",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-body-fallback/gisvkpcjwe?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/body-fallback/?body_round=3",
+        "reportCreatedAt": "2026-10-15T13:44:12+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:44+02:00",
+        "performance": 98,
+        "fcpMs": 1677,
+        "lcpMs": 2194,
+        "tbtMs": 0,
+        "cls": 0,
+        "speedIndexMs": 2626
+      }
+    ],
+    "summary": {
+      "priorityLcpMs": [
+        2254,
+        2269,
+        2254
+      ],
+      "bodyFallbackLcpMs": [
+        2205,
+        1832,
+        2194
+      ],
+      "priorityMedianMs": 2254,
+      "bodyFallbackMedianMs": 2194,
+      "pairedDifferenceMs": [
+        -49,
+        -437,
+        -60
+      ],
+      "below2Seconds": 1
+    },
+    "limitation": "Diagnostic-only: body glyphs differ. Original Barlow faces and headline geometry preserved, including remote 412px H1 rect12,118,388,150.52. Removing all external Inter requests helps all3pairs but only one meets2s; no production typography change justified."
   }
 }

@@ -1,5 +1,14 @@
 # SEO checkpoint — 2026-09-18
 
+## Current LCP state — 15 October 2026, priority-only rollback and diagnosis
+
+- User selected priority-only. Rollback14935a1 is live; embedded heading fonts and permanent preparation-strip spacing are reverted. Do not restore the older combined implementation described below.
+- 48 fresh scored PSI Mobile audits across four exploratory phases: early background request contributes to simulated LCP; blur removal does not help. Body-font removal helps modestly but still misses2 s twice in three. No new candidate proves reliable sub-2-second LCP.
+- Separate probes show an intermittent ~1s frame gap after font readiness; cause is unresolved. Engine work follows initial H1 paint; no H1 replacement. Lab simulations and actual timing captures must be kept separate.
+- Read lcp-priority-diagnosis-report.md and results JSON for exact receipts, all results, limits and next trace/artwork/analytics tests. No new production optimization beyond priority is justified.
+- Temporary diagnosis generation/probes are removed; 26 exact redirects retire the pages. Build/hosting and independent review passed. Preserve unrelated %SystemDrive%/.
+
+
 ## Latest recovery checkpoint — 15 October 2026, controlled LCP experiments
 
 - User authorized measuring each candidate independently and all three together.
