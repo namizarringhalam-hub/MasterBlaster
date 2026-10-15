@@ -1,5 +1,89 @@
 # SEO checkpoint — 2026-09-18
 
+## Latest recovery checkpoint — 15 October 2026, daily follow-up
+
+- Heartbeat arrived 09:05 CEST; community/mail checks 09:05–09:08, mobile PSI
+  09:12:05. Read current
+  AGENTS, conversation and SEO/community/growth/second/third-wave checkpoints.
+  Delegated directory checks and read-only source audit; privacy/holds kept.
+- 13 Oct saved tracker sequence 12 and four local docs but did not finish review,
+  commit/push or final report. 14 Oct started read-only source/browser work,
+  without completed daily checkpoint/report; cause unconfirmed. Disclosed to
+  user; do not backdate completion or claim full 14 Oct coverage. Finish preserved
+  13 Oct records plus today's actual checks in this related documentation commit.
+- Resources approval 12 Oct/exact public verification 13 Oct remains confirmed;
+  no new publication today, eight placements. No new written feedback, PaperCroft
+  scores unchanged, Xander recording reply outstanding. GameDev discussion and
+  ESReality blocked; Reddit removals persist. Brand mail successfully read,
+  Spam/Trash empty. Full scoped outcomes in community register.
+- Initial source audit was local/pre-fetch 8acfc38 only. Push rejected because
+  origin/main had advanced to 2034887, Optimize frame lifecycle and upgrade arena
+  rendering, dated 12 Oct. Fetch and rebase of this task's unpublished docs
+  succeeded without conflicts; published history preserved, no force push.
+  That revision changes game/render/HUD code; landing H1/fonts/index/boot/build
+  unchanged. No task source edits; existing implementation validation is recorded
+  in docs/lag-graphics-implementation-checkpoint.md. The 13 Oct live PSI may
+  already include 2034887; do not claim a 15 Oct deployment or causal comparison.
+- One fresh official [mobile PSI report](https://pagespeed.web.dev/analysis/https-masterblaster-se/1q02tyddar?form_factor=mobile)
+  captured 15 Oct 09:12:05 CEST after discovery: performance 92, accessibility/
+  best practices/SEO 100; FCP 1.8 s, LCP 2.9 s, TBT 0 ms, CLS 0, Speed Index 4.2 s.
+  Emulated Moto G Power, Lighthouse 13.5.0, initial single-page load, Slow 4G,
+  Headless Chromium 153.0.8010.36. No CrUX field data. Latest lab result supersedes
+  13 Oct 2.7 s/95, without evidence of a causal improvement/regression. H1 remains
+  LCP element; diagnostic render delay 2,440 ms/TTFB 0 ms is not additive to simulated
+  2.9 s. Under 2 s goal remains unmet. No source fix justified without supported
+  font/H1/loading-strip/compositor trace; that trace remains uncollected.
+- Native tracker saved six guarded block replacements, sequence 13; all six
+  read back exactly. Independent documentation review passed after word-spacing
+  corrections; git diff --check passed. Native visual preview unverified.
+  Only community register, second-/third-wave checkpoints
+  and this file belong to this update; preserve unrelated %SystemDrive%/.
+  Scheduler/drafts/sharing and all paused/manual work remain unchanged.
+- Next: daily listings/replies/brand mail, Xander recording response, pending
+  directory/editorial outcomes, GameDev discussion access, Rando user test and
+  mobile trace. Independent documentation review passed; brand commit/push
+  follows. No external prose sent.
+
+## Latest recovery checkpoint — 13 October 2026, daily follow-up
+
+- Heartbeat arrived 08:55 CEST; external checks 08:57–09:03. Read current
+  conversation, AGENTS and SEO/community/growth/second/third-wave checkpoints.
+  Delegated directory/editorial checks and source audit. Preserve all holds.
+- 12 Oct run has no completed dated repo checkpoint, tracker date update or
+  final report; cause unknown. Disclosed incomplete recovery to user. No valid
+  12 Oct PSI artifact recovered; failed/lost run is not a passing measurement.
+- HEAD 8acfc38 records Game Studio publication; preceding b03404e changed
+  responsive landing CSS and game rendering/input on 11 Oct. Startup index,
+  boot/font preload/build configuration unchanged. No source edit today.
+- NEW Resources publication: official brand approval mail 12 Oct 03:43;
+  exact public listing independently verified 13 Oct 08:59. Eight public
+  placements now registered. Existing feedback scores/replies unchanged;
+  GameDev discussion/ESReality blocked, Reddit removals persist. Brand mail
+  successfully read; unrelated forum digest not feedback, Spam/Trash empty.
+- Official PSI API returned HTTP 429 once, no retry. Official browser UI
+  recovered a valid [mobile report](https://pagespeed.web.dev/analysis/https-masterblaster-se/qbb61j3743?form_factor=mobile)
+  captured 13 Oct 09:02:12 CEST: performance 95, accessibility/best practices/
+  SEO 100; FCP 1.7 s, LCP 2.7 s, TBT 70 ms, CLS 0.001, Speed Index 1.7 s.
+  Emulated Moto G Power, Lighthouse 13.5.0, Slow 4G, initial single-page load,
+  Headless Chromium 153.0.8010.36. No CrUX field data. This supersedes historical
+  2.9 s as latest lab result; single run does not prove b03404e caused improvement.
+  Under two seconds remains unmet; no field Core Web Vitals pass claimed.
+- LCP element is hero H1 SWING WILD. BREAK EVERYTHING. Diagnostic TTFB 0 ms,
+  element render delay 300 ms; those diagnostic values are not additive to the
+  simulated 2.7 s. Independent source review: heading is initial HTML, fonts
+  preloaded with swap, production CSS inlined, engine deferred until fonts/two
+  frames. No safe change justified from this diagnostic alone. Next: sanctioned
+  font response/H1 paint/compositor trace including loading-strip state and
+  mobile backdrop effects. Native computer APIs disabled; no workaround.
+- Documentation only: community register, second-/third-wave checkpoints and
+  this file. Native tracker saved seven guarded block replacements, sequence
+  12; all seven read back exactly. Preserve concurrent user edits, unchanged
+  scheduler/drafts/sharing and unrelated untracked %SystemDrive%/.
+- Independent final documentation review and diff validation pending; brand
+  commit/push follows for these four related files only. Next: daily replies/
+  listings/mail, Xander recording response, pending directory/editorial outcomes,
+  GameDev discussion access, Rando user test and mobile trace.
+
 ## Latest recovery checkpoint — 11 October 2026, daily follow-up
 
 - Heartbeat arrived 08:58 CEST; actual external checks 08:58–09:03. Read current

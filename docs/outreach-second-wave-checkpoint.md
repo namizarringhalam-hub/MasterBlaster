@@ -1,5 +1,43 @@
 # Master Blaster: second outreach wave
 
+## Latest daily check — 15 October 2026, 09:05–09:08 CEST
+
+- Resources exact approved listing and Weekly issue 666 remain public; no new
+  publication. Resources approval 12 Oct/first verification 13 Oct retained.
+  Three.js topic 95005 has original post only, 45 views, no written replies.
+- Brand Inbox/All mail/Spam/Trash successfully read; no new outreach reply,
+  bounce or newsletter; Spam/Trash empty. ABG/IGP Sent still not delivery proof.
+- iogames.party home, Something Big 47-game index, BrowserGames.gg home/Shooter,
+  iogames.fun New 84 entries, ABG home/Browser Game, IGP recent and focused searches
+  show no additional feature. iogames.fun home timed out; New has no visible
+  pagination. Prior guessed ?page= attempts are not catalog pagination evidence.
+- Free Play home/New no match; official Request form still mailto to the failed
+  info address, no working route. No sends/replies/resubmissions or manual edits.
+- Native tracker maintained from actual checks; Resources pending state stays
+  superseded. Existing daily schedule, brand privacy and moderation holds kept.
+
+## Latest daily check — 13 October 2026, 08:57–09:03 CEST
+
+- NEW Three.js Resources approval: official brand notification received
+  12 Oct 03:43 CEST; [exact public listing](https://threejsresources.com/showcase/master-blaster)
+  independently verified 13 Oct 08:59. Approved 4 Oct description, Master Blaster
+  credit, AI disclosure, rocket screenshot and clickable tagged game link.
+  No comment thread exposed. Publisher appended ?ref=threejsresources within
+  utm_content; original ref/source survive. Guide is plain text. No measured
+  ranking/traffic claim. Pending-only Resources entries below are historical.
+- Existing Weekly issue 666 Games feature remains public, not new coverage.
+  Three.js 95005 still original post 235794 only, one like and 43 views.
+- Brand Inbox/All mail/Spam/Trash successfully read: Resources approval only
+  new substantive outreach item; unrelated forum digest is not feedback.
+  Spam/Trash empty; no ABG/IGP reply/bounce or new newsletter. No resend/reply.
+- BrowserGames.gg home/Shooter and iogames.fun New/page 5 have no match;
+  iogames.fun home failed twice, pages 2–4 timed out, catalog coverage incomplete.
+  ABG home reader failure recovered in guest browser; category/recent coverage
+  and focused searches show no verified ABG/IGP feature. These are scoped checks.
+- Native tracker updated to eight publicly verified placements; Resources
+  removed from pending table. Existing scheduler/privacy/manual-prose and
+  moderation holds preserved. Future Resources work is monitoring this listing.
+
 ## Latest daily check — 11 October 2026, 08:58–09:03 CEST
 
 - Existing [Gamedev.js Weekly issue 666](https://gamedevjsweekly.com/666) Games
@@ -227,7 +265,7 @@ body contains no explicit AI-assisted coding disclosure. Preserve it unchanged;
 the user can decide whether to add that disclosure manually. Public URL and
 activity check are recorded in the published-post register. Monitor this topic's
 replies daily; its previous pending-only state is superseded.
-Monitor the existing Three.js Resources submission for editorial publication and
+Monitor the approved Three.js Resources listing (verified 13 Oct) for changes and
 the other directory/mail outcomes. All seven approved outreach actions are now
 submitted or sent. Existing register and daily monitor include the second wave.
 Documentation review and git diff --check passed; the request's repository
