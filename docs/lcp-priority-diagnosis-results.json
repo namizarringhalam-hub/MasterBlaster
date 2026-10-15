@@ -1104,5 +1104,25 @@
       "below2Seconds": 1
     },
     "limitation": "Diagnostic-only: body glyphs differ. Original Barlow faces and headline geometry preserved, including remote 412px H1 rect12,118,388,150.52. Removing all external Inter requests helps all3pairs but only one meets2s; no production typography change justified."
+  },
+  "finalState": {
+    "rollbackCommit": "14935a1",
+    "cleanupCommit": "e018146",
+    "verifiedAt": "2026-10-15T13:48:00+02:00",
+    "release": "f0069daa3f45c0ce8e211beaa852ecacdf1f0256e522e87b1a8e74a7e2add24c",
+    "retiredRoutesVerified": 26,
+    "redirectStatus": 301,
+    "queriesPreserved": true,
+    "relativeLocationsNormalized": true,
+    "canonicalStatus": 200,
+    "indexable": true,
+    "fontPreloads": 3,
+    "headingFontsHighBeforeImage": 2,
+    "imageExplicitHigh": false,
+    "fontEmbedding": false,
+    "diagnosticProbe": false,
+    "originalConditionalSpacing": true,
+    "localServerStopped": true,
+    "target": "Reliable sub2s not demonstrated; exact frame-gap cause remains unresolved"
   }
 }
