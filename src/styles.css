@@ -37,7 +37,7 @@ body:has([data-menu-scene], #ui-root > .screen) #game-canvas { visibility: hidde
 .resource-progress [data-resource-detail] { min-width: 0; margin-left: auto; overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .resource-progress button { flex-shrink: 0; pointer-events: auto; padding: 3px 10px; font-size: 11px; }
 body:not(:has([data-menu-scene="landing"])) .resource-progress { display: none; }
-body:has(#resource-progress) [data-menu-scene="landing"] { padding-top: max(clamp(32px, 5vw, 84px), 50px, calc(env(safe-area-inset-top) + 36px)); }
+body:has(#resource-progress:not([hidden])) [data-menu-scene="landing"] { padding-top: max(clamp(32px, 5vw, 84px), 50px, calc(env(safe-area-inset-top) + 36px)); }
 body:has(#resource-progress:not([hidden]) [data-resource-retry]:not([hidden])) [data-menu-scene="landing"] { padding-top: max(clamp(32px, 5vw, 84px), 80px, calc(env(safe-area-inset-top) + 66px)); }
 
 .rematch-loading {

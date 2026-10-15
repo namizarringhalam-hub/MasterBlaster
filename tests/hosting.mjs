@@ -67,16 +67,15 @@ assert.doesNotMatch(deployedHtml, /<link[^>]*rel="stylesheet"/, "the first menu 
 const fontPreloads = [...deployedHtml.matchAll(/<link\b[^>]*>/g)].map(([tag]) => tag)
   .filter(tag => tag.includes('rel="preload"') && tag.includes('as="font"'))
   .map(tag => tag.match(/href="([^"]+)"/)?.[1]);
-assert.equal(fontPreloads.length, 1, "only the external body face needs preload; heading faces are embedded");
+assert.equal(fontPreloads.length, 3, "the original two heading faces and body face are preloaded");
 const preloadTags = [...deployedHtml.matchAll(/<link\b[^>]*rel="preload"[^>]*>/g)].map(([tag]) => tag);
 const headingFonts = preloadTags.filter(tag => tag.includes('as="font"') && /HTx[wy]L3I/.test(tag));
 const menuArtwork = preloadTags.find(tag => tag.includes("menu-arena-v2.webp"));
-assert.equal(headingFonts.length, 0, "embedded heading fonts must not also trigger full-font preloads");
+assert.equal(headingFonts.length, 2, "both original heading fonts retain their preloads");
+assert.ok(headingFonts.every(tag => tag.includes('fetchpriority="high"')), "heading font preloads retain high priority");
+assert.ok(headingFonts.every(tag => preloadTags.indexOf(tag) < preloadTags.indexOf(menuArtwork)), "heading fonts are discovered before decorative artwork");
 assert.ok(menuArtwork && !menuArtwork.includes('fetchpriority="high"'), "decorative artwork cannot outrank the heading through an explicit high hint");
-const headingStyle = deployedHtml.match(/<style data-heading-subset>([\s\S]*?)<\/style>/)?.[1];
-assert.ok(headingStyle?.includes("Master Blaster Hero"));
-assert.equal((headingStyle.match(/data:font\/woff2;base64,/g) || []).length, 2, "both heading styles are embedded without network dependencies");
-assert.match(headingStyle, /Barlow Condensed.*Barlow Condensed Fallback/, "uncovered future characters retain full-font fallback");
+assert.doesNotMatch(deployedHtml, /data-heading-subset|Master Blaster Hero|data:font\/woff2/, "experimental font embedding is reverted");
 assert.doesNotMatch(deployedHtml, /lcp-experiment|lcp-probe-results|noindex/, "temporary measurement pages cannot alter the canonical homepage");
 for (const candidate of ["baseline", "priority", "fonts", "spacing", "combined"]) {
   for (const prefix of ["", "diagnostic/"]) {

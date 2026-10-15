@@ -111,14 +111,6 @@ export default defineConfig({
         const css = await readFile(resolve(dir, `.${link[1]}`), "utf8");
         html = html.replace(link[0], `<style data-app-styles>${css}</style>`);
       }
-      // Only the fixed headline/brand glyphs are embedded; other copy keeps the
-      // complete, cacheable Barlow faces through the existing font fallback.
-      let headingCss = resources.rewrite(await readFile("public/fonts/hero-fonts.css", "utf8"));
-      for (const name of ["hero-normal.woff2", "hero-italic.woff2"]) {
-        const bytes = await readFile(`public/fonts/${name}`);
-        headingCss = headingCss.replace(resources.urls[`/fonts/${name}`], `data:font/woff2;base64,${bytes.toString("base64")}`);
-      }
-      html = html.replace("</head>", `<style data-heading-subset>${headingCss}</style></head>`);
       await writeFile(htmlPath, html);
       await writeResourceRelease(dir, resources);
     }
