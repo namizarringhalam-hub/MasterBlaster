@@ -401,6 +401,309 @@
     }
   },
   "phase2": {
-    "status": "preparing"
+    "commit": "b804d8d",
+    "release": "3bd8c61fd87e0ba6cf481965b9f6664c2a3a7594dda262527f62764e15d4feb6",
+    "method": "Three fresh exploratory rounds per arm, common schedule_round query each round, forward/reverse/varied start order. No fresh result excluded. Same marker/header/no-probe/release checks as phase1.",
+    "runs": [
+      {
+        "round": 1,
+        "variant": "priority",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-priority/ugwfc58owo?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/priority/?schedule_round=1",
+        "reportCreatedAt": "2026-10-15T13:26:09+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:26+02:00",
+        "performance": 97,
+        "fcpMs": 1704,
+        "lcpMs": 2253,
+        "tbtMs": 90,
+        "cls": 0.001,
+        "speedIndexMs": 1704
+      },
+      {
+        "round": 1,
+        "variant": "image-low",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-image-low/h8qdkersfn?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/image-low/?schedule_round=1",
+        "reportCreatedAt": "2026-10-15T13:26:10+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:26+02:00",
+        "performance": 98,
+        "fcpMs": 1668,
+        "lcpMs": 2253,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 2593
+      },
+      {
+        "round": 1,
+        "variant": "image-css",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-image-css/gx20c002gj?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/image-css/?schedule_round=1",
+        "reportCreatedAt": "2026-10-15T13:26:11+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:26+02:00",
+        "performance": 93,
+        "fcpMs": 1703,
+        "lcpMs": 3002,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 2750
+      },
+      {
+        "round": 1,
+        "variant": "analytics-async",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-analytics-async/656wlcjpan?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/analytics-async/?schedule_round=1",
+        "reportCreatedAt": "2026-10-15T13:26:13+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:26+02:00",
+        "performance": 98,
+        "fcpMs": 1674,
+        "lcpMs": 2101,
+        "tbtMs": 29,
+        "cls": 0.001,
+        "speedIndexMs": 1674
+      },
+      {
+        "round": 1,
+        "variant": "boot-low",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-boot-low/61mrvpbxqg?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/boot-low/?schedule_round=1",
+        "reportCreatedAt": "2026-10-15T13:26:14+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:26+02:00",
+        "performance": 94,
+        "fcpMs": 1674,
+        "lcpMs": 2554,
+        "tbtMs": 164,
+        "cls": 0.001,
+        "speedIndexMs": 1674
+      },
+      {
+        "round": 2,
+        "variant": "priority",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-priority/90xwqxpzy5?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/priority/?schedule_round=2",
+        "reportCreatedAt": "2026-10-15T13:27:22+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:27+02:00",
+        "performance": 98,
+        "fcpMs": 1656,
+        "lcpMs": 2101,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 1656
+      },
+      {
+        "round": 2,
+        "variant": "image-low",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-image-low/dvtxz4amd0?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/image-low/?schedule_round=2",
+        "reportCreatedAt": "2026-10-15T13:27:20+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:27+02:00",
+        "performance": 98,
+        "fcpMs": 1672,
+        "lcpMs": 2101,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 1672
+      },
+      {
+        "round": 2,
+        "variant": "image-css",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-image-css/u8wv44u47x?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/image-css/?schedule_round=2",
+        "reportCreatedAt": "2026-10-15T13:27:19+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:27+02:00",
+        "performance": 96,
+        "fcpMs": 1668,
+        "lcpMs": 2701,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 1668
+      },
+      {
+        "round": 2,
+        "variant": "analytics-async",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-analytics-async/t0h8r6tfo5?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/analytics-async/?schedule_round=2",
+        "reportCreatedAt": "2026-10-15T13:27:18+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:27+02:00",
+        "performance": 97,
+        "fcpMs": 1691,
+        "lcpMs": 2253,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 2565
+      },
+      {
+        "round": 2,
+        "variant": "boot-low",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-boot-low/xdjznqu5z3?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/boot-low/?schedule_round=2",
+        "reportCreatedAt": "2026-10-15T13:27:17+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:27+02:00",
+        "performance": 97,
+        "fcpMs": 1671,
+        "lcpMs": 2401,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 1671
+      },
+      {
+        "round": 3,
+        "variant": "priority",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-priority/al3xcv8ryg?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/priority/?schedule_round=3",
+        "reportCreatedAt": "2026-10-15T13:30:15+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:30+02:00",
+        "performance": 95,
+        "fcpMs": 1843,
+        "lcpMs": 2254,
+        "tbtMs": 0,
+        "cls": 0,
+        "speedIndexMs": 4048
+      },
+      {
+        "round": 3,
+        "variant": "image-low",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-image-low/sniiwj7kgj?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/image-low/?schedule_round=3",
+        "reportCreatedAt": "2026-10-15T13:30:17+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:30+02:00",
+        "performance": 98,
+        "fcpMs": 1670,
+        "lcpMs": 2101,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 1670
+      },
+      {
+        "round": 3,
+        "variant": "image-css",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-image-css/fn8zt01w3w?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/image-css/?schedule_round=3",
+        "reportCreatedAt": "2026-10-15T13:30:15+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:30+02:00",
+        "performance": 95,
+        "fcpMs": 1815,
+        "lcpMs": 2252,
+        "tbtMs": 0,
+        "cls": 0,
+        "speedIndexMs": 4127
+      },
+      {
+        "round": 3,
+        "variant": "analytics-async",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-analytics-async/t8xnaoz5hf?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/analytics-async/?schedule_round=3",
+        "reportCreatedAt": "2026-10-15T13:30:19+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:30+02:00",
+        "performance": 98,
+        "fcpMs": 1676,
+        "lcpMs": 2254,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 2485
+      },
+      {
+        "round": 3,
+        "variant": "boot-low",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-boot-low/qhgsue8jg1?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/boot-low/?schedule_round=3",
+        "reportCreatedAt": "2026-10-15T13:30:17+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:30+02:00",
+        "performance": 97,
+        "fcpMs": 1674,
+        "lcpMs": 2402,
+        "tbtMs": 5,
+        "cls": 0.001,
+        "speedIndexMs": 1674
+      }
+    ],
+    "summary": [
+      {
+        "variant": "priority",
+        "n": 3,
+        "lcpMedianMs": 2253,
+        "lcpRangeMs": [
+          2101,
+          2254
+        ],
+        "fcpMedianMs": 1704,
+        "pairedLcpDifferenceMs": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "variant": "image-low",
+        "n": 3,
+        "lcpMedianMs": 2101,
+        "lcpRangeMs": [
+          2101,
+          2253
+        ],
+        "fcpMedianMs": 1670,
+        "pairedLcpDifferenceMs": [
+          0,
+          0,
+          -153
+        ]
+      },
+      {
+        "variant": "image-css",
+        "n": 3,
+        "lcpMedianMs": 2701,
+        "lcpRangeMs": [
+          2252,
+          3002
+        ],
+        "fcpMedianMs": 1703,
+        "pairedLcpDifferenceMs": [
+          749,
+          600,
+          -2
+        ]
+      },
+      {
+        "variant": "analytics-async",
+        "n": 3,
+        "lcpMedianMs": 2253,
+        "lcpRangeMs": [
+          2101,
+          2254
+        ],
+        "fcpMedianMs": 1676,
+        "pairedLcpDifferenceMs": [
+          -152,
+          152,
+          0
+        ]
+      },
+      {
+        "variant": "boot-low",
+        "n": 3,
+        "lcpMedianMs": 2402,
+        "lcpRangeMs": [
+          2401,
+          2554
+        ],
+        "fcpMedianMs": 1674,
+        "pairedLcpDifferenceMs": [
+          301,
+          300,
+          148
+        ]
+      }
+    ]
+  },
+  "algorithmResearch": {
+    "publicLighthouseVersion": "13.5.0",
+    "traceEngine": "0.0.65",
+    "sources": [
+      "https://raw.githubusercontent.com/GoogleChrome/lighthouse/v13.5.0/package.json",
+      "https://unpkg.com/@paulirish/trace_engine@0.0.65/models/trace/lantern/metrics/LargestContentfulPaint.js",
+      "https://unpkg.com/@paulirish/trace_engine@0.0.65/models/trace/lantern/metrics/FirstContentfulPaint.js",
+      "https://unpkg.com/@paulirish/trace_engine@0.0.65/models/trace/lantern/metrics/Metric.js"
+    ],
+    "finding": "LCP optimistic graph includes eligible completed pre-LCP networks except Low/VeryLow images. Pessimistic includes all eligible completed pre-LCP networks and pre-LCP layout tasks. Graph retains dependency ancestors. Metrics average optimistic/pessimistic and LCP is clamped >= FCP. FCP uses narrower priority filtering. No text-specific FCP==LCP delegation in this pinned release.",
+    "limitation": "Mechanism explains divergent simulation from coincident observed text paint; without original trace/network/graph artifacts it does not identify which request caused a given score. Public version verified; PSI-internal patches not independently known."
   }
 }

@@ -14,6 +14,7 @@ const html = `<!doctype html><html lang="en"><head>
 <link rel="preload" as="font" href="/resources/heading/italic.woff2" />
 <link rel="preload" as="image" href="/resources/image/menu.webp" />
 <style data-fonts>@font-face { font-family: Inter; font-weight: 700; src: url(/resources/body/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuFuYMZg-latin.woff2); }</style>
+<style>.arena-towers { background-image: url("/resources/image/menu.webp"); }</style>
 <script defer src="https://cloud.umami.is/script.js" data-auto-pageview="false"></script>
 <script type="module" crossorigin src="/assets/index-boot.js"></script>
 </head><body><div id="resource-progress"></div><main class="menu-shell" data-menu-scene="landing"><section class="hero-panel"><h1>SWING WILD.<br><em>BREAK EVERYTHING.</em></h1></section><div class="menu-atmosphere"><span></span></div></main>
@@ -44,13 +45,19 @@ for (const variant of LCP_DIAGNOSTIC_VARIANTS) {
   assert.equal(page.includes('href="/resources/body/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuFuYMZg-latin.woff2"'), variant === "body-preload");
   assert.ok(!page.includes("lcp-probe-results"));
   assert.equal(page.includes('fetchpriority="low"'), ["image-low", "boot-low"].includes(variant));
-  assert.equal(page.includes('as="image"'), variant !== "image-css");
+  assert.equal(page.includes('as="image"'), !["image-css", "no-art"].includes(variant));
+  assert.equal(page.includes('data-lcp-diagnostic="art-exclusion"'), ["no-art", "unused-art"].includes(variant));
+  assert.ok(page.includes('background-image: url("/resources/image/menu.webp")'));
 }
 const normalizeVariant = page => page.replace(/data-lcp-variant="[^"]+"/, 'data-lcp-variant="priority"');
 assert.equal(normalizeVariant(lcpDiagnosticVariant(html, "image-low")).replace(' fetchpriority="low"', ""), baseline);
 assert.equal(normalizeVariant(lcpDiagnosticVariant(html, "image-css")), baseline.replace('<link rel="preload" as="image" href="/resources/image/menu.webp" />', ""));
 assert.equal(normalizeVariant(lcpDiagnosticVariant(html, "analytics-async")), baseline.replace('defer src="https://cloud.umami.is', 'async src="https://cloud.umami.is'));
 assert.equal(normalizeVariant(lcpDiagnosticVariant(html, "boot-low")), baseline.replace('src="/assets/index-boot.js">', 'src="/assets/index-boot.js" fetchpriority="low">'));
+const artOverride = '<style data-lcp-diagnostic="art-exclusion">.menu-shell[data-menu-scene="landing"] .arena-towers { background-image: none !important; }</style>\n';
+assert.equal(normalizeVariant(lcpDiagnosticVariant(html, "unused-art")).replace(artOverride, ""), baseline);
+assert.equal(normalizeVariant(lcpDiagnosticVariant(html, "no-art")).replace(artOverride, ""), baseline.replace('<link rel="preload" as="image" href="/resources/image/menu.webp" />', ""));
+for (const variant of ["no-art", "unused-art"]) assert.throws(() => lcpDiagnosticVariant(html.replace('as="image"', 'as="fetch"'), variant), /art exclusion control/);
 const withBody = lcpDiagnosticVariant(html, "body-preload");
 assert.ok(withBody.indexOf('href="/resources/heading/italic.woff2"') < withBody.indexOf('href="/resources/body/'));
 assert.ok(withBody.indexOf('href="/resources/body/') < withBody.indexOf('as="image"'));
@@ -59,7 +66,7 @@ const dir = await mkdtemp(join(tmpdir(), "master-blaster-lcp-diagnosis-"));
 try {
   await writeFile(join(dir, "index.html"), html);
   const result = await writeLcpDiagnosis(dir);
-  assert.equal(result.variants.length, 10);
+  assert.equal(result.variants.length, 12);
   assert.equal(await readFile(join(dir, "index.html"), "utf8"), html);
   for (const variant of LCP_DIAGNOSTIC_VARIANTS) {
     const scored = await readFile(join(dir, LCP_DIAGNOSIS_PATH, variant, "index.html"), "utf8");
@@ -119,4 +126,4 @@ assert.equal(snapshot.resourceCompletions.filter(entry => entry.name === "font.w
 assert.ok(measurements.some(entry => entry.name.includes("resource complete menu-arena-v2.webp") && entry.end === 700));
 assert.ok(measurements.some(entry => entry.name.includes("resource complete font.woff2") && entry.end === 400));
 assert.ok(!measurements.some(entry => entry.name.includes("unrelated.js")));
-console.log("LCP diagnosis checks passed: ten isolated arms, noindex/canonical/shared content, probe-only diagnostics, bounded LCP/CLS and resource User Timing output.");
+console.log("LCP diagnosis checks passed: twelve isolated arms, noindex/canonical/shared content, probe-only diagnostics, bounded LCP/CLS and resource User Timing output.");

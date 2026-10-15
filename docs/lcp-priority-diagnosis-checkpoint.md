@@ -60,3 +60,18 @@ Historical experiment receipts remain in lcp-experiment-report.md/results.json.
 - Phase 2 harness/build/hosting and independent isolation review pass. Original
   six transforms are byte-identical. Resource observer exposes bounded font/image
   completion measures only on diagnostic copies. Canonical remains priority-only.
+- Phase 2 complete: 15 fresh reports saved. Priority median 2253 ms, image-low
+  2101 (two ties/one win), CSS-only image discovery 2701 (worse two rounds),
+  async analytics 2253 (mixed), boot-low 2402 (worse every round). No candidate
+  reliably below 2 s; no extra priority/script/visual change justified.
+- Pinned public Lighthouse 13.5.0 uses trace_engine 0.0.65. Its LCP simulation
+  includes a broader pre-paint request graph than FCP, including eligible
+  noncritical requests in the pessimistic estimate. This explains a mechanism
+  for divergent simulated FCP/LCP, not proof of the exact responsible request.
+  Sources/limits recorded in JSON; do not cite current DevTools main as identical.
+- Final exploratory exclusion: three rounds of priority, no-art (image CSS off
+  and no preload), unused-art (same CSS off, preload retained). H1/typography
+  unchanged, both black-background arms diagnostic-only. Need verify resource
+  completion relative to H1 paint before attributing network versus rendering.
+  Twelve-arm tests/build and independent source review pass; prior ten arms
+  byte-identical. Canonical stays priority-only.

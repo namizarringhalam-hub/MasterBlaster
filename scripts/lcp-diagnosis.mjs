@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const LCP_DIAGNOSIS_PATH = "lcp-diagnosis-20261015";
-export const LCP_DIAGNOSTIC_VARIANTS = ["priority", "shell", "no-blur", "still", "body-preload", "no-analytics", "image-low", "image-css", "analytics-async", "boot-low"];
+export const LCP_DIAGNOSTIC_VARIANTS = ["priority", "shell", "no-blur", "still", "body-preload", "no-analytics", "image-low", "image-css", "analytics-async", "boot-low", "no-art", "unused-art"];
 
 export function lcpDiagnosticVariant(html, variant) {
   if (!LCP_DIAGNOSTIC_VARIANTS.includes(variant)) throw new Error(`Unknown LCP diagnostic variant: ${variant}`);
@@ -51,6 +51,13 @@ export function lcpDiagnosticVariant(html, variant) {
     const matches = [...result.matchAll(boot)];
     if (matches.length !== 1 || /\bfetchpriority\s*=/i.test(matches[0][0])) throw new Error("Expected one production boot module without an existing priority");
     result = result.replace(boot, match => match.replace(/>/, ' fetchpriority="low">'));
+  }
+  if (variant === "no-art" || variant === "unused-art") {
+    const image = /<link\b(?=[^>]*\brel="preload")(?=[^>]*\bas="image")[^>]*>/gi;
+    if ([...result.matchAll(image)].length !== 1) throw new Error("Expected one background image preload for art exclusion control");
+    if (variant === "no-art") result = result.replace(image, "");
+    // Diagnostic exclusion only: the original CSS URL remains, but is overridden.
+    result = result.replace(/<\/head>/i, '<style data-lcp-diagnostic="art-exclusion">.menu-shell[data-menu-scene="landing"] .arena-towers { background-image: none !important; }</style>\n</head>');
   }
   return result;
 }
