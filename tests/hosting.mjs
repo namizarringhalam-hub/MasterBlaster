@@ -77,6 +77,12 @@ assert.ok(headingFonts.every(tag => preloadTags.indexOf(tag) < preloadTags.index
 assert.ok(menuArtwork && !menuArtwork.includes('fetchpriority="high"'), "decorative artwork cannot outrank the heading through an explicit high hint");
 assert.doesNotMatch(deployedHtml, /data-heading-subset|Master Blaster Hero|data:font\/woff2/, "experimental font embedding is reverted");
 assert.doesNotMatch(deployedHtml, /lcp-experiment|lcp-probe-results|noindex/, "temporary measurement pages cannot alter the canonical homepage");
+for (const path of ["priority", "diagnostic/priority"]) {
+  const diagnostic = await worker.fetch(new Request(`https://masterblaster.se/lcp-diagnosis-20261015/${path}/`), { ASSETS: clientAssets });
+  assert.equal(diagnostic.status, 200);
+  assert.equal(diagnostic.headers.get("cache-control"), "no-store");
+  assert.equal(diagnostic.headers.get("x-robots-tag"), "noindex");
+}
 for (const candidate of ["baseline", "priority", "fonts", "spacing", "combined"]) {
   for (const prefix of ["", "diagnostic/"]) {
     const retired = await worker.fetch(new Request(`https://masterblaster.se/lcp-experiment/${prefix}${candidate}/?retired=1`), { ASSETS: clientAssets });

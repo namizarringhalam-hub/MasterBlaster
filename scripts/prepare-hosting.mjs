@@ -1,4 +1,5 @@
 import { copyFile, cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { writeLcpDiagnosis } from "./lcp-diagnosis.mjs";
 
 await mkdir("dist/server", { recursive: true });
 await mkdir("dist/client", { recursive: true });
@@ -18,6 +19,7 @@ for (const file of ["favicon.svg", "manifest.webmanifest", "menu-arena-v2.webp",
 const routes = (await readFile("public/_redirects", "utf8")).split(/\r?\n/)
   .filter(line => line.trim() && !line.startsWith("#"))
   .map(line => line.trim().split(/\s+/));
+await writeLcpDiagnosis();
 await writeFile(
   "dist/server/index.js",
 `const routes = new Map(${JSON.stringify(routes.map(([from, to, status]) => [from, { to, status: Number(status) }]))});
@@ -53,7 +55,8 @@ export default {
     }
     const headers = new Headers(response.headers);
     const pathname = new URL(request.url).pathname;
-    if (!response.ok || headers.get("content-type")?.includes("text/html") || pathname === "/sw.js") headers.set("cache-control", "public, max-age=0, must-revalidate");
+    if (pathname.startsWith("/lcp-diagnosis-20261015/")) { headers.set("cache-control", "no-store"); headers.set("x-robots-tag", "noindex"); }
+    else if (!response.ok || headers.get("content-type")?.includes("text/html") || pathname === "/sw.js") headers.set("cache-control", "public, max-age=0, must-revalidate");
     else if (pathname.startsWith("/assets/") || pathname.startsWith("/resources/") || /^\\/resources-[a-f0-9]+\\.json$/.test(pathname)) headers.set("cache-control", "public, max-age=31536000, immutable");
     else headers.set("cache-control", "public, max-age=0, must-revalidate");
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
