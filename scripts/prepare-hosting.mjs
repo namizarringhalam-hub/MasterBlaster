@@ -1,4 +1,5 @@
 import { copyFile, cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { writeLcpExperiments } from "./lcp-experiments.mjs";
 
 await mkdir("dist/server", { recursive: true });
 await mkdir("dist/client", { recursive: true });
@@ -18,6 +19,7 @@ for (const file of ["favicon.svg", "manifest.webmanifest", "menu-arena-v2.webp",
 const routes = (await readFile("public/_redirects", "utf8")).split(/\r?\n/)
   .filter(line => line.trim() && !line.startsWith("#"))
   .map(line => line.trim().split(/\s+/));
+await writeLcpExperiments();
 await writeFile(
   "dist/server/index.js",
 `const routes = new Map(${JSON.stringify(routes.map(([from, to, status]) => [from, { to, status: Number(status) }]))});
