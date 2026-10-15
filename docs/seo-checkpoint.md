@@ -1,5 +1,32 @@
 # SEO checkpoint — 2026-09-18
 
+## Latest recovery checkpoint — 15 October 2026, controlled LCP experiments
+
+- User authorized measuring each candidate independently and all three together.
+  Measurement release 80b60fc preserved the canonical homepage while five
+  temporary noindex pages shared identical resources. Five valid official PSI
+  Mobile runs per condition; five reused underlying captures were excluded and
+  replaced equally. Exact receipts and raw metrics: lcp-experiment-results.json.
+- Median LCP: baseline 2.703 s, priority 2.252 s, embedded fonts 2.702 s,
+  stable spacing 2.853 s, combined 2.101 s (22.3% below controlled baseline).
+  No valid run was below 2 s. Combined's extra benefit over priority is uncertain:
+  two wins, one tie and two losses in corresponding rounds. FCP median rises
+  128 ms combined versus baseline. Lab only; no CrUX field result.
+- Combined source prepared for canonical deployment; temporary routes/probes
+  removed. Exact typography retained, full-font fallback preserved, normal
+  loader spacing reserved. HTML grows about 10.8 KB Brotli; ready small-screen
+  spacing grows 30–38 px. See lcp-experiment-report.md for all downsides.
+- Build/hosting, matchStartup, resourcePreparation, playerText and independent
+  glyph/metrics/HarfBuzz/reproducibility checks pass. Portrait, landscape and
+  desktop menus inspected. Full gameplay smoke inconclusive: baseline and
+  combined both remain in the same loader 45–60 s; no full gameplay pass or
+  variant-specific regression established. Independent source review found no
+  code blocker. No unrelated changes included; preserve %SystemDrive%/.
+- Next: push validated combined source, verify canonical deployment and removal
+  of temporary routes, then record fresh canonical PSI validation. This later
+  task supersedes the morning's uncollected-trace next step; outreach holds and
+  scheduler remain unchanged.
+
 ## Latest recovery checkpoint — 15 October 2026, daily follow-up
 
 - Heartbeat arrived 09:05 CEST; community/mail checks 09:05–09:08, mobile PSI

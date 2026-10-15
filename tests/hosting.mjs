@@ -67,7 +67,17 @@ assert.doesNotMatch(deployedHtml, /<link[^>]*rel="stylesheet"/, "the first menu 
 const fontPreloads = [...deployedHtml.matchAll(/<link\b[^>]*>/g)].map(([tag]) => tag)
   .filter(tag => tag.includes('rel="preload"') && tag.includes('as="font"'))
   .map(tag => tag.match(/href="([^"]+)"/)?.[1]);
-assert.equal(fontPreloads.length, 3, "the three critical menu fonts are preloaded from versioned resources");
+assert.equal(fontPreloads.length, 1, "only the external body face needs preload; heading faces are embedded");
+const preloadTags = [...deployedHtml.matchAll(/<link\b[^>]*rel="preload"[^>]*>/g)].map(([tag]) => tag);
+const headingFonts = preloadTags.filter(tag => tag.includes('as="font"') && /HTx[wy]L3I/.test(tag));
+const menuArtwork = preloadTags.find(tag => tag.includes("menu-arena-v2.webp"));
+assert.equal(headingFonts.length, 0, "embedded heading fonts must not also trigger full-font preloads");
+assert.ok(menuArtwork && !menuArtwork.includes('fetchpriority="high"'), "decorative artwork cannot outrank the heading through an explicit high hint");
+const headingStyle = deployedHtml.match(/<style data-heading-subset>([\s\S]*?)<\/style>/)?.[1];
+assert.ok(headingStyle?.includes("Master Blaster Hero"));
+assert.equal((headingStyle.match(/data:font\/woff2;base64,/g) || []).length, 2, "both heading styles are embedded without network dependencies");
+assert.match(headingStyle, /Barlow Condensed.*Barlow Condensed Fallback/, "uncovered future characters retain full-font fallback");
+assert.doesNotMatch(deployedHtml, /lcp-experiment|lcp-probe-results|noindex/, "temporary measurement pages cannot alter the canonical homepage");
 for (const fontPath of fontPreloads) {
   assert.match(fontPath, /^\/resources\/[a-f0-9]+\/[^/]+\.woff2$/);
   assert.ok(release.entries.some(entry => entry.url === fontPath), "each preload belongs to the complete offline release");
