@@ -5,7 +5,7 @@ on the same deployed game release. The diagnostic trace is separate from scores.
 
 ## Independent and combined results
 
-| Condition | Median LCP | Range | Median difference from baseline | Median performance |
+| Condition | Median LCP | Range | Difference from baseline median | Median performance |
 | --- | ---: | ---: | ---: | ---: |
 | Baseline | 2.703 s | 2.701–2.852 s | — | 95 |
 | Font/background priority only | 2.252 s | 2.101–2.707 s | −0.451 s (16.7%) | 97 |

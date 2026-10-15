@@ -81,6 +81,12 @@ the combined result, including implementation downsides. Baseline: 9f4eb45.
   Original 7 bots restored, High/75% unchanged, owned tabs closed.
 - Independent final source review found no code blocker; arithmetic was checked
   against all 25 reports. Preserve the uncertainty, FCP cost and smoke-test limit.
-- Next: push combined implementation,
-  verify live canonical release/no temporary routes and measure production.
+- Combined implementation ff58c1b committed/pushed. Canonical HTML verified:
+  two embedded heading faces, one body-font preload, stable spacing and no noindex.
+- Removed experiment assets still returned cached noindex copies (Age 987 s,
+  shared max-age 604800); a fresh query returned 404. Add explicit retirement
+  redirects for all ten scored/diagnostic URLs. Full rebuild/hosting check passes;
+  running hosting alone before rebuild correctly rejected stale release identity.
+- Next: deploy retirement redirects, verify live behavior and complete three
+  fresh canonical PSI captures (exclude any repeated underlying captures).
 - Preserve unrelated untracked %SystemDrive%/ and all other work.

@@ -78,6 +78,13 @@ assert.ok(headingStyle?.includes("Master Blaster Hero"));
 assert.equal((headingStyle.match(/data:font\/woff2;base64,/g) || []).length, 2, "both heading styles are embedded without network dependencies");
 assert.match(headingStyle, /Barlow Condensed.*Barlow Condensed Fallback/, "uncovered future characters retain full-font fallback");
 assert.doesNotMatch(deployedHtml, /lcp-experiment|lcp-probe-results|noindex/, "temporary measurement pages cannot alter the canonical homepage");
+for (const candidate of ["baseline", "priority", "fonts", "spacing", "combined"]) {
+  for (const prefix of ["", "diagnostic/"]) {
+    const retired = await worker.fetch(new Request(`https://masterblaster.se/lcp-experiment/${prefix}${candidate}/?retired=1`), { ASSETS: clientAssets });
+    assert.equal(retired.status, 301, "retired experiment links must not serve old cached variants");
+    assert.equal(retired.headers.get("location"), "https://masterblaster.se/?retired=1");
+  }
+}
 for (const fontPath of fontPreloads) {
   assert.match(fontPath, /^\/resources\/[a-f0-9]+\/[^/]+\.woff2$/);
   assert.ok(release.entries.some(entry => entry.url === fontPath), "each preload belongs to the complete offline release");

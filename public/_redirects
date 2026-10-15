@@ -3,6 +3,18 @@
 /how-to-play /how-to-play/ 301
 /how-to-play/index.html /how-to-play/ 301
 
+# Retire temporary LCP measurements, including previously cached copies.
+/lcp-experiment/baseline/ / 301
+/lcp-experiment/priority/ / 301
+/lcp-experiment/fonts/ / 301
+/lcp-experiment/spacing/ / 301
+/lcp-experiment/combined/ / 301
+/lcp-experiment/diagnostic/baseline/ / 301
+/lcp-experiment/diagnostic/priority/ / 301
+/lcp-experiment/diagnostic/fonts/ / 301
+/lcp-experiment/diagnostic/spacing/ / 301
+/lcp-experiment/diagnostic/combined/ / 301
+
 # These are passive game screen URLs, not separate public content pages.
 # Allow refreshes without turning missing files or arbitrary paths into the game.
 /quick-play / 200
