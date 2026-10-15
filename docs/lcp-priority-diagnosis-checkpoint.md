@@ -43,3 +43,20 @@ Historical experiment receipts remain in lcp-experiment-report.md/results.json.
   exploratory matched rounds per arm; then five fresh matched runs for any
   promising candidate before claiming repeated success. Shell removes the whole
   bootstrap, not just the engine, and is never a production candidate.
+- Phase 1 complete: 18 fresh exploratory reports, exact receipts/metrics in
+  lcp-priority-diagnosis-results.json. Medians (ms): priority 2253, shell 2101,
+  no-blur 2252, still 2102 (range 2101–2629), body preload 2102, no analytics
+  2062 (2035–2072). Blur differences were +1,+3,-1 ms in matched rounds: no
+  demonstrated saving. Body preload FCP median 1841 versus priority 1672.
+  No arm reliably clears 2 s; do not publish cosmetic/functional removals.
+- Remote probe receipt 9mchsubhw8 shows actual demanded-fonts-ready 178 ms,
+  H1 candidate 252, engine-ready 3375.30; separate probe-only observations,
+  not scored comparisons. Local warm 390x844 probe retains H1 node 1 across
+  engine hydration; fonts 128.2, paint 224, engine 1612.1. No cold-mobile claim.
+- Phase 2 tests request scheduling with identical visuals/functionality:
+  priority baseline, explicit low image hint, image CSS-discovery only,
+  async analytics and low boot-module fetch hint. Three exploratory matched
+  rounds planned, common new query per round. Keep data separate from phase 1.
+- Phase 2 harness/build/hosting and independent isolation review pass. Original
+  six transforms are byte-identical. Resource observer exposes bounded font/image
+  completion measures only on diagnostic copies. Canonical remains priority-only.

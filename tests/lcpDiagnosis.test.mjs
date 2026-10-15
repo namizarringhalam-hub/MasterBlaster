@@ -22,6 +22,13 @@ const baseline = lcpDiagnosticVariant(html, "priority");
 assert.equal(baseline.replace(' data-lcp-variant="priority"', "").replace('content="noindex, follow"', 'content="index, follow, max-image-preview:large"'), html);
 assert.throws(() => lcpDiagnosticVariant(html, "unknown"), /Unknown/);
 assert.throws(() => lcpDiagnosticVariant(html.replace('type="module"', 'type="text/plain"'), "shell"), /one production boot module/);
+assert.throws(() => lcpDiagnosticVariant(html.replace('defer src="https://cloud.umami.is', 'async src="https://cloud.umami.is'), "analytics-async"), /deferred, non-async/);
+assert.throws(() => lcpDiagnosticVariant(html.replace('type="module"', 'type="module" fetchpriority="high"'), "boot-low"), /without an existing priority/);
+for (const variant of ["image-low", "image-css"]) {
+  assert.throws(() => lcpDiagnosticVariant(html.replace('as="image"', 'as="image" fetchpriority="high"'), variant), /without an existing priority/);
+  assert.throws(() => lcpDiagnosticVariant(html.replace('as="image"', 'as="fetch"'), variant), /one background image preload/);
+  assert.throws(() => lcpDiagnosticVariant(html.replace('as="image"', 'as="image" /><link rel="preload" as="image"'), variant), /one background image preload/);
+}
 
 for (const variant of LCP_DIAGNOSTIC_VARIANTS) {
   const page = lcpDiagnosticVariant(html, variant);
@@ -36,7 +43,14 @@ for (const variant of LCP_DIAGNOSTIC_VARIANTS) {
   assert.equal(page.includes('data-lcp-diagnostic="still"'), variant === "still");
   assert.equal(page.includes('href="/resources/body/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuFuYMZg-latin.woff2"'), variant === "body-preload");
   assert.ok(!page.includes("lcp-probe-results"));
+  assert.equal(page.includes('fetchpriority="low"'), ["image-low", "boot-low"].includes(variant));
+  assert.equal(page.includes('as="image"'), variant !== "image-css");
 }
+const normalizeVariant = page => page.replace(/data-lcp-variant="[^"]+"/, 'data-lcp-variant="priority"');
+assert.equal(normalizeVariant(lcpDiagnosticVariant(html, "image-low")).replace(' fetchpriority="low"', ""), baseline);
+assert.equal(normalizeVariant(lcpDiagnosticVariant(html, "image-css")), baseline.replace('<link rel="preload" as="image" href="/resources/image/menu.webp" />', ""));
+assert.equal(normalizeVariant(lcpDiagnosticVariant(html, "analytics-async")), baseline.replace('defer src="https://cloud.umami.is', 'async src="https://cloud.umami.is'));
+assert.equal(normalizeVariant(lcpDiagnosticVariant(html, "boot-low")), baseline.replace('src="/assets/index-boot.js">', 'src="/assets/index-boot.js" fetchpriority="low">'));
 const withBody = lcpDiagnosticVariant(html, "body-preload");
 assert.ok(withBody.indexOf('href="/resources/heading/italic.woff2"') < withBody.indexOf('href="/resources/body/'));
 assert.ok(withBody.indexOf('href="/resources/body/') < withBody.indexOf('as="image"'));
@@ -45,7 +59,7 @@ const dir = await mkdtemp(join(tmpdir(), "master-blaster-lcp-diagnosis-"));
 try {
   await writeFile(join(dir, "index.html"), html);
   const result = await writeLcpDiagnosis(dir);
-  assert.equal(result.variants.length, 6);
+  assert.equal(result.variants.length, 10);
   assert.equal(await readFile(join(dir, "index.html"), "utf8"), html);
   for (const variant of LCP_DIAGNOSTIC_VARIANTS) {
     const scored = await readFile(join(dir, LCP_DIAGNOSIS_PATH, variant, "index.html"), "utf8");
@@ -69,7 +83,8 @@ const entries = {
   "largest-contentful-paint": [{ startTime: 2100, renderTime: 2100, loadTime: 0, size: 12000, element: null, url: "" }],
   paint: [{ name: "first-contentful-paint", startTime: 1300 }],
   "layout-shift": [{ startTime: 100, value: .02, hadRecentInput: false, sources: [] }, { startTime: 500, value: .03, hadRecentInput: false, sources: [] }, { startTime: 1600, value: .04, hadRecentInput: false, sources: [] }, { startTime: 1800, value: .9, hadRecentInput: true, sources: [] }],
-  longtask: [{ startTime: 1800, duration: 80, name: "self" }]
+  longtask: [{ startTime: 1800, duration: 80, name: "self" }],
+  resource: [{ name: "https://example.test/resources/a/menu-arena-v2.webp", startTime: 100, responseEnd: 700 }, { name: "https://example.test/resources/b/font.woff2?query=1", startTime: 120, responseEnd: 400 }, { name: "https://example.test/resources/b/font.woff2?query=1", startTime: 120, responseEnd: 400 }, { name: "https://example.test/unrelated.js", startTime: 40, responseEnd: 500 }, ...Array.from({ length: 40 }, (_, index) => ({ name: `https://example.test/font-${index}.woff2`, startTime: 200, responseEnd: 800 + index }))]
 };
 class PerformanceObserverStub {
   static supportedEntryTypes = Object.keys(entries);
@@ -99,4 +114,9 @@ assert.equal(snapshot.conditions.viewport.width, 400);
 assert.ok(snapshot.conditions.cache.includes("neither clears"));
 assert.ok(measurements.some(entry => entry.name.includes("candidate 1") && entry.start === 0 && entry.end === 2100));
 assert.ok(measurements.every(entry => entry.name.startsWith("LCP diagnosis: ")));
-console.log("LCP diagnosis checks passed: six isolated arms, noindex/canonical/shared content, probe-only diagnostics, bounded LCP/CLS and User Timing output.");
+assert.equal(snapshot.resourceCompletions.length, 32);
+assert.equal(snapshot.resourceCompletions.filter(entry => entry.name === "font.woff2").length, 1);
+assert.ok(measurements.some(entry => entry.name.includes("resource complete menu-arena-v2.webp") && entry.end === 700));
+assert.ok(measurements.some(entry => entry.name.includes("resource complete font.woff2") && entry.end === 400));
+assert.ok(!measurements.some(entry => entry.name.includes("unrelated.js")));
+console.log("LCP diagnosis checks passed: ten isolated arms, noindex/canonical/shared content, probe-only diagnostics, bounded LCP/CLS and resource User Timing output.");

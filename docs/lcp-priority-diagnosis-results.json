@@ -1,0 +1,406 @@
+{
+  "date": "2026-10-15",
+  "canonicalRollbackCommit": "14935a1",
+  "conditions": {
+    "device": "Emulated Moto G Power",
+    "lighthouse": "13.5.0",
+    "browser": "HeadlessChromium 153.0.8010.36",
+    "network": "Slow 4G",
+    "navigation": "Initial page load, single page session",
+    "field": "No CrUX data",
+    "probes": "Separate diagnostic copies only; no probes on scored pages"
+  },
+  "phase1": {
+    "commit": "14af8c8",
+    "release": "ec8105c5148d72cb59f363bdc9cfb5d1c67a52cbd9a58f720eb0bb4198d9552e",
+    "method": "Three exploratory rounds for all six arms; common fresh query each round; start order forward, reverse, varied. Every scored page verified same release, HTTP200/no-store/noindex, correct marker, no probe. No fresh score discarded.",
+    "runs": [
+      {
+        "round": 1,
+        "variant": "priority",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-priority/i2emf1a4tb?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/priority/?lcp_round=1",
+        "reportCreatedAt": "2026-10-15T13:18:47+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:18+02:00",
+        "performance": 98,
+        "fcpMs": 1669,
+        "lcpMs": 2253,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 2603
+      },
+      {
+        "round": 1,
+        "variant": "shell",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-shell/w67b504ou3?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/shell/?lcp_round=1",
+        "reportCreatedAt": "2026-10-15T13:18:48+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:18+02:00",
+        "performance": 99,
+        "fcpMs": 1657,
+        "lcpMs": 1952,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 1657
+      },
+      {
+        "round": 1,
+        "variant": "no-blur",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-no-blur/ho372e28t8?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/no-blur/?lcp_round=1",
+        "reportCreatedAt": "2026-10-15T13:18:49+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:18+02:00",
+        "performance": 98,
+        "fcpMs": 1711,
+        "lcpMs": 2254,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 2525
+      },
+      {
+        "round": 1,
+        "variant": "still",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-still/ffnkkt718d?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/still/?lcp_round=1",
+        "reportCreatedAt": "2026-10-15T13:18:49+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:18+02:00",
+        "performance": 93,
+        "fcpMs": 1672,
+        "lcpMs": 2629,
+        "tbtMs": 193,
+        "cls": 0.001,
+        "speedIndexMs": 2637
+      },
+      {
+        "round": 1,
+        "variant": "body-preload",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-body-preload/584kps6rca?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/body-preload/?lcp_round=1",
+        "reportCreatedAt": "2026-10-15T13:18:50+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:18+02:00",
+        "performance": 98,
+        "fcpMs": 1870,
+        "lcpMs": 2102,
+        "tbtMs": 0,
+        "cls": 0,
+        "speedIndexMs": 1870
+      },
+      {
+        "round": 1,
+        "variant": "no-analytics",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-no-analytics/uenrtuc0zo?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/no-analytics/?lcp_round=1",
+        "reportCreatedAt": "2026-10-15T13:18:51+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:18+02:00",
+        "performance": 98,
+        "fcpMs": 1687,
+        "lcpMs": 2062,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 2579
+      },
+      {
+        "round": 2,
+        "variant": "priority",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-priority/dn46ccwxhn?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/priority/?lcp_round=2",
+        "reportCreatedAt": "2026-10-15T13:20:22+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:20+02:00",
+        "performance": 98,
+        "fcpMs": 1672,
+        "lcpMs": 2101,
+        "tbtMs": 22,
+        "cls": 0.001,
+        "speedIndexMs": 1672
+      },
+      {
+        "round": 2,
+        "variant": "shell",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-shell/1975xs5ski?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/shell/?lcp_round=2",
+        "reportCreatedAt": "2026-10-15T13:20:22+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:20+02:00",
+        "performance": 98,
+        "fcpMs": 1768,
+        "lcpMs": 2101,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 2652
+      },
+      {
+        "round": 2,
+        "variant": "no-blur",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-no-blur/e4bl8pftaf?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/no-blur/?lcp_round=2",
+        "reportCreatedAt": "2026-10-15T13:20:21+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:20+02:00",
+        "performance": 97,
+        "fcpMs": 1674,
+        "lcpMs": 2104,
+        "tbtMs": 138,
+        "cls": 0.001,
+        "speedIndexMs": 1674
+      },
+      {
+        "round": 2,
+        "variant": "still",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-still/b2s2j1esyl?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/still/?lcp_round=2",
+        "reportCreatedAt": "2026-10-15T13:20:20+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:20+02:00",
+        "performance": 98,
+        "fcpMs": 1677,
+        "lcpMs": 2102,
+        "tbtMs": 14,
+        "cls": 0.001,
+        "speedIndexMs": 1677
+      },
+      {
+        "round": 2,
+        "variant": "body-preload",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-body-preload/19yy0ggd5e?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/body-preload/?lcp_round=2",
+        "reportCreatedAt": "2026-10-15T13:20:19+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:20+02:00",
+        "performance": 99,
+        "fcpMs": 1671,
+        "lcpMs": 1951,
+        "tbtMs": 0,
+        "cls": 0,
+        "speedIndexMs": 1671
+      },
+      {
+        "round": 2,
+        "variant": "no-analytics",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-no-analytics/f7y3ohlzir?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/no-analytics/?lcp_round=2",
+        "reportCreatedAt": "2026-10-15T13:20:18+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:20+02:00",
+        "performance": 98,
+        "fcpMs": 1712,
+        "lcpMs": 2072,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 2582
+      },
+      {
+        "round": 3,
+        "variant": "priority",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-priority/57npukzmdr?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/priority/?lcp_round=3",
+        "reportCreatedAt": "2026-10-15T13:21:27+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:21+02:00",
+        "performance": 97,
+        "fcpMs": 1692,
+        "lcpMs": 2253,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 2534
+      },
+      {
+        "round": 3,
+        "variant": "shell",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-shell/8cqxx5zgyp?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/shell/?lcp_round=3",
+        "reportCreatedAt": "2026-10-15T13:21:29+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:21+02:00",
+        "performance": 98,
+        "fcpMs": 1669,
+        "lcpMs": 2101,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 1669
+      },
+      {
+        "round": 3,
+        "variant": "no-blur",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-no-blur/eb1mkhror7?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/no-blur/?lcp_round=3",
+        "reportCreatedAt": "2026-10-15T13:21:25+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:21+02:00",
+        "performance": 97,
+        "fcpMs": 1701,
+        "lcpMs": 2252,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 2585
+      },
+      {
+        "round": 3,
+        "variant": "still",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-still/ohqfk6hunu?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/still/?lcp_round=3",
+        "reportCreatedAt": "2026-10-15T13:21:30+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:21+02:00",
+        "performance": 98,
+        "fcpMs": 1670,
+        "lcpMs": 2101,
+        "tbtMs": 21,
+        "cls": 0.001,
+        "speedIndexMs": 1670
+      },
+      {
+        "round": 3,
+        "variant": "body-preload",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-body-preload/diucsatj55?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/body-preload/?lcp_round=3",
+        "reportCreatedAt": "2026-10-15T13:21:26+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:21+02:00",
+        "performance": 97,
+        "fcpMs": 1841,
+        "lcpMs": 2253,
+        "tbtMs": 0,
+        "cls": 0,
+        "speedIndexMs": 2629
+      },
+      {
+        "round": 3,
+        "variant": "no-analytics",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-no-analytics/03elwtxzrl?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/no-analytics/?lcp_round=3",
+        "reportCreatedAt": "2026-10-15T13:21:28+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:21+02:00",
+        "performance": 99,
+        "fcpMs": 1668,
+        "lcpMs": 2035,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 1668
+      }
+    ],
+    "summary": [
+      {
+        "variant": "priority",
+        "n": 3,
+        "lcpMedianMs": 2253,
+        "lcpRangeMs": [
+          2101,
+          2253
+        ],
+        "fcpMedianMs": 1672,
+        "pairedLcpDifferenceMs": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "variant": "shell",
+        "n": 3,
+        "lcpMedianMs": 2101,
+        "lcpRangeMs": [
+          1952,
+          2101
+        ],
+        "fcpMedianMs": 1669,
+        "pairedLcpDifferenceMs": [
+          -301,
+          0,
+          -152
+        ]
+      },
+      {
+        "variant": "no-blur",
+        "n": 3,
+        "lcpMedianMs": 2252,
+        "lcpRangeMs": [
+          2104,
+          2254
+        ],
+        "fcpMedianMs": 1701,
+        "pairedLcpDifferenceMs": [
+          1,
+          3,
+          -1
+        ]
+      },
+      {
+        "variant": "still",
+        "n": 3,
+        "lcpMedianMs": 2102,
+        "lcpRangeMs": [
+          2101,
+          2629
+        ],
+        "fcpMedianMs": 1672,
+        "pairedLcpDifferenceMs": [
+          376,
+          1,
+          -152
+        ]
+      },
+      {
+        "variant": "body-preload",
+        "n": 3,
+        "lcpMedianMs": 2102,
+        "lcpRangeMs": [
+          1951,
+          2253
+        ],
+        "fcpMedianMs": 1841,
+        "pairedLcpDifferenceMs": [
+          -151,
+          -150,
+          0
+        ]
+      },
+      {
+        "variant": "no-analytics",
+        "n": 3,
+        "lcpMedianMs": 2062,
+        "lcpRangeMs": [
+          2035,
+          2072
+        ],
+        "fcpMedianMs": 1687,
+        "pairedLcpDifferenceMs": [
+          -191,
+          -29,
+          -218
+        ]
+      }
+    ]
+  },
+  "diagnostics": {
+    "canonicalPriority": {
+      "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se/z2ed79n2y1?form_factor=mobile",
+      "lcpSimulatedMs": 2102,
+      "fcpSimulatedMs": 1672,
+      "actualH1RenderDelayInsightMs": 370,
+      "bootMarkMs": 331.5,
+      "menuReadyMarkMs": 408.84,
+      "longTask": {
+        "startMs": 946,
+        "durationMs": 69
+      },
+      "note": "Actual insight/marks are not simulated metric components."
+    },
+    "localWarm": {
+      "viewport": [
+        390,
+        844,
+        1
+      ],
+      "cache": "Shared local browser/SW; all selected resource transfer sizes zero; not cold or throttled",
+      "fontDemandReadyMs": 128.2,
+      "lcpMs": 224,
+      "engineReadyMs": 1612.1,
+      "headingNodeId": 1,
+      "nodePreserved": true,
+      "lastObservationMs": 10000,
+      "lateHeadingCandidate": false
+    },
+    "remoteInstrumented": {
+      "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-diagnostic-priority/9mchsubhw8?form_factor=mobile",
+      "actualH1CandidateMs": 252,
+      "demandedFontsReadyMs": 178,
+      "menuReadyMs": 190.39,
+      "engineReadyMs": 3375.3,
+      "probeAffectsTiming": true,
+      "note": "Diagnostic-only actual ordering; do not compare its score to uninstrumented arms or subtract from simulated LCP."
+    }
+  },
+  "phase2": {
+    "status": "preparing"
+  }
+}

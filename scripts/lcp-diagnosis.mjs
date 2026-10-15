@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const LCP_DIAGNOSIS_PATH = "lcp-diagnosis-20261015";
-export const LCP_DIAGNOSTIC_VARIANTS = ["priority", "shell", "no-blur", "still", "body-preload", "no-analytics"];
+export const LCP_DIAGNOSTIC_VARIANTS = ["priority", "shell", "no-blur", "still", "body-preload", "no-analytics", "image-low", "image-css", "analytics-async", "boot-low"];
 
 export function lcpDiagnosticVariant(html, variant) {
   if (!LCP_DIAGNOSTIC_VARIANTS.includes(variant)) throw new Error(`Unknown LCP diagnostic variant: ${variant}`);
@@ -32,6 +32,25 @@ export function lcpDiagnosticVariant(html, variant) {
     const matches = [...result.matchAll(analytics)];
     if (matches.length !== 1) throw new Error(`Expected one explicit Umami script, found ${matches.length}`);
     result = result.replace(analytics, "");
+  }
+  if (variant === "image-low" || variant === "image-css") {
+    const image = /<link\b(?=[^>]*\brel="preload")(?=[^>]*\bas="image")[^>]*>/gi;
+    const matches = [...result.matchAll(image)];
+    if (matches.length !== 1) throw new Error(`Expected one background image preload, found ${matches.length}`);
+    if (/\bfetchpriority\s*=/i.test(matches[0][0])) throw new Error("Expected the baseline image preload without an existing priority");
+    result = result.replace(image, match => variant === "image-css" ? "" : match.replace(/\s*\/?>$/, ending => ` fetchpriority="low"${ending}`));
+  }
+  if (variant === "analytics-async") {
+    const analytics = /<script\b(?=[^>]*\bsrc="https:\/\/cloud\.umami\.is\/script\.js")[^>]*>\s*<\/script>/gi;
+    const matches = [...result.matchAll(analytics)];
+    if (matches.length !== 1 || !/\sdefer(?=\s|>)/i.test(matches[0][0]) || /\sasync(?=\s|>)/i.test(matches[0][0])) throw new Error("Expected one deferred, non-async Umami script");
+    result = result.replace(analytics, match => match.replace(/\sdefer(?=\s|>)/i, " async"));
+  }
+  if (variant === "boot-low") {
+    const boot = /<script\b(?=[^>]*\btype="module")(?=[^>]*\bsrc="\/assets\/index-[^"\s]+\.js")[^>]*>\s*<\/script>/gi;
+    const matches = [...result.matchAll(boot)];
+    if (matches.length !== 1 || /\bfetchpriority\s*=/i.test(matches[0][0])) throw new Error("Expected one production boot module without an existing priority");
+    result = result.replace(boot, match => match.replace(/>/, ' fetchpriority="low">'));
   }
   return result;
 }

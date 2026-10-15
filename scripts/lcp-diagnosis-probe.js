@@ -2,7 +2,7 @@
 (() => {
   const startedAt = performance.now();
   const duration = 10000;
-  const observations = { lcp: [], paints: [], shifts: [], longTasks: [], fonts: [], states: [], unsupported: [] };
+  const observations = { lcp: [], paints: [], shifts: [], longTasks: [], fonts: [], states: [], resourceCompletions: [], unsupported: [] };
   const observers = [];
   let stopped = false;
   let queuedFrame = 0;
@@ -40,6 +40,17 @@
   });
   observe("longtask", entries => {
     for (const entry of entries) observations.longTasks.push({ at: round(entry.startTime), duration: round(entry.duration), name: entry.name });
+  });
+  const completedResources = new Set();
+  observe("resource", entries => {
+    for (const entry of entries) {
+      const filename = entry.name.split(/[?#]/)[0].split("/").at(-1);
+      const key = `${entry.name}|${entry.startTime}`;
+      if ((!filename.endsWith(".woff2") && filename !== "menu-arena-v2.webp") || completedResources.has(key) || completedResources.size >= 32) continue;
+      completedResources.add(key);
+      observations.resourceCompletions.push({ name: filename, at: round(entry.responseEnd), start: round(entry.startTime) });
+      timing(`resource complete ${filename}`, entry.responseEnd);
+    }
   });
 
   function sampleState(reason) {
