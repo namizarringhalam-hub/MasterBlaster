@@ -523,5 +523,104 @@
       "excludedFromIndependentRuns": true
     }
   ],
-  "exclusionReason": "Initial fifth-round requests returned the fourth-round underlying capture minute and identical metrics. Excluded; replacement audits used a common lcp_sample=5 query and show new 12:26 captures."
+  "exclusionReason": "Initial fifth-round requests returned the fourth-round underlying capture minute and identical metrics. Excluded; replacement audits used a common lcp_sample=5 query and show new 12:26 captures.",
+  "productionValidation": {
+    "conditions": "Same official PSI Mobile device/network/browser configuration as controlled runs; no CrUX field data.",
+    "plan": "Three fresh homepage captures; preserve and exclude reused underlying audits. Final replacement uses a cache-fresh query whose HTML was verified byte-identical to canonical root.",
+    "rollout": "First two captures ff58c1b; final capture b8d9afb. Cleanup adds retirement redirects and changes release identity, without changing landing optimization code. These are post-rollout validation, not controlled additional effect estimates.",
+    "runs": [
+      {
+        "round": 1,
+        "url": "https://masterblaster.se/",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se/lhmjdz2gfu?form_factor=mobile",
+        "reportCreatedAt": "2026-10-15T12:34:50+02:00",
+        "underlyingCaptureMinute": "2026-10-15T12:34+02:00",
+        "performance": 95,
+        "fcpMs": 1812,
+        "lcpMs": 2701,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 1812,
+        "sourceCommit": "ff58c1b",
+        "release": "c2dd3b388efb90d7340305541797255675c50d6b1964baca2cf019a480b643b6"
+      },
+      {
+        "round": 2,
+        "url": "https://masterblaster.se/",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se/h5s2gokzxb?form_factor=mobile",
+        "reportCreatedAt": "2026-10-15T12:36:11+02:00",
+        "underlyingCaptureMinute": "2026-10-15T12:36+02:00",
+        "performance": 98,
+        "fcpMs": 1673,
+        "lcpMs": 2103,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 1673,
+        "sourceCommit": "ff58c1b",
+        "release": "c2dd3b388efb90d7340305541797255675c50d6b1964baca2cf019a480b643b6"
+      },
+      {
+        "round": 3,
+        "url": "https://masterblaster.se/?lcp_validation=3",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se/fln66al5o4?form_factor=mobile",
+        "reportCreatedAt": "2026-10-15T12:37:45+02:00",
+        "underlyingCaptureMinute": "2026-10-15T12:37+02:00",
+        "performance": 94,
+        "fcpMs": 1809,
+        "lcpMs": 2852,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 2688,
+        "sourceCommit": "b8d9afb",
+        "release": "7b8431d2d9ebdf80f323aa9818aa9927cb151216db4b5ac48a9517c34f2fa1ce"
+      }
+    ],
+    "summary": {
+      "medianLcpMs": 2701,
+      "minLcpMs": 2103,
+      "maxLcpMs": 2852,
+      "medianPerformance": 95,
+      "medianFcpMs": 1809,
+      "conclusion": "The controlled combined median 2101ms was not consistently reproduced on the canonical homepage; under 2000ms was not achieved."
+    },
+    "excludedReusedReports": [
+      {
+        "excluded": true,
+        "reason": "Reused underlying first production audit",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se/o5kqsa0gxx?form_factor=mobile",
+        "reportCreatedAt": "2026-10-15T12:35:35+02:00",
+        "underlyingCaptureMinute": "2026-10-15T12:34+02:00",
+        "duplicateOf": "https://pagespeed.web.dev/analysis/https-masterblaster-se/lhmjdz2gfu?form_factor=mobile",
+        "performance": 95,
+        "fcpMs": 1812,
+        "lcpMs": 2701,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 1812
+      },
+      {
+        "excluded": true,
+        "reason": "Reused underlying second production audit",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se/38k8kf0t0p?form_factor=mobile",
+        "reportCreatedAt": "2026-10-15T12:37:07+02:00",
+        "underlyingCaptureMinute": "2026-10-15T12:36+02:00",
+        "duplicateOf": "https://pagespeed.web.dev/analysis/https-masterblaster-se/h5s2gokzxb?form_factor=mobile",
+        "performance": 98,
+        "fcpMs": 1673,
+        "lcpMs": 2103,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 1673
+      }
+    ],
+    "deploymentValidation": {
+      "indexableRoot": true,
+      "embeddedHeadingFaces": 2,
+      "externalFontPreloads": 1,
+      "explicitHighArtworkPriority": false,
+      "stableSpacing": true,
+      "retiredUrls": "All ten original unqueried scored/diagnostic paths verified HTTP301 Location /",
+      "release": "7b8431d2d9ebdf80f323aa9818aa9927cb151216db4b5ac48a9517c34f2fa1ce"
+    }
+  }
 }

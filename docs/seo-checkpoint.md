@@ -22,10 +22,20 @@
   combined both remain in the same loader 45–60 s; no full gameplay pass or
   variant-specific regression established. Independent source review found no
   code blocker. No unrelated changes included; preserve %SystemDrive%/.
-- Next: push validated combined source, verify canonical deployment and removal
-  of temporary routes, then record fresh canonical PSI validation. This later
-  task supersedes the morning's uncollected-trace next step; outreach holds and
-  scheduler remain unchanged.
+- Combined source ff58c1b and retirement cleanup b8d9afb committed/pushed.
+  Canonical HTML independently verified indexable with both embedded faces,
+  single body-font preload and stable spacing. All ten old scored/diagnostic
+  URLs return 301 to home, including original previously cached paths.
+- Fresh live-homepage validation: 2.701, 2.103 and 2.852 s; median 2.701 s,
+  performance median 95. Two reused captures excluded; final cache-fresh query
+  verified byte-identical HTML. Exact receipt/release data in JSON/report.
+  Controlled combined median 2.101 s did not reproduce consistently on home;
+  reliable sub-2 s and a live median improvement remain unestablished.
+- Priority-only has the strongest benefit/cost evidence (five controlled wins).
+  All three remain enabled for requested combined implementation. Do not restart
+  old font experiments or claim another saving without new evidence. Outreach
+  holds, creator privacy and scheduler unchanged. Next: finish final report and
+  continue existing daily monitoring; performance target remains outstanding.
 
 ## Latest recovery checkpoint — 15 October 2026, daily follow-up
 

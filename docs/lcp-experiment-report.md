@@ -77,11 +77,43 @@ baseline, despite its lower median LCP. Valid-run CLS was 0–0.001.
 
 ## Production validation
 
-The combined version is selected for canonical-homepage validation because it
-had the fastest observed median. Temporary routes/probes are removed from the
-final build. Production report receipts and results will be recorded here after
-deployment; they are validation, not additional independent variant-effect runs.
+All three changes are deployed in ff58c1b. A separate three-capture homepage
+validation returned the following results under the same mobile lab conditions:
 
-All 25 raw measurements, report links and the five excluded receipts are in
+| Fresh capture | LCP | FCP | Performance | Receipt |
+| --- | ---: | ---: | ---: | --- |
+| 12:34 CEST | 2.701 s | 1.812 s | 95 | [Report](https://pagespeed.web.dev/analysis/https-masterblaster-se/lhmjdz2gfu?form_factor=mobile) |
+| 12:36 CEST | 2.103 s | 1.673 s | 98 | [Report](https://pagespeed.web.dev/analysis/https-masterblaster-se/h5s2gokzxb?form_factor=mobile) |
+| 12:37 CEST | 2.852 s | 1.809 s | 94 | [Report](https://pagespeed.web.dev/analysis/https-masterblaster-se/fln66al5o4?form_factor=mobile) |
+
+**Live validation median: 2.701 s**, range 2.103–2.852 s; median performance 95.
+The controlled combined median of 2.101 s did not reproduce consistently on the
+homepage. There is no demonstrated reliable sub-two-second result or established
+canonical-homepage median improvement. These are post-rollout validation, not
+additional controlled variant-effect runs; do not pool the two groups.
+
+Two new report URLs reused earlier underlying captures; both are excluded with
+full receipts in the JSON. The last replacement uses ?lcp_validation=3; its HTML
+was verified byte-identical to the canonical root. First two captures used
+ff58c1b, release c2dd3b388efb90d7340305541797255675c50d6b1964baca2cf019a480b643b6.
+The last used b8d9afb, release
+7b8431d2d9ebdf80f323aa9818aa9927cb151216db4b5ac48a9517c34f2fa1ce;
+the landing implementation is unchanged by that cleanup deployment.
+
+Canonical HTML is indexable with both embedded faces, one external body-font
+preload and stable spacing. Removed experiment assets initially remained in
+shared caches. Commit b8d9afb adds explicit retirement redirects: all ten original
+unqueried scored/diagnostic paths now independently verify HTTP 301 to home.
+Full build/hosting checks, including every retirement path, pass.
+
+For benefit versus complexity, priority-only has the strongest evidence: it beat
+baseline in all five controlled runs without larger HTML or extra spacing.
+Embedding preserves typography and spacing prevents the measured movement;
+their additional LCP benefit remains unproven. All three remain enabled for the user's
+requested combined implementation. Further optimization requires new evidence;
+these results do not justify promising another 100 ms saving or changing visuals.
+
+All 25 controlled measurements, three fresh production captures, report links
+and all seven excluded receipts are in
 [lcp-experiment-results.json](lcp-experiment-results.json). The measurement harness
 is recoverable from commit 80b60fc; generated diagnostic artifacts remain ignored.

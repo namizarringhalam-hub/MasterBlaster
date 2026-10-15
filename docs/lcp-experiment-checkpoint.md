@@ -87,6 +87,17 @@ the combined result, including implementation downsides. Baseline: 9f4eb45.
   shared max-age 604800); a fresh query returned 404. Add explicit retirement
   redirects for all ten scored/diagnostic URLs. Full rebuild/hosting check passes;
   running hosting alone before rebuild correctly rejected stale release identity.
-- Next: deploy retirement redirects, verify live behavior and complete three
-  fresh canonical PSI captures (exclude any repeated underlying captures).
+- Retirement cleanup b8d9afb committed/pushed. All ten original unqueried scored/
+  diagnostic paths now verify 301 to home; root indexable with combined changes.
+- Three fresh canonical validations: 2701, 2103 and 2852 ms, median 2701 ms.
+  Two reused captures excluded; final replacement query has byte-identical HTML.
+  First two captures ff58c1b, last b8d9afb (redirect cleanup only). Record exact
+  releases/receipts in JSON. Controlled 2101 ms median did not consistently
+  reproduce; under 2 s remains unmet. Do not pool validation with effect runs.
+- Independent source/report/arithmetic and cleanup reviews pass. User report
+  must lead with both controlled and live outcomes, not only the fastest median.
+- Final validation records saved and independently reviewed; owned local server
+  stopped. Final documentation commit/push accompanies this checkpoint. Next
+  performance work needs new evidence; this experiment set is complete, while
+  reliable sub-2 s remains outstanding. Existing daily monitoring continues.
 - Preserve unrelated untracked %SystemDrive%/ and all other work.
