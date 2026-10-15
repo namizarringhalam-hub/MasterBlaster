@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const LCP_DIAGNOSIS_PATH = "lcp-diagnosis-20261015";
-export const LCP_DIAGNOSTIC_VARIANTS = ["priority", "shell", "no-blur", "still", "body-preload", "no-analytics", "image-low", "image-css", "analytics-async", "boot-low", "no-art", "unused-art"];
+export const LCP_DIAGNOSTIC_VARIANTS = ["priority", "shell", "no-blur", "still", "body-preload", "no-analytics", "image-low", "image-css", "analytics-async", "boot-low", "no-art", "unused-art", "body-fallback"];
 
 export function lcpDiagnosticVariant(html, variant) {
   if (!LCP_DIAGNOSTIC_VARIANTS.includes(variant)) throw new Error(`Unknown LCP diagnostic variant: ${variant}`);
@@ -58,6 +58,22 @@ export function lcpDiagnosticVariant(html, variant) {
     if (variant === "no-art") result = result.replace(image, "");
     // Diagnostic exclusion only: the original CSS URL remains, but is overridden.
     result = result.replace(/<\/head>/i, '<style data-lcp-diagnostic="art-exclusion">.menu-shell[data-menu-scene="landing"] .arena-towers { background-image: none !important; }</style>\n</head>');
+  }
+  if (variant === "body-fallback") {
+    const style = /(<style\b(?=[^>]*\bdata-fonts(?:\s|=|>))[^>]*>)([\s\S]*?)(<\/style>)/gi;
+    const styles = [...result.matchAll(style)];
+    if (styles.length !== 1) throw new Error("Expected one inlined data-fonts style");
+    let removed = 0;
+    const css = styles[0][2].replace(/@font-face\s*\{[^{}]*\}/gi, rule => {
+      if (!/font-family\s*:\s*(?:'Inter'|"Inter"|Inter)\s*;/i.test(rule) || !/src\s*:\s*url\(/i.test(rule)) return rule;
+      removed++;
+      return "";
+    });
+    if (removed !== 6) throw new Error(`Expected six external Inter font faces, found ${removed}`);
+    const preload = /<link\b(?=[^>]*\brel="preload")(?=[^>]*\bas="font")(?=[^>]*\bhref="\/[^"\s]*LyfMZg-latin\.woff2")[^>]*>/gi;
+    if ([...result.matchAll(preload)].length !== 1) throw new Error("Expected one Inter 400 Latin preload");
+    // Exclusion only: retain local metric-adjusted fallback and all heading faces.
+    result = result.replace(style, (_, open, originalCss, close) => `${open}${css}${close}`).replace(preload, "");
   }
   return result;
 }

@@ -75,3 +75,17 @@ Historical experiment receipts remain in lcp-experiment-report.md/results.json.
   completion relative to H1 paint before attributing network versus rendering.
   Twelve-arm tests/build and independent source review pass; prior ten arms
   byte-identical. Canonical stays priority-only.
+- Phase 3 complete: nine fresh reports. Priority median 2254 ms, no-art 2102
+  (range 1655–2104), unused-art 2253. With background hidden identically, removing
+  its initial request is faster than retaining it by 523/372/151 ms. Request or
+  resource-processing contribution supported; not a proven network-only number.
+  No-art still fails target two of three times. Remote probe verifies no document
+  image completion before H1 on no-art, versus image 227 ms before H1 1344 on
+  unused-art. Later service-worker image downloads are separate.
+- Final font exclusion: priority versus body-fallback, three fresh matched rounds.
+  Remove only external Inter faces/body preload, retain exact original Barlow
+  heading and metric-adjusted local fallback. Diagnostic-only body glyph change;
+  verify headline geometry and request absence before interpretation. No intent
+  to ship a different body typeface. Extra finite frame/visibility/LoAF probes
+  help distinguish frame scheduling from a font or app delay; no source cause
+  will be inferred from a probe-induced or uncorrelated gap.

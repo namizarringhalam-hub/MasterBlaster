@@ -2,10 +2,11 @@
 (() => {
   const startedAt = performance.now();
   const duration = 10000;
-  const observations = { lcp: [], paints: [], shifts: [], longTasks: [], fonts: [], states: [], resourceCompletions: [], unsupported: [] };
+  const observations = { lcp: [], paints: [], shifts: [], longTasks: [], longAnimationFrames: [], fonts: [], states: [], frames: [], visibility: [], resourceCompletions: [], unsupported: [] };
   const observers = [];
   let stopped = false;
   let queuedFrame = 0;
+  let sampledFrame = 0;
   let previousState = "";
   let firstInput = null;
   const nodeIds = new WeakMap();
@@ -41,6 +42,14 @@
   observe("longtask", entries => {
     for (const entry of entries) observations.longTasks.push({ at: round(entry.startTime), duration: round(entry.duration), name: entry.name });
   });
+  observe("long-animation-frame", entries => {
+    for (const entry of entries) {
+      if (observations.longAnimationFrames.length >= 20) break;
+      const scripts = [...(entry.scripts || [])].sort((a, b) => b.duration - a.duration).slice(0, 3).map(script => ({ function: (script.sourceFunctionName || "").slice(0, 80), source: (script.sourceURL || "").split(/[?#]/)[0].split("/").at(-1).slice(0, 96), duration: round(script.duration) }));
+      observations.longAnimationFrames.push({ at: round(entry.startTime), duration: round(entry.duration), blockingDuration: round(entry.blockingDuration), renderStart: round(entry.renderStart), styleAndLayoutStart: round(entry.styleAndLayoutStart), scripts });
+      performance.measure(`LCP diagnosis: LoAF ${observations.longAnimationFrames.length} block ${round(entry.blockingDuration)}ms`, { start: entry.startTime, duration: entry.duration });
+    }
+  });
   const completedResources = new Set();
   observe("resource", entries => {
     for (const entry of entries) {
@@ -52,6 +61,24 @@
       timing(`resource complete ${filename}`, entry.responseEnd);
     }
   });
+  const recordVisibility = event => {
+    if (stopped || observations.visibility.length >= 20) return;
+    const state = { at: round(performance.now()), reason: typeof event === "string" ? event : event.type, visibility: document.visibilityState, focused: document.hasFocus?.() ?? null };
+    observations.visibility.push(state);
+    timing(`visibility ${state.reason} ${state.visibility} focus ${state.focused}`);
+  };
+  recordVisibility("probe-start");
+  document.addEventListener("visibilitychange", recordVisibility);
+  window.addEventListener("focus", recordVisibility);
+  window.addEventListener("blur", recordVisibility);
+  // Ten timestamps only; no geometry reads or continuous frame sampling.
+  const recordFrame = timestamp => {
+    if (stopped || performance.now() > duration || observations.frames.length >= 10) return;
+    observations.frames.push({ timestamp: round(timestamp), observedAt: round(performance.now()), visibility: document.visibilityState, focused: document.hasFocus?.() ?? null });
+    timing(`frame ${observations.frames.length} ${document.visibilityState}`, timestamp);
+    if (observations.frames.length < 10) sampledFrame = requestAnimationFrame(recordFrame);
+  };
+  sampledFrame = requestAnimationFrame(recordFrame);
 
   function sampleState(reason) {
     if (stopped) return;
@@ -73,7 +100,7 @@
     const serialized = JSON.stringify(state);
     if (serialized !== previousState) {
       observations.states.push({ at: round(performance.now()), reason, ...state });
-      timing(`state ${observations.states.length} ${reason}; progress ${state.progress?.stage || "unset"} ${state.progress?.hidden ? "hidden" : "shown"}`);
+      timing(`state ${observations.states.length} ${reason}; H1#${state.headingNodeId} ${state.rect ? `${state.rect.x},${state.rect.y},${state.rect.width},${state.rect.height}` : "absent"}; fonts ${state.fontsStatus}; progress ${state.progress?.stage || "unset"} ${state.progress?.hidden ? "hidden" : "shown"}`);
     }
     previousState = serialized;
   }
@@ -119,12 +146,16 @@
     sampleState("capture-end");
     stopped = true;
     cancelAnimationFrame(queuedFrame);
+    cancelAnimationFrame(sampledFrame);
     mutation.disconnect();
     for (const { observer, receive } of observers) { receive(observer.takeRecords()); observer.disconnect(); }
     for (const type of ["loading", "loadingdone", "loadingerror"]) document.fonts.removeEventListener(type, fontsEvent);
     for (const type of ["pointerdown", "keydown", "touchstart", "wheel"]) window.removeEventListener(type, interacted, { capture: true });
     document.removeEventListener("DOMContentLoaded", domReady);
     window.removeEventListener("load", loaded);
+    document.removeEventListener("visibilitychange", recordVisibility);
+    window.removeEventListener("focus", recordVisibility);
+    window.removeEventListener("blur", recordVisibility);
     let cls = 0, sessionValue = 0, sessionStart = -Infinity, previousShift = -Infinity;
     for (const shift of observations.shifts.filter(shift => !shift.hadRecentInput).sort((a, b) => a.at - b.at)) {
       if (shift.at - previousShift >= 1000 || shift.at - sessionStart >= 5000) { sessionStart = shift.at; sessionValue = 0; }

@@ -398,7 +398,35 @@
       "engineReadyMs": 3375.3,
       "probeAffectsTiming": true,
       "note": "Diagnostic-only actual ordering; do not compare its score to uninstrumented arms or subtract from simulated LCP."
-    }
+    },
+    "artExclusion": [
+      {
+        "variant": "no-art",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-diagnostic-no-art/bv92wmavj7?form_factor=mobile",
+        "headingPaintMs": 292,
+        "fontResourceCompletionMs": [
+          133.5,
+          134.5,
+          136.3,
+          173.1
+        ],
+        "documentImageCompletionBeforeHeading": false,
+        "engineReadyMs": 3351.25
+      },
+      {
+        "variant": "unused-art",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-diagnostic-unused-art/2xvjpao6vm?form_factor=mobile",
+        "headingPaintMs": 1344,
+        "fontResourceCompletionMs": [
+          225.9,
+          280.3,
+          288.1,
+          330.2
+        ],
+        "imageCompletionMs": 227,
+        "documentImageCompletionBeforeHeading": true
+      }
+    ]
   },
   "phase2": {
     "commit": "b804d8d",
@@ -705,5 +733,188 @@
     ],
     "finding": "LCP optimistic graph includes eligible completed pre-LCP networks except Low/VeryLow images. Pessimistic includes all eligible completed pre-LCP networks and pre-LCP layout tasks. Graph retains dependency ancestors. Metrics average optimistic/pessimistic and LCP is clamped >= FCP. FCP uses narrower priority filtering. No text-specific FCP==LCP delegation in this pinned release.",
     "limitation": "Mechanism explains divergent simulation from coincident observed text paint; without original trace/network/graph artifacts it does not identify which request caused a given score. Public version verified; PSI-internal patches not independently known."
+  },
+  "phase3": {
+    "commit": "3ac68b9",
+    "release": "c6d4771e841403cd47d15315c21d6bf66bcb67c4483f14f5143884ed2cccfc30",
+    "method": "Three fresh matched exploratory rounds of priority, no-art, unused-art; common art_round query. All three variants verified no-store/noindex/probe-free and same release.",
+    "runs": [
+      {
+        "round": 1,
+        "variant": "priority",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-priority/265wlaru2r?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/priority/?art_round=1",
+        "reportCreatedAt": "2026-10-15T13:33:32+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:33+02:00",
+        "performance": 98,
+        "fcpMs": 1669,
+        "lcpMs": 2101,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 1669
+      },
+      {
+        "round": 1,
+        "variant": "no-art",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-no-art/qkboe4wb6k?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/no-art/?art_round=1",
+        "reportCreatedAt": "2026-10-15T13:33:32+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:33+02:00",
+        "performance": 97,
+        "fcpMs": 1670,
+        "lcpMs": 2104,
+        "tbtMs": 111,
+        "cls": 0.001,
+        "speedIndexMs": 1670
+      },
+      {
+        "round": 1,
+        "variant": "unused-art",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-unused-art/2j33ifhh1r?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/unused-art/?art_round=1",
+        "reportCreatedAt": "2026-10-15T13:33:34+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:33+02:00",
+        "performance": 93,
+        "fcpMs": 1906,
+        "lcpMs": 2627,
+        "tbtMs": 0,
+        "cls": 0,
+        "speedIndexMs": 4089
+      },
+      {
+        "round": 2,
+        "variant": "priority",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-priority/v2wcoyz72s?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/priority/?art_round=2",
+        "reportCreatedAt": "2026-10-15T13:34:16+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:34+02:00",
+        "performance": 94,
+        "fcpMs": 1720,
+        "lcpMs": 2255,
+        "tbtMs": 203,
+        "cls": 0.001,
+        "speedIndexMs": 2660
+      },
+      {
+        "round": 2,
+        "variant": "no-art",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-no-art/xycxrp71lj?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/no-art/?art_round=2",
+        "reportCreatedAt": "2026-10-15T13:34:14+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:34+02:00",
+        "performance": 99,
+        "fcpMs": 1655,
+        "lcpMs": 1655,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 1655
+      },
+      {
+        "round": 2,
+        "variant": "unused-art",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-unused-art/dwtv92yohs?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/unused-art/?art_round=2",
+        "reportCreatedAt": "2026-10-15T13:34:13+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:34+02:00",
+        "performance": 99,
+        "fcpMs": 1669,
+        "lcpMs": 2027,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 1669
+      },
+      {
+        "round": 3,
+        "variant": "priority",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-priority/jn24th2qk5?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/priority/?art_round=3",
+        "reportCreatedAt": "2026-10-15T13:37:07+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:37+02:00",
+        "performance": 97,
+        "fcpMs": 1706,
+        "lcpMs": 2254,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 2536
+      },
+      {
+        "round": 3,
+        "variant": "no-art",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-no-art/09ybfwbkho?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/no-art/?art_round=3",
+        "reportCreatedAt": "2026-10-15T13:37:06+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:37+02:00",
+        "performance": 98,
+        "fcpMs": 1685,
+        "lcpMs": 2102,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 1685
+      },
+      {
+        "round": 3,
+        "variant": "unused-art",
+        "report": "https://pagespeed.web.dev/analysis/https-masterblaster-se-lcp-diagnosis-20261015-unused-art/x3frxt5ld7?form_factor=mobile",
+        "url": "https://masterblaster.se/lcp-diagnosis-20261015/unused-art/?art_round=3",
+        "reportCreatedAt": "2026-10-15T13:37:08+02:00",
+        "underlyingCaptureMinute": "2026-10-15T13:37+02:00",
+        "performance": 97,
+        "fcpMs": 1704,
+        "lcpMs": 2253,
+        "tbtMs": 0,
+        "cls": 0.001,
+        "speedIndexMs": 2544
+      }
+    ],
+    "summary": [
+      {
+        "variant": "priority",
+        "n": 3,
+        "lcpMedianMs": 2254,
+        "lcpRangeMs": [
+          2101,
+          2255
+        ],
+        "pairedLcpDifferenceMs": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "variant": "no-art",
+        "n": 3,
+        "lcpMedianMs": 2102,
+        "lcpRangeMs": [
+          1655,
+          2104
+        ],
+        "pairedLcpDifferenceMs": [
+          3,
+          -600,
+          -152
+        ]
+      },
+      {
+        "variant": "unused-art",
+        "n": 3,
+        "lcpMedianMs": 2253,
+        "lcpRangeMs": [
+          2027,
+          2627
+        ],
+        "pairedLcpDifferenceMs": [
+          526,
+          -228,
+          -1
+        ]
+      }
+    ],
+    "pairedNoArtMinusUnusedArtMs": [
+      -523,
+      -372,
+      -151
+    ],
+    "limitation": "Both exclusion pages change the visible background and are diagnostic only. Unused preloads may have different browser scheduling than CSS-used requests; distinguish request/resource processing from visible image rendering, not a proven network-only number."
   }
 }
