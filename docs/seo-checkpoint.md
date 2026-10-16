@@ -1,5 +1,15 @@
 # SEO checkpoint — 2026-09-18
 
+## Daily follow-up — 16 October 2026, 09:01–09:05 CEST
+
+- Read latest conversation, AGENTS, SEO/community/growth and both wave checkpoints. Eight verified placements retained; no additional publication/new written feedback found in scoped checks. Exact per-target outcomes and last successful checks recorded in community register.
+- HTML5 and Three.js original posts only (Three.js 47 views, one reaction). IndieDB profile/five gallery comment areas have no replies. Resources/SlowDen/Weekly 666 remain public. PaperCroft scores unchanged; Xander recording reply outstanding. GameDev discussion/ESReality access blocked; both Reddit removals persist.
+- Brand Inbox/All mail/Spam/Trash successfully read after fresh-tab recovery from old-tab focus timeouts. No new reply/bounce/newsletter; Spam/Trash empty. Scoped directory/editorial checks found no additional feature; iogames.fun catalog incomplete. Free Play mailto to failed address reconfirmed in DOM, no resend.
+- Native tracker six guarded patches applied at sequence 14; exact readback, title and untouched blocks preserved. No changes to drafts, schedule, sharing or external final prose. Lemmy excluded; Rando user test and all posting/reply holds preserved.
+- Priority-only remains selected/live. Font embedding and permanent spacing reverted by 14935a1; diagnostic cleanup/verification 8db9d7c complete. Latest homepage lab 2.102 s; 48 fresh scored follow-up audits did not establish reliable sub-2-second LCP. Raw cold-mobile trace still needed for unexplained post-font frame gap. See lcp-priority-diagnosis-report.md; no new performance source change, no unchanged PSI rerun.
+- Fetched origin: local/main and origin/main both 8db9d7c, no new source changes. Only four daily documentation files changed; preserve unrelated %SystemDrive%/. Independent documentation/tracker review and git diff checks passed. Task-created monitoring tabs closed; user tabs untouched. Next: continue existing daily checks, Xander reply and eligible pending outcomes; raw mobile trace and Rando test remain outstanding.
+
+
 ## Current LCP state — 15 October 2026, priority-only rollback and diagnosis
 
 - User selected priority-only. Rollback14935a1 is live; embedded heading fonts and permanent preparation-strip spacing are reverted. Do not restore the older combined implementation described below.

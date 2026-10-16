@@ -1,5 +1,14 @@
 # Master Blaster: second outreach wave
 
+## Latest daily check — 16 October 2026, 09:01–09:05 CEST
+
+- Resources exact public listing verified in muted guest browser after reader failure; description/tagged game anchor intact. Weekly 666 Games feature remains public. Neither is new coverage. Three.js 95005 still original post only, one reaction, 47 views; no written replies.
+- Brand Inbox/All mail/Spam/Trash successfully read after fresh-tab recovery. No new outreach reply/bounce/newsletter; Spam/Trash empty. Xander request still awaits reply; ABG/IGP Sent does not prove delivery.
+- Scoped directory/editorial indexes and focused searches show no additional feature. Something Big 47 games, BrowserGames.gg home/three-game Shooter, iogames.fun New 84 entries. iogames.fun home reader failed; no visible New pagination, catalog incomplete. ABG latest 15 Oct, IGP recent through 14 Oct.
+- Free Play home/New no match; official Request form browser DOM still mailto:info@freeplaygames.com, POST/text/plain. Do not resend failed addresses; no alternate working route verified.
+- Native tracker sequence 14 saved six guarded patches/readback exact; title/untouched blocks preserved. No submission, sends, replies, manual-post edit, schedule or sharing changes.
+
+
 ## Latest daily check — 15 October 2026, 09:05–09:08 CEST
 
 - Resources exact approved listing and Weekly issue 666 remain public; no new
