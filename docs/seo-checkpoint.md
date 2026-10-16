@@ -1,5 +1,10 @@
 # SEO checkpoint — 2026-09-18
 
+## Monitoring schedule — changed 16 October 2026
+
+The user changed monitoring from daily to weekly. The existing `master-blaster-seo-follow-up` heartbeat is active on Fridays at 09:00 Europe/Stockholm, reporting in this chat; next scheduled check is 23 October 2026. Publication, feedback, moderation, directory/editorial, brand-mail and remaining SEO scope are retained. Its prompt now specifies weekly checks/reports. No duplicate automation was created. Earlier daily-check entries below are historical. The native tracker schedule was updated at sequence 15.
+
+
 ## Daily follow-up — 16 October 2026, 09:01–09:05 CEST
 
 - Read latest conversation, AGENTS, SEO/community/growth and both wave checkpoints. Eight verified placements retained; no additional publication/new written feedback found in scoped checks. Exact per-target outcomes and last successful checks recorded in community register.

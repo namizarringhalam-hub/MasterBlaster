@@ -1,5 +1,10 @@
 # Master Blaster: community outreach targets
 
+## Current monitoring cadence — changed 16 October 2026
+
+The user changed monitoring from daily to weekly. The existing `master-blaster-seo-follow-up` heartbeat is active on Fridays at 09:00 Europe/Stockholm, reporting in this chat; next scheduled check is 23 October 2026. Publication, feedback, moderation, directory/editorial, brand-mail and remaining SEO scope are retained. Its prompt now specifies weekly checks/reports. No duplicate automation was created. Earlier daily-check entries below are historical. The native tracker schedule was updated at sequence 15.
+
+
 ## Daily outcomes — 16 October 2026, 09:01–09:05 CEST
 
 - Eight previously verified placements retained; no additional publication or written feedback established in today's successful checks. Resources exact approved listing recovered from a web-reader error in the muted browser: description, screenshot and tagged View Live Site link remain public. Weekly issue 666 still includes Master Blaster under Games; existing coverage, not a new review.
