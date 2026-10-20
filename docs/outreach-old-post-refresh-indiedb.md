@@ -1,5 +1,16 @@
 # IndieDB existing-profile refresh — 20 October 2026
 
+## Current handoff recovery — 20 October 2026
+
+The earlier IndieDB tab 1966654584 was no longer available after this agent resumed
+other browser work. Restored the same normal brand-login route in muted own tab
+**1966654684**, filled only MasterBlasterGame, left password empty. It still says
+guest; no new successful login or edit is inferred from the user's separate
+VibeTopList completion. Login-blocker screenshot refreshed at the same evidence
+path below. Both this IndieDB tab and existing Pixel error tab **1966654653** were
+explicitly marked handoff together before yielding; repeat all owned marks after
+any future session resumption. No account recreation, reset or new auth request.
+
 ## Current outcome, 18:55–18:57 CEST
 
 **Blocked by existing brand login; no public content changed.** User explicitly

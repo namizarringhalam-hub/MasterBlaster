@@ -2,6 +2,26 @@
 
 ## 20 October 2026 — prepared, not submitted
 
+### Current final handoff — after completed VibeTopList gallery update
+
+- Existing muted Edge tab **1966654687** at https://vibecode.game/faq was
+  found in fresh inventory. Still unauthenticated (Sign in visible); restored
+  Sign in > Sign up dialog with masterblastergame@proton.me, password blank,
+  Create account untouched. Marked handoff and refreshed the same signup proof.
+- This tab supersedes prior tab IDs below. No account, email-confirmation
+  request, developer profile, listing or additional credential was created.
+
+### Current handoff restored during VibeTopList gallery work
+
+- Prior tab 1966654580 was no longer in fresh Edge inventory. Fresh muted
+  tab **1966654674** at https://vibecode.game/faq still showed Sign in, without
+  an authenticated account session. Signup dialog restored with brand email
+  `masterblastergame@proton.me`, password blank and Create account untouched.
+  Marked handoff again and refreshed the existing signup proof screenshot.
+- This is restoration of an unsent form only, not a new account/submission
+  attempt. Only VibeTopList signup was user-confirmed complete; do not infer
+  Vibecode completion from that separate service's confirmation.
+
 ### Follow-up after “Approval on all”
 
 - User approval covers the requested agreements and brand signup, so do not

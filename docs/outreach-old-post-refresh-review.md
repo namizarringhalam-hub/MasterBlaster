@@ -181,3 +181,7 @@ DOM proof records fonts loaded, 5/5 selected, visibleControlsFit true and all
 relevant bottoms below the 1440-pixel viewport. No visual/factual blocker remains
 to using this package for proportion-compatible aliases and permitted galleries.
 Public delivery, platform caching and any gallery uploads remain separate checks.
+
+## Final ledger review
+
+Independent final read-only review accepted the reconciled VibeTopList live/four-image record, source-tag/caption/privacy distinctions, receipt-versus-publication states, and remaining authentication/manual-edit gates. c5c9e88 public-byte delivery is correctly separated from cached Three.js display. Pages19/8 readback matched all intended replacements, preserving untouched block hashes. Build/hosting and diff checks passed. No production runtime or LCP change.

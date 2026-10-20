@@ -1,5 +1,42 @@
 # Fourth-wave browser submission handoff
 
+Handoff upkeep after subsequent work: Pixel error tab **1966654653** remains
+available and was marked handoff together with restored IndieDB brand login tab
+**1966654684**. No additional Pixel request/retry was made. Re-mark all owned
+handoffs on each session resumption so unrelated task continuation cannot clear
+the older login handoff marks.
+
+## Latest PixelGamesHub recovery — 20 October 2026, 19:14–19:16 CEST
+
+- Root read the brand mailbox's 19:02 signup confirmation and supplied its
+  observed single-use auth link privately. User reported completing Pixel work;
+  this prompted verification of actual login/submission status.
+- Original tab 1966654550 no longer exists. Opened fresh own muted tab 1966654653
+  in the same Edge profile; navigated the observed confirmation normally once.
+  Callback returned access_denied / otp_expired and Email link is invalid or has
+  expired. Page alert: Sign-in did not finish. This proves the link failed, not
+  whether it expired, was consumed elsewhere or was otherwise invalid. Private
+  confirmation URL/token are deliberately excluded from this record and reports.
+- Current profile remained guest. Fresh public /games collection rendered 18
+  entries and no Master Blaster match. No account success, game receipt, listing
+  or backlink was verified from this user's latest completed-action report.
+- After root authorized normal recovery from the confirmed invalid link, made
+  **one fresh brand sign-in request** around 19:16 using the same approved email
+  and terms. Sending your link completed to **Sign-in failed. Please try again
+  shortly.** No Check your inbox success receipt was shown. New email dispatch
+  remains unconfirmed; root notified to watch only for an actually new email.
+  No repeated request, old-token replay, alternate email, recreated account,
+  CAPTCHA bypass or duplicate game submission.
+- Bounded browser console error/warning read returned no entries; cause of the
+  failed replacement request is unconfirmed. Do not invent a rate-limit diagnosis.
+- Handoff tab 1966654653 retained at Pixel's login/error page. Evidence saved
+  locally under ignored .wrangler/tmp/outreach/: pixel-signin-expired-2026-10-20.png
+  and pixel-signin-request-failed-2026-10-20.png. Neither screenshot includes the
+  private token; the failure URL contains only the site's error code/description.
+- Next: use a genuinely new brand auth email if one arrives or complete the
+  ordinary login manually in the retained tab. Inspect actual submission fields
+  after successful login and submit the game once; no public submission yet.
+
 ## Latest outcome — 20 October 2026, 18:50–18:52 CEST
 
 The user explicitly approved all disclosed fourth-wave agreements. PixelGamesHub
