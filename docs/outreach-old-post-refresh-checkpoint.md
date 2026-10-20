@@ -2,7 +2,13 @@
 
 The user explicitly requested current images and verified feature/improvement updates for older posts wherever editable. This supersedes the previous instruction to preserve old post copy merely to avoid a package refresh. It does not authorize duplicate posts, moderation evasion, publisher messages, new credentials without the required handoff, or changes to historical reviews/ratings. Current General feedback Page was freshly read at sequence357; its approved story, privacy limits and staged-action captions remain the source.
 
-## Current outcome
+## Visual verification correction
+
+Commit052e3d5 reached production; all four aliases were downloaded through the ordinary browser and hash-matched the20Octsources. However, visual QA found that Three.js retains fixed old img dimensions/style (rocket690x474 for original1068x735) while the new source is3394x1269. That stretches the new image. HTML5 also retained cached originals despite regular reload. Public media delivery alone is not a completed or acceptable forum-image refresh.
+
+Restored all four undated aliases to the archived originals while preparing direct current-game captures at the original aspect ratios (actions1068x735, menus1280x720). No dated source was changed. This correction supersedes the initial deployment outcome below; do not report a completed live image refresh until compatible captures are deployed and visually verified. Existing post prose remains unedited pending actual access.
+
+## Initial media attempt and access outcomes
 
 - Four owned undated press-image aliases now contain the exact approved 20 October screenshot bytes in the working tree. Original files are archived, unchanged, under public/press/archive/pre-refresh-2026-10-20/. All dated captures, including 5 October Quick Play and 20 October assets, are unchanged. The replacement is dated 20 October; it does not imply these images appeared in earlier publications at their original dates.
 - HTML5 Game Devs topic76464/comment375862 directly embeds all four aliases. It is signed out and cannot yet be edited. Original tagged play/guide anchors and feedback request remain intact. Brand username prepared in tab1966654590, password blank, login handoff marked. No duplicate post or comment.
