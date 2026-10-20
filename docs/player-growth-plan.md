@@ -11,8 +11,7 @@ accounts only. See [the current target list and post register](community-outreac
 20 October refresh: current pitch snapshot below includes four reviewed new
 dated screenshots; all four public downloads now match the captured source bytes.
 The [new outreach shortlist](https://chatgpt.com/space/page_c0971087828481918cae6c2678c0f41d)
-now shows all eight authorized targets and their submission states. This refresh does not edit earlier published posts or
-sent pitches. Routine monitoring is now weekly on Fridays at 09:00 Stockholm;
+now shows all eight authorized targets and their submission states. In the separately authorized old-post refresh, IndieDB's existing profile is saved with current copy, icon/listing image and four inline screenshots; its home, Quick Play and two action gallery files and captions are also replaced at their original URLs. The original arena overview remains historical. See [the old-post checkpoint](outreach-old-post-refresh-checkpoint.md). No pitch was resent. Routine monitoring is now weekly on Fridays at 09:00 Stockholm;
 older daily schedules in this experiment describe its original plan.
 
 ## What we know
