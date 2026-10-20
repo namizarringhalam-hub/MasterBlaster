@@ -1,5 +1,37 @@
 # Fourth-wave browser submission handoff
 
+## Latest outcome — 20 October 2026, 18:50–18:52 CEST
+
+The user explicitly approved all disclosed fourth-wave agreements. PixelGamesHub
+terms and Glaze's embed/distribution permission were specifically covered. The
+initial agreement gates below are historical and are now resolved.
+
+- **Glaze submitted once at 18:51 CEST**, from the existing prepared brand form.
+  Rights checkbox checked after the user's approval; Submit game clicked once.
+  The Sending state completed to the official green queue receipt at
+  https://glazegames.com/developers:
+  “Thank you, your game is in our queue. A real person will check it and reply to
+  your email, usually within a few business days. If it is a fit we will agree a
+  launch week with you.” No unique submission ID or public listing URL exposed.
+  Screenshot saved with the receipt visible at ignored
+  .wrangler/tmp/outreach/glaze-receipt-2026-10-20.png;
+  tab 1966654553 marked deliverable.
+  This confirms queued submission, not approval/publication/backlink or an actual
+  Glaze-origin gameplay pass. The exact prepared values below were sent, including
+  AI help, red blood/splatter, unverified Glaze iframe compatibility, feedback
+  request, tagged game/guide and four current screenshot links. No paid/SDK step.
+- **PixelGamesHub single sign-in request sent at 18:50 CEST** to the brand mailbox.
+  Existing tab 1966654550 now displays Check your inbox and states a sign-in link
+  is on its way; the latest email must be opened in this browser and each link
+  works once. Tab marked handoff; root notified to read the brand mailbox.
+  At approximately 18:53 CEST root checked brand Inbox/Spam/loaded All mail;
+  no Pixel sign-in email was present yet. Single-request screen saved at ignored
+  .wrangler/tmp/outreach/pixel-signin-pending-2026-10-20.png.
+  Account/game submission not yet confirmed. Do not request another link merely
+  because email receipt is pending; use the existing single request.
+
+## Initial preparation — historical
+
 Checked 20 October 2026, 18:28–18:36 CEST. Options 1 and 2 only.
 The user authorized this fourth wave; current General feedback Page sequence
 357 was read before preparation. Brand identity and mailbox only. No submission,

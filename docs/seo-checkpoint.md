@@ -2,7 +2,7 @@
 
 ## Fourth-wave execution — 20 October 2026
 
-User authorized all eight researched targets. One AI Browser Games submission receipt verified; Creative Bloq 18:37 and TechRadar 18:38 Stockholm brand pitches verified in Sent. No new publication/backlink established. Five targets remain concretely prepared at actual agreement/credential gates; [fourth-wave checkpoint](outreach-fourth-wave-checkpoint.md) records exact form states, content and next steps. Current General feedback Page 357 and current screenshots used; new required 728×90 native-vector banner validated and independently reviewed. Production gameplay/LCP unchanged. Existing tracker/status Page updated separately from older placement checks; retain weekly Friday 09:00 and all prior holds. No duplicate/resend/payment/personal-account use.
+User authorized all eight researched targets and approved all requested agreements. Three directory receipts verified: AI Browser Games 18:33, AI Vibe Coded Games about 18:50 and Glaze about 18:51 Stockholm. Creative Bloq 18:37 and TechRadar 18:38 brand pitches verified in Sent. No new publication/backlink established. PixelGamesHub awaits one requested sign-in email; VibeTopList and Vibecode require user password/signup completion under the browser credential rule. [Fourth-wave checkpoint](outreach-fourth-wave-checkpoint.md) records exact form states, content and next steps. Current General feedback Page 357 and screenshots used; required 728×90 native-vector banner validated and reviewed. Production gameplay/LCP unchanged. Existing tracker/status Page updated separately from older placement checks; retain weekly Friday 09:00 and prior holds. No duplicate/resend/payment/personal-account use.
 
 ## Outreach package refresh — 20 October 2026
 
