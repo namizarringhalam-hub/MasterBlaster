@@ -2066,7 +2066,8 @@ select("press-action").onclick = async () => {
     await waitForReviewFrame(serial, () => !game.hideMatchLoadingAfterFrame && !game.preparingMatch);
     if (game.players.length !== 16 || game.players.filter(player => player.isBot).length !== 15) throw Error("Action capture requires exactly 15 bots");
     // ponytail: stage only starting positions/loadouts; production AI owns every combat effect.
-    hero.position.set(-16, 15.01, 18); hero.velocity.set(0, 0, 0);
+    hero.position.set(-17, 15.01, -18); hero.velocity.set(0, 0, 0);
+    if (game.world.surfaceHeightAt(hero.position, 15.1) !== 15) throw Error("Staged hero has no central-platform support");
     hero.aim.set(0, 16.2, 8).sub(hero.position).normalize();
     game.cameraYaw = Math.atan2(hero.aim.x, hero.aim.z); game.cameraPitch = Math.asin(hero.aim.y);
     const weapons = ["rocket_launcher", "grenade_launcher", "plasma_cannon", "mortar", "cluster_grenade"];
@@ -2081,7 +2082,7 @@ select("press-action").onclick = async () => {
     game.setTrainingBotOption("botsStandStill", false); game.setTrainingBotOption("botsDontAttack", false);
     if (select("view").value === "effects") game.updateCamera = () => {
       hero.rig.visible = true;
-      game.camera.position.set(-22, 20, 27); game.camera.lookAt(-1, 16.2, 8);
+      game.camera.position.set(-24, 22, -28); game.camera.lookAt(0, 16, 0);
       game.camera.fov = 62; game.camera.updateProjectionMatrix();
     };
     game.updateCamera(); game.scene.updateMatrixWorld(true);
@@ -2089,7 +2090,8 @@ select("press-action").onclick = async () => {
     pressAction = { status: "running", stagedSetup: "Central-platform starting positions and explosive loadouts; production AI movement and combat", injectedExplosions: false,
       fighters: 16, bots: 15, weapon: hero.weapon.id, view: select("view").value, frames: 0, durationMs: 0, started: performance.now(), initialErrors: errorCount };
     stress = true; game.paused = false; game.sound.resume(); game.sound.setPaused(false); resetSamples(0);
-    await waitForReviewFrame(serial, () => pressAction?.status !== "running", 8000);
+    // Bounded headroom for background/throttled capture sessions; simulation and effects stay unchanged.
+    await waitForReviewFrame(serial, () => pressAction?.status !== "running", 60000);
     if (pressAction?.status !== "captured") throw Error(pressAction?.error || "Action capture interrupted");
   } catch (error) {
     pressAction = { ...pressAction, status: "error", error: String(error), errors: errorCount };
@@ -2135,8 +2137,14 @@ game.frame = time => {
     const inView = point => { const clip = point.clone().project(game.camera); return clip.z > -1 && clip.z < 1 && Math.abs(clip.x) < .88 && Math.abs(clip.y) < .8; };
     const visibleBots = game.players.slice(1).filter(player => player.alive && inView(player.position.clone().add(new THREE.Vector3(0, 1.3, 0)))).length;
     const hero = game.players[0];
-    const shell = game.combatVisuals.explosions.layers.find(layer => layer.kind === "shell").particles.find(particle =>
-      particle.life > 0 && particle.maxLife - particle.life >= .08 && particle.maxLife - particle.life <= .2 && particle.size >= 2 && inView(particle.position));
+    const activeShells = game.combatVisuals.explosions.layers.find(layer => layer.kind === "shell").particles.filter(particle => particle.life > 0);
+    const maxShellAge = activeShells.length ? Math.max(...activeShells.map(particle => particle.maxLife - particle.life)) : null;
+    Object.assign(pressAction, { heroAlive: hero.alive, heroDeaths: hero.deaths, heroPosition: hero.position.toArray(),
+      visibleBots, activeShells: activeShells.length, maxShellAge,
+      maxShellAgeSeen: Math.max(pressAction.maxShellAgeSeen || 0, maxShellAge || 0) });
+    // Inspect real bursts across a catch-up frame's 15 simulation steps, without creating effects.
+    const shell = activeShells.find(particle => particle.maxLife - particle.life >= .04 && particle.maxLife - particle.life <= .5
+      && particle.size >= 2 && inView(particle.position));
     if (errorCount !== pressAction.initialErrors || game.renderPipeline.direct) {
       pressAction.status = "error"; pressAction.error = "Renderer error interrupted action capture";
     } else if (shell && hero.alive && hero.rig.visible && visibleBots >= 4 && inView(hero.position.clone().add(new THREE.Vector3(0, 1.3, 0)))) {
