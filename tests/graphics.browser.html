@@ -539,6 +539,16 @@ let renderedFrames = 0;
 let captureCanvas = false;
 let canvasCapture = null, ropeRenders = 0;
 let pressAction = null;
+let pressRenderHold = null;
+function pressFrozenState() {
+  return {
+    players: game.players.map(player => ({ id: player.id, health: player.health, alive: player.alive, deaths: player.deaths,
+      position: player.position.toArray(), velocity: player.velocity.toArray(), ammo: { ...player.ammo } })),
+    explosions: game.combatVisuals.explosions.layers.map(layer => ({ kind: layer.kind,
+      particles: layer.particles.filter(particle => particle.life > 0).map(particle => [particle.life, ...particle.position.toArray()]) })),
+    camera: { position: game.camera.position.toArray(), rotation: game.camera.quaternion.toArray(), fov: game.camera.fov }
+  };
+}
 let thrusterSortControl = null, thrusterRenderOrder = [];
 function clearThrusterSortControl() {
   if (!thrusterSortControl) return;
@@ -2091,18 +2101,23 @@ select("press-action").onclick = async () => {
       fighters: 16, bots: 15, weapon: hero.weapon.id, view: select("view").value, frames: 0, durationMs: 0, started: performance.now(), initialErrors: errorCount };
     stress = true; game.paused = false; game.sound.resume(); game.sound.setPaused(false); resetSamples(0);
     // Bounded headroom for background/throttled capture sessions; simulation and effects stay unchanged.
-    await waitForReviewFrame(serial, () => pressAction?.status !== "running", 60000);
+    await waitForReviewFrame(serial, () => ["captured", "error"].includes(pressAction?.status), 60000);
     if (pressAction?.status !== "captured") throw Error(pressAction?.error || "Action capture interrupted");
   } catch (error) {
     pressAction = { ...pressAction, status: "error", error: String(error), errors: errorCount };
     metrics.textContent = JSON.stringify({ pressAction });
   } finally {
     stress = false; game.paused = true; explosionReview = true; game.sound.setPaused(true);
+    if (pressRenderHold) {
+      game.updateCamera = pressRenderHold.updateCamera; game.cameraKick = pressRenderHold.cameraKick;
+      pressRenderHold = null;
+    }
     for (const [control, disabled] of controls) control.disabled = disabled;
   }
 };
 const frame = game.frame.bind(game);
 game.frame = time => {
+  const sceneRenderCallsBefore = game.renderer.info.render.calls;
   const now = performance.now(), interval = now - previous; previous = now;
   startupCalls = traceStartup && startupTrace.length < 3 ? {} : null;
   if (!document.hidden && now >= settleUntil && interval > 0 && frames.length < 3600) {
@@ -2148,9 +2163,29 @@ game.frame = time => {
     if (errorCount !== pressAction.initialErrors || game.renderPipeline.direct) {
       pressAction.status = "error"; pressAction.error = "Renderer error interrupted action capture";
     } else if (shell && hero.alive && hero.rig.visible && visibleBots >= 4 && inView(hero.position.clone().add(new THREE.Vector3(0, 1.3, 0)))) {
-      Object.assign(pressAction, { status: "captured", visibleBots, errors: errorCount,
+      Object.assign(pressAction, { status: "settling", visibleBots, errors: errorCount,
         explosion: { position: shell.position.toArray(), age: shell.maxLife - shell.life, size: shell.size } });
-      stress = false; game.paused = true; explosionReview = true; captureCanvas = true;
+      stress = false; game.paused = true; explosionReview = true;
+      // Request the production pause-settling path; rAF callbacks alone do not render a held scene.
+      pressAction.freezeFrame = renderedFrames; pressAction.settleFrames = 0;
+      pressAction.frozenState = pressFrozenState();
+      pressRenderHold = { updateCamera: game.updateCamera, cameraKick: game.cameraKick };
+      game.updateCamera = () => {}; game.cameraKick = null;
+      game.renderPipeline.resetHistory(); game.sceneDirty = true;
+    }
+  }
+  if (pressAction?.status === "settling" && renderedFrames > pressAction.freezeFrame) {
+    if (game.renderer.info.render.calls > sceneRenderCallsBefore) pressAction.settleFrames++;
+    if (errorCount !== pressAction.initialErrors || game.renderPipeline.direct) {
+      pressAction.status = "error"; pressAction.error = "Renderer error interrupted frozen-frame settling";
+    } else if (pressAction.settleFrames >= 32 && game.sceneSettleFrames === 0) {
+      pressAction.frozenStateAfter = pressFrozenState();
+      pressAction.frozenStateUnchanged = JSON.stringify(pressAction.frozenState) === JSON.stringify(pressAction.frozenStateAfter);
+      if (!pressAction.frozenStateUnchanged) {
+        pressAction.status = "error"; pressAction.error = "Frozen physics, effects or camera changed while settling";
+      } else {
+        pressAction.status = "captured"; captureCanvas = true;
+      }
     }
   }
   if (captureCanvas && resetPhase === "ready") {

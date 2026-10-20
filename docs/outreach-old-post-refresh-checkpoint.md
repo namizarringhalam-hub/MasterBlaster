@@ -2,13 +2,21 @@
 
 The user explicitly requested current images and verified feature/improvement updates for older posts wherever editable. This supersedes the previous instruction to preserve old post copy merely to avoid a package refresh. It does not authorize duplicate posts, moderation evasion, publisher messages, new credentials without the required handoff, or changes to historical reviews/ratings. Current General feedback Page was freshly read at sequence357; its approved story, privacy limits and staged-action captions remain the source.
 
-## Visual verification correction
+## Current compatible media result
+
+The four undated aliases now use fresh native current-game captures with the original embed aspect ratios: action images1068×735 and menus2560×1440 (16:9). The approved wide20October source package remains unchanged. Independent review accepted the settled real-combat action captures and complete menus, including all five Quick Play slots and the full weapon card. Build and hosting checks pass. Public deployment verification is pending this commit; do not confuse local validation with refreshed platform caches.
+
+The development-only capture helper now waits for32 actual scene renders while holding the sampled combat/camera state. No production gameplay, visuals, startup or LCP code changed. See [capture evidence](outreach-forum-compatible-capture.md) and [independent review](outreach-old-post-refresh-review.md).
+
+Existing post prose has not been edited: HTML5 and IndieDB require brand login, GameDev.net requires manual editing, Three.js requires human-finalized prose, and Resources rehosts its image behind owner/publisher access. No duplicate posts or publisher messages were sent.
+
+## Historical visual verification correction
 
 Commit052e3d5 reached production; all four aliases were downloaded through the ordinary browser and hash-matched the20Octsources. However, visual QA found that Three.js retains fixed old img dimensions/style (rocket690x474 for original1068x735) while the new source is3394x1269. That stretches the new image. HTML5 also retained cached originals despite regular reload. Public media delivery alone is not a completed or acceptable forum-image refresh.
 
 Restored all four undated aliases to the archived originals while preparing direct current-game captures at the original aspect ratios (actions1068x735, menus1280x720). No dated source was changed. This correction supersedes the initial deployment outcome below; do not report a completed live image refresh until compatible captures are deployed and visually verified. Existing post prose remains unedited pending actual access.
 
-## Initial media attempt and access outcomes
+## Historical initial media attempt and access outcomes
 
 - Four owned undated press-image aliases now contain the exact approved 20 October screenshot bytes in the working tree. Original files are archived, unchanged, under public/press/archive/pre-refresh-2026-10-20/. All dated captures, including 5 October Quick Play and 20 October assets, are unchanged. The replacement is dated 20 October; it does not imply these images appeared in earlier publications at their original dates.
 - HTML5 Game Devs topic76464/comment375862 directly embeds all four aliases. It is signed out and cannot yet be edited. Original tagged play/guide anchors and feedback request remain intact. Brand username prepared in tab1966654590, password blank, login handoff marked. No duplicate post or comment.
@@ -23,12 +31,12 @@ Restored all four undated aliases to the archived originals while preparing dire
 
 | Alias after /press/ | Source after /press/ | Archived original SHA-256 |
 | --- | --- | --- |
-| action-rockets.png | action-rockets-2026-10-20.png | c0413c7bb9b46a688dddfd82c42219bdcb9df9ef50c674fe7ed055f7f78268d9 |
-| action-grenades.png | action-grenades-2026-10-20.png | b6905479028031c6c45b60fcfd64835067e69d77e7c844cad9f64a56273f94a1 |
-| home-menu.jpg | home-menu-2026-10-20.jpg | 53aa7796ce421ec84040fa349b1f522cee8f0a943e74cc92f2790b903fd2b265 |
-| quick-play.jpg | quick-play-2026-10-20.jpg | 54c33e0a95f15669a5873558c0bd605c9bae11b4cde6c772be344bc98370b8ef |
+| action-rockets.png | action-rockets-forum-2026-10-20.png | c0413c7bb9b46a688dddfd82c42219bdcb9df9ef50c674fe7ed055f7f78268d9 |
+| action-grenades.png | action-grenades-forum-2026-10-20.png | b6905479028031c6c45b60fcfd64835067e69d77e7c844cad9f64a56273f94a1 |
+| home-menu.jpg | home-menu-forum-2026-10-20.jpg | 53aa7796ce421ec84040fa349b1f522cee8f0a943e74cc92f2790b903fd2b265 |
+| quick-play.jpg | quick-play-forum-2026-10-20.jpg | 54c33e0a95f15669a5873558c0bd605c9bae11b4cde6c772be344bc98370b8ef |
 
-All four aliases hash-match their dated sources. New no-cache response rules apply only to the four mutable aliases; dated assets keep their existing behavior. Third-party caches/proxies are outside our control. The two action files are about6.3MB each versus about1MB previously; retaining approved full-resolution bytes increases gallery-download cost. No gameplay code, initial-page asset reference, LCP implementation or offline resource set was changed. npm run build including hosting checks passed. Deployment and public media verification are the next step; do not yet claim live post images changed.
+All four aliases hash-match their compatible dated sources. The action files are about1.2MB each; menu files are about0.2MB each. No-cache response rules apply only to these four mutable aliases; dated assets keep their existing behavior. Third-party caches/proxies are outside our control. No production gameplay code, initial-page asset reference, LCP implementation or offline resource set changed. npm run build including hosting checks passed. Deployment and public media verification remain separate checks.
 
 ## Prepared HTML5 update — not saved
 

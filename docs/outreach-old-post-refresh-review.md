@@ -106,3 +106,78 @@ by these local assertions. The proposed renderer wording is supported: current
 README documents WebGPU with a WebGL 2 fallback, and main/render-pipeline source
 implements both paths. Prefer that exact wording over an implied universal
 browser-support claim.
+
+## Forum-ratio recaptures — first review
+
+The first wide-alias release was restored after fixed-size external image
+attributes exposed a proportion mismatch. New action captures are directly
+rendered at 1068 x 735; menus at 1280 x 720. They are not resized/composited
+versions of the wide package. The original dated wide files remain unchanged.
+
+Initial forum proofs record 15 bots/16 fighters, hero alive with zero deaths,
+zero renderer errors, no direct fallback and no injected explosions. Rocket
+captured after four action frames/117 ms; grenade after 30 frames/962 ms.
+Both satisfy proportion/truth checks, but moving bots show conspicuous stippling
+and the rocket foreground fighter has temporal softness/ghosting. Recommend
+settling the genuine frozen combat state with renderer-only temporal frames,
+without new effects or altered gameplay, before final image acceptance.
+
+Home menu is a practical visual pass. Initial Quick Play image cuts off most
+loadout slots and the bottom of the preview/card. Its five-selected badge and
+15-veteran summary are truthful, but it must not be described as showing all
+five slots or the entire card. A fresh browser-zoom capture fitting the actual
+UI would be preferable to resizing or compositing the image.
+
+The VibeTopList execution checkpoint accurately distinguishes its verified
+brand-view listing/functional tagged Play CTA from an unverified logged-out
+view. Its plain description has been corrected; no rich guide/action anchors
+or third/fourth image upload should be claimed before verified attachments.
+
+### Corrected action captures — practical pass
+
+The dev-only capture helper now requests the existing production held-scene
+temporal path with sceneDirty and resetHistory, pauses simulation, holds the
+camera, and waits for 32 actual renderer-call increments plus completed settling.
+Installed Three's render.calls counter is cumulative; this measures renders,
+not merely requestAnimationFrame callbacks. Camera overrides restore in finally.
+No production source, physics or effects creation changed. Before/after equality
+covers recorded player health/alive/deaths/position/velocity/ammo, active explosion
+life/positions and camera; do not call this an exhaustive snapshot of all state.
+
+Both corrected 1068 x 735 images were independently inspected at native size.
+Temporal stippling is removed and proportions are correct. Rocket proof records
+22 combat frames and 32 settling renders; grenade records 16 and 32. Each records
+15 bots/16 fighters, hero alive with zero deaths, unchanged sampled frozen state,
+zero renderer errors, no direct fallback and no injected explosions.
+
+Both are practical supporting action images. Genuine foreground bursts obscure
+much of the equipped weapon/body; captions must say the launcher is equipped,
+not imply a visible player-fired shot or headshot. Rocket uses the showcase
+camera; grenade uses the actual player camera. The similar arena views and
+effect occlusion are limitations, not reasons to manufacture clearer pixels.
+Quick Play's improved full-UI recapture remains pending at this review point.
+
+### Final forum package — practical acceptance
+
+Supersedes the earlier pending/menu-clipping and rocket-occlusion findings above.
+All four current files were re-opened and inspected. Independently decoded image
+headers confirm action images at 1068 x 735 and menus at 2560 x 1440. The menu
+ratio is exactly the original 1280 x 720 ratio; this preserves existing fixed
+forum proportions without a bitmap resize or composite. Full-resolution viewing
+is still needed for small menu labels on narrow forum/mobile embeds.
+
+The final rocket recapture clearly shows its equipped launcher with genuine
+midfield combat effects. Its proof now records seven combat frames plus 32
+settling renders. Grenade remains 16 plus 32, with the genuine foreground blast
+partly obscuring the equipped weapon. Both keep the 15-bot/16-fighter, hero alive,
+zero-death/error, unchanged sampled frozen-state and no-injection evidence.
+Captions must retain staged positions/live AI combat and the correct showcase
+versus player camera; neither establishes a player-fired blast or headshot.
+
+Both final menus are practical passes at the normal 100% browser zoom capture.
+Quick Play now shows all five equipped slots, the complete Rocket Launcher
+preview and filtered card, the 15-veteran summary and footer without clipping.
+DOM proof records fonts loaded, 5/5 selected, visibleControlsFit true and all
+relevant bottoms below the 1440-pixel viewport. No visual/factual blocker remains
+to using this package for proportion-compatible aliases and permitted galleries.
+Public delivery, platform caching and any gallery uploads remain separate checks.
