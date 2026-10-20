@@ -9,7 +9,7 @@ Adapt greetings, recipient references, subject/title, length, community format a
 Snapshot refreshed 20 October 2026 for the next outreach package. All four new
 screenshots passed capture review; their public downloads were verified byte-for-byte.
 The [new target shortlist](https://chatgpt.com/space/page_c0971087828481918cae6c2678c0f41d)
-is for review. Existing published posts and sent messages retain their original copy.
+shows the eight authorized targets and current submission states. Existing published posts and sent messages retain their original copy.
 
 **Title:** Master Blaster — free browser arena shooter with grappling and destructible towers
 

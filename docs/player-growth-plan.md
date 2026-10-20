@@ -11,7 +11,7 @@ accounts only. See [the current target list and post register](community-outreac
 20 October refresh: current pitch snapshot below includes four reviewed new
 dated screenshots; all four public downloads now match the captured source bytes.
 The [new outreach shortlist](https://chatgpt.com/space/page_c0971087828481918cae6c2678c0f41d)
-is available for review. This refresh does not edit earlier published posts or
+now shows all eight authorized targets and their submission states. This refresh does not edit earlier published posts or
 sent pitches. Routine monitoring is now weekly on Fridays at 09:00 Stockholm;
 older daily schedules in this experiment describe its original plan.
 

@@ -1,0 +1,113 @@
+# Vibecode.game fourth-wave submission checkpoint
+
+## 20 October 2026 — prepared, not submitted
+
+- User authorized shortlist option 6 alongside all eight fourth-wave targets.
+- Fresh official browser checks: https://vibecode.game/faq and
+  https://vibecode.game/contact. Existing brand account/session not present.
+- The email signup modal exposes Google, Discord, email address, password and
+  Create account. No passwordless email route or terms checkbox was exposed.
+  Brand email `masterblastergame@proton.me` is prepared; password is blank and
+  Create account has not been pressed. No account, profile, game submission,
+  receipt, public URL or backlink exists from this attempt.
+- Muted Edge handoff tab **1966654547** remains at
+  https://vibecode.game/faq with the signup dialog open. Root agent will batch
+  the user handoff with other real account/access blockers. User must enter,
+  confirm and submit the new credential under the current CUA handoff rule;
+  handle any required binding terms or human verification at action time.
+- FAQ requires an email-confirmed account, then a developer profile (display
+  name, at least one genre, at least one AI tool, generated avatar). Studio,
+  biography, website and social links are optional. Use Master Blaster brand
+  identity; omit optional bio/location/personal details. Profile and game
+  review remain future steps, not claims of acceptance.
+- Duplicate scope: fresh `/vibe-coded-games` rendered **100 article cards**;
+  no Master Blaster title or masterblaster.se anchor. The visible Shooter
+  filter led to
+  https://vibecode.game/vibe-coded-games/shooter-vibe-coded-games with
+  **11 articles**, also no title/domain match. This checks these rendered
+  catalog surfaces, not private pending submissions or complete search history.
+- Official contact email is hello@vibecode.game; no contact message sent.
+  No wallet, token/jam, purchase or paid-placement route used.
+
+## Ready content — not entered into a game form
+
+Source: current user-edited General feedback Page
+https://chatgpt.com/space/page_6f014dc1bbfc81919de2edf967cf18bf,
+sequence **357**, freshly read 20 October. The game form is inaccessible until
+account/profile gates are complete; these are prepared values only.
+
+- Title: Master Blaster
+- Display name / studio credit: Master Blaster
+- Genre: Shooter; Action; Multiplayer, where selectable.
+- Engine: Three.js
+- AI tool: ChatGPT/Codex, using accurate available field options; do not select
+  unrelated tools merely to satisfy a dropdown.
+- Platform: Web Browser. Do not claim native PC/console builds.
+- Play styles: Solo against bots; Multiplayer. Do not claim co-op modes.
+- Short blurb: Free browser arena shooter with grappling, destructible towers
+  and 47 weapons. Play against up to 15 bots or invite friends online.
+- Play URL:
+  https://masterblaster.se/?ref=vibecodegame&utm_source=vibecodegame&utm_medium=directory&utm_campaign=first_players&utm_content=listing
+- Guide URL:
+  https://masterblaster.se/how-to-play/?ref=vibecodegame&utm_source=vibecodegame&utm_medium=directory&utm_campaign=first_players&utm_content=guide
+- If referral parameters are prohibited by the final form/rules, use the
+  canonical game/guide URLs and record that actual choice.
+
+Long description:
+
+My son, who’s 8 years old, is working on Master Blaster, a free browser arena
+shooter where you can grapple and swing across the map, blast opponents and
+bring towers down. There are 47 weapons to choose from, with five in your
+loadout. He’s building it with AI-assisted coding, and my job as his dad has
+been to help him set up the needed accounts and help with marketing :)
+
+Please check the game out. You can play Quick Play or Training against up to
+15 bots, invite friends to a Private Room, or find or create a game in Global
+Multiplayer. It runs in your browser with no installation and no in-game chat.
+
+Quick Play and Training can also work offline after the home menu finishes
+preparing resources and shows “Available offline.” That depends on your
+browser retaining the saved resources; online multiplayer needs an internet
+connection.
+
+[Play Master Blaster](https://masterblaster.se/?ref=vibecodegame&utm_source=vibecodegame&utm_medium=directory&utm_campaign=first_players&utm_content=listing)
+
+[Controls and game modes](https://masterblaster.se/how-to-play/?ref=vibecodegame&utm_source=vibecodegame&utm_medium=directory&utm_campaign=first_players&utm_content=guide)
+
+We'd love feedback, especially on:
+
+- Do the movement, grappling and weapons feel right?
+- Is the game fun?
+- What would you change first to make you want to play more matches?
+
+If something breaks or runs poorly, please tell us what happened, your device
+and browser, and which game mode you were playing.
+
+Thanks for giving it a go!
+
+## Current assets — not uploaded
+
+FAQ permits optional wide cover and up to eight screenshots, **4 MB each**.
+Current Page action PNGs exceed this limit; do not attach them unchanged.
+The menu JPEGs fit. No image conversion has been performed for this target.
+
+| Asset | Exact current URL | Bytes | Planned handling |
+| --- | --- | ---: | --- |
+| Home menu | https://masterblaster.se/press/home-menu-2026-10-20.jpg | 219714 | Eligible cover/screenshot, no upload yet |
+| Quick Play | https://masterblaster.se/press/quick-play-2026-10-20.jpg | 193491 | Eligible screenshot, no upload yet |
+| Rocket action | https://masterblaster.se/press/action-rockets-2026-10-20.png | 6393504 | Link rather than oversized attachment, if final description supports it |
+| Close-range blast | https://masterblaster.se/press/action-grenades-2026-10-20.png | 6250771 | Link rather than oversized attachment, if final description supports it |
+
+Preserve Page captions if linking action images: staged starting positions,
+live AI combat, captured 20 October 2026; rocket image has Rocket Launcher,
+close-range player-camera image has Grenade Launcher. Never describe these as
+unqualified spontaneous match screenshots.
+
+## Next step
+
+After user signup/confirmation, inspect the actual developer profile form,
+submit only brand fields and await its recorded review gate. Then inspect the
+game form, recheck duplicates, upload only eligible reviewed assets, verify
+rendered clickable links and final terms, and submit once if permitted. Record
+the actual receipt/queue/public URL and state; do not count prepared copy or
+signup as a listing.

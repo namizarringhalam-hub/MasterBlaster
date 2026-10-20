@@ -1,5 +1,9 @@
 # SEO checkpoint — 2026-09-18
 
+## Fourth-wave execution — 20 October 2026
+
+User authorized all eight researched targets. One AI Browser Games submission receipt verified; Creative Bloq 18:37 and TechRadar 18:38 Stockholm brand pitches verified in Sent. No new publication/backlink established. Five targets remain concretely prepared at actual agreement/credential gates; [fourth-wave checkpoint](outreach-fourth-wave-checkpoint.md) records exact form states, content and next steps. Current General feedback Page 357 and current screenshots used; new required 728×90 native-vector banner validated and independently reviewed. Production gameplay/LCP unchanged. Existing tracker/status Page updated separately from older placement checks; retain weekly Friday 09:00 and all prior holds. No duplicate/resend/payment/personal-account use.
+
 ## Outreach package refresh — 20 October 2026
 
 User requested new pitch destinations, current graphics screenshots and copy review. Eight new proposals and official routes are in [the fourth shortlist](outreach-fourth-wave-shortlist.md), with an editable review Page linked there; no new pitch/submission has been sent. General feedback Page story, feature wording, qualified offline availability and feedback questions refreshed; all four native images/captions/downloads now use the reviewed 20 October package. Assets/helper commit51214dd pushed; regular-browser public downloads match all four source SHA-256 hashes. Build/hosting passed; press images are excluded from the offline manifest. [Refresh checkpoint](outreach-refresh-checkpoint.md) records proof, reviewer limitations and next steps. Production gameplay and LCP implementation unchanged; no unchanged PageSpeed rerun. Existing weekly Friday monitoring remains active.

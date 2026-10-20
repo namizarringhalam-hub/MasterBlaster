@@ -1,0 +1,112 @@
+# Fourth-wave browser submission handoff
+
+Checked 20 October 2026, 18:28–18:36 CEST. Options 1 and 2 only.
+The user authorized this fourth wave; current General feedback Page sequence
+357 was read before preparation. Brand identity and mailbox only. No submission,
+account, receipt, publication or backlink has been created in this handoff.
+
+## 1. PixelGamesHub — account agreement gate
+
+- Requested route: https://pixelgameshub.com/submit-game.
+- Actual redirect: https://pixelgameshub.com/login?next=%2Fsubmit-game.
+- Own muted Edge tab 1966654550, marked for handoff. Brand email
+  masterblastergame@proton.me is filled. **Email me a sign-in link has not been
+  clicked.** First verified sign-in creates an account; no password is requested.
+- The screen states that continuing agrees to its terms and privacy policy.
+  Action-time agreement confirmation is needed before that continuation.
+- Terms https://pixelgameshub.com/terms, updated 14 October 2026: account users
+  must be at least 13, work must be owned or authorized; submission permits review
+  and use of supplied introduction, screenshots, creator credit and links for a
+  credited community listing and, if selected, editorial listing. Ownership is
+  retained; permission expressly excludes hosting or embedding the game build.
+  Listing is free, independent of payment, and may be declined/corrected/retired.
+  No guaranteed publication, traffic, timing or search visibility.
+- Policy https://pixelgameshub.com/editorial-policy distinguishes unindexed
+  community submissions from independently playtested editorial picks.
+- Duplicate check: fresh guest collection https://pixelgameshub.com/games
+  rendered 18 entries (five editorial, 13 community), none Master Blaster.
+  This supersedes the shortlist's earlier eight-item count. The attempted title
+  search navigated to an unrelated editorial detail page; no reliable search-result
+  claim is made. No game was played or opened externally.
+- The actual submission fields remain inaccessible before sign-in. Do not claim
+  the game form is complete, sent, queued or public. After confirmed sign-in,
+  inspect its actual fields/rights wording and prepare from the current Page;
+  preserve AI assistance, father-and-son story, feedback and current screenshots.
+
+## 2. Glaze Games — prepared for review, not submitted
+
+- Route/current form: https://glazegames.com/developers.
+- Own muted Edge tab 1966654553, marked for handoff. No account required.
+- Exact checkbox: **I own or have the rights to publish this game.** It is
+  **unchecked**. Submit game has **not** been clicked. There is no family-friendly,
+  blood-free or tested-compatibility assertion in that checkbox.
+- Terms https://glazegames.com/terms, last updated 8 May 2026, read in the regular
+  browser after the web reader failed. It says developer/publisher ownership is
+  retained and games are licensed for embed and distribution. Service terms also
+  address advertising, acceptable use, availability, termination and changes;
+  the public document describes itself as a plain-language summary.
+- Developer page states free credited/non-exclusive listing, our own hosting,
+  removal available, optional SDK and no revenue share on Glaze's own ads yet.
+  **Action-time acceptance confirmation is needed before submission grants the
+  embed/distribution permission.** No SDK, payment or copied game host proposed.
+- Site says submission triggers an automatic framing check, then human review
+  and an email response. Launch week is agreed if a fit. The form exposes no
+  pre-submission iframe gameplay preview. Actual gameplay on the Glaze origin
+  remains unverified; there was no DOM injection or fabricated compatibility pass.
+  Submission can request their review with this limitation disclosed; a public
+  iframe must be tested before claiming compatibility/publication success.
+- Family-friendly eligibility remains the publisher's review: the current source
+  has stylized shooting/explosions and red blood/splatter effects. Blood particles
+  and decals are implemented in src/combatVisuals.js; src/main.js invokes blood
+  effects. Do not claim blood-free or an established age rating.
+- Duplicate check: live catalog search for Master Blaster returned broad fuzzy
+  results without an exact match in the visible first group. Canonical domain
+  masterblaster.se returned No matches among 48,743 games. This is a scoped search,
+  not a complete independent catalog audit.
+- Cookie processing refused, optional analytics declined. Optional birth-year
+  dialog closed normally without a year or personal details; no age fabricated.
+
+### Prepared form values
+
+Studio: Master Blaster. Contact: masterblastergame@proton.me.
+Title: Master Blaster. Genre: Shooting.
+
+Game URL:
+https://masterblaster.se/?ref=glazegames&utm_source=glazegames&utm_medium=directory&utm_campaign=first_players&utm_content=listing
+
+Short description:
+
+> A free browser arena shooter with grappling, destructible towers and 47 weapons,
+> with five in your loadout. Play Quick Play or Training against up to 15 bots,
+> invite friends to a Private Room, or find or create a Global Multiplayer match;
+> no installation or in-game chat.
+
+Notes (as entered; URL rendering cannot be verified until a public listing exists):
+
+```text
+My son, who's 8 years old, is building Master Blaster with AI-assisted coding; as his dad, I'm helping with accounts and marketing :) I'd love feedback on the movement, grappling and weapons, whether it is fun, and what would make you play more matches. Please report bugs or poor performance with your device, browser and game mode.
+
+Content disclosure for your family-friendly review: stylized weapon combat, explosions and red blood/splatter effects. Please assess suitability; I am not claiming an age rating. AI assistance is used in development, not live AI-generated gameplay.
+
+Compatibility is not yet verified in an iframe on glazegames.com. Your public form exposes no pre-submission gameplay preview; please provide a preview/test route before scheduling publication. No SDK or paid placement is requested; hosting remains masterblaster.se.
+
+Controls and modes: https://masterblaster.se/how-to-play/?ref=glazegames&utm_source=glazegames&utm_medium=directory&utm_campaign=first_players&utm_content=guide
+
+Current screenshots, captured 20 October 2026:
+Rocket action: https://masterblaster.se/press/action-rockets-2026-10-20.png
+Close-range blast: https://masterblaster.se/press/action-grenades-2026-10-20.png
+Home menu: https://masterblaster.se/press/home-menu-2026-10-20.jpg
+Quick Play: https://masterblaster.se/press/quick-play-2026-10-20.jpg
+The two action images use staged starting positions with live AI combat in a 15-bot match.
+
+Quick Play and Training can work offline only after the home menu shows Available offline, if the browser retains saved resources; online multiplayer needs internet.
+```
+
+## Next actions
+
+Batch concrete agreement confirmations for PixelGamesHub continuation and Glaze
+submission. Then continue through the existing prepared tabs, inspecting any new
+rights/verification requests. Pixel's sign-in email must be read through the brand
+mailbox only. Glaze may be submitted honestly for publisher review after agreement
+confirmation, without claiming its iframe/content checks have passed. Capture exact
+receipt/status once actually submitted; never duplicate uncertain submissions.
