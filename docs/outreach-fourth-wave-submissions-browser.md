@@ -1,12 +1,16 @@
 # Fourth-wave browser submission handoff
 
+Current Pixel outcome supersedes the historical handoffs below: the user completed brand sign-in, and Master Blaster was submitted once at21:53Stockholm20October. The public community entry is https://pixelgameshub.com/submissions/master-blaster, awaiting editorial review. Current cover, tagged play/guide anchors and zero comments verified; noindex/follow metadata, no editorial recommendation or indexed-backlink claim. See [the final Pixel record](outreach-pixelgameshub-final.md) for exact content and evidence. No further sign-in email, account recreation or duplicate submission is needed. Glaze remains at its original review receipt.
+
+## Historical access handoffs
+
 Handoff upkeep after subsequent work: Pixel error tab **1966654653** remains
 available and was marked handoff together with restored IndieDB brand login tab
 **1966654684**. No additional Pixel request/retry was made. Re-mark all owned
 handoffs on each session resumption so unrelated task continuation cannot clear
 the older login handoff marks.
 
-## Latest PixelGamesHub recovery — 20 October 2026, 19:14–19:16 CEST
+## Historical PixelGamesHub recovery — 20 October 2026, 19:14–19:16 CEST
 
 - Root read the brand mailbox's 19:02 signup confirmation and supplied its
   observed single-use auth link privately. User reported completing Pixel work;

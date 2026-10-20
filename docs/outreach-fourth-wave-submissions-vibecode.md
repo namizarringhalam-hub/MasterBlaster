@@ -1,6 +1,17 @@
 # Vibecode.game fourth-wave submission checkpoint
 
-## 20 October 2026 — prepared, not submitted
+## Current result — 20 October 2026, about 21:50 Stockholm
+
+- User completed brand signup/sign-in. The browser verifies username `masterblastergame`; no additional credential was entered or stored by the agent.
+- Submitted the single **Master Blaster** developer profile once. Explicit receipt: **Profile submitted** / **Your developer profile is saved and pending review.** The account dashboard independently shows **pending** and **Your developer profile is pending review.**
+- Private review-status URL: https://vibecode.game/profile?tab=developer (existing two-tab-window tab1966654683). This is an account page, not a public developer/game permalink or backlink.
+- Required brand display name Master Blaster; genres Action, Shooter, Multiplayer; available accurate AI label ChatGPT; default generated avatar. Studio, role, location, biography and personal/social links left blank. Previewed actual clickable Website anchor preserves the full brand-only ref/UTM URL: `https://masterblaster.se/?ref=vibecodegame&utm_source=vibecodegame&utm_medium=directory&utm_campaign=first_players&utm_content=developer`.
+- **Game not submitted:** the dashboard explicitly requires an approved Developer Profile before game submissions are available. No game form, game receipt, uploaded cover/screenshots or public game URL exists yet. Do not bypass, duplicate or withdraw the pending profile.
+- The General feedback Page was freshly read at sequence358; approved story/body and four attachments remain current. Prepared game copy below is still unused. The additional reviewed compatible action PNGs are1,205,196/1,163,679bytes and fit4MB; original approved wide sources remain unchanged and exceed4MB.
+- Ignored screenshot: `.wrangler/tmp/outreach/vibecode-profile-pending-2026-10-20.png`. Independent factual/privacy review: [final review](outreach-vibecode-final-review.md).
+- Next: monitor this exact pending profile and brand mailbox in the existing weekly Friday follow-up; once approved, complete the game form once using current approved copy, tagged anchors and reviewed eligible media. No further content/account approval is needed. No personal creator bio/location, new credentials, wallet/payment, votes, replies or publisher messages.
+
+## Historical signup preparation — superseded by the current result below
 
 ### Current final handoff — after completed VibeTopList gallery update
 
@@ -154,9 +165,9 @@ unqualified spontaneous match screenshots.
 
 ## Next step
 
-After user signup/confirmation, inspect the actual developer profile form,
-submit only brand fields and await its recorded review gate. Then inspect the
-game form, recheck duplicates, upload only eligible reviewed assets, verify
-rendered clickable links and final terms, and submit once if permitted. Record
-the actual receipt/queue/public URL and state; do not count prepared copy or
-signup as a listing.
+The brand developer profile is submitted and pending. Monitor that existing
+entry and brand mail in the existing weekly follow-up. Once it is approved,
+inspect the unlocked game form, recheck duplicates, upload only eligible
+reviewed assets, verify rendered clickable links and final terms, and submit
+the game once. Record its actual receipt/queue/public URL and state; the profile
+receipt and prepared game copy are not a game listing.
