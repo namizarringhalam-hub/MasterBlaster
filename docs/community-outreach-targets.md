@@ -1,5 +1,9 @@
 # Master Blaster: community outreach targets
 
+## New target research — 20 October 2026
+
+Eight additional destinations are proposed in the [reviewable shortlist](https://chatgpt.com/space/page_c0971087828481918cae6c2678c0f41d) and [repository research](outreach-fourth-wave-shortlist.md). None has been pitched, submitted or added to the published-post register. Creative Bloq/TechRadar are selective editorial prospects; AI Vibe Coded Games/AI Browser Games have clear AI-assisted browser-game fit. Other directories have specific compatibility, account, banner or unproven-reach limitations. User review precedes new outreach. The existing general feedback Page has been refreshed with current dated screenshots; do not resend or edit historical posts merely to adopt the new package. See [refresh checkpoint](outreach-refresh-checkpoint.md).
+
 ## Current monitoring cadence — changed 16 October 2026
 
 The user changed monitoring from daily to weekly. The existing `master-blaster-seo-follow-up` heartbeat is active on Fridays at 09:00 Europe/Stockholm, reporting in this chat; next scheduled check is 23 October 2026. Publication, feedback, moderation, directory/editorial, brand-mail and remaining SEO scope are retained. Its prompt now specifies weekly checks/reports. No duplicate automation was created. Earlier daily-check entries below are historical. The native tracker schedule was updated at sequence 15.

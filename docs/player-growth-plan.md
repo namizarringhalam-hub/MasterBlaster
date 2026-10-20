@@ -8,6 +8,13 @@ in community-outreach-targets.md.
 Existing approved directory work is recorded in seo-checkpoint.md. Use brand
 accounts only. See [the current target list and post register](community-outreach-targets.md).
 
+20 October refresh: current pitch snapshot below includes four reviewed new
+dated screenshots; all four public downloads now match the captured source bytes.
+The [new outreach shortlist](https://chatgpt.com/space/page_c0971087828481918cae6c2678c0f41d)
+is available for review. This refresh does not edit earlier published posts or
+sent pitches. Routine monitoring is now weekly on Fridays at 09:00 Stockholm;
+older daily schedules in this experiment describe its original plan.
+
 ## What we know
 
 - The SEO checkpoint records successful Google ownership verification, sitemap
@@ -16,8 +23,10 @@ accounts only. See [the current target list and post register](community-outreac
 - The game offers browser play, momentum grappling, destructible towers, 47
   weapons, local bot modes, private rooms and Global Multiplayer. These claims
   come from README.md and PLAYER_TEXT.js; this campaign task did not retest gameplay.
-- No analytics integration was found in the inspected client sources. Hosting
-  analytics may exist separately; traffic, retention and acquisition are unknown.
+- The current client includes Umami journey tracking in src/journeys.js. This
+  refresh did not inspect its dashboard or verify event delivery; traffic,
+  retention and acquisition outcomes remain unknown. The earlier observation
+  that no analytics integration existed is superseded.
 
 ## Positioning
 
@@ -53,18 +62,22 @@ Master Blaster is a free browser arena shooter with destructible towers and
 
 Play: [Play Master Blaster](https://masterblaster.se/?ref=social&utm_source=social&utm_medium=community&utm_campaign=first_players&utm_content=caption)
 
-### Generic feedback post approved 5 October 2026
+### General feedback post — 20 October 2026 snapshot
 
 Use the latest General feedback post on the [editable Page](https://chatgpt.com/space/page_6f014dc1bbfc81919de2edf967cf18bf)
 as the default for all future outreach emails and posts. Read the Page before
 preparing new copy; recipient, subject/title, length, format and source-tag
-adaptations are authorized. The following is the current snapshot.
+adaptations are authorized. The following refresh preserves the user's supplied
+story and feedback request while clarifying current gameplay and offline limits.
+The new screenshot package below passed capture review and public byte verification.
 
 **Title:** Master Blaster — free browser arena shooter with grappling and destructible towers
 
-My son who’s 8 years old is working on Master Blaster, a free browser arena shooter where you can grapple/swing across the map, blast players and the environment of towers using any of the 47 available weapons. He’s building it with AI-assisted coding and my job as his dad has been to help him set up the needed accounts and to help him with marketing :)
+My son, who’s 8 years old, is working on Master Blaster, a free browser arena shooter where you can grapple and swing across the map, blast opponents and bring towers down. There are 47 weapons to choose from, with five in your loadout. He’s building it with AI-assisted coding, and my job as his dad has been to help him set up the needed accounts and help with marketing :)
 
-Please check the game out, you can do Quick Play or Training against up to 15 bots, invite friends to a Private Room, or find/create a game in Global Multiplayer. No downloads and no chats make the game child friendly.
+Please check the game out. You can play Quick Play or Training against up to 15 bots, invite friends to a Private Room, or find or create a game in Global Multiplayer. It runs in your browser with no installation and no in-game chat.
+
+Quick Play and Training can also work offline after the home menu finishes preparing resources and shows “Available offline.” That depends on your browser retaining the saved resources; online multiplayer needs an internet connection.
 
 **Play:** [Play Master Blaster](https://masterblaster.se/?ref=community&utm_source=community&utm_medium=community&utm_campaign=first_players&utm_content=showcase)
 
@@ -72,13 +85,13 @@ Please check the game out, you can do Quick Play or Training against up to 15 bo
 
 We'd love feedback, especially on:
 
-- Does the game mechanics feel right?
+- Do the movement, grappling and weapons feel right?
 
 - Is the game fun?
 
 - What would you change first to make you want to play more matches?
 
-If something breaks or runs poorly, please let us know.
+If something breaks or runs poorly, please tell us what happened, your device and browser, and which game mode you were playing.
 
 Thanks for giving it a go!
 
@@ -101,33 +114,50 @@ Thanks for giving it a go!
 - Overview caption: "Master Blaster's neon arena."
 - Overview alt text: "Master Blaster arena with tall towers and platforms outlined in
   yellow, cyan and magenta beneath a dark sky."
-- Four new screenshots expand the review package:
+- Four dated screenshots passed capture review and were pushed in commit
+  51214dd. All four regular-browser downloads from Cloudflare match their source
+  SHA-256 hashes; native images also load in the editable Page.
 
 | Asset / direct attachment URL | Caption | Alt text |
 | --- | --- | --- |
-| [action-rockets.png](https://masterblaster.se/press/action-rockets.png) | Rocket Launcher equipped in a staged 15-bot engine scene; real bot combat and explosions. | A blue fighter holds a rocket launcher in a neon arena while colourful bot fighters fire and a large red explosion lights the platform. |
-| [action-grenades.png](https://masterblaster.se/press/action-grenades.png) | Grenade Launcher equipped, captured from the player camera in a staged 15-bot engine scene. | A fight viewed from behind the player, with armed bot fighters, bright purple explosions and a cyan hit effect on the foreground fighter. |
-| [home-menu.jpg](https://masterblaster.se/press/home-menu.jpg) | Master Blaster home menu. | Master Blaster home menu with Quick Play, Private Room, Global Multiplayer and Training choices beneath Swing wild. Break everything. |
-| [Latest Quick Play image on the Page](https://chatgpt.com/space/page_6f014dc1bbfc81919de2edf967cf18bf) | Quick Play setup with 15 veteran bots, five equipped weapons and the current weapon preview. | Latest Quick Play menu and weapon preview. Native Page attachment replaces the earlier public quick-play.jpg; no public/exported replacement URL verified. |
+| [action-rockets-2026-10-20.png](https://masterblaster.se/press/action-rockets-2026-10-20.png) | Rocket Launcher equipped during a 15-bot battle. Staged starting positions; live AI combat. | A cyan fighter with a Rocket Launcher faces colorful bots and a bright explosion on a neon platform. |
+| [action-grenades-2026-10-20.png](https://masterblaster.se/press/action-grenades-2026-10-20.png) | Close-range blast during a 15-bot match, with Grenade Launcher equipped. Player camera; staged starting positions; live AI combat. | A close-range pink and purple blast surrounds the foreground cyan fighter while bots battle across the neon arena. |
+| [home-menu-2026-10-20.jpg](https://masterblaster.se/press/home-menu-2026-10-20.jpg) | Master Blaster home menu, captured from production on 20 October 2026. | Home menu with Quick Play, Private Room, Global Multiplayer and Training against a neon arena background. |
+| [quick-play-2026-10-20.jpg](https://masterblaster.se/press/quick-play-2026-10-20.jpg) | Quick Play setup with 15 veteran bots and all five loadout slots. Rocket Launcher selected, with its full preview and filtered weapon card visible. | Quick Play with 15 veteran bots, all five equipped weapon slots and a full Rocket Launcher preview and filtered weapon card. |
 
-The 4 October home and original Quick Play images were 1280 × 720 JPEG browser
-captures. Use the replacement Quick Play attachment from the current Page for
-future outreach; its exported/public URL is not yet verified.
-The action images are unchanged 1068 × 735 PNG canvas exports from the current production
-engine's development-only review view. Initial positions/loadouts were staged;
-production AI movement, weapon fire and resulting explosions ran normally.
-Both capture proofs record 15 bots, 16 fighters, no injected explosions, zero
-renderer errors and no direct-render fallback. The first uses a free review
-camera; the second uses the actual player camera. Label staged captures accurately
-and do not imply an earned headshot, a player-fired blast or a 16-human lobby.
-Use the two action images first where an image gallery is allowed, then the menus;
-retain the chosen overview as an optional fifth image. No video is included.
+Both action images were captured with the existing review fixture's **Capture
+15-bot action** control. Recorded metadata confirms 15 bots/16 fighters, real AI
+combat, zero renderer errors and no direct-render fallback; both images were
+inspected. Starting positions/loadouts were staged; no cosmetic explosions were
+injected. The first image uses a free review camera and the second the actual
+player camera. A previous failed attempt is not part of this final package.
+Label staged captures accurately; do not imply an earned headshot, a player-fired
+blast or 16 human players. Use the two action images first where galleries are
+allowed, then menus; the chosen overview remains an optional fifth image. No
+video is included. Keep research/capture tabs muted before loading the game.
 
-The playable game, guide and original overview returned HTTP 200 on 4 October
-2026; the overview returned image/png with the expected 804,703-byte length.
-Gameplay/mode claims were checked against current PLAYER_TEXT.js and README.md;
-no new performance claims are made. The new assets are also covered by the final
-build/hosting and live checks recorded in seo-checkpoint.md.
+Action files are 3394 × 1269 PNGs: rocket 6,393,504 bytes and grenade 6,250,771
+bytes. Both exceed a 4 MB attachment limit; prepare and review separate smaller
+exports before attaching them to a destination with that cap. Home and Quick
+Play are 3394 × 1316 JPEGs, 219,714 and 193,491 bytes respectively. The current
+Quick Play SHA-256 is
+57639c2e77f653b0e09c4fcff643712206fe111179a4804dadda85481b867b35.
+
+Historical assets remain unchanged for existing posts: action-rockets.png,
+action-grenades.png, home-menu.jpg and quick-play-loadout-2026-10-05.jpg. The
+5 October replacement Quick Play image was previously exported and verified;
+the old note saying it had no public replacement URL is superseded. Prior
+capture/build/HTTP proofs are distinct from the new dated assets. The new images'
+content, format and dimensions were checked, followed by public byte verification
+on 20 October. A direct Python request was blocked by Cloudflare1010; successful
+regular-browser image loads/downloads establish these delivery checks.
+
+Current gameplay claims were checked against PLAYER_TEXT.js, README.md,
+src/gameData.js and src/multiplayerProtocol.js on 20 October. There are 47
+weapons, five loadout slots and up to 16 fighters including bots. Touch controls
+exist, but no universal device/browser compatibility, FPS, sub-two-second load
+time or child-safety guarantee is made. Qualified offline readiness is described
+in the pitch above. AI assistance and the user's own story stay explicit.
 
 Use brand accounts and only the father-and-son story the user supplied in the
 5 October Page rewrite; do not add names, account-derived details or creator bios.
@@ -177,9 +207,10 @@ whether success means more people playing anywhere or more visits to the site.
 Record each post's date, channel, URL, clip concept, views, link clicks, referred
 visits and feedback in a simple log. Mark unavailable measurements as unknown.
 The published-post register in community-outreach-targets.md is the source for
-daily activity monitoring; record exact permalinks only after verified publication.
-The ACTIVE daily 09:00 Europe/Stockholm follow-up checks each registered post,
+weekly activity monitoring; record exact permalinks only after verified publication.
+The existing ACTIVE Friday 09:00 Europe/Stockholm follow-up checks each registered post,
 reports new feedback with links and identifies where the user should engage.
+Its next scheduled check is 23 October 2026; no duplicate automation is needed.
 Read and summarize replies; do not publish responses without user authorization.
 Local checks require the computer on and app running; missed access is not proof
 that a post has no activity.
@@ -200,7 +231,7 @@ with a completed match. Compare source quality before choosing paid promotion.
 ## Next unfinished step
 
 HTML5 topic 76464 and user-submitted Three.js topic 95005 were publicly verified
-on 5 October; monitor their replies/moderation daily. ESReality submission 2975313
+on 5 October; monitor their replies/moderation weekly. ESReality submission 2975313
 is still not publicly visible; new-user approval appears pending. Forum posts use
 first-person feedback copy, clickable source-tagged play/guide links and four
 screenshots. Preserve the Three.js user's final text; its missing AI-assisted
@@ -213,9 +244,10 @@ moderator. Hold further automated Reddit promotion while the removal causes rema
 unresolved; no duplicates or manufactured participation. r/Codex's current Rule 9
 prohibits bots, so its prepared showcase below is for manual brand-account posting.
 Apply approved wording under each eligible community's rules and record successful
-publication for daily checks. Exact URLs/status are in the community register.
-No spending or use of personal accounts is authorized. The ACTIVE 09:00 daily
-follow-up reflects content approval and monitors pending submissions as well.
+publication for weekly checks. Exact URLs/status are in the community register.
+No spending or use of personal accounts is authorized. The existing ACTIVE Friday
+09:00 Europe/Stockholm follow-up monitors pending submissions as well; its next
+scheduled check is 23 October 2026.
 
 ### Historical Codex showcase copy
 

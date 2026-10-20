@@ -1,5 +1,9 @@
 # SEO checkpoint — 2026-09-18
 
+## Outreach package refresh — 20 October 2026
+
+User requested new pitch destinations, current graphics screenshots and copy review. Eight new proposals and official routes are in [the fourth shortlist](outreach-fourth-wave-shortlist.md), with an editable review Page linked there; no new pitch/submission has been sent. General feedback Page story, feature wording, qualified offline availability and feedback questions refreshed; all four native images/captions/downloads now use the reviewed 20 October package. Assets/helper commit51214dd pushed; regular-browser public downloads match all four source SHA-256 hashes. Build/hosting passed; press images are excluded from the offline manifest. [Refresh checkpoint](outreach-refresh-checkpoint.md) records proof, reviewer limitations and next steps. Production gameplay and LCP implementation unchanged; no unchanged PageSpeed rerun. Existing weekly Friday monitoring remains active.
+
 ## Monitoring schedule — changed 16 October 2026
 
 The user changed monitoring from daily to weekly. The existing `master-blaster-seo-follow-up` heartbeat is active on Fridays at 09:00 Europe/Stockholm, reporting in this chat; next scheduled check is 23 October 2026. Publication, feedback, moderation, directory/editorial, brand-mail and remaining SEO scope are retained. Its prompt now specifies weekly checks/reports. No duplicate automation was created. Earlier daily-check entries below are historical. The native tracker schedule was updated at sequence 15.
