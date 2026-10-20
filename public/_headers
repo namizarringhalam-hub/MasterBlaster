@@ -16,3 +16,11 @@
   Cache-Control: no-cache
 /manifest.webmanifest
   Cache-Control: no-cache
+/press/action-rockets.png
+  Cache-Control: no-cache
+/press/action-grenades.png
+  Cache-Control: no-cache
+/press/home-menu.jpg
+  Cache-Control: no-cache
+/press/quick-play.jpg
+  Cache-Control: no-cache
