@@ -4,14 +4,16 @@
 
 One actual **10-second vertical video is produced for user review**. Seven
 future hooks/footage briefs are prepared, not seven finished videos. The user
-confirmed no brand TikTok account exists and requested setup help. No account
-was created and no TikTok post was published. A signup handoff was requested;
+initially had no brand TikTok account and requested setup help. The user has now
+completed signup as @master_blaster_game; its signed-in Profile link was verified
+in the InPrivate window on 27 October. No TikTok post was published. The
 user handles password, birth date and human verification. Use only Master
 Blaster and masterblastergame@proton.me; never personal accounts or details.
 
 Editable campaign, video download and native poster:
 https://chatgpt.com/space/page_29e2a760bf58819184cb9d8e7a8722a3
-Page sequence 3: four delivery/status replacements and two attachment blocks
+Page sequence 4: account handle and signed-in status updated in four blocks;
+prior delivery/status replacements and two attachment blocks
 read back exactly; title and every untouched block hash preserved (25 blocks).
 The uploaded MP4 and poster both explicitly confirmed destination file access.
 Native Page rendering was not independently inspected; saved content/file access
@@ -81,9 +83,9 @@ mechanic. Future grapple/destruction/teleport briefs need those real captures.
 - Owned Edge window82972888, original tab mute confirmed by Unmute tab menu.
   TikTok signup in normal Edge redirected to an existing personal session; no
   account/profile actions were taken there. Separate InPrivate window22153746
-  is left for the user. Latest observation: signup/create-username, validation
-  requires lowercase letters, numbers, underscores or periods (no spaces).
-  User completes this authentication step; brand signup is not yet confirmed.
+  is left for the user. User completed signup as master_blaster_game. Latest
+  signed-in feed exposes Profile https://www.tiktok.com/@master_blaster_game;
+  signup is confirmed. No authentication automation was used.
   Do not close that handoff or touch the original user Edge window67862.
 - Task-owned capture server9120 was stopped after delivery. No listener on8799
   remained in the final read-only port check. User browser windows are preserved.
@@ -99,10 +101,10 @@ waits for the brand account and required final publishing step. Local capture
 requires the computer on, usable/unlocked and the app running. Preserve the
 separate Friday09:00 outreach heartbeat and all older intentionally paused work.
 
-Next: user reviews the attached first video and completes brand signup at
-https://www.tiktok.com/signup. Suggested handle MasterBlasterGame if available,
-display Master Blaster; username must be lowercase, e.g. masterblastergame if
-available. Do not invent identity data, automate authentication,
+Next: user reviews the attached first video. The brand handle is
+@master_blaster_game (other choices were unavailable); display name and bio
+remain to be checked/configured through the permitted workflow. Do not invent
+identity data, automate authentication,
 repeatedly register, publish without required confirmation, or call uploaded/
 drafted content posted. Then complete eligible brand profile/link/disclosure
 settings and publish the reviewed first video through the permitted workflow.
