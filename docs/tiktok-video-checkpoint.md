@@ -20,8 +20,9 @@ human verification. Preserve existing manual publication/confirmation rules.
 
 Editable campaign and native media:
 https://chatgpt.com/space/page_29e2a760bf58819184cb9d8e7a8722a3
-Sequence10: publication link/status added after approved upload, with earlier
-scene/text and future-neon updates; exact same-stream readback passed;
+Sequence11: all 16 user-supplied themes added to the existing campaign bank;
+publication link/status, media and earlier scene/text rules preserved.
+Exact same-stream readback passed;
 25 blocks, title and every untouched block hash preserved. MP4/poster uploads
 confirmed destination access. Native Page rendering was not separately inspected.
 
@@ -49,6 +50,55 @@ Mandatory gates for every daily video:
 - Truthfully disclose bot opponents, staged starts/loadouts, scripted featured
   controls where used, and showcase camera. Never fabricate kills/headshots,
   effects or human opponents. Do not claim a tower collapse from broken cover.
+
+## Theme bank — 27 October user update
+
+Use one main theme per daily video, rotating through:
+
+1. 47 weapons.
+2. Individual weapon showcases; repeat the series with different named weapons.
+3. Grappling and swinging.
+4. Massive mechas: show the actual playable armored mecha rigs.
+5. Free to play.
+6. No app download or installation; play in the browser.
+7. Amazing graphics, demonstrated with honest current game footage.
+8. Extensive graphics settings and real before/after views.
+9. Up to 16 players or bots total in one match.
+10. Training mode.
+11. Fun and quirky weapons and their genuine effects.
+12. Destructible towers, platforms and cover.
+13. Towers squashing enemies.
+14. Mobile and desktop gameplay.
+15. Global Multiplayer.
+16. Private-room multiplayer.
+
+Campaign Page11 contains example hooks and required footage for every theme.
+Daily automation was updated through automation_update; saved prompt readback
+matches exactly, preserving ACTIVE status, same chat and daily03:00 schedule.
+All 25 Page block IDs/order and untouched hashes/title are preserved. These are
+future themes, not newly completed videos; today's approved MP4/post is unchanged.
+
+Every theme retains action from frame one, simultaneous same-bot grapple/fire,
+no wall-stuck shots, fresh scenes/wording and neon punchlines from28October.
+Keep supporting free/easy/action/no-install messages brief. Ask a theme-specific
+feedback question in the description. Log theme, named weapon/mode and claim
+evidence alongside source hashes, cut ranges and caption pairs. If a required
+shot cannot be verified, choose another theme and leave that one pending.
+
+Independent factual review checked current game source and the player guide:
+47 weapons/five equipped; 16 total fighters (local player plus up to15 bots);
+actual playable mechas, not an invented giant vehicle/boss mode. Browser assets
+still download, so no app installer does not mean zero transfer or instant load.
+Structural crush is real: descending decks trapping a fighter emit a crush
+event, applying100damage locally. Claim a particular squash/elimination only
+with falling structure, trapped victim and corresponding damage/death evidence;
+debris and riders alone are insufficient. Phone claims require real touch
+gameplay, not a desktop crop. Settings and performance depend on device/renderer.
+Public/private multiplayer needs actual connected play; do not fabricate human
+opponents, audience size or instant matchmaking. No fully destructible-map claim.
+Sources reviewed: public/how-to-play/index.html; src/player.js; src/mecha.js;
+src/world.js; src/main.js; weapon/loadout data and graphics settings.
+No game/capture/renderer change or new performance measurement was needed.
 
 ## Revised deliverable
 
@@ -137,8 +187,9 @@ checkpoint; rendered media stay ignored and in Page Files.
 Preserve unrelated %SystemDrive%/. Task-owned Vite32308 was stopped after capture;
 no unrelated process/window or paused helper was terminated.
 
-Next: prepare a fresh video at03:00 with different action/copy and the neon
-punchline rule. Check existing publication/register first to avoid duplicates.
+Next: prepare a fresh video at03:00 using one main theme from the bank, different
+action/copy and the neon punchline rule. Check existing publication/register
+first to avoid duplicates.
 Use only the brand account; preserve manual-authentication and platform-rule
 requirements. Never claim a private session remains signed in after restart.
 Never post the superseded master-blaster-day01-tiktok.mp4
