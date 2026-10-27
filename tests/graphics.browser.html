@@ -128,6 +128,7 @@ import { withFittedChestCore } from "./chestFit.js";
 import { withWallImpactReview } from "./wallImpactReview.js";
 import { withSurfaceBurstRuntime } from "./surfaceBurstReview.js";
 import { withStructuralDustReview } from "./structuralDustReview.js";
+import { createSocialVideoCapture } from "./socialVideoCapture.js";
 document.querySelector("#view").add(new Option("lower-body-oblique", "lower-body-oblique"));
 document.querySelector("#view").add(new Option("thrusters-low", "thrusters-low"));
 document.querySelector("#view").add(new Option("skyline", "skyline"));
@@ -539,6 +540,7 @@ let renderedFrames = 0;
 let captureCanvas = false;
 let canvasCapture = null, ropeRenders = 0;
 let pressAction = null;
+let socialVideo = null;
 let pressRenderHold = null;
 function pressFrozenState() {
   return {
@@ -2064,7 +2066,8 @@ select("stress").onclick = () => {
   game.setTrainingBotOption("botsStandStill", !stress); game.setTrainingBotOption("botsDontAttack", !stress);
   game.players[0].rig.visible = true; resetSamples();
 };
-select("press-action").onclick = async () => {
+select("press-action").onclick = () => capturePressAction();
+async function capturePressAction(recordVideo = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
   const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
   for (const [control] of controls) control.disabled = true;
@@ -2095,17 +2098,41 @@ select("press-action").onclick = async () => {
       game.camera.position.set(-24, 22, -28); game.camera.lookAt(0, 16, 0);
       game.camera.fov = 62; game.camera.updateProjectionMatrix();
     };
+    if (recordVideo) {
+      // A disclosed showcase view from the fight side keeps the central pillar behind the bots.
+      const cameraStart = performance.now();
+      game.updateCamera = () => {
+        hero.rig.visible = true;
+        if (new URLSearchParams(location.search).get("videoView") === "follow") {
+          const subject = game.players[1];
+          const target = subject.position.clone().add(new THREE.Vector3(0, 1.2, 0));
+          game.camera.position.copy(target).add(new THREE.Vector3(-7, 5, 10));
+          game.camera.lookAt(target);
+        } else {
+          const drift = Math.sin((performance.now() - cameraStart) / 12000) * 2;
+          game.camera.position.set(-18 + drift, 21, 24); game.camera.lookAt(-2 + drift, 16, 10);
+        }
+        game.camera.fov = 62; game.camera.updateProjectionMatrix();
+      };
+    }
     game.updateCamera(); game.scene.updateMatrixWorld(true);
     game.matchStartDelay = 0; game.audioCountdown = false; game.awaitingAudioGesture = false;
     pressAction = { status: "running", stagedSetup: "Central-platform starting positions and explosive loadouts; production AI movement and combat", injectedExplosions: false,
       fighters: 16, bots: 15, weapon: hero.weapon.id, view: select("view").value, frames: 0, durationMs: 0, started: performance.now(), initialErrors: errorCount };
     stress = true; game.paused = false; game.sound.resume(); game.sound.setPaused(false); resetSamples(0);
+    if (recordVideo) {
+      pressAction.status = "recording";
+      await socialVideo.record({ sceneSerial: serial });
+      pressAction.status = "captured";
+      return;
+    }
     // Bounded headroom for background/throttled capture sessions; simulation and effects stay unchanged.
     await waitForReviewFrame(serial, () => ["captured", "error"].includes(pressAction?.status), 60000);
     if (pressAction?.status !== "captured") throw Error(pressAction?.error || "Action capture interrupted");
   } catch (error) {
     pressAction = { ...pressAction, status: "error", error: String(error), errors: errorCount };
     metrics.textContent = JSON.stringify({ pressAction });
+    if (recordVideo) socialVideo.fail(error);
   } finally {
     stress = false; game.paused = true; explosionReview = true; game.sound.setPaused(true);
     if (pressRenderHold) {
@@ -2114,7 +2141,7 @@ select("press-action").onclick = async () => {
     }
     for (const [control, disabled] of controls) control.disabled = disabled;
   }
-};
+}
 const frame = game.frame.bind(game);
 game.frame = time => {
   const sceneRenderCallsBefore = game.renderer.info.render.calls;
@@ -2141,7 +2168,7 @@ game.frame = time => {
     frame(time);
     if (startupCalls) startupTrace.push({ timeMs: now, durationMs: performance.now() - now, calls: startupCalls,
       draws: game.renderer.info.render.drawCalls, triangles: game.renderer.info.render.triangles, memory: { ...game.renderer.info.memory } });
-  } catch (error) { startupIdentityRecorder?.close(); throw error; }
+  } catch (error) { startupIdentityRecorder?.close(); socialVideo?.fail(error); throw error; }
   finally {
     startupCalls = null;
     if (startupTrace.length === 3) startupIdentityRecorder?.close();
@@ -2279,5 +2306,8 @@ game.frame = time => {
   stats.observerMatrixSync = { ...observerMatrixSync };
   metrics.textContent = JSON.stringify(stats);
 };
+if (new URLSearchParams(location.search).get("socialVideo") === "1")
+  socialVideo = createSocialVideoCapture(game, { onRecord: () => capturePressAction(true), getErrors: () => errorCount });
 await reset();
+socialVideo?.preview();
 </script></html>
