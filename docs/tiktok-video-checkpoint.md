@@ -6,8 +6,12 @@ The requested replacement is finished and independently reviewed. It is a
 10-second vertical video with five fresh action cuts and five different animated
 promotional text pairs. No persistent overlay from the rejected first draft
 remains. The same featured bot visibly grapples and fires concurrently. Selected
-wall-stuck, obstructed and weak filler scenes were excluded. No TikTok post was
-published by this task; the new video is ready for the user's review.
+wall-stuck, obstructed and weak filler scenes were excluded. The user approved it for upload on 27 October; it is now published through
+@master_blaster_game at 13:40 Europe/Stockholm. Exact live post, caption and
+Promotional content label verified:
+https://www.tiktok.com/@master_blaster_game/video/7701326586712198422
+Studio publication baseline: 0 views / 0 likes / 0 comments; live comment count: 0.
+No paid promotion, duplicate post or engagement/conversion claim.
 
 Brand account: @master_blaster_game, created by the user and signed-in Profile
 link verified in InPrivate Edge. Only Master Blaster brand accounts and
@@ -16,7 +20,8 @@ human verification. Preserve existing manual publication/confirmation rules.
 
 Editable campaign and native media:
 https://chatgpt.com/space/page_29e2a760bf58819184cb9d8e7a8722a3
-Sequence7: ten affected blocks updated, exact same-stream readback passed;
+Sequence10: publication link/status added after approved upload, with earlier
+scene/text and future-neon updates; exact same-stream readback passed;
 25 blocks, title and every untouched block hash preserved. MP4/poster uploads
 confirmed destination access. Native Page rendering was not separately inspected.
 
@@ -33,6 +38,9 @@ Mandatory gates for every daily video:
   grapple rope while its own weapon fires. Review visual overlap and recording-
   aligned production shot/rope/movement evidence; telemetry alone is insufficient.
 - Each cut gets its own promotional text; no persistent text across scenes.
+- From28October onward, punchlines use the verified game neon palette (pink,
+  cyan/blue, red and other arena accents), varied per scene. Subtitles stay
+  readable white on stronger dark backing. Today's approved MP4 stays unchanged.
 - Different actual action scenes/compositions and promotional wording every day.
   A new timestamp on the same stock route does not count. Keep source hashes,
   cut ranges and caption pairs in that day's manifest/register.
@@ -123,14 +131,67 @@ Module and extracted HTML-module syntax pass; scene-manifest acceptance and
 repeated-caption rejection pass. Production build/hosting checks pass, with
 existing asset-resolution/chunk-size warnings. Capture module/controls are
 absent from production assets. No gameplay/LCP changes or unchanged PSI rerun.
-Only tests/graphics.browser.html, tests/socialVideoCapture.js,
-scripts/render-social-video.py and this checkpoint belong to this revision.
+The video-remake commit is1c9cb67. Today's upload/color follow-up changes only
+scripts/render-social-video.py, docs/community-outreach-targets.md and this
+checkpoint; rendered media stay ignored and in Page Files.
 Preserve unrelated %SystemDrive%/. Task-owned Vite32308 was stopped after capture;
 no unrelated process/window or paused helper was terminated.
 
-Next: user reviews the REVISED file; complete permitted brand profile/publication
-steps only within applicable confirmation rules. Record actual post URL/date
-once published. Never post the superseded master-blaster-day01-tiktok.mp4
+Next: prepare a fresh video at03:00 with different action/copy and the neon
+punchline rule. Check existing publication/register first to avoid duplicates.
+Use only the brand account; preserve manual-authentication and platform-rule
+requirements. Never claim a private session remains signed in after restart.
+Never post the superseded master-blaster-day01-tiktok.mp4
 (SHA99793368...76dcf) or use the old take02/take03 burned-caption footage in
 future clean edits. Keep older raw evidence ignored locally; never relabel
 uploaded/drafted media as a published TikTok post.
+
+
+## Neon typography update and today's upload —27October
+
+Future renderer accepts only named game palette colors or matching RGB hex via
+scene title_color; defaults cycle pink/cyan/red/blue. Palette provenance is
+src/world.js and src/gameData.js. Subtitle remains white; dark caption panel
+opacity0.86. --check-colors validates palette provenance/normalization and rejects
+off-palette/filter-injection values. Independent source/contrast review and an
+actual neon style preview pass readability through bright blasts, safe margins
+and no clipping. The style-QA render reuses old scenes only for testing; it is
+NOT tomorrow's new video and must not be posted as a fresh daily deliverable.
+The approved MP4 remains byte-for-byte SHA e48ea43a...adefa80. Daily03:00
+automation and campaign Page both carry the future-color instruction.
+
+TikTok brand account @master_blaster_game verified at existing InPrivate
+window22153746; profile initially showed Upload your first video. Approved
+MP4 selected via native chooser; Studio reports Uploaded(8.94MB),1080P,10s.
+No personal account was used. Location stayed blank. Promotional disclosure
+Your brand checked; Branded content unchecked. No new legal agreement, payment,
+security bypass or human verification was required.
+
+The initial accessibility setValue changed the caption DOM but not TikTok's
+stored editor model, retaining the filename; this unpublished form was reset.
+Final clean form used native keyboard Ctrl+A/Backspace to reach0characters,
+then typed exact caption, dismissed hashtag suggestions with Escape, and
+verified398characters plus exact preview before posting. Never use setValue
+on this contenteditable caption editor. Cover is an existing video frame around
+3s with visible grapple/fire text. Native coordinate fallback was used when
+cached browser/dialog element indexes were unavailable; no shell UI automation.
+
+User explicitly approved today's upload. Post clicked once at13:40 Stockholm;
+Studio routed to /tiktokstudio/content, exposing the exact post permalink and
+Everyone visibility. Live post subsequently verified at13:44, tab Audio muted,
+correct caption/hashtags, Promotional content label,0comments, no displayed
+processing/review barrier. Independent anonymous playback was not checked.
+Record: post7701326586712198422, original post only, no comment/reply IDs.
+
+Caption published (398characters including paragraph breaks):
+Grapple and fire at the same time. Blast through cover. Master Blaster is free, easy to play and runs in your browser—no install. Play at masterblaster.se. Which weapon would you try first?
+
+Edited bot gameplay; staged starts/loadouts, scripted grapple/fire controls and showcase camera using real game mechanics. Built with AI-assisted coding.
+
+#MasterBlaster #BrowserGame #ArenaShooter #FreeGames
+
+Campaign Page10 and existing outreach/approval tracker24 record publication;
+repository published-post register has the exact link/date/account/file/version
+and baseline. Older outreach statuses retain23October check dates, and the
+Friday09:00 schedule/holds remain unchanged. Tomorrow's style preview is QA
+only; no future new daily video has yet been claimed complete or published.
