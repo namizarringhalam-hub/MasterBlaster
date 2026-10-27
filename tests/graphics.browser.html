@@ -541,6 +541,8 @@ let captureCanvas = false;
 let canvasCapture = null, ropeRenders = 0;
 let pressAction = null;
 let socialVideo = null;
+let socialSceneEvidence = null;
+let restoreSocialScene = null;
 let pressRenderHold = null;
 function pressFrozenState() {
   return {
@@ -2067,8 +2069,96 @@ select("stress").onclick = () => {
   game.players[0].rig.visible = true; resetSamples();
 };
 select("press-action").onclick = () => capturePressAction();
+async function stageSocialScene() {
+  const grappleScene = new URLSearchParams(location.search).get("videoScene") === "grapple";
+  const actor = game.players[1], hero = game.players[0];
+  const wallNear = (player, margin = .3) => game.world.nearbyObstacles(player.position.x - 2, player.position.x + 2, player.position.z - 2, player.position.z + 2)
+    .some(item => !item.removed && item.active !== false && item.top > player.position.y + .6 && item.baseY < player.position.y + 1.8
+      && Math.abs(player.position.x - item.x) < item.w / 2 + player.radius + margin
+      && Math.abs(player.position.z - item.z) < item.d / 2 + player.radius + margin);
+  // Keep targets on the same open side of the spire; normal AI never starts by chasing through its wall.
+  hero.position.set(0, 15.01, 18);
+  for (const [index, bot] of game.players.slice(1).entries()) {
+    bot.position.set(-12 + index % 5 * 6, 15.01, 6 + Math.floor(index / 5) * 4);
+    if (wallNear(bot)) throw Error(`Video start overlaps a wall: ${bot.id}`);
+  }
+  const anchorAim = new THREE.Vector3(-3.5, 48, 0);
+  if (grappleScene) {
+    actor.position.set(-18, 15.01, 18);
+    if (wallNear(actor)) throw Error("Featured bot start is not clear");
+    actor.loadout = ["machine_gun", "rocket_launcher", "blaster", "plasma_cannon", "grenade_launcher"];
+    actor.slotIndex = 0; actor.ammo = Object.fromEntries(actor.loadout.map(id => [id, WEAPONS[id].ammo]));
+    await prepareFighterWeapons(actor);
+  }
+  socialSceneEvidence = { scene: grappleScene ? "grapple-and-fire" : "open-platform-combat", featuredBotId: grappleScene ? actor.id : null,
+    disclosure: grappleScene ? "Staged starts, loadouts, camera and scripted featured-bot grapple/fire controls; unmodified production movement, grapple and weapon mechanics" : "Staged starts, loadouts and camera; live production AI combat",
+    clockStartedAt: null, performanceStartMs: null, events: [], concurrentShotCount: 0, wallStuckEvents: [] };
+  const originalBot = game.updateBot, originalFire = game.tryFire, originalCamera = game.updateCamera;
+  const sideMove = new THREE.Vector3(-.85, 0, .4), idleMove = new THREE.Vector3(), targetAim = new THREE.Vector3();
+  const stalled = new Map(), activeWallEvents = new Map(); let attached = false, releasedAt = null, attachedAt = null;
+  const time = () => socialSceneEvidence.performanceStartMs === null ? 0 : (performance.now() - socialSceneEvidence.performanceStartMs) / 1000;
+  const visible = player => {
+    const point = player.position.clone().add(new THREE.Vector3(0, 1.3, 0)), clip = point.clone().project(game.camera);
+    return clip.z > -1 && clip.z < 1 && Math.abs(clip.x) < .9 && Math.abs(clip.y) < .85 && !game.world.effectBlocked(game.camera.position, point);
+  };
+  const snapshot = (player, kind) => ({ kind, atMs: Math.round(time() * 1000), atISO: new Date().toISOString(), botId: player.id,
+    position: player.position.toArray(), velocity: player.velocity.toArray(), speed: player.velocity.length(), grounded: player.grounded,
+    grappleActive: Boolean(player.grapple), anchor: player.grapple?.anchor.toArray() || null, ropeVisible: player.grapple?.line.visible || false,
+    ropeLength: player.grapple?.ropeLength || null, visible: visible(player) });
+  game.tryFire = function (player, ...args) {
+    const weapon = player.weapon, before = player.ammo[weapon.id];
+    const result = originalFire.call(this, player, ...args);
+    if (grappleScene && player === actor && socialSceneEvidence.performanceStartMs !== null && time() <= 18 && player.ammo[weapon.id] < before) {
+      const event = { ...snapshot(player, "production-shot"), weapon: weapon.id, ammoBefore: before, ammoAfter: player.ammo[weapon.id] };
+      socialSceneEvidence.events.push(event);
+      if (event.grappleActive && !event.grounded && event.speed > 3 && event.visible && event.ropeVisible) socialSceneEvidence.concurrentShotCount++;
+    }
+    return result;
+  };
+  game.updateBot = function (bot, dt) {
+    const before = bot.position.clone(), elapsed = time();
+    if (grappleScene && bot === actor && elapsed < 2.8) {
+      if (!bot.alive) return socialVideo.fail("Featured bot died before its grapple/fire shot completed");
+      if (elapsed < .6) bot.update(dt, idleMove, bot.aim, { reducedMotion: this.settings.reducedMotion }, this.world);
+      else {
+        if (!attached) {
+          bot.aim.copy(anchorAim).sub(bot.position).sub(new THREE.Vector3(0, 1.4, 0)).normalize();
+          this.toggleGrapple(bot);
+          if (!bot.grapple) throw Error("The production grapple did not attach to the real spire");
+          attached = true; attachedAt = elapsed; socialSceneEvidence.events.push(snapshot(bot, "grapple-attached"));
+        }
+        const target = this.players.find(player => player !== actor && player.alive);
+        targetAim.copy(target?.position || anchorAim).add(new THREE.Vector3(0, 1.2, 0)).sub(bot.position).sub(new THREE.Vector3(0, 1.4, 0)).normalize();
+        bot.update(dt, sideMove, targetAim, { reducedMotion: this.settings.reducedMotion }, this.world);
+        this.updateGrapple(bot, dt);
+        if (bot.grapple && (elapsed - attachedAt > 1 || bot.position.distanceTo(bot.grapple.anchor) < 10 || wallNear(bot, 2))) {
+          socialSceneEvidence.events.push(snapshot(bot, "grapple-release")); this.releaseGrapple(bot, false); releasedAt = elapsed;
+        }
+        if ((!bot.grounded && bot.grapple) || (releasedAt !== null && elapsed - releasedAt < .6)) this.tryFire(bot, true);
+      }
+    } else originalBot.call(this, bot, dt);
+    const blocked = socialSceneEvidence.performanceStartMs !== null && bot.alive && bot.controlMove.lengthSq() > .05 && bot.position.distanceTo(before) < .01 && wallNear(bot) && visible(bot);
+    const duration = blocked ? (stalled.get(bot.id) || 0) + dt : 0; stalled.set(bot.id, duration);
+    if (duration > .8 && !activeWallEvents.has(bot.id)) {
+      const event = { ...snapshot(bot, "wall-stuck"), startMs: Math.max(0, Math.round(time() * 1000 - duration * 1000)), endMs: null, duration };
+      socialSceneEvidence.wallStuckEvents.push(event); activeWallEvents.set(bot.id, event);
+    } else if (!blocked && activeWallEvents.has(bot.id)) {
+      activeWallEvents.get(bot.id).endMs = Math.round(time() * 1000); activeWallEvents.delete(bot.id);
+    }
+  };
+  if (grappleScene) game.updateCamera = () => {
+    actor.rig.visible = true;
+    const focus = actor.position.clone().add(new THREE.Vector3(0, 1.3, 0)).lerp(actor.grapple?.anchor || anchorAim, .08);
+    game.camera.position.copy(focus).add(new THREE.Vector3(-10, 6, 13)); game.camera.lookAt(focus);
+    game.camera.fov = 62; game.camera.updateProjectionMatrix();
+  };
+  return () => {
+    game.updateBot = originalBot; game.tryFire = originalFire; game.updateCamera = originalCamera;
+  };
+}
 async function capturePressAction(recordVideo = false) {
   if (resetReview.running || cacheReview.running || cameraReview.running || decoyReview.running) return;
+  if (recordVideo && (resetPhase !== "ready" || game.preparingMatch || game.hideMatchLoadingAfterFrame)) return socialVideo.fail("Wait for the first scene to finish preparing");
   const controls = [...document.querySelectorAll("nav button, nav select, nav input")].map(control => [control, control.disabled]);
   for (const [control] of controls) control.disabled = true;
   try {
@@ -2114,6 +2204,7 @@ async function capturePressAction(recordVideo = false) {
         }
         game.camera.fov = 62; game.camera.updateProjectionMatrix();
       };
+      restoreSocialScene = await stageSocialScene();
     }
     game.updateCamera(); game.scene.updateMatrixWorld(true);
     game.matchStartDelay = 0; game.audioCountdown = false; game.awaitingAudioGesture = false;
@@ -2134,6 +2225,7 @@ async function capturePressAction(recordVideo = false) {
     metrics.textContent = JSON.stringify({ pressAction });
     if (recordVideo) socialVideo.fail(error);
   } finally {
+    restoreSocialScene?.(); restoreSocialScene = null;
     stress = false; game.paused = true; explosionReview = true; game.sound.setPaused(true);
     if (pressRenderHold) {
       game.updateCamera = pressRenderHold.updateCamera; game.cameraKick = pressRenderHold.cameraKick;
@@ -2307,7 +2399,8 @@ game.frame = time => {
   metrics.textContent = JSON.stringify(stats);
 };
 if (new URLSearchParams(location.search).get("socialVideo") === "1")
-  socialVideo = createSocialVideoCapture(game, { onRecord: () => capturePressAction(true), getErrors: () => errorCount });
+  socialVideo = createSocialVideoCapture(game, { onRecord: () => capturePressAction(true), getErrors: () => errorCount, getCaptureEvidence: () => socialSceneEvidence,
+    onRecordingStart: startMs => { if (socialSceneEvidence) { socialSceneEvidence.performanceStartMs = startMs; socialSceneEvidence.clockStartedAt = new Date().toISOString(); } } });
 await reset();
 socialVideo?.preview();
 </script></html>

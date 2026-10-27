@@ -14,16 +14,16 @@ export function socialVideoMime(isSupported) {
   return mime;
 }
 
-export function createSocialVideoCapture(game, { onRecord, getErrors }) {
+export function createSocialVideoCapture(game, { onRecord, getErrors, getCaptureEvidence = () => null, onRecordingStart = () => {} }) {
   const source = game.renderer.domElement;
   const canvas = document.createElement("canvas"); canvas.width = 1080; canvas.height = 1920;
   canvas.id = "social-preview"; canvas.setAttribute("aria-label", "Live portrait video composition preview");
   const ctx = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
   const panel = document.createElement("section"); panel.id = "social-capture";
   panel.innerHTML = `<label>Daily hook <select id="social-topic">${SOCIAL_TOPICS.map(([id, title]) => `<option value="${id}">${title}</option>`).join("")}</select></label>
-    <button id="social-record">Record 18 second clip</button>
-    <output id="social-status" role="status">Ready. Each recording starts a fresh 15-bot battle.</output>
-    <p>Real AI combat; staged starting positions/loadouts and showcase camera. No injected explosions or kills.</p>
+    <button id="social-record" disabled>Record 18 second clip</button>
+    <output id="social-status" role="status">Preparing initial game scene…</output>
+    <p>Staged gameplay/controls using real game mechanics; bot opponents and showcase camera.</p>
     <a id="social-video-download" hidden>Download video</a> <a id="social-proof-download" hidden>Download proof JSON</a>`;
   const style = document.createElement("style");
   style.textContent = `body{background:#050c16!important}body>nav,#app{opacity:0;pointer-events:none}#social-capture{position:fixed;z-index:300;top:0;left:0;right:0;padding:12px 18px;background:#0a1828;color:#eafaff;font:14px Inter,sans-serif;display:flex;gap:14px;align-items:center;flex-wrap:wrap}#social-capture select,#social-capture button{font:inherit}#social-capture output{min-width:220px}#social-capture p{margin:0;font-size:11px;color:#a6bfcd}#social-capture a{color:#52e9ff}#social-capture [hidden]{display:none}#social-preview{position:fixed;top:112px;left:50%;transform:translateX(-50%);z-index:200;display:block;height:calc(100vh - 120px);width:auto;max-width:90vw;object-fit:contain;margin:0;box-shadow:0 0 0 1px #284151}`;
@@ -49,25 +49,7 @@ export function createSocialVideoCapture(game, { onRecord, getErrors }) {
 
   function draw() {
     ctx.drawImage(source, 0, 0, 1080, 1920);
-    const top = ctx.createLinearGradient(0, 0, 0, 600);
-    top.addColorStop(0, "rgba(3,10,20,.94)"); top.addColorStop(1, "rgba(3,10,20,0)");
-    ctx.fillStyle = top; ctx.fillRect(0, 0, 1080, 600);
-    const bottom = ctx.createLinearGradient(0, 1230, 0, 1570);
-    bottom.addColorStop(0, "rgba(3,10,20,0)"); bottom.addColorStop(.45, "rgba(3,10,20,.88)"); bottom.addColorStop(1, "rgba(3,10,20,0)");
-    ctx.fillStyle = bottom; ctx.fillRect(0, 1230, 1080, 340);
-    ctx.fillStyle = "#52e9ff"; ctx.font = '900 48px "Barlow Condensed", sans-serif';
-    ctx.fillText("MASTER BLASTER", 80, 180);
-    ctx.fillStyle = "#c0d8e5"; ctx.font = '700 28px "Barlow Condensed", sans-serif'; ctx.fillText("15-BOT COMBAT", 80, 230);
-    ctx.font = '900 96px "Barlow Condensed", sans-serif'; ctx.fillStyle = "#ffffff";
-    let line = "", y = 340;
-    for (const word of SOCIAL_TOPICS.find(([id]) => id === topic.value)[1].split(" ")) {
-      if (ctx.measureText(`${line} ${word}`).width > 820 && line) { ctx.fillText(line, 80, y); line = word; y += 100; }
-      else line += `${line ? " " : ""}${word}`;
-    }
-    ctx.fillText(line, 80, y);
-    ctx.font = '900 62px "Barlow Condensed", sans-serif'; ctx.fillText("FREE. EASY TO PLAY.", 80, 1260);
-    ctx.font = '700 40px "Barlow Condensed", sans-serif'; ctx.fillText("ACTION PACKED. NO INSTALL.", 80, 1320);
-    ctx.fillStyle = "#52e9ff"; ctx.font = '900 48px "Barlow Condensed", sans-serif'; ctx.fillText("PLAY MASTERBLASTER.SE", 80, 1390);
+    // Clean footage: scene-specific promotion is added during the edit.
   }
   function cleanup(s) {
     clearTimeout(s.timer);
@@ -122,12 +104,16 @@ export function createSocialVideoCapture(game, { onRecord, getErrors }) {
             endedAt: new Date().toISOString(), durationMs, width: 1080, height: 1920, mimeType: mime, actualRenderFrames: s.frames,
             actualRenderFps: s.frames * 1000 / durationMs, botCount: game.players.filter(p => p.isBot).length, botTravel: s.botTravel,
             observedExplosions: explosions, audioPeak: s.audioPeak, worldPeak: s.worldPeak, errorCount: getErrors(), directFallback: game.renderPipeline.direct,
-            injectedExplosions: false, stagedSetup: "Staged starting positions/loadouts; live production AI combat; showcase camera", error: s.error };
+            injectedExplosions: false, stagedSetup: "Staged gameplay/controls using production mechanics; bot opponents; showcase camera",
+            sceneEvidence: getCaptureEvidence(), error: s.error };
           proof.minimumRenderFps = 20; proof.preferredRenderFps = 24;
+          proof.recordingStartedPerformanceMs = s.started;
           proof.qualityWarning = proof.actualRenderFps < 24 ? "Below preferred 24 actual FPS; review motion quality" : null;
           cleanup(s); session = null;
           if (!s.error && (durationMs < 17500 || proof.actualRenderFps < 20 || s.botTravel < .5 || explosions < 1 || s.worldPeak < 12 || s.audioPeak < .0001 || getErrors() || game.renderPipeline.direct))
             proof.error = "Capture failed duration, moving-frame, combat, picture or game-audio validation";
+          if (proof.sceneEvidence?.scene === "grapple-and-fire" && !proof.sceneEvidence.concurrentShotCount)
+            proof.error = "No recorded visible airborne grapple and production shot occurred together";
           const proofUrl = URL.createObjectURL(new Blob([JSON.stringify(proof, null, 2)], { type: "application/json" })); urls.push(proofUrl);
           const stem = `master-blaster-${topic.value}-${s.startedAt.replace(/[:.]/g, "-")}`;
           proofLink.href = proofUrl; proofLink.download = `${stem}.json`; proofLink.hidden = false;
@@ -136,10 +122,11 @@ export function createSocialVideoCapture(game, { onRecord, getErrors }) {
           if (!blob.size) { status.textContent = "Capture failed: empty video"; reject(Error("Empty video")); return; }
           const videoUrl = URL.createObjectURL(blob); urls.push(videoUrl);
           videoLink.href = videoUrl; videoLink.download = `${stem}.${mime.includes("mp4") ? "mp4" : "webm"}`; videoLink.hidden = false;
-          status.textContent = `Ready: ${(durationMs / 1000).toFixed(1)} s, ${proof.actualRenderFps.toFixed(1)} actual FPS, ${explosions} real explosions. Review both downloads.`;
+          status.textContent = `Ready: ${(durationMs / 1000).toFixed(1)} s, ${proof.actualRenderFps.toFixed(1)} actual FPS, ${explosions} spawned explosion events. Review both downloads.`;
           resolve(proof);
         };
-        s.recorder.start(250);
+        s.started = performance.now();
+        s.recorder.start(250); onRecordingStart(s.started);
         s.timer = setTimeout(() => { if (s.recorder.state !== "inactive") s.recorder.stop(); }, 18000);
         status.textContent = "Recording live AI combat for 18 seconds. Keep this tab visible.";
       });
@@ -162,5 +149,8 @@ export function createSocialVideoCapture(game, { onRecord, getErrors }) {
   const visibility = () => { if (document.hidden && session) fail("Tab became hidden"); };
   document.addEventListener("visibilitychange", visibility);
   addEventListener("pagehide", () => { if (session) { fail("Page closed"); cleanup(session); } game.resize = resize; game.renderScene = renderScene; for (const url of urls) URL.revokeObjectURL(url); }, { once: true });
-  return { record, preview: draw, fail };
+  return { record, preview() {
+    draw(); button.disabled = false;
+    status.textContent = "Ready. Each recording starts a fresh 15-bot battle.";
+  }, fail };
 }
