@@ -1,6 +1,52 @@
-# Master Blaster daily TikTok videos — 27 October 2026
+# Master Blaster daily TikTok videos — 28 October 2026
 
 ## Current outcome
+
+28 October scheduled preparation is blocked at Windows browser activation.
+sky.list_apps and list_windows returned the existing Edge window, but the
+Ctrl+Shift+N action returned "failed to activate captured window". Refreshed
+selection/get_window and get_window_state succeeded; one activate_window
+recovery attempt returned the same error. Stopped Windows input per Computer
+Use recovery guidance. No cause confirmed; do not claim the desktop is locked.
+No new capture window/server was started, no recording was made, and nothing
+was uploaded or published. The earlier brand InPrivate session is absent from
+the returned window inventory; do not assume yesterday's session persists.
+
+Day02 Rocket Launcher brief and caption are saved in campaign Page12, explicitly
+pending fresh footage and independent video review. Five planned neon cuts:
+
+| Scene | Punchline | Supporting text | Colour |
+| --- | --- | --- | --- |
+| 1 | ROCKET MAYHEM | FREE TO PLAY | Pink |
+| 2 | SWING. AIM. FIRE. | EASY TO START. ALL ACTION. | Cyan |
+| 3 | COVER? WHAT COVER? | BREAK THROUGH THE FIGHT | Red |
+| 4 | SKIP THE INSTALL | YOUR BROWSER IS THE ARENA | Blue |
+| 5 | MASTERBLASTER.SE | PLAY FREE. MAKE SOME NOISE. | Gold |
+
+Target12seconds; actual sources/hashes/cut ranges and claim evidence remain
+pending, not invented. Capture real named Rocket Launcher launch/impact and
+same-bot continuous grapple plus its own rocket firing; the existing machine-
+gun grapple setup does not satisfy that named-weapon scene. Use fresh staging,
+camera composition and controls, not yesterday's fixed route. Cover shot must
+show actual destruction; no unverified kill/crush. Independent critic accepted
+this as a pending brief only, requiring named-weapon and shot evidence. No final
+text layout, audio or visual quality pass has occurred without a rendered video.
+
+Draft caption, pending footage verification:
+Meet the Rocket Launcher. Then swing into a free, action-packed browser arena shooter—easy to play, with no app download or installation. Play at masterblaster.se. Which weapon should get the next spotlight?
+
+Edited bot gameplay; staged starts/loadouts, scripted grapple/fire controls and showcase camera using real game mechanics. Built with AI-assisted coding.
+
+#MasterBlaster #BrowserGame #RocketLauncher #FreeGames
+
+Page12 readback verified new pending register row, scene table and draft caption;
+all untouched block hashes/title preserved. Native Page layout was not separately
+inspected. Daily03:00 preparation and Friday09:00 outreach schedules unchanged.
+Next unfinished step: restore working browser-window activation with desktop
+available/unlocked and Codex running, then capture fresh Rocket Launcher shots,
+edit and independently review before publication handoff. No old MP4 substitution.
+
+## Published video — 27 October
 
 The requested replacement is finished and independently reviewed. It is a
 10-second vertical video with five fresh action cuts and five different animated
