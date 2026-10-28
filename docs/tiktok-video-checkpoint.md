@@ -3,8 +3,9 @@
 ## Current outcome
 
 28 October Rocket Launcher video is recorded, edited and independently reviewed.
-Ready for user review; NOT uploaded or published to TikTok. No new TikTok URL,
-metrics or brand login is claimed. The user's latest request was recording.
+The user approved publication and brand profile completion on28October.
+NOT uploaded or published to TikTok: browser access is blocked as described
+below. No new TikTok URL, metrics, saved profile changes or brand login claimed.
 
 Deliverable: .codex-spec-render/tiktok-2026-10-28/master-blaster-day02-rockets.mp4
 SHA256 36eb9e57cb8c56dade6c9d7908219a1caaee15170eb0da2c2270873e6d91324a
@@ -95,9 +96,53 @@ LCP or unchanged PSI run. Changed files only tests/graphics.browser.html and
 this checkpoint; all media/proofs stay ignored locally and final media in Files.
 Preserve unrelated %SystemDrive%/. Daily03:00 and Friday09:00 schedules unchanged.
 
-Next: user reviews the actual Page video; publication remains pending its
-applicable handoff. Prepare the next new theme with different footage/text on
+Next: restore brand TikTok access and publish the approved MP4/caption once,
+then apply/verify the prepared profile updates. No repeat content approval.
+Prepare the next new theme with different footage/text on
 the next daily run, never republish this or the old style-QA render as fresh.
+
+## Publication approved and profile prepared — 28 October
+
+User: publish day02 and complete the TikTok profile for visibility. Existing
+brand username stays @master_blaster_game. This authorizes this reviewed video
+and profile changes; do not infer automatic publishing of future unreviewed edits.
+
+Fresh window inventory returned task InPrivate33494134 at about:blank and the
+unrelated personal browser window. Selecting only the InPrivate window and
+trying Ctrl+L was blocked immediately: Computer Use could not determine the
+current browser URL confidently enough to enforce policy and stopped for the
+turn. No upload/profile mutation occurred. No further browser input or alternate
+automation was attempted. Automatic approval review rejected that navigation;
+cause is URL verification, not missing content permission or confirmed logout.
+
+User action requested asynchronously: manually open
+https://www.tiktok.com/tiktokstudio/upload in the existing InPrivate window,
+sign into @master_blaster_game if prompted, and report when upload page is visible.
+User handles credentials/verification; never use the personal TikTok account.
+No content/account approval needs repeating. Confirm brand identity and avoid
+duplicates before selecting the exact approved MP4. Use the saved caption,
+original sound, own-brand disclosure, and a clear frame from the actual video.
+Record exact post URL and status only after publication is verified.
+
+Prepared profile, independently fact/privacy/length reviewed; NOT saved on TikTok:
+- Display name: Master Blaster | Free Shooter (29characters).
+- Bio: Free browser arena shooter. 47 weapons. Grapple. No install. masterblaster.se (77characters).
+- Website only if TikTok exposes an eligible website field:
+  https://masterblaster.se/?ref=tiktok_profile&utm_source=tiktok&utm_medium=organic_social&utm_campaign=profile
+- Keep existing username. No unsupported FPS, verification, worldwide audience,
+  ranking/visibility guarantee or link-in-bio claim. No payments or account-type
+  conversion merely to unlock a field. No unrelated social account connections.
+
+Avatar prepared by rasterizing canonical public/favicon.svg directly at512x512
+with installed FFmpeg librsvg -width512 -height512, preserving its exact design.
+Actual PNG visually inspected;31,560bytes;
+SHA256088a0db8a31e713a3874143de6fad957786cede49b836729e98b30a9dc32ade6.
+Local: .codex-spec-render/tiktok-2026-10-28/master-blaster-avatar.png
+Files: library-file:fde1_bGliZmlsZV80enBGUXc5V1JwLTNzaUMxRDFJQmZB_FileDrive_997d946b8bb081919e011d8c88124928
+Destination access confirmed; added to campaign Page with prepared-copy status.
+Guarded Page update/readback preserves untouched content/title, existing MP4,
+poster and published27October row. No native Page layout claim.
+Daily03:00 and weeklyFriday09:00 schedules unchanged. No public game changes.
 
 ## Published video — 27 October
 
