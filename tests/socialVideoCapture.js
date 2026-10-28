@@ -1,4 +1,5 @@
 // Opt-in development capture surface. No device capture or gameplay effects are synthesized.
+import { marketingGraphicsEvidence, requireMarketingGraphics } from "./marketingGraphics.js";
 export const SOCIAL_TOPICS = [
   ["browser", "THIS RUNS IN YOUR BROWSER"],
   ["free", "FREE BROWSER MAYHEM"],
@@ -77,6 +78,7 @@ export function createSocialVideoCapture(game, { onRecord, getErrors, getCapture
     if (document.hidden) throw Error("Keep this tab visible throughout capture");
     if (source.width !== 1080 || source.height !== 1920) throw Error("Game drawing buffer must be native 1080 × 1920");
     if (getErrors() || game.renderPipeline.direct) throw Error("Renderer errors or fallback prevent recording");
+    requireMarketingGraphics(game);
     if (typeof MediaRecorder !== "function" || !canvas.captureStream) throw Error("Canvas recording is unavailable");
     await document.fonts.load('900 96px "Barlow Condensed"');
     await game.sound.context?.resume();
@@ -105,7 +107,8 @@ export function createSocialVideoCapture(game, { onRecord, getErrors, getCapture
             actualRenderFps: s.frames * 1000 / durationMs, botCount: game.players.filter(p => p.isBot).length, botTravel: s.botTravel,
             observedExplosions: explosions, audioPeak: s.audioPeak, worldPeak: s.worldPeak, errorCount: getErrors(), directFallback: game.renderPipeline.direct,
             injectedExplosions: false, stagedSetup: "Staged gameplay/controls using production mechanics; bot opponents; showcase camera",
-            sceneEvidence: getCaptureEvidence(), error: s.error };
+            sceneEvidence: getCaptureEvidence(), marketingGraphics: marketingGraphicsEvidence(game),
+            sourceBuffer: { width: source.width, height: source.height }, error: s.error };
           proof.minimumRenderFps = 20; proof.preferredRenderFps = 24;
           proof.recordingStartedPerformanceMs = s.started;
           proof.qualityWarning = proof.actualRenderFps < 24 ? "Below preferred 24 actual FPS; review motion quality" : null;
@@ -114,6 +117,7 @@ export function createSocialVideoCapture(game, { onRecord, getErrors, getCapture
             proof.error = "Capture failed duration, moving-frame, combat, picture or game-audio validation";
           if (proof.sceneEvidence?.scene === "grapple-and-fire" && !proof.sceneEvidence.concurrentShotCount)
             proof.error = "No recorded visible airborne grapple and production shot occurred together";
+          if (!proof.marketingGraphics.matches) proof.error = "Marketing graphics changed or became unavailable during recording";
           const proofUrl = URL.createObjectURL(new Blob([JSON.stringify(proof, null, 2)], { type: "application/json" })); urls.push(proofUrl);
           const stem = `master-blaster-${topic.value}-${s.startedAt.replace(/[:.]/g, "-")}`;
           proofLink.href = proofUrl; proofLink.download = `${stem}.json`; proofLink.hidden = false;

@@ -7,7 +7,7 @@
 <div id="app"><canvas id="game-canvas"></canvas><div id="ui-root"></div></div>
 <div id="match-loading" hidden><span data-match-seed></span><span data-match-kind></span></div>
 <nav style="position:fixed;z-index:100;inset:auto 0 0;max-height:36vh;overflow:auto;background:#07111def;padding:8px;display:flex;gap:8px;flex-wrap:wrap;font:12px monospace">
-<label>Tier <select id="tier"><option>high</option><option>medium</option><option>low</option></select></label>
+<label>Tier <select id="tier"><option>high</option><option>medium</option><option>low</option><option>ultra</option></select></label>
 <label><input type="checkbox" id="reflections" checked>Live reflections</label>
 <label><input type="checkbox" id="scene-reduced">Reduced scene motion</label>
 <label><input type="checkbox" id="local-fog" checked>Local fog</label>
@@ -115,7 +115,7 @@
 // assets and renderer. No test instrumentation is included in the client build.
 import * as THREE from "three/webgpu";
 import { materialOpacity, mrt, normalView, normalViewGeometry, output, positionViewDirection, time as shaderTime, uniform, vec3, vec4 } from "three/tsl";
-import { WEAPONS, MAP_THEMES, seedFromText } from "../src/gameData.js";
+import { WEAPONS, MAP_THEMES, seedFromText, loadSettings, saveSettings } from "../src/gameData.js";
 import { Fighter } from "../src/player.js";
 import { prepareFighterWeapons } from "../src/gameplayPreparation.js";
 import { shoulderChamferGeometry } from "./shoulderChamferGeometry.js";
@@ -129,6 +129,7 @@ import { withWallImpactReview } from "./wallImpactReview.js";
 import { withSurfaceBurstRuntime } from "./surfaceBurstReview.js";
 import { withStructuralDustReview } from "./structuralDustReview.js";
 import { createSocialVideoCapture } from "./socialVideoCapture.js";
+import { MARKETING_GRAPHICS, applyMarketingGraphics, marketingGraphicsEvidence, requireMarketingGraphics } from "./marketingGraphics.js";
 document.querySelector("#view").add(new Option("lower-body-oblique", "lower-body-oblique"));
 document.querySelector("#view").add(new Option("thrusters-low", "thrusters-low"));
 document.querySelector("#view").add(new Option("skyline", "skyline"));
@@ -215,8 +216,24 @@ let errorCount = 0;
 function recordError(message) { errorCount++; if (!errors.includes(message) && errors.length < 20) errors.push(message); }
 addEventListener("error", e => recordError(e.message));
 addEventListener("unhandledrejection", e => recordError(String(e.reason)));
+const captureParams = new URLSearchParams(location.search);
+const marketingCapture = captureParams.get("marketingCapture") === "1" || captureParams.get("socialVideo") === "1";
+// Initialize before renderer construction, preserving every unrelated local preference.
+if (marketingCapture) saveSettings(applyMarketingGraphics(loadSettings()));
 const { gameReady } = await import("../src/main.js");
 const game = await gameReady, metrics = document.querySelector("#metrics");
+
+function restoreMarketingGraphics() {
+  if (!marketingCapture) return;
+  applyMarketingGraphics(game.settings);
+  document.querySelector("#tier").value = MARKETING_GRAPHICS.graphics;
+  for (const id of ["tier", "reflections", "scene-reduced", "local-fog", "soft-particles"]) {
+    const control = document.querySelector(`#${id}`);
+    if (control.type === "checkbox") control.checked = id !== "scene-reduced";
+    control.disabled = true;
+  }
+}
+restoreMarketingGraphics();
 document.querySelector("#reflections").onchange = event => {
   if (game.renderPipeline.reflectionPass) game.renderPipeline.reflectionPass.intensity.value = event.target.checked ? .45 : 0;
 };
@@ -830,6 +847,7 @@ async function reset() {
   cameraOffset = 0;
   stress = false; game.mode = "training"; game.seed = select("seed").value;
   game.settings.botCount = 15; game.timeLimitMinutes = 30; game.targetScore = 10000;
+  restoreMarketingGraphics();
   game.settings.graphics = select("tier").value;
   game.settings.matchSettings.training.botsStandStill = true;
   game.settings.matchSettings.training.botsDontAttack = true;
@@ -852,7 +870,11 @@ async function reset() {
 select("view").onchange = setView;
 select("boost-pad").onchange = setView;
 select("cover-edge").onchange = setView;
-select("capture-canvas").onclick = () => { validateExhaustView(true); captureCanvas = resetPhase === "ready"; };
+select("capture-canvas").onclick = () => {
+  validateExhaustView(true);
+  if (marketingCapture) requireMarketingGraphics(game);
+  captureCanvas = resetPhase === "ready";
+};
 select("tier").onchange = () => { game.settings.graphics = select("tier").value; game.applyGraphicsSettings(); resetSamples(); };
 select("seed").onchange = reset;
 select("weapon").onchange = () => {
@@ -2185,6 +2207,7 @@ async function capturePressAction(recordVideo = false) {
     await reset();
     const serial = sceneSerial, hero = game.players[0];
     await waitForReviewFrame(serial, () => !game.hideMatchLoadingAfterFrame && !game.preparingMatch);
+    if (marketingCapture) requireMarketingGraphics(game);
     if (game.players.length !== 16 || game.players.filter(player => player.isBot).length !== 15) throw Error("Action capture requires exactly 15 bots");
     // ponytail: stage only starting positions/loadouts; production AI owns every combat effect.
     hero.position.set(-17, 15.01, -18); hero.velocity.set(0, 0, 0);
@@ -2328,10 +2351,15 @@ game.frame = time => {
   }
   if (captureCanvas && resetPhase === "ready") {
     captureCanvas = false;
+    if (marketingCapture) {
+      try { requireMarketingGraphics(game); }
+      catch (error) { recordError(String(error)); metrics.textContent = String(error); return; }
+    }
     const grapple = game.players[0]?.grapple;
     const hero = game.players[0];
     canvasCapture = { renderedFrames, sceneSerial, view: select("view").value, pressAction: pressAction ? structuredClone(pressAction) : null,
-      tier: game.settings?.graphics ?? null, profile: game.renderPipeline.profile ?? null, pose: { ...poseReview },
+      tier: game.settings?.graphics ?? null, profile: game.renderPipeline.profile ?? null,
+      marketingGraphics: marketingCapture ? marketingGraphicsEvidence(game) : null, pose: { ...poseReview },
       camera: game.camera ? { gameplay: select("view").value === "player-camera", matrix: game.camera.matrixWorld.toArray(), projection: game.camera.projectionMatrix.toArray(), fov: game.camera.fov,
         firstPerson: game.cameraFirstPerson, clearance: { ...game.cameraClearance } } : null,
       lowerBody: hero?.leftLeg ? { floorAtFighter: game.world?.surfaceHeightAt?.(hero.position, hero.position.y + .35) ?? null,
@@ -2369,8 +2397,9 @@ game.frame = time => {
   if (now - sampleAt < 1000) return;
   sampleAt = now;
   const sorted = [...frames].sort((a,b) => a-b), percentile = p => +(sorted[Math.floor((sorted.length-1)*p)] || 0).toFixed(2);
-  stats = { tier: game.settings.graphics, profile: game.renderPipeline.profile, directFallback: game.renderPipeline.direct, theme: game.world?.theme.id,
-    reflections: game.settings.graphics === "high" && game.renderPipeline.reflectionPass ? { intensity: game.renderPipeline.reflectionPass.intensity.value, resolutionScale: game.renderPipeline.reflectionPass.resolutionScale } : null,
+  stats = { tier: game.settings.graphics, profile: game.renderPipeline.profile,
+    marketingGraphics: marketingCapture ? marketingGraphicsEvidence(game) : null, directFallback: game.renderPipeline.direct, theme: game.world?.theme.id,
+    reflections: game.renderPipeline.reflectionPass ? { intensity: game.renderPipeline.reflectionPass.intensity.value, resolutionScale: game.renderPipeline.reflectionPass.resolutionScale } : null,
     atmosphere: game.world?.atmosphere ? { steps: game.world.atmosphere.steps.value, clock: game.world.atmosphere.clock.value } : null,
     localFog: game.renderPipeline.localFog ? { ready: game.renderPipeline.localFog.ready.value, strength: game.renderPipeline.localFog.strength.value } : null,
     softParticles: game.renderPipeline.particleDepth ? { frames: game.renderPipeline.particleDepth.frames, strength: game.renderPipeline.particleDepth.strength.value,

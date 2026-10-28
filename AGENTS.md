@@ -12,6 +12,12 @@
 
 - Always mute browser tabs used for research or testing before loading game content. Keep them muted throughout the work.
 
+## Marketing captures
+
+- For every video, screenshot, thumbnail and other marketing capture, match the graphics settings in the user's current Master Blaster browser tab. Inspect the current tab when available; preserve the user's settings and session.
+- Use the verified saved capture defaults in `docs/marketing-capture-defaults.md` and `tests/marketingGraphics.js` when the tab is unavailable. Refresh both when the user changes their preferred settings. Do not silently lower quality or disable effects to improve capture FPS; report a capture limitation instead.
+- These are marketing/capture defaults, not new graphics defaults for all players. Record the applied graphics settings in capture evidence.
+
 ## Long-running work recovery
 
 - Keep a concise persistent checkpoint for substantial multi-session work, including changed files, verified tests, reviewer findings, blockers and the next unfinished step. Update it at material milestones and before yielding.

@@ -2,6 +2,15 @@
 
 ## Current outcome
 
+Marketing capture preference updated28October: all future videos, screenshots
+and thumbnails use the user's current browser graphics, with the saved exact
+Ultra/all-effects profile in docs/marketing-capture-defaults.md and
+tests/marketingGraphics.js. Daily/weekly automation prompts and campaign Page18
+verified after save; schedules unchanged. Tests and independent code review
+pass. New fixture runtime validation remains pending after browser URL review
+stopped Ctrl+T; no further browser actions issued, task Vite76871 stopped.
+Production player defaults and existing published videos remain unchanged.
+
 28 October Rocket Launcher video is recorded, edited and independently reviewed.
 Published once28October at11:26Europe/Stockholm through @master_blaster_game.
 Exact post: https://www.tiktok.com/@master_blaster_game/video/7701663190626602262
