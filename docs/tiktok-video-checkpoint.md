@@ -3,16 +3,27 @@
 ## Current outcome
 
 28 October Rocket Launcher video is recorded, edited and independently reviewed.
-The user approved publication and brand profile completion on28October.
-NOT uploaded or published to TikTok: browser access is blocked as described
-below. No new TikTok URL, metrics, saved profile changes or brand login claimed.
+Published once28October at11:26Europe/Stockholm through @master_blaster_game.
+Exact post: https://www.tiktok.com/@master_blaster_game/video/7701663190626602262
+Studio Video published and Everyone visibility verified; live brand-browser
+playback, exact427-character caption, clean grapple cover, original sound and
+Promotional content label confirmed. Initial review/Only me hold cleared without
+resubmission. Final check28October11:33:36Stockholm:0likes/0comments, no reply IDs.
+Studio initial baseline0views/likes/comments; later profile shows2views, which
+can include verification activity. No reach, conversion or anonymous-access claim.
+
+Profile name, bio and canonical icon saved and verified after a browser reload.
+Display name: Master Blaster | Free Shooter. Bio: Free browser arena shooter.
+47 weapons. Grapple. No install. masterblaster.se. Username unchanged. The web
+editor offers no Website field; bio domain is plain text, not a clickable link.
 
 Deliverable: .codex-spec-render/tiktok-2026-10-28/master-blaster-day02-rockets.mp4
 SHA256 36eb9e57cb8c56dade6c9d7908219a1caaee15170eb0da2c2270873e6d91324a
 8,447,759 bytes; H264/yuv420p1080x1920, CFR30 delivery,299frames/9.966667s;
 AAC48k stereo10.005333s; faststart. Three fresh28October takes; no old footage.
-Campaign Page14 contains the MP4, actual-frame poster, scene texts, caption and
-ready-for-review register row. Readback verified34blocks, intended replacements,
+Campaign Page17 and outreach tracker25 record the live publication and saved
+profile. Campaign retains MP4, actual-frame poster, scene text, exact caption
+and icon. Readback verified35campaign blocks, intended replacements,
 all untouched hashes/title, and both native file references. Destination access
 and matching MP4 digest confirmed; native Page layout not separately inspected.
 
@@ -56,7 +67,7 @@ independently; no black>=0.1s, freeze>=0.5s or silence>=0.5s flags. Raw WebM Opu
 header warning occurred on ingestion only; final AAC/MP4 decodes cleanly.
 Subjective listening not performed. No universal AAA/performance claim.
 
-Caption prepared, not posted:
+Published caption (427characters including paragraph breaks):
 Meet the Rocket Launcher. Then swing into a free, action-packed browser arena shooter—easy to play, with no app download or installation. Play at masterblaster.se. Which weapon should get the next spotlight?
 
 Edited bot gameplay; staged starts/loadouts, scripted movement/grapple/fire controls and showcase camera using real game mechanics. Built with AI-assisted coding.
@@ -96,53 +107,67 @@ LCP or unchanged PSI run. Changed files only tests/graphics.browser.html and
 this checkpoint; all media/proofs stay ignored locally and final media in Files.
 Preserve unrelated %SystemDrive%/. Daily03:00 and Friday09:00 schedules unchanged.
 
-Next: restore brand TikTok access and publish the approved MP4/caption once,
-then apply/verify the prepared profile updates. No repeat content approval.
-Prepare the next new theme with different footage/text on
+Next: prepare the next new theme with different footage/text on
 the next daily run, never republish this or the old style-QA render as fresh.
 
-## Publication approved and profile prepared — 28 October
+## Publication and profile completion — 28 October
 
-User: publish day02 and complete the TikTok profile for visibility. Existing
-brand username stays @master_blaster_game. This authorizes this reviewed video
-and profile changes; do not infer automatic publishing of future unreviewed edits.
+User approved publishing day02 and completing the brand profile. Initial attempt
+at Ctrl+L from about:blank was stopped by automatic URL verification. User then
+manually opened Studio and confirmed brand access. Window33494134's Profile link
+verified @master_blaster_game; Studio listed only day01, avoiding duplicates.
+User later directed all future uploads to the existing regular logged-in browser
+session: do not create a new window or private/InPrivate session for uploads.
+Verify @master_blaster_game in that session; never post using a personal account.
+This preference is saved in the daily automation, preserving ACTIVE status,
+daily03:00 schedule, same chat and every content/authentication quality gate.
+Saved automation prompt matched the intended text on readback; campaign Page17
+also records this preference, with its changed paragraph verified after saving.
+The older InPrivate steps below are historical, not the future upload workflow.
 
-Fresh window inventory returned task InPrivate33494134 at about:blank and the
-unrelated personal browser window. Selecting only the InPrivate window and
-trying Ctrl+L was blocked immediately: Computer Use could not determine the
-current browser URL confidently enough to enforce policy and stopped for the
-turn. No upload/profile mutation occurred. No further browser input or alternate
-automation was attempted. Automatic approval review rejected that navigation;
-cause is URL verification, not missing content permission or confirmed logout.
+Approved MP4 selected from the native chooser and Studio verified Uploaded8.05MB,
+1080P and10seconds. Use native Alt+N/filename entry when a child chooser lacks
+cached element geometry; verify the exact filename before Return. Native caption
+Ctrl+A/Backspace reached0characters, then exact427characters typed, hashtag
+suggestions dismissed with Escape and actual preview verified. Never setValue
+this contenteditable editor. Disclose post content/Your brand checked; Branded
+content and synthetic-content labels not applied. No location was selected.
+Everyone/Now and default high-quality uploads retained. Optional automatic
+content-check setup prompt declined; no security/privacy setting changes.
 
-User action requested asynchronously: manually open
-https://www.tiktok.com/tiktokstudio/upload in the existing InPrivate window,
-sign into @master_blaster_game if prompted, and report when upload page is visible.
-User handles credentials/verification; never use the personal TikTok account.
-No content/account approval needs repeating. Confirm brand identity and avoid
-duplicates before selecting the exact approved MP4. Use the saved caption,
-original sound, own-brand disclosure, and a clear frame from the actual video.
-Record exact post URL and status only after publication is verified.
+TikTok UI snapshots can lag input; allow roughly900ms for transition/readback
+before deciding the action failed. An unsaved accidental cover sticker was
+rolled back, then a clean actual grapple frame around2seconds selected and
+saved, with no added sticker/text. Original reviewed MP4 bytes unchanged.
+Post clicked once at10:26:44UTC(11:26Stockholm). Studio Video published toast and
+exact new permalink established. Initial Content under review/Only me state
+cleared to Everyone on subsequent check. Live post verified at11:33:36Stockholm,
+including complete caption/hashtags, Promotional content and0comments. No reply
+or moderator message sent, no duplicate, payment, music addition or promotion buy.
 
-Prepared profile, independently fact/privacy/length reviewed; NOT saved on TikTok:
+Saved profile, independently fact/privacy/length reviewed and reloaded to verify:
 - Display name: Master Blaster | Free Shooter (29characters).
 - Bio: Free browser arena shooter. 47 weapons. Grapple. No install. masterblaster.se (77characters).
-- Website only if TikTok exposes an eligible website field:
+- Canonical game icon, clean circular crop; username @master_blaster_game retained.
+- Native editor exposed Profile photo, Username, Name and Bio only. No Website
+  field, so no clickable website or profile UTM placement is claimed. Reserve
   https://masterblaster.se/?ref=tiktok_profile&utm_source=tiktok&utm_medium=organic_social&utm_campaign=profile
-- Keep existing username. No unsupported FPS, verification, worldwide audience,
-  ranking/visibility guarantee or link-in-bio claim. No payments or account-type
-  conversion merely to unlock a field. No unrelated social account connections.
+  for a genuinely available future website field. No link-in-bio claim.
+- Standard nickname confirmation warned it can change only once every7days;
+  approved name saved successfully. No verification/follower/visibility guarantee,
+  personal identity, unrelated social link, purchase or account-type conversion.
 
-Avatar prepared by rasterizing canonical public/favicon.svg directly at512x512
-with installed FFmpeg librsvg -width512 -height512, preserving its exact design.
-Actual PNG visually inspected;31,560bytes;
-SHA256088a0db8a31e713a3874143de6fad957786cede49b836729e98b30a9dc32ade6.
+Avatar rasterized from public/favicon.svg directly at512x512 using installed
+FFmpeg librsvg -width512 -height512; exact existing design preserved and viewed.
+31,560bytes; SHA256088a0db8a31e713a3874143de6fad957786cede49b836729e98b30a9dc32ade6.
 Local: .codex-spec-render/tiktok-2026-10-28/master-blaster-avatar.png
 Files: library-file:fde1_bGliZmlsZV80enBGUXc5V1JwLTNzaUMxRDFJQmZB_FileDrive_997d946b8bb081919e011d8c88124928
-Destination access confirmed; added to campaign Page with prepared-copy status.
-Guarded Page update/readback preserves untouched content/title, existing MP4,
-poster and published27October row. No native Page layout claim.
-Daily03:00 and weeklyFriday09:00 schedules unchanged. No public game changes.
+Saved profile after reload visibly matches icon/name/bio. Existing brand window
+left on live day02 post, profile tab Audio muted. User's unrelated windows untouched.
+No personal TikTok account used. Native campaign Page and main tracker preserve
+old23October outreach checks, old post rows/assets, user edits and sharing.
+Daily03:00 and weeklyFriday09:00 schedules unchanged. Only this checkpoint and
+published-post register changed; no production code/content or performance rerun.
 
 ## Published video — 27 October
 
