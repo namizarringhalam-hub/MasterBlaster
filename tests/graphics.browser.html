@@ -2070,7 +2070,11 @@ select("stress").onclick = () => {
 };
 select("press-action").onclick = () => capturePressAction();
 async function stageSocialScene() {
-  const grappleScene = new URLSearchParams(location.search).get("videoScene") === "grapple";
+  const videoParams = new URLSearchParams(location.search);
+  const grappleScene = videoParams.get("videoScene") === "grapple";
+  // Opt-in second composition; keep production mechanics and the original take unchanged.
+  const rocketShowcase = videoParams.get("videoWeapon") === "rocket_launcher";
+  const side = videoParams.get("videoTake") === "2" ? -1 : 1;
   const actor = game.players[1], hero = game.players[0];
   const wallNear = (player, margin = .3) => game.world.nearbyObstacles(player.position.x - 2, player.position.x + 2, player.position.z - 2, player.position.z + 2)
     .some(item => !item.removed && item.active !== false && item.top > player.position.y + .6 && item.baseY < player.position.y + 1.8
@@ -2079,22 +2083,26 @@ async function stageSocialScene() {
   // Keep targets on the same open side of the spire; normal AI never starts by chasing through its wall.
   hero.position.set(0, 15.01, 18);
   for (const [index, bot] of game.players.slice(1).entries()) {
-    bot.position.set(-12 + index % 5 * 6, 15.01, 6 + Math.floor(index / 5) * 4);
+    bot.position.set(side * (-12 + index % 5 * 6), 15.01, 6 + Math.floor(index / 5) * 4);
     if (wallNear(bot)) throw Error(`Video start overlaps a wall: ${bot.id}`);
   }
-  const anchorAim = new THREE.Vector3(-3.5, 48, 0);
-  if (grappleScene) {
-    actor.position.set(-18, 15.01, 18);
+  const anchorAim = new THREE.Vector3(side * -3.5, 48, 0);
+  if (grappleScene || rocketShowcase) {
+    if (grappleScene) actor.position.set(side * -18, 15.01, 18);
     if (wallNear(actor)) throw Error("Featured bot start is not clear");
-    actor.loadout = ["machine_gun", "rocket_launcher", "blaster", "plasma_cannon", "grenade_launcher"];
+    actor.loadout = rocketShowcase
+      ? ["rocket_launcher", "machine_gun", "blaster", "plasma_cannon", "grenade_launcher"]
+      : ["machine_gun", "rocket_launcher", "blaster", "plasma_cannon", "grenade_launcher"];
     actor.slotIndex = 0; actor.ammo = Object.fromEntries(actor.loadout.map(id => [id, WEAPONS[id].ammo]));
     await prepareFighterWeapons(actor);
   }
-  socialSceneEvidence = { scene: grappleScene ? "grapple-and-fire" : "open-platform-combat", featuredBotId: grappleScene ? actor.id : null,
-    disclosure: grappleScene ? "Staged starts, loadouts, camera and scripted featured-bot grapple/fire controls; unmodified production movement, grapple and weapon mechanics" : "Staged starts, loadouts and camera; live production AI combat",
+  socialSceneEvidence = { scene: grappleScene ? "grapple-and-fire" : "open-platform-combat", featuredBotId: actor.id,
+    featuredWeapon: actor.weapon.id, requiredConcurrentWeapon: rocketShowcase ? "rocket_launcher" : null,
+    composition: side === -1 ? "east-side-take2" : "west-side-original",
+    disclosure: grappleScene || rocketShowcase ? "Staged starts, loadouts, camera and scripted featured-bot movement/fire controls; unmodified production movement, grapple and weapon mechanics" : "Staged starts, loadouts and camera; live production AI combat",
     clockStartedAt: null, performanceStartMs: null, events: [], concurrentShotCount: 0, wallStuckEvents: [] };
   const originalBot = game.updateBot, originalFire = game.tryFire, originalCamera = game.updateCamera;
-  const sideMove = new THREE.Vector3(-.85, 0, .4), idleMove = new THREE.Vector3(), targetAim = new THREE.Vector3();
+  const sideMove = new THREE.Vector3(side * -.85, 0, .4), rocketMove = new THREE.Vector3(side * .4, 0, .25), idleMove = new THREE.Vector3(), targetAim = new THREE.Vector3();
   const stalled = new Map(), activeWallEvents = new Map(); let attached = false, releasedAt = null, attachedAt = null;
   const time = () => socialSceneEvidence.performanceStartMs === null ? 0 : (performance.now() - socialSceneEvidence.performanceStartMs) / 1000;
   const visible = player => {
@@ -2108,10 +2116,11 @@ async function stageSocialScene() {
   game.tryFire = function (player, ...args) {
     const weapon = player.weapon, before = player.ammo[weapon.id];
     const result = originalFire.call(this, player, ...args);
-    if (grappleScene && player === actor && socialSceneEvidence.performanceStartMs !== null && time() <= 18 && player.ammo[weapon.id] < before) {
+    if (player === actor && socialSceneEvidence.performanceStartMs !== null && time() <= 18 && player.ammo[weapon.id] < before) {
       const event = { ...snapshot(player, "production-shot"), weapon: weapon.id, ammoBefore: before, ammoAfter: player.ammo[weapon.id] };
       socialSceneEvidence.events.push(event);
-      if (event.grappleActive && !event.grounded && event.speed > 3 && event.visible && event.ropeVisible) socialSceneEvidence.concurrentShotCount++;
+      if (event.grappleActive && !event.grounded && event.speed > 3 && event.visible && event.ropeVisible
+        && (!rocketShowcase || event.weapon === "rocket_launcher")) socialSceneEvidence.concurrentShotCount++;
     }
     return result;
   };
@@ -2136,6 +2145,15 @@ async function stageSocialScene() {
         }
         if ((!bot.grounded && bot.grapple) || (releasedAt !== null && elapsed - releasedAt < .6)) this.tryFire(bot, true);
       }
+    } else if (rocketShowcase && !grappleScene && bot === actor && elapsed < 4 && bot.alive) {
+      // Keep the named weapon in a short disclosed spotlight; other bots retain live AI.
+      if (socialSceneEvidence.performanceStartMs === null) bot.update(dt, idleMove, bot.aim, { reducedMotion: this.settings.reducedMotion }, this.world);
+      else {
+        const target = this.players.find(player => player !== actor && player.alive);
+        targetAim.copy(target?.position || anchorAim).add(new THREE.Vector3(0, 1.2, 0)).sub(bot.position).sub(new THREE.Vector3(0, 1.4, 0)).normalize();
+        bot.update(dt, rocketMove, targetAim, { reducedMotion: this.settings.reducedMotion }, this.world);
+        this.tryFire(bot, true);
+      }
     } else originalBot.call(this, bot, dt);
     const blocked = socialSceneEvidence.performanceStartMs !== null && bot.alive && bot.controlMove.lengthSq() > .05 && bot.position.distanceTo(before) < .01 && wallNear(bot) && visible(bot);
     const duration = blocked ? (stalled.get(bot.id) || 0) + dt : 0; stalled.set(bot.id, duration);
@@ -2149,7 +2167,7 @@ async function stageSocialScene() {
   if (grappleScene) game.updateCamera = () => {
     actor.rig.visible = true;
     const focus = actor.position.clone().add(new THREE.Vector3(0, 1.3, 0)).lerp(actor.grapple?.anchor || anchorAim, .08);
-    game.camera.position.copy(focus).add(new THREE.Vector3(-10, 6, 13)); game.camera.lookAt(focus);
+    game.camera.position.copy(focus).add(new THREE.Vector3(side * -10, 6, side === -1 ? 11 : 13)); game.camera.lookAt(focus);
     game.camera.fov = 62; game.camera.updateProjectionMatrix();
   };
   return () => {
@@ -2196,7 +2214,8 @@ async function capturePressAction(recordVideo = false) {
         if (new URLSearchParams(location.search).get("videoView") === "follow") {
           const subject = game.players[1];
           const target = subject.position.clone().add(new THREE.Vector3(0, 1.2, 0));
-          game.camera.position.copy(target).add(new THREE.Vector3(-7, 5, 10));
+          const take2 = new URLSearchParams(location.search).get("videoTake") === "2";
+          game.camera.position.copy(target).add(new THREE.Vector3(take2 ? 8 : -7, take2 ? 4 : 5, take2 ? 8 : 10));
           game.camera.lookAt(target);
         } else {
           const drift = Math.sin((performance.now() - cameraStart) / 12000) * 2;

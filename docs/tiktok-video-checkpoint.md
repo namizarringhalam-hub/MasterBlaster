@@ -2,49 +2,102 @@
 
 ## Current outcome
 
-28 October scheduled preparation is blocked at Windows browser activation.
-sky.list_apps and list_windows returned the existing Edge window, but the
-Ctrl+Shift+N action returned "failed to activate captured window". Refreshed
-selection/get_window and get_window_state succeeded; one activate_window
-recovery attempt returned the same error. Stopped Windows input per Computer
-Use recovery guidance. No cause confirmed; do not claim the desktop is locked.
-No new capture window/server was started, no recording was made, and nothing
-was uploaded or published. The earlier brand InPrivate session is absent from
-the returned window inventory; do not assume yesterday's session persists.
+28 October Rocket Launcher video is recorded, edited and independently reviewed.
+Ready for user review; NOT uploaded or published to TikTok. No new TikTok URL,
+metrics or brand login is claimed. The user's latest request was recording.
 
-Day02 Rocket Launcher brief and caption are saved in campaign Page12, explicitly
-pending fresh footage and independent video review. Five planned neon cuts:
+Deliverable: .codex-spec-render/tiktok-2026-10-28/master-blaster-day02-rockets.mp4
+SHA256 36eb9e57cb8c56dade6c9d7908219a1caaee15170eb0da2c2270873e6d91324a
+8,447,759 bytes; H264/yuv420p1080x1920, CFR30 delivery,299frames/9.966667s;
+AAC48k stereo10.005333s; faststart. Three fresh28October takes; no old footage.
+Campaign Page14 contains the MP4, actual-frame poster, scene texts, caption and
+ready-for-review register row. Readback verified34blocks, intended replacements,
+all untouched hashes/title, and both native file references. Destination access
+and matching MP4 digest confirmed; native Page layout not separately inspected.
 
-| Scene | Punchline | Supporting text | Colour |
-| --- | --- | --- | --- |
-| 1 | ROCKET MAYHEM | FREE TO PLAY | Pink |
-| 2 | SWING. AIM. FIRE. | EASY TO START. ALL ACTION. | Cyan |
-| 3 | COVER? WHAT COVER? | BREAK THROUGH THE FIGHT | Red |
-| 4 | SKIP THE INSTALL | YOUR BROWSER IS THE ARENA | Blue |
-| 5 | MASTERBLASTER.SE | PLAY FREE. MAKE SOME NOISE. | Gold |
+Video Files reference:
+library-file:fde1_bGliZmlsZV96UVNvTEs3Z1dTZ3NPZ0w2a2xwNEdB_FileDrive_997d946b8bb081919e011d8c88124928
+Poster Files reference:
+library-file:fde1_bGliZmlsZV9oWTRGb0dIRDBjVEtVR0MyeXR6U0Zn_FileDrive_997d946b8bb081919e011d8c88124928
 
-Target12seconds; actual sources/hashes/cut ranges and claim evidence remain
-pending, not invented. Capture real named Rocket Launcher launch/impact and
-same-bot continuous grapple plus its own rocket firing; the existing machine-
-gun grapple setup does not satisfy that named-weapon scene. Use fresh staging,
-camera composition and controls, not yesterday's fixed route. Cover shot must
-show actual destruction; no unverified kill/crush. Independent critic accepted
-this as a pending brief only, requiring named-weapon and shot evidence. No final
-text layout, audio or visual quality pass has occurred without a rendered video.
+Scene manifest: .codex-spec-render/tiktok-2026-10-28/day02-scenes.json.
+Theme: individual weapon showcase, Rocket Launcher. All original quality rules
+and neon typography apply. Cuts chosen to avoid walls, obstruction and weak
+filler; no destruction/kill/crush claim. The proposed cover caption was replaced
+because the selected deck transition did not establish a structural break.
 
-Draft caption, pending footage verification:
+| Output time | Source and selected seconds | Neon promotional text |
+| --- | --- | --- |
+| 0–1.65 | rocket-spotlight.webm0–1.65 | Pink: ROCKET MAYHEM / FREE TO PLAY |
+| 1.65–3.25 | rocket-grapple.webm0.35–1.95 | Cyan: SWING. AIM. FIRE. / EASY TO PLAY. ALL ACTION. |
+| 3.25–4.8 | rocket-spotlight.webm1.65–3.2 | Red: ALL-OUT MAYHEM / 15 BOTS. ONE ARENA. |
+| 4.8–7.5 | rocket-combat.webm5.7–8.4 | Blue: SKIP THE INSTALL / YOUR BROWSER IS THE ARENA |
+| 7.5–10 | rocket-combat.webm14.2–16.7 | Gold: MASTERBLASTER.SE / PLAY FREE. MAKE SOME NOISE. |
+
+Source SHA256 and actual render FPS:
+- rocket-spotlight:1299999665deeebb1ded12c712d6101d9ecc4493e591249a4c99595201f43d39;37.9FPS.
+- rocket-grapple:427732d249014c486fbfd57e13ca1ee27c9bff755cbdfffe77306e27075b7095;41.7FPS.
+- rocket-combat:2c2fde248cd8a69f28900a7048035c9e70df8696436912360d2d33bd9d9bde23;36.5FPS.
+All three:15bots, zero renderer errors/fallback, zero detected wall-stuck events.
+Native encoded source cadence independently measured about27.83/28.51/27.24FPS
+(spotlight/grapple/combat), distinct from rendering FPS. CFR30 resamples existing
+frames for delivery; no synthetic/interpolated action or native30 source claim.
+
+Rocket/grapple proof: p2's own rocket_launcher shot633ms while attached,
+airborne, moving and visibly on rope; release1613ms. Its1681ms shot is AFTER
+release and is not claimed concurrent. Named spotlight shots38/1078/2185ms.
+Live-AI combat rocket15838ms supplies the closing shot;17s+ obstruction excluded.
+Telemetry uses recording-start time and actual ammo-decrement/weapon events.
+Independent visual review confirmed same identifiable bot/rope/own rocket, fresh
+east-side composition, legible changing neon text, no selected wall-stuck scene,
+and a clean unobstructed final frame through9.93s. Full final AV decode passed
+independently; no black>=0.1s, freeze>=0.5s or silence>=0.5s flags. Raw WebM Opus
+header warning occurred on ingestion only; final AAC/MP4 decodes cleanly.
+Subjective listening not performed. No universal AAA/performance claim.
+
+Caption prepared, not posted:
 Meet the Rocket Launcher. Then swing into a free, action-packed browser arena shooter—easy to play, with no app download or installation. Play at masterblaster.se. Which weapon should get the next spotlight?
 
-Edited bot gameplay; staged starts/loadouts, scripted grapple/fire controls and showcase camera using real game mechanics. Built with AI-assisted coding.
+Edited bot gameplay; staged starts/loadouts, scripted movement/grapple/fire controls and showcase camera using real game mechanics. Built with AI-assisted coding.
 
 #MasterBlaster #BrowserGame #RocketLauncher #FreeGames
 
-Page12 readback verified new pending register row, scene table and draft caption;
-all untouched block hashes/title preserved. Native Page layout was not separately
-inspected. Daily03:00 preparation and Friday09:00 outreach schedules unchanged.
-Next unfinished step: restore working browser-window activation with desktop
-available/unlocked and Codex running, then capture fresh Rocket Launcher shots,
-edit and independently review before publication handoff. No old MP4 substitution.
+## 28 October retry and recovery
+
+The scheduled run's Edge activation failed after one recovery; cause unconfirmed.
+The user reported the desktop unlocked and asked to retry. This retry succeeded:
+new task-owned InPrivate Edge window33494134; Ctrl+M before game navigation,
+context menu explicitly showed Unmute tab. Native1080x1920 opt-in harness captures
+saved via visible video/proof download links. No desktop/microphone capture,
+synthetic explosions, damage changes or personal-account use.
+
+Dev-only tests/graphics.browser.html now accepts videoWeapon=rocket_launcher and
+videoTake=2. It mirrors starts/anchor/traversal/camera and equips the featured
+bot's rocket first. Four-second disclosed rocket spotlight uses existing
+Fighter.update/tryFire; other bots retain live AI. Before MediaRecorder's clock,
+featured actor idles and cannot consume its ammunition. Concurrent-shot gate
+requires the actual named rocket for this opt-in mode. Original default take
+and all production game files remain unchanged. Independent critic found and
+verified fixes for named-weapon gating and pre-record ammunition consumption.
+
+Capture/encode completed. During task-owned blank-tab cleanup, Computer Use
+stopped because it could not determine the current browser URL confidently
+for policy enforcement. No further UI input issued. Saved local footage was
+edited/reviewed and uploaded to Page Files through the connector. This is not
+TikTok upload/publication. Do not assume browser/tab state or brand login after
+the halt; refresh inventory on the next explicit UI task. Task Vite session84014
+was stopped after capture. No unrelated window/process or paused helper touched.
+
+Validation: final extracted module syntax passes; npm build and hosting checks
+pass with existing asset-resolution/chunk-size warnings; capture-only markers
+absent from production bundles. Published27October MP4 SHA unchanged. No game,
+LCP or unchanged PSI run. Changed files only tests/graphics.browser.html and
+this checkpoint; all media/proofs stay ignored locally and final media in Files.
+Preserve unrelated %SystemDrive%/. Daily03:00 and Friday09:00 schedules unchanged.
+
+Next: user reviews the actual Page video; publication remains pending its
+applicable handoff. Prepare the next new theme with different footage/text on
+the next daily run, never republish this or the old style-QA render as fresh.
 
 ## Published video — 27 October
 
