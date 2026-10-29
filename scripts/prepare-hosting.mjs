@@ -12,7 +12,7 @@ await cp("dist/press", "dist/client/press", { recursive: true });
 const { version } = JSON.parse(await readFile("dist/resources.json", "utf8"));
 await copyFile("dist/resources.json", "dist/client/resources.json");
 await copyFile(`dist/resources-${version}.json`, `dist/client/resources-${version}.json`);
-for (const file of ["favicon.svg", "manifest.webmanifest", "menu-arena-v2.webp", "og.png", "sw.js", "robots.txt", "sitemap.xml", "indexnow.txt", "404.html", "_headers", "_redirects"]) {
+for (const file of ["favicon.svg", "favicon.ico", "manifest.webmanifest", "menu-arena-v2.webp", "og.png", "sw.js", "robots.txt", "sitemap.xml", "indexnow.txt", "404.html", "_headers", "_redirects"]) {
   await copyFile(`dist/${file}`, `dist/client/${file}`);
 }
 const routes = (await readFile("public/_redirects", "utf8")).split(/\r?\n/)
