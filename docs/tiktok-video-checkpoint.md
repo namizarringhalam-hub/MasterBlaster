@@ -2,99 +2,101 @@
 
 ## Current outcome — 29 October
 
-Latest retry interrupted by user's physical Escape key in Computer Use. All UI
-actions stopped immediately; task helper23232 stopped. Task capture tab1966657010
-was previously marked for handoff and was not changed after interruption.
-No new final edit, upload or publication. Work remains in progress, not complete.
+Fresh grappling video is FINISHED and independently passed final media review.
+Not uploaded to TikTok or published. User now explicitly authorizes direct
+publication of this and all future finished videos after internal quality review:
+"no need to show me the video, always just upload it directly when you're done
+with it". Do not ask again for video/content approval. Reuse existing regular
+logged-in brand session @master_blaster_game; no new/private window.
 
-Direct source capture + foreground handoff produced31.21renderFPS/27.26encodedFPS
-for direct-grapple.mp4/json and23.8renderFPS for direct-combat.mp4/json; exactUltra,
-focus true throughout, zero renderererrors/fallback, visible real same-bot grapple
-and ownweapon shots. Independent source review selected usable ranges but no final
-montage has been assembled. Every >95ms render gap followed frame15,30,45...:
-normal/sample medians29/109.6ms(grapple),39.35/149.25ms(combat), identifying the
-recording-loop GPU pixel readback as a periodic stall source.
+Publication retry reached existing TikTok Studio tab1966657019 (regular Edge3,
+MasterBlaster group, https://www.tiktok.com/tiktokstudio/content). Binding failed
+at focus emulation; native tab-search selected the exact existing open result.
+Computer Use then stopped all UI control because it could not verify the current
+Windows browser URL confidently. No further UI actions issued. User should select
+that existing Studio tab manually, then resume. This is an access/safety-review
+block, not missing content approval. No upload or Post click occurred.
 
-Uncommitted WIP: tests/socialVideoCapture.js direct original-canvas stream, native
-preview, focus/blur safeguards, frame timestamp proof and endpoint-picture trial;
-tests/directCanvasCapture.test.mjs with failure/focus/cleanup/hot-loop checks;
-scripts/test.mjs registration. Tests/syntax pass, but latest endpoint-picture trial
-is NOT runtime validated: direct-endpoint-1.json has0brightness at both endpoints
-and intermittent1Hz gaps despite focused/visible proof. WebGPU source bitmap may
-be discarded outside render callbacks; zero endpoint samples do not establish an
-encoded black video. Next change must validate the actual encoded Blob AFTER stop
-(decode/seek/sample) rather than source GPU endpoints, preserving picture gates.
-Then retry foreground capture and inspect encoded cadence/black/stale frames,
-grapple overlap and final scenes. Do not commit unfinished capture code as fixed.
-Current code/tests remain preserved locally for continuation; only this evidence
-checkpoint is ready to commit. No production files or graphics settings changed.
+Deliverable: .codex-spec-render/tiktok-2026-10-29/master-blaster-day03-grapple.mp4
+SHA256 f0e14960c00e9fe68f0497f75408e83679a64c06287be4b037f660a19f918a05
+7,448,612 bytes; H264 yuv420p1080x1920, CFR30 delivery,302video frames/10.066667s;
+AAC48k stereo10.1s; format10.1s. Original game audio; no music/mic/desktop capture.
+Final audio peak-1.87dBFS, RMS-17.45dBFS. Full AV decode exit0; no black>=100ms,
+freeze>=250ms or silence>=250ms. Native30 source performance is not claimed.
 
-Later user-directed retry is in progress: direct original-WebGPU-canvas capture
-replaces the full-size 2D copy. Added focus preflight/blur abort and focus/frame
-timestamp proof. Native activation failed; user manually confirmed Edge ready.
-The unfocused trial ran at1Hz and is not a valid direct-path performance comparison.
-Focused direct-grapple.mp4/json now passes31.21renderFPS, exactUltra/nativepasses,
-zeroerrors/fallback,14concurrentp2shots and no detectedstuckevents; focus stayed
-true/visible throughout. Encoded cadence/visual review and second angle pending.
-Task helper23232 runs8799; currenttask tab1966657010, originalmatchpaused.
+Manifest/caption: day03-scenes.json / day03-caption.txt in the same directory.
+Theme grappling and swinging; featured p2 machine gun in15-bot Training combat.
+Current production controls still exactly matched saved Ultra/all19effects,
+35%motion blur, native WebGPU temporal. Sources/proofs retain exact effective
+profile and no renderer errors/fallback. No quality downgrade or production change.
 
-User requested run now. No finished daily video approved, uploaded or published.
-The independent harsh reviewer rejected available footage for motion hitches,
-obstructed later action and insufficient strong material for a clean10–20s edit.
-No existing published media, production gameplay, player defaults or graphics
-quality thresholds were changed. Daily03:00 and Friday09:00 schedules unchanged.
+| Source | Seconds | Neon title / subtitle |
+| --- | --- | --- |
+| direct-grapple.mp4 |0.65–1.9|Cyan SWING INTO CHAOS / GRAPPLE + SHOOT TOGETHER|
+| direct-combat.mp4 |6–7.8|Pink FREE. FULL THROTTLE. / ACTION IN YOUR BROWSER|
+| direct-grapple.mp4 |9.3–10.4|Red EASY TO JUMP IN / PICK A WEAPON. MAKE MAYHEM|
+| direct-combat.mp4 |8.15–11.35|Blue ZERO INSTALL / OPEN A TAB. JOIN THE ACTION|
+| direct-combat.mp4 |16–17.4|Violet KEEP IT MOVING / REAL WEAPONS. REAL MAYHEM|
+| direct-grapple.mp4 |10.95–12.3|Gold MASTERBLASTER.SE / PLAY FREE. OWN THE AIR|
 
-Current production-tab DOM controls still exactly matched saved Ultra,
-all19effects,35blur,noReducedMotion. User match restored to original pause screen;
-no preferences changed. Native runtime integration verified saved/effective
-options/effects, WebGPU temporal and all passes, with no compatibility/direct
-fallback or renderer errors. This resolves the28October pending runtime check.
+Independent harsh review removed blocked-crate lead, crate-obscured lead and
+partly off-frame closing actor. Final actual MP4 passed: same moving pink bot
+visibly on attached rope while firing its own weapon in continuous opening;
+all six neon captions readable/in safe area; no selected wall-stuck scene.
+Evidence: independent-final-review.json and dense critic-final2 sheets.
 
-Fresh opt-in take3 has different starts, real-spire anchor/timing/traverse and
-camera, preserving earlier takes and production movement/weapon mechanics.
-Additional explicit socialVideo=1&videoBots=5 supports a real five-bot Training
-skirmish; ordinary/default captures retain15bots. UI, exact fighter-count gate
-and proof report actual counts. Smaller skirmish did not resolve final quality.
+Sources are fresh29October, not reused27/28October material. direct-grapple.mp4
+SHA c403d19377dc998751398273c80a4ce4375d94564e7f514ad548bd88f5100b94
+31.21render/27.26encodedFPS; direct-combat.mp4 SHA
+577620ab824cf5340ab88aa551e2a8f16682786cb0657a71574884289d9900a3
+23.8render/21.63encodedFPS. CFR30 resamples real source frames, no interpolation.
+Caption discloses staged starts/loadouts, scripted featured movement/grapple/fire,
+bot Training combat, showcase camera and AI-assisted coding; asks for feedback.
 
-| Actual attempt | Render FPS | Outcome |
-| --- | ---: | --- |
-|15bots,VP8 |17.87|Capture gate rejected below20FPS |
-|15bots,preferredH264 |21.53|Capture gate passed; independent motion/scene review rejected |
-|15bots,followcamera,GPU2Dtrial |14.16|Capture gate rejected |
-|15bots,grapple,GPU2Dtrial |22.89|Encoded16.51FPS with visible gaps; final review rejected |
-|15bots,manualrequestFrame trial |19.94|Capture gate rejected |
-|5bots,originalcanvas/pacing,H264 |21.45|Encoded19.36FPS; mandatory scene about16.7FPS with221ms gap; final review rejected |
+## Capture implementation and recovery
 
-The better original H264 candidate encoded about19.45FPS, distinct from render
-FPS. Same moving airborne p2 visibly fires its own machine gun on an attached
-rope around0.8–1.2s; proof confirms concurrent shots and no detected wall-stuck
-sessions, but that does not override the visual cadence/obstruction rejection.
-No native30FPS or finished-media claim. GPU2D allocation and manualrequestFrame
-experiments did not establish a gain; both reverted to original context and60Hz
-capture stream. No quality-gate relaxation or synthetic/interpolated frames.
+Opt-in tests/socialVideoCapture.js records original WebGPU canvas directly,
+preserving native portrait preview; no full-frame second 2D copy. Every>95ms gap
+in accepted direct sources followed old every15th-frame GPU pixel reads. Removed
+all recording-loop pixel reads; now validate recorded Blob AFTER stop using muted
+HTML video first/middle/last seeks, bounded8seconds, releasing URL/listeners/video.
+Stop-time proof snapshots and audio/tracks are released before asynchronous decode.
+Focus/visibility preflight and blur abort remain. Also verify actual active Chrome
+tab/window: extension-emulated document focus alone can mislead.
 
-Sources/proofs and hashes: .codex-spec-render/tiktok-2026-10-29/day03-run.json;
-accepted-source candidates grapple.mp4/json, grapple-gpu.mp4/json and
-grapple-five.mp4/json remain rejected as final media. Failed proof files retain
-actual checks. No final scene captions/cut manifest or ready MP4 was fabricated.
-Campaign Page19 has an explicit blocked29October row and preserves prior videos.
+Native Edge integration with actual direct-grapple H264 passed encoded picture
+samples100/8970/17839ms, peaks437/693/227. Meaningful targeted tests cover capture
+failure/focus/cleanup,600frames with zero GPU reads, frozen proof through async
+stop, loadeddata/seek ordering, corrupt/black rejection, Infinity duration fallback
+and URL/listener cleanup. Parent and independent code review passed:
+node tests/directCanvasCapture.test.mjs; node tests/marketingGraphics.test.mjs;
+node --check tests/socialVideoCapture.js; git diff --check.
 
-Recovery: generic Vite8808 stopped with confirmed EBUSY watching copiedproofJSON;
-recovered with existing scripts/social-video-server.mjs8799, ignoringoutputs.
-Task-owned capture tab closed and helper78746 stopped after bounded trials.
-Original user game remains paused; unrelated tabs/windows/processes untouched.
+The latest new-code recording ran steadily15.27FPS and was correctly rejected
+before decoder validation; no>95ms gaps in that run. This does not establish a
+universal capture FPS fix or pure A/B improvement. Earlier direct-source selected
+ranges, independently reviewed above, form today's final edit. Failed earlier
+proofs remain audit evidence, never tomorrow's fresh footage. No gate relaxed.
 
-Changed files: tests/graphics.browser.html, tests/socialVideoCapture.js,
-tests/marketingGraphics.test.mjs, docs/marketing-capture-defaults.md and this
-checkpoint. Inline module syntax, helper syntax, marketingprofile/count test,
-graphics-settings test and diffcheck passed. Independent code review found no
-blocker on opt-in paths; final media review did not pass. No unchanged PSI rerun.
+Task local server96452 and task capture tab1966657010 closed after successful
+encoded-file integration. Original production game remains paused/preferences
+preserved; unrelated browser tabs and processes untouched.
 
-Next: investigate capture-to-encoder pacing and source-frame delivery at the same
-Ultra look before another fresh scene. Use encoded timestamps and a visual motion
-review as well as render counts. Do not repeat the failed experiments or reuse
-rejected footage as tomorrow's new video. No user login/verification action is
-currently required; the blocker is capture quality, not content approval.
+Campaign Page20 now contains final MP4, real-frame poster, exact scene texts and
+caption; prior published videos preserved. Its pending-review wording predates
+the user's new direct-publication authorization and must be updated on resume.
+Final native Files reference (digest/access verified):
+library-file:fde1_bGliZmlsZV9Yd1hpbWtDNXkwai1BaHZGb3VBRkt3_FileDrive_997d946b8bb081919e011d8c88124928
+Poster reference:
+library-file:fde1_bGliZmlsZV91a2I5UFIwWW5WZjdFbmE2MGhUZkln_FileDrive_997d946b8bb081919e011d8c88124928
+Page edit receipt applied all operations; final same-stream readback still needed.
+
+Next: resume existing regular Studio tab after user selects it; verify brand;
+upload exact final MP4, caption, clean grapple cover and Your brand disclosure;
+publish once, verify Studio/live URL, then update registers/Page/manifest. Update
+existing daily03:00 automation prompt to direct publication after internal review
+(no user preview/reapproval), preserving all capture requirements, Friday weekly
+outreach and actual verification blockers. No new automation or account needed.
 
 ## Previous outcome — 28 October
 

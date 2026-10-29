@@ -75,10 +75,11 @@ still matched the snapshot; capture evidence confirmed native WebGPU temporal,
 all required passes, exact options/effects and no renderer fallback or errors.
 The user's match was restored paused and their preferences preserved.
 
-The daily video still failed independent final motion/scene review: the better
-sources encoded about 19.4 FPS, with visible gaps during the mandatory grapple
-shot. Encoder/canvas trials were reverted after no reliable gain. An explicit
-`socialVideo=1&videoBots=5` Training scenario preserves the full Ultra profile
-and reports five bots plus one local player; ordinary captures retain 15 bots.
-It also failed final media review. No finished video is claimed. See
-`docs/tiktok-video-checkpoint.md` for source evidence and the next capture step.
+The 29 October final edit now passes independent media review using selected
+fresh Ultra direct-canvas source ranges. Direct WebGPU capture avoids a second
+full-frame CPU copy. Picture validation samples the actual encoded Blob after
+stop, keeping GPU pixel reads outside recording. Native Edge H264 decoding and
+first/middle/last picture checks passed; full FFmpeg and visual review remain
+mandatory. Verify the actual active tab/window as well as DOM focus. Capture
+performance still depends on scene/load; no universal native30FPS claim or
+quality reduction. See docs/tiktok-video-checkpoint.md for evidence and status.
