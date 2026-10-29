@@ -1,5 +1,46 @@
 # Master Blaster daily TikTok videos — 29 October 2026
 
+## Future video direction — 29 October user feedback
+
+The user found today's video hard to follow: enemies were not clearly shown,
+and random firing, jumping, grappling and debris did not communicate a battle.
+The next videos must tell a readable real fight, beyond the technical checks:
+
+- Include an outside in-game/showcase shot framing the featured fighter AND at
+  least one identifiable opposing enemy, plus a shot from the game's actual
+  supported normal player camera/HUD. Do not call spectator footage player POV.
+- Stage real opposing combatants exchanging aimed attacks. Keep targets/lines of
+  fire readable; show at least one traceable attack, actual impact and reaction
+  or result. Maintain opponent continuity or make fighter switches clear.
+- Put the continuous attached-grapple/own-weapon-fire shot inside that visible
+  fight. Reject empty spraying, isolated movement stunts and debris-only filler.
+- Prefer three or four purposeful shots of two to five seconds, keeping the
+  overall10–20seconds. Avoid subsecond cuts by default; let the action resolve.
+- Record perspective, visible opponents and real attack/result evidence per cut.
+  Independent visual review must be able to follow who is fighting whom. Never
+  invent hits, damage, kills, enemies or human-player participation.
+- Public captions should be short and exciting: action hook, verified benefit,
+  brief free/no-install invitation, masterblaster.se and a feedback question.
+  Use1–3fitting action emojis and3–5relevant hashtags including#MasterBlaster
+  plus genre/weapon/movement/mode. No routine technical production disclaimer
+  about staging, scripted controls, showcase cameras or AI-assisted coding.
+  Training/bot counts can be deliberate feature hooks, not a disclaimer footer.
+  Keep provenance/opponent/staging facts in internal evidence; retain required
+  TikTok Your brand/Promotional content labeling and accurate marketing claims.
+
+These changes apply to future videos, not edits/deletions/reposts of today's
+published video. Exact current graphics, real production mechanics, no stuck
+bots, neon scene text, fresh footage/copy and all other quality gates continue.
+Daily03:00 direct publication remains authorized after independent review;
+no additional user preview/content approval. Weekly outreach unchanged.
+
+Campaign Page23 and the existing automation now contain these rules. Readback
+verified exact prompt, ACTIVE status, unchanged03:00 schedule and target chat;
+Page readback preserves existing title, media, captions and publication register.
+Independent editorial review checked actual player-view meaning, traceable
+combat, shot length and truthful evidence; no implementation/capture pass is
+claimed for the next video before that footage exists.
+
 ## Current outcome — 29 October
 
 Fresh grappling video is PUBLISHED29October2026 at15:54Europe/Stockholm.
@@ -321,6 +362,11 @@ The separate weekly Friday09:00 outreach automation is unchanged.
 Local recording requires the computer on/unlocked and Codex running.
 
 Mandatory gates for every daily video:
+- Show readable player/enemy battles with both an outside in-game view and the
+  actual supported normal player camera/HUD; visible opponents, aimed exchanges,
+  and at least one real attack/impact/reaction. Integrate grapple/fire into combat.
+- Prefer3–4shots of2–5seconds within10–20seconds; avoid subsecond cuts and finish
+  actions before cutting. Reject empty fire, isolated stunts and debris-only filler.
 - No selected scene showing a bot stuck against a wall or repeated blocked movement.
 - At least one quick continuous shot of the SAME moving bot on an attached
   grapple rope while its own weapon fires. Review visual overlap and recording-
@@ -334,9 +380,12 @@ Mandatory gates for every daily video:
   cut ranges and caption pairs in that day's manifest/register.
 - Across the edit communicate free, easy to play, action packed, no installation
   and masterblaster.se. Real game audio only unless eligible music is licensed.
-- Truthfully disclose bot opponents, staged starts/loadouts, scripted featured
-  controls where used, and showcase camera. Never fabricate kills/headshots,
-  effects or human opponents. Do not claim a tower collapse from broken cover.
+- Use short, exciting public captions with a hook, verified game benefit,
+  free/no-install/domain, feedback question,1–3fitting emojis and3–5relevant
+  hashtags. Skip technical staging/camera/scripted-control/AI-coding disclaimers.
+  Keep production/opponent provenance internally and required own-brand labeling.
+  Never fabricate kills/headshots, effects or human opponents. Do not claim a
+  tower collapse from broken cover.
 
 ## Theme bank — 27 October user update
 
