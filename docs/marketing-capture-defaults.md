@@ -70,8 +70,15 @@ and video proof retain the exact profile, digest and effective renderer state.
 Daily 03:00 and weekly Friday 09:00 automation prompts and campaign Page18 were
 updated and read back; schedules, status and target chat were preserved.
 
-Live fixture verification is still pending: Computer Use stopped on opening a
-verification tab because it could not determine the browser URL confidently
-enough to enforce policy. No further browser input was issued. The task-owned
-local Vite helper was stopped; no new media or runtime-render pass is claimed.
-Next capture must verify the native WebGPU profile in the fixture before recording.
+Live fixture verification passed on 29 October: current production-tab controls
+still matched the snapshot; capture evidence confirmed native WebGPU temporal,
+all required passes, exact options/effects and no renderer fallback or errors.
+The user's match was restored paused and their preferences preserved.
+
+The daily video still failed independent final motion/scene review: the better
+sources encoded about 19.4 FPS, with visible gaps during the mandatory grapple
+shot. Encoder/canvas trials were reverted after no reliable gain. An explicit
+`socialVideo=1&videoBots=5` Training scenario preserves the full Ultra profile
+and reports five bots plus one local player; ordinary captures retain 15 bots.
+It also failed final media review. No finished video is claimed. See
+`docs/tiktok-video-checkpoint.md` for source evidence and the next capture step.

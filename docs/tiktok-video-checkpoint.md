@@ -1,6 +1,66 @@
-# Master Blaster daily TikTok videos — 28 October 2026
+# Master Blaster daily TikTok videos — 29 October 2026
 
-## Current outcome
+## Current outcome — 29 October
+
+User requested run now. No finished daily video approved, uploaded or published.
+The independent harsh reviewer rejected available footage for motion hitches,
+obstructed later action and insufficient strong material for a clean10–20s edit.
+No existing published media, production gameplay, player defaults or graphics
+quality thresholds were changed. Daily03:00 and Friday09:00 schedules unchanged.
+
+Current production-tab DOM controls still exactly matched saved Ultra,
+all19effects,35blur,noReducedMotion. User match restored to original pause screen;
+no preferences changed. Native runtime integration verified saved/effective
+options/effects, WebGPU temporal and all passes, with no compatibility/direct
+fallback or renderer errors. This resolves the28October pending runtime check.
+
+Fresh opt-in take3 has different starts, real-spire anchor/timing/traverse and
+camera, preserving earlier takes and production movement/weapon mechanics.
+Additional explicit socialVideo=1&videoBots=5 supports a real five-bot Training
+skirmish; ordinary/default captures retain15bots. UI, exact fighter-count gate
+and proof report actual counts. Smaller skirmish did not resolve final quality.
+
+| Actual attempt | Render FPS | Outcome |
+| --- | ---: | --- |
+|15bots,VP8 |17.87|Capture gate rejected below20FPS |
+|15bots,preferredH264 |21.53|Capture gate passed; independent motion/scene review rejected |
+|15bots,followcamera,GPU2Dtrial |14.16|Capture gate rejected |
+|15bots,grapple,GPU2Dtrial |22.89|Encoded16.51FPS with visible gaps; final review rejected |
+|15bots,manualrequestFrame trial |19.94|Capture gate rejected |
+|5bots,originalcanvas/pacing,H264 |21.45|Encoded19.36FPS; mandatory scene about16.7FPS with221ms gap; final review rejected |
+
+The better original H264 candidate encoded about19.45FPS, distinct from render
+FPS. Same moving airborne p2 visibly fires its own machine gun on an attached
+rope around0.8–1.2s; proof confirms concurrent shots and no detected wall-stuck
+sessions, but that does not override the visual cadence/obstruction rejection.
+No native30FPS or finished-media claim. GPU2D allocation and manualrequestFrame
+experiments did not establish a gain; both reverted to original context and60Hz
+capture stream. No quality-gate relaxation or synthetic/interpolated frames.
+
+Sources/proofs and hashes: .codex-spec-render/tiktok-2026-10-29/day03-run.json;
+accepted-source candidates grapple.mp4/json, grapple-gpu.mp4/json and
+grapple-five.mp4/json remain rejected as final media. Failed proof files retain
+actual checks. No final scene captions/cut manifest or ready MP4 was fabricated.
+Campaign Page19 has an explicit blocked29October row and preserves prior videos.
+
+Recovery: generic Vite8808 stopped with confirmed EBUSY watching copiedproofJSON;
+recovered with existing scripts/social-video-server.mjs8799, ignoringoutputs.
+Task-owned capture tab closed and helper78746 stopped after bounded trials.
+Original user game remains paused; unrelated tabs/windows/processes untouched.
+
+Changed files: tests/graphics.browser.html, tests/socialVideoCapture.js,
+tests/marketingGraphics.test.mjs, docs/marketing-capture-defaults.md and this
+checkpoint. Inline module syntax, helper syntax, marketingprofile/count test,
+graphics-settings test and diffcheck passed. Independent code review found no
+blocker on opt-in paths; final media review did not pass. No unchanged PSI rerun.
+
+Next: investigate capture-to-encoder pacing and source-frame delivery at the same
+Ultra look before another fresh scene. Use encoded timestamps and a visual motion
+review as well as render counts. Do not repeat the failed experiments or reuse
+rejected footage as tomorrow's new video. No user login/verification action is
+currently required; the blocker is capture quality, not content approval.
+
+## Previous outcome — 28 October
 
 Marketing capture preference updated28October: all future videos, screenshots
 and thumbnails use the user's current browser graphics, with the saved exact

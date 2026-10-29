@@ -5,6 +5,11 @@ import { GRAPHICS_EFFECTS } from "../src/graphicsEffects.js";
 import { GRAPHICS_OPTIONS, GRAPHICS_VERSION } from "../src/graphicsPresets.js";
 import { MARKETING_GRAPHICS, MARKETING_GRAPHICS_SHA256, applyMarketingGraphics,
   marketingGraphicsEvidence, requireMarketingGraphics } from "./marketingGraphics.js";
+import { socialVideoBotCount } from "./socialVideoCapture.js";
+
+assert.equal(socialVideoBotCount(new URLSearchParams("socialVideo=1&videoBots=5")), 5, "explicit small Training skirmish");
+for (const query of ["", "videoBots=5", "marketingCapture=1&videoBots=5", "socialVideo=1", "socialVideo=1&videoBots=15", "socialVideo=1&videoBots=0"])
+  assert.equal(socialVideoBotCount(new URLSearchParams(query)), 15, `preserve the 15-bot default for ${query}`);
 
 assert.equal(createHash("sha256").update(JSON.stringify(MARKETING_GRAPHICS)).digest("hex"), MARKETING_GRAPHICS_SHA256);
 assert.equal(MARKETING_GRAPHICS.graphicsVersion, GRAPHICS_VERSION, "review the saved capture profile after a settings migration");

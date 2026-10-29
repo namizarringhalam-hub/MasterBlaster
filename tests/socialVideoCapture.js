@@ -14,17 +14,22 @@ export function socialVideoMime(isSupported) {
   if (!mime) throw Error("This browser exposes no supported H.264/VP9/VP8 recording format");
   return mime;
 }
+export function socialVideoBotCount(params) {
+  return params.get("socialVideo") === "1" && params.get("videoBots") === "5" ? 5 : 15;
+}
 
 export function createSocialVideoCapture(game, { onRecord, getErrors, getCaptureEvidence = () => null, onRecordingStart = () => {} }) {
+  const botCount = socialVideoBotCount(new URLSearchParams(location.search));
+  const topics = SOCIAL_TOPICS.map(([id, title]) => [id, id === "bots" ? `${botCount} BOTS. ZERO CHILL.` : title]);
   const source = game.renderer.domElement;
   const canvas = document.createElement("canvas"); canvas.width = 1080; canvas.height = 1920;
   canvas.id = "social-preview"; canvas.setAttribute("aria-label", "Live portrait video composition preview");
   const ctx = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
   const panel = document.createElement("section"); panel.id = "social-capture";
-  panel.innerHTML = `<label>Daily hook <select id="social-topic">${SOCIAL_TOPICS.map(([id, title]) => `<option value="${id}">${title}</option>`).join("")}</select></label>
-    <button id="social-record" disabled>Record 18 second clip</button>
+  panel.innerHTML = `<label>Daily hook <select id="social-topic">${topics.map(([id, title]) => `<option value="${id}">${title}</option>`).join("")}</select></label>
+    <button id="social-record" disabled>Record 18 second clip (${botCount} bots)</button>
     <output id="social-status" role="status">Preparing initial game scene…</output>
-    <p>Staged gameplay/controls using real game mechanics; bot opponents and showcase camera.</p>
+    <p>Staged Training gameplay/controls using real game mechanics; ${botCount} bot opponents and showcase camera.</p>
     <a id="social-video-download" hidden>Download video</a> <a id="social-proof-download" hidden>Download proof JSON</a>`;
   const style = document.createElement("style");
   style.textContent = `body{background:#050c16!important}body>nav,#app{opacity:0;pointer-events:none}#social-capture{position:fixed;z-index:300;top:0;left:0;right:0;padding:12px 18px;background:#0a1828;color:#eafaff;font:14px Inter,sans-serif;display:flex;gap:14px;align-items:center;flex-wrap:wrap}#social-capture select,#social-capture button{font:inherit}#social-capture output{min-width:220px}#social-capture p{margin:0;font-size:11px;color:#a6bfcd}#social-capture a{color:#52e9ff}#social-capture [hidden]{display:none}#social-preview{position:fixed;top:112px;left:50%;transform:translateX(-50%);z-index:200;display:block;height:calc(100vh - 120px);width:auto;max-width:90vw;object-fit:contain;margin:0;box-shadow:0 0 0 1px #284151}`;
@@ -69,7 +74,7 @@ export function createSocialVideoCapture(game, { onRecord, getErrors, getCapture
     if (button.disabled) return;
     button.disabled = topic.disabled = true; videoLink.hidden = proofLink.hidden = true;
     for (const url of urls) URL.revokeObjectURL(url); urls = [];
-    status.textContent = "Preparing a fresh battle and native portrait renderer…";
+    status.textContent = `Preparing a fresh ${botCount}-bot battle and native portrait renderer…`;
     try { await onRecord(); } catch (error) { fail(error); }
     finally { button.disabled = topic.disabled = false; }
   };
@@ -102,9 +107,9 @@ export function createSocialVideoCapture(game, { onRecord, getErrors, getCapture
         s.recorder.onstop = () => {
           const durationMs = performance.now() - s.started, mime = s.recorder.mimeType;
           const explosions = game.combatVisuals.explosions.layers[2].cursor - s.shellStart;
-          const proof = { topic: topic.value, hook: SOCIAL_TOPICS.find(([id]) => id === topic.value)[1], startedAt: s.startedAt,
+          const proof = { topic: topic.value, hook: topics.find(([id]) => id === topic.value)[1], startedAt: s.startedAt,
             endedAt: new Date().toISOString(), durationMs, width: 1080, height: 1920, mimeType: mime, actualRenderFrames: s.frames,
-            actualRenderFps: s.frames * 1000 / durationMs, botCount: game.players.filter(p => p.isBot).length, botTravel: s.botTravel,
+            actualRenderFps: s.frames * 1000 / durationMs, botCount: game.players.filter(p => p.isBot).length, fighterCount: game.players.length, botTravel: s.botTravel,
             observedExplosions: explosions, audioPeak: s.audioPeak, worldPeak: s.worldPeak, errorCount: getErrors(), directFallback: game.renderPipeline.direct,
             injectedExplosions: false, stagedSetup: "Staged gameplay/controls using production mechanics; bot opponents; showcase camera",
             sceneEvidence: getCaptureEvidence(), marketingGraphics: marketingGraphicsEvidence(game),
@@ -132,7 +137,7 @@ export function createSocialVideoCapture(game, { onRecord, getErrors, getCapture
         s.started = performance.now();
         s.recorder.start(250); onRecordingStart(s.started);
         s.timer = setTimeout(() => { if (s.recorder.state !== "inactive") s.recorder.stop(); }, 18000);
-        status.textContent = "Recording live AI combat for 18 seconds. Keep this tab visible.";
+        status.textContent = `Recording ${botCount}-bot Training combat for 18 seconds. Keep this tab visible.`;
       });
     } catch (error) { cleanup(s); if (session === s) session = null; throw error; }
   }
@@ -155,6 +160,6 @@ export function createSocialVideoCapture(game, { onRecord, getErrors, getCapture
   addEventListener("pagehide", () => { if (session) { fail("Page closed"); cleanup(session); } game.resize = resize; game.renderScene = renderScene; for (const url of urls) URL.revokeObjectURL(url); }, { once: true });
   return { record, preview() {
     draw(); button.disabled = false;
-    status.textContent = "Ready. Each recording starts a fresh 15-bot battle.";
+    status.textContent = `Ready. Each recording starts a fresh ${botCount}-bot Training battle.`;
   }, fail };
 }
