@@ -2,20 +2,26 @@
 
 ## Current outcome — 29 October
 
-Fresh grappling video is FINISHED and independently passed final media review.
-Not uploaded to TikTok or published. User now explicitly authorizes direct
+Fresh grappling video is PUBLISHED29October2026 at15:54Europe/Stockholm.
+Exact post: https://www.tiktok.com/@master_blaster_game/video/7702103217731144982
+Studio Everyone visibility and live brand-browser playback, exact425-character
+caption, original sound and Promotional content label verified. Initial
+Content under review/Onlyme hold cleared without resubmission. Initial Studio
+baseline0views/0likes/0comments; live0likes/0comments, no reply IDs. No reach,
+traffic or anonymous-access claim. User now explicitly authorizes direct
 publication of this and all future finished videos after internal quality review:
 "no need to show me the video, always just upload it directly when you're done
 with it". Do not ask again for video/content approval. Reuse existing regular
 logged-in brand session @master_blaster_game; no new/private window.
 
-Publication retry reached existing TikTok Studio tab1966657019 (regular Edge3,
-MasterBlaster group, https://www.tiktok.com/tiktokstudio/content). Binding failed
-at focus emulation; native tab-search selected the exact existing open result.
-Computer Use then stopped all UI control because it could not verify the current
-Windows browser URL confidently. No further UI actions issued. User should select
-that existing Studio tab manually, then resume. This is an access/safety-review
-block, not missing content approval. No upload or Post click occurred.
+Publication used the existing regular logged-in Edge Studio tab1966657019;
+brand profile link verified @master_blaster_game before attaching media. Earlier
+URL-verification block resolved when the user selected Studio manually. Extension
+file-URL permission was initially off; user enabled it, which reconnected existing
+Edge as browser4. Exact reviewed MP4 and actual-frame poster attached successfully;
+Now/Everyone and Your brand checked, caption verified, Post clicked once. No new
+browser window, private session, personal account, paid promotion or duplicate.
+The existing Studio result tab remains open and muted for future uploads.
 
 Deliverable: .codex-spec-render/tiktok-2026-10-29/master-blaster-day03-grapple.mp4
 SHA256 f0e14960c00e9fe68f0497f75408e83679a64c06287be4b037f660a19f918a05
@@ -82,21 +88,26 @@ Task local server96452 and task capture tab1966657010 closed after successful
 encoded-file integration. Original production game remains paused/preferences
 preserved; unrelated browser tabs and processes untouched.
 
-Campaign Page20 now contains final MP4, real-frame poster, exact scene texts and
-caption; prior published videos preserved. Its pending-review wording predates
-the user's new direct-publication authorization and must be updated on resume.
+Campaign Page21 and outreach tracker26 now record the published URL/status,
+actual media/caption and direct-publication routine; prior media/user edits remain.
+Daily03:00Europe/Stockholm automation updated through automation_update and exact
+prompt, ACTIVE status, unchanged schedule and same target chat read back from
+saved TOML. Future finished videos publish after independent review without a
+user preview or renewed content approval. Actual login, verification, local-file
+permission and action-time agreement blockers remain user handoffs. Friday weekly
+outreach scheduler unchanged. Current settings/quality rules preserved.
+
 Final native Files reference (digest/access verified):
 library-file:fde1_bGliZmlsZV9Yd1hpbWtDNXkwai1BaHZGb3VBRkt3_FileDrive_997d946b8bb081919e011d8c88124928
 Poster reference:
 library-file:fde1_bGliZmlsZV91a2I5UFIwWW5WZjdFbmE2MGhUZkln_FileDrive_997d946b8bb081919e011d8c88124928
-Page edit receipt applied all operations; final same-stream readback still needed.
+Page edit receipts applied all intended operations. Same-stream final readback
+checks new text/status, old media references, title and untouched hashes.
 
-Next: resume existing regular Studio tab after user selects it; verify brand;
-upload exact final MP4, caption, clean grapple cover and Your brand disclosure;
-publish once, verify Studio/live URL, then update registers/Page/manifest. Update
-existing daily03:00 automation prompt to direct publication after internal review
-(no user preview/reapproval), preserving all capture requirements, Friday weekly
-outreach and actual verification blockers. No new automation or account needed.
+Next: next daily video uses fresh footage and a different theme/copy, preserving
+exact current graphics and independent review gates. Publish through existing
+regular brand session when ready; verify exact live link and update both registers.
+No further action or review is required from the user for today's publication.
 
 ## Previous outcome — 28 October
 
