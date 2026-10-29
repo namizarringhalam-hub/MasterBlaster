@@ -2,6 +2,42 @@
 
 ## Current outcome — 29 October
 
+Latest retry interrupted by user's physical Escape key in Computer Use. All UI
+actions stopped immediately; task helper23232 stopped. Task capture tab1966657010
+was previously marked for handoff and was not changed after interruption.
+No new final edit, upload or publication. Work remains in progress, not complete.
+
+Direct source capture + foreground handoff produced31.21renderFPS/27.26encodedFPS
+for direct-grapple.mp4/json and23.8renderFPS for direct-combat.mp4/json; exactUltra,
+focus true throughout, zero renderererrors/fallback, visible real same-bot grapple
+and ownweapon shots. Independent source review selected usable ranges but no final
+montage has been assembled. Every >95ms render gap followed frame15,30,45...:
+normal/sample medians29/109.6ms(grapple),39.35/149.25ms(combat), identifying the
+recording-loop GPU pixel readback as a periodic stall source.
+
+Uncommitted WIP: tests/socialVideoCapture.js direct original-canvas stream, native
+preview, focus/blur safeguards, frame timestamp proof and endpoint-picture trial;
+tests/directCanvasCapture.test.mjs with failure/focus/cleanup/hot-loop checks;
+scripts/test.mjs registration. Tests/syntax pass, but latest endpoint-picture trial
+is NOT runtime validated: direct-endpoint-1.json has0brightness at both endpoints
+and intermittent1Hz gaps despite focused/visible proof. WebGPU source bitmap may
+be discarded outside render callbacks; zero endpoint samples do not establish an
+encoded black video. Next change must validate the actual encoded Blob AFTER stop
+(decode/seek/sample) rather than source GPU endpoints, preserving picture gates.
+Then retry foreground capture and inspect encoded cadence/black/stale frames,
+grapple overlap and final scenes. Do not commit unfinished capture code as fixed.
+Current code/tests remain preserved locally for continuation; only this evidence
+checkpoint is ready to commit. No production files or graphics settings changed.
+
+Later user-directed retry is in progress: direct original-WebGPU-canvas capture
+replaces the full-size 2D copy. Added focus preflight/blur abort and focus/frame
+timestamp proof. Native activation failed; user manually confirmed Edge ready.
+The unfocused trial ran at1Hz and is not a valid direct-path performance comparison.
+Focused direct-grapple.mp4/json now passes31.21renderFPS, exactUltra/nativepasses,
+zeroerrors/fallback,14concurrentp2shots and no detectedstuckevents; focus stayed
+true/visible throughout. Encoded cadence/visual review and second angle pending.
+Task helper23232 runs8799; currenttask tab1966657010, originalmatchpaused.
+
 User requested run now. No finished daily video approved, uploaded or published.
 The independent harsh reviewer rejected available footage for motion hitches,
 obstructed later action and insufficient strong material for a clean10–20s edit.
