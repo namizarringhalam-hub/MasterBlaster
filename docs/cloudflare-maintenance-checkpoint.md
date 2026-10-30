@@ -34,5 +34,19 @@
 ## Preservation and rollback
 
 - Leave unrelated untracked `%SystemDrive%/` untouched.
-- Duplicate CI can be restored by switching Disable builds off in the redundant Worker's Settings → Builds. Do not disconnect the Pages repository.
+- Before the 30 October removal, duplicate CI could be restored by switching Disable builds off. That option no longer applies: the redundant Worker has now been deleted. The Pages repository remains connected.
 - Record the exact before/after canonical rule before saving. Rollback removes only the added `www` ACME exclusion.
+
+## Redundant Worker removal — 30 October 2026
+
+- User explicitly authorized deleting the redundant `masterblaster` Worker while preserving the live Pages site and multiplayer service.
+- Pre-removal API inspection confirms both API routes still belong to `master-blaster-multiplayer`; the account has no Worker custom domains. The three live Durable Object namespace IDs are distinct from the duplicate Worker's three namespaces.
+- All four account Workers' relevant bindings were inspected. No other Worker references `masterblaster` or its namespaces. The `masterblaster` Pages project has no service or Durable Object bindings.
+- Production Pages deployment `ee32d1eb-9955-4f3e-b2c2-75ebd02a8664`, source `a7a56e3`, reports deploy success. Live multiplayer version remains `501b8e96-1fc4-4ee9-aa19-ad780ca96e83` at 100%.
+- Public baseline passed: homepage and favicon 200, correct favicon bytes; both API health endpoints healthy; ordinary redirects preserve path and query.
+- Deleted only `/accounts/ac21898cd74d6bd4bfd130f3499d5fa0/workers/scripts/masterblaster` through the authenticated API, without `force`, at 23:21:21 CET. Cloudflare returned HTTP 200 and `success: true`.
+- Post-removal API comparison passed: the redundant Worker and its three separate namespaces are absent; all other Workers remain. Both API routes, the three live namespaces and bindings, and the active multiplayer version are unchanged. The Pages deployment remains successful and both custom domains remain active.
+- The refreshed Workers & Pages application list confirms only the `masterblaster` Pages site and `master-blaster-multiplayer` Worker remain for this game; the redundant Worker's failed-build entry is gone.
+- Independent public checks passed after deletion: homepage, seven referenced assets and favicon return 200; favicon bytes match the repository; apex/www API health and normal redirects are healthy.
+- Two private WebSockets, one per hostname, joined the same isolated lobby with two humans and zero bots; both ping/pong checks passed. Close acknowledgments were absent within the bounded 1.5-second wait, as in the earlier test, but a separate status read verified zero active humans and no public directory entry. No public match or gameplay was started.
+- No application code or live backend deployment was changed. This documentation update records the completed removal and verification; unrelated untracked files are preserved.
