@@ -2161,9 +2161,14 @@ async function stageSocialScene() {
     const before = bot.position.clone(), elapsed = time();
     if (grappleScene && bot === actor && elapsed < 2.8) {
       if (!bot.alive) return socialVideo.fail("Featured bot died before its grapple/fire shot completed");
-      if (elapsed < (quarterTurn ? .35 : .6)) bot.update(dt, idleMove, bot.aim, { reducedMotion: this.settings.reducedMotion }, this.world);
+      if (elapsed < (quarterTurn ? .35 : .6)) {
+        // Preparation may hold a pose; recorded lead-in must already be a real fight.
+        if (socialSceneEvidence.performanceStartMs === null) bot.update(dt, idleMove, bot.aim, { reducedMotion: this.settings.reducedMotion }, this.world);
+        else originalBot.call(this, bot, dt);
+      }
       else {
         if (!attached) {
+          if (bot.grapple) this.releaseGrapple(bot, false);
           bot.aim.copy(anchorAim).sub(bot.position).sub(new THREE.Vector3(0, 1.4, 0)).normalize();
           this.toggleGrapple(bot);
           if (!bot.grapple) throw Error("The production grapple did not attach to the real spire");

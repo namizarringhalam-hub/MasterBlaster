@@ -1,5 +1,42 @@
 # Master Blaster daily TikTok videos — 30 October 2026
 
+## Active-bot rule — 30 October user correction
+
+The user spotted idle background bots in today's published video. The duel
+capture deliberately parked four extras with stand-still and do-not-attack flags;
+the earlier media review missed this problem. That footage must not be treated
+as an acceptable example for future captures.
+
+Every visible living bot must actively fight the player or another fighter.
+No idle, frozen, pacifist or spectator extras, including in the background.
+Fewer than 15 bots is explicitly allowed; prefer a smaller readable fight.
+Review all visible fighters throughout each selected cut, not just the featured
+grapple/fire bot. Brief real reloads and hit reactions within a battle are fine;
+a static aiming pose without combat does not qualify.
+Record actual bot counts and visible involvement internally; enabling AI or
+counting total shots does not itself prove a finished video passes.
+
+The existing daily automation and campaign Page now carry this rule, with the
+same 03:00 Stockholm schedule and direct-publication authorization. Page 28
+readback preserves every earlier block and title; the saved automation prompt,
+ACTIVE status, schedule and target chat were verified. Marketing capture guidance
+also retains this rule.
+
+Capture-only correction: background bots now clear both passive/still flags and
+their training anchor, then use the unchanged production movement/fire AI.
+Quarter-second frame evidence includes every fighter's identity, motion and flags.
+The legacy grapple take delegates its recorded lead-in to real AI; if that AI
+already attached a rope, the staged transition releases it through production
+mechanics before attaching the planned grapple. Preparation-only holds remain
+outside recording. No player defaults, production combat or graphics changed.
+
+Targeted battle, combat-validation, direct-canvas and marketing-graphics checks,
+syntax and diff checks pass. Tests exercise actual lead-in/attachment branches,
+background AI delegation, movement, ammunition use, evidence roster and cleanup.
+Independent code review passed; this is not a fresh runtime/media review.
+Next capture must still reject every cut with any idle or stuck visible bot.
+No remake, deletion or repost was requested; no new recording is claimed here.
+
 ## Current outcome — 30 October published
 
 Published once at08:32Europe/Stockholm through existing regular brand session

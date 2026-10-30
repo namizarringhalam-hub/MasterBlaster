@@ -62,6 +62,16 @@ through its effect switch; obsolete MSAA is not reintroduced.
   may omit the normal DOM HUD; never invent a HUD or claim it was captured.
 - Published material remains unchanged unless the user requests an update.
 
+For action videos, every visible living bot must be actively fighting the player
+or another fighter. Never park idle, pacifist or frozen background extras. Fewer
+than 15 bots is fine; prefer a smaller readable battle over inactive crowds.
+Review every visible bot throughout each selected shot, including the background,
+and reject scenes where bots stand around doing nothing. Brief real reloads or
+hit reactions within an ongoing exchange are fine; a static aiming pose without
+combat does not qualify. Record the actual bot count
+and visible fighters' involvement internally; flags and aggregate shot counts
+do not replace visual review of the finished edit.
+
 This is a capture preference. Production player defaults and the user's running
 game session are not changed by saving it.
 

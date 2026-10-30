@@ -36,7 +36,7 @@ export async function stageSocialBattle(game, { params, prepareFighterWeapons, p
     fighter.slotIndex = 0; fighter.ammo = Object.fromEntries(fighter.loadout.map(id => [id, WEAPONS[id].ammo]));
     await prepareFighterWeapons(fighter);
   }
-  // Keep inactive background opponents away from the staged pair, without hiding their graphics.
+  // Clear starting positions only; every background opponent keeps its production combat AI.
   const background = [];
   for (const z of [-18, -12, -6]) for (const x of [-24, -18, -12, -6, 6, 12, 18, 24]) {
     const position = new THREE.Vector3(x, 15.01, z);
@@ -46,7 +46,7 @@ export async function stageSocialBattle(game, { params, prepareFighterWeapons, p
   if (background.length < game.players.length - 2) throw Error("Not enough clear background starts for duel capture");
   for (const [index, bot] of game.players.slice(2).entries()) {
     bot.position.copy(background[index]); bot.velocity.set(0, 0, 0); bot.grounded = true;
-    bot.trainingStandStill = true; bot.trainingDontAttack = true; bot.trainingAnchor = bot.position.clone();
+    bot.trainingStandStill = false; bot.trainingDontAttack = false; bot.trainingAnchor = null;
   }
   const evidence = { scene: "readable-duel", composition: `oct30-duel-${take === 1 ? "east" : "west"}`,
     featuredBotId: actor.id, featuredWeapon: actor.weapon.id, opponentIds: [hero.id],
@@ -59,7 +59,8 @@ export async function stageSocialBattle(game, { params, prepareFighterWeapons, p
   const point = p => p.position.clone().add(new THREE.Vector3(0, 1.3, 0));
   const projection = p => {
     const center = point(p), clip = center.clone().project(game.camera);
-    return { id: p.id, alive: p.alive, health: p.health, position: p.position.toArray(), clip: clip.toArray(),
+    return { id: p.id, isBot: p.isBot, alive: p.alive, health: p.health, position: p.position.toArray(),
+      velocity: p.velocity.toArray(), trainingStandStill: p.trainingStandStill, trainingDontAttack: p.trainingDontAttack, clip: clip.toArray(),
       visible: p.alive && clip.z > -1 && clip.z < 1 && Math.abs(clip.x) < .88 && Math.abs(clip.y) < .83
         && !game.world.effectBlocked(game.camera.position, center) };
   };
@@ -135,7 +136,7 @@ export async function stageSocialBattle(game, { params, prepareFighterWeapons, p
     game.camera.updateMatrixWorld(true);
     const sample = Math.floor(elapsed() * 4);
     if (evidence.performanceStartMs !== null && sample !== lastSample) {
-      lastSample = sample; evidence.samples.push(event("battle-frame", { fighters: [hero, actor].map(projection),
+      lastSample = sample; evidence.samples.push(event("battle-frame", { fighters: game.players.map(projection),
         camera: game.camera.position.toArray(), cameraQuaternion: game.camera.quaternion.toArray(),
         perspective: evidence.perspective, grappleAttached: Boolean(actor.grapple), grappleReleased: released }));
     }

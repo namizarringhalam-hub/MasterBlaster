@@ -15,6 +15,39 @@ for (const [recording, query, expected] of [[true, "videoScene=battle&videoView=
   assert.equal(actual, expected);
 }
 
+// Execute the legacy pre-grapple branch: only preparation may hold an idle pose.
+const leadInCode = harness.slice(harness.indexOf("if (elapsed < (quarterTurn ? .35 : .6))"),
+  harness.indexOf("\n      else {", harness.indexOf("if (elapsed < (quarterTurn ? .35 : .6))")));
+assert.ok(leadInCode.includes("originalBot.call"));
+const leadIn = new Function("elapsed", "quarterTurn", "socialSceneEvidence", "bot", "dt", "idleMove", "originalBot", leadInCode);
+for (const quarterTurn of [false, true]) for (const recording of [false, true]) {
+  let idle = 0, active = 0;
+  const context = { settings: {}, world: {} }, bot = { aim: {}, update() { idle++; } };
+  leadIn.call(context, .1, quarterTurn, { performanceStartMs: recording ? 1 : null }, bot, .016, {}, function (p, dt) {
+    assert.equal(this, context); assert.equal(p, bot); assert.equal(dt, .016); active++;
+  });
+  assert.equal(idle, recording ? 0 : 1); assert.equal(active, recording ? 1 : 0);
+}
+
+// Live AI can attach a rope during the lead-in; switch to the staged anchor through normal release/attach.
+const attachStart = harness.indexOf("if (!attached) {", harness.indexOf("async function stageSocialScene"));
+const attachCode = harness.slice(attachStart, harness.indexOf("        const target =", attachStart));
+const attach = new Function("bot", "anchorAim", "elapsed", "socialSceneEvidence", "snapshot", "THREE",
+  `let attached = false, attachedAt = null; ${attachCode}; return { attached, attachedAt };`);
+for (const priorRope of [null, { anchor: new THREE.Vector3(1, 20, 2) }]) {
+  const calls = [], plannedRope = { anchor: new THREE.Vector3(0, 42, 0) };
+  const bot = { grapple: priorRope, position: new THREE.Vector3(0, 15, 18), aim: new THREE.Vector3() };
+  const context = {
+    releaseGrapple(p, boost) { assert.equal(p.grapple, priorRope); assert.equal(boost, false); calls.push("release"); p.grapple = null; },
+    toggleGrapple(p) { calls.push("toggle"); p.grapple = p.grapple ? null : plannedRope; }
+  };
+  const evidence = { events: [] };
+  const state = attach.call(context, bot, plannedRope.anchor, .7, evidence, (p, kind) => ({ kind }), THREE);
+  assert.deepEqual(calls, priorRope ? ["release", "toggle"] : ["toggle"]);
+  assert.equal(bot.grapple, plannedRope); assert.deepEqual(state, { attached: true, attachedAt: .7 });
+  assert.equal(evidence.events[0].kind, "grapple-attached");
+}
+
 assert.equal(battleControls(.8, true).grapple, true);
 assert.equal(battleControls(1.05, true).grapple, false, "short combat swing releases before crossing the spire");
 assert.equal(battleControls(2, true).grapple, false);
@@ -26,13 +59,19 @@ for (const view of ["outside", "player"]) {
     id: `p${i + 1}`, isBot: i > 0, position: new THREE.Vector3(), velocity: new THREE.Vector3(),
     aim: new THREE.Vector3(0, 0, 1), rig: { visible: true }, alive: true, health: 100,
     grounded: true, trainingStandStill: false, trainingDontAttack: false, trainingAnchor: null,
+    loadout: ["blaster"], slotIndex: 0, ammo: { blaster: WEAPONS.blaster.ammo },
     get weapon() { return WEAPONS[this.loadout[this.slotIndex]]; },
     update(dt, move, aim) { this.lastMove = move.clone(); this.position.addScaledVector(move, dt); this.aim.copy(aim); }
   }));
-  let productionShots = 0, productionHits = 0, productionCameras = 0, attached = 0;
+  const originalAnchor = new THREE.Vector3(1, 15, 2);
+  Object.assign(players[2], { trainingStandStill: true, trainingDontAttack: true, trainingAnchor: originalAnchor });
+  let productionShots = 0, productionHits = 0, productionCameras = 0, attached = 0, backgroundUpdates = 0;
   const game = { players, camera: new THREE.PerspectiveCamera(62, 1080 / 1920, .1, 520), settings: { reducedMotion: false },
     world: { nearbyObstacles: () => [], surfaceHeightAt: () => 15, ropeBlocked: () => false, effectBlocked: () => false },
-    updateBot() {}, updateHuman() {}, updateCamera() { throw Error("Showcase override must not become player camera"); },
+    updateBot(p, dt) {
+      assert.equal(p.trainingStandStill, false); assert.equal(p.trainingDontAttack, false); assert.equal(p.trainingAnchor, null);
+      backgroundUpdates++; p.position.x += dt; this.tryFire(p, true);
+    }, updateHuman() {}, updateCamera() { throw Error("Showcase override must not become player camera"); },
     tryFire(p) { productionShots++; p.ammo[p.weapon.id]--; },
     damagePlayer(p, damage) { productionHits++; p.health -= damage; },
     toggleGrapple(p) { attached++; p.grapple = { line: { visible: true }, anchor: new THREE.Vector3(0, 42, 0) }; },
@@ -48,10 +87,14 @@ for (const view of ["outside", "player"]) {
   assert.deepEqual(prepared, ["p1", "p2"]);
   assert.equal(battle.evidence.hudCaptured, false);
   assert.equal(players[0].health, 100); assert.equal(players[1].health, 100);
-  assert.equal(players[2].trainingDontAttack, true);
+  for (const bot of players.slice(1)) {
+    assert.equal(bot.trainingStandStill, false); assert.equal(bot.trainingDontAttack, false); assert.equal(bot.trainingAnchor, null);
+  }
   assert.ok(players[2].position.distanceTo(players[1].position) > 8);
   battle.evidence.performanceStartMs = performance.now() - 800;
   game.updateCamera(.1);
+  assert.equal(battle.evidence.samples[0].fighters.length, players.length, "evidence includes visible background bots, not only the featured pair");
+  assert.ok(battle.evidence.samples[0].fighters.every(p => !p.trainingStandStill && !p.trainingDontAttack));
   assert.equal(productionCameras, view === "player" ? 1 : 0);
   if (view === "outside") {
     const midpoint = players[0].position.clone().lerp(players[1].position, .5);
@@ -67,8 +110,15 @@ for (const view of ["outside", "player"]) {
   assert.equal(productionHits, 1);
   const damage = battle.evidence.events.find(e => e.kind === "production-damage");
   assert.equal(damage.healthBefore, 100); assert.equal(damage.healthAfter, 93); assert.equal(damage.shotId, "real-shot");
+  for (const bot of players.slice(2)) {
+    const x = bot.position.x, ammo = bot.ammo.blaster;
+    game.updateBot(bot, .016);
+    assert.equal(bot.position.x, x + .016); assert.equal(bot.ammo.blaster, ammo - 1);
+  }
+  assert.equal(backgroundUpdates, players.length - 2, "all nonfeatured bots delegate to production movement/fire AI");
   battle.restore();
   for (const [key, value] of Object.entries(original)) assert.equal(game[key], value);
-  assert.equal(players[2].trainingDontAttack, false); assert.equal(players[2].trainingAnchor, null);
+  assert.equal(players[2].trainingStandStill, true); assert.equal(players[2].trainingDontAttack, true);
+  assert.equal(players[2].trainingAnchor, originalAnchor, "restore original training controls and anchor identity");
 }
 console.log("Battle staging, real camera source, actual shot/damage evidence and cleanup passed.");
