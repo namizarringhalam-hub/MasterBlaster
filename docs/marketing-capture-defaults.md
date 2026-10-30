@@ -54,8 +54,12 @@ through its effect switch; obsolete MSAA is not reintroduced.
   in source evidence. Reject renderer fallback, unsupported required effects or
   a mismatch rather than silently downgrading quality. If capture is too slow,
   report it and improve the capture workflow without changing the chosen look.
-- Use real current game graphics. Keep existing bot/staging disclosures and
-  video action, freshness, grapple/fire and motion-quality requirements.
+- Use real current game graphics. Retain bot/staging provenance in internal
+  capture evidence. Public video captions follow the user's short promotional
+  wording, emoji and hashtag rules; keep required own-brand platform labels.
+  Preserve readable enemy battles, actual supported player/outside camera views,
+  fresh footage, grapple/fire and motion-quality requirements. A canvas recording
+  may omit the normal DOM HUD; never invent a HUD or claim it was captured.
 - Published material remains unchanged unless the user requests an update.
 
 This is a capture preference. Production player defaults and the user's running

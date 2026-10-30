@@ -1,30 +1,89 @@
 # Master Blaster daily TikTok videos — 30 October 2026
 
-## Current attempt — 30 October scheduled run
+## Current outcome — 30 October published
 
-Recording did not start. Computer Use inventory returned the existing regular
-Edge session and window67270, but native accessibility was unavailable. The
-subsequent screenshot request was stopped by automatic browser safety review
-because the current Windows browser URL could not be verified confidently.
-All UI work stopped immediately. No claim that the computer was locked: that
-was not established. No fresh footage, finished MP4, upload or publication.
+Published once at08:32Europe/Stockholm through existing regular brand session
+@master_blaster_game. Exact post:
+https://www.tiktok.com/@master_blaster_game/video/7702360320890653974
+Studio initial Onlyme hold cleared automatically to Everyone. Live brand-browser
+playback, exact caption, original sound and Promotional content label verified
+08:33–08:34. Initial Studio0views/0likes/0comments; live0likes/0comments, no reply
+IDs. No anonymous reach/traffic claim or duplicate. Selected actual-frame action
+cover. No authentication, new agreement or user handoff required this retry.
 
-Campaign Page23 was read; Page24 now records the blocked30October attempt in
-the opening and daily register, with successful targeted readback. Prior
-publications preserved. Current user edits and all29October battle framing,
-real player-view, longer-shot and short promotional caption/emoji/hashtag rules
-remain authoritative. Current live game settings could not be inspected; saved
-verified Ultra profile remains the fallback, never a quality downgrade.
-Existing published videos and user tabs/settings were not changed. No local
-capture helper was started, no new browser/private window created, no account
-used and no duplicate post. Existing daily03:00 and Friday weekly jobs preserved.
+Final: .codex-spec-render/tiktok-2026-10-30/master-blaster-day04-free-battle.mp4
+SHA256 0c975f020bc3dd9aef959af83c486e8654219120c560abcaca4ea9270b8116c9
+7,936,034bytes; H264yuv420p1080x1920CFR30,304frames/10.133333video;
+AAC48kstereo/container10.170667. Original game audio only. No desktop/mic/music.
+Manifest day04-scenes.json; public caption day04-caption.txt; actual-frame
+cover day04-cover.jpg; publication screenshot tiktok-live-proof.png. All ignored
+locally; final MP4/cover also stored in campaign Page Files.
 
-To resume: user selects the existing Master Blaster browser tab and confirms
-ready, allowing a new UI turn to verify its URL/settings and try foreground
-capture again. Then stage a fresh visible enemy battle with outside and actual
-player views, review it independently, publish directly if all gates pass and
-record the exact live URL. The current blocker is URL verification, not missing
-content approval. Previous videos cannot substitute for fresh footage.
+| Source | Cut | Perspective and text |
+| --- | --- | --- |
+| outside3.mp4 |0–3s|Outside actual cyan/pink exchange; attached moving pink ownmachinegun fire~.745–.857s. Pink THEY SHOOT BACK / FREE BROWSER BATTLES|
+| player2.mp4 |.12–5.12s|Actual bound production Game.updateCamera, cyan foreground/pink enemy, real hits/death. Cyan EASY TO JUMP IN / ALL ACTION. ZERO INSTALL.|
+| outside3.mp4 |3–5.15s|Continued duel and actual result. Gold MASTERBLASTER.SE / JUMP IN FREE|
+
+Three purposeful3/5/2.15s cuts, no repeated sourceframes/subsecond cuts. Theme
+Free/readablebattle, Blaster/MachineGun. Localplayer+5bots=6total, two duel
+fighters; four background bots passive. Staged starts/loadouts/controls/outside
+camera; unchanged production movement/grapple/shots/damage and player camera.
+No invented hits, human opponents or HUD. Internal provenance stays in manifest;
+public caption uses exciting copy,2emojis/4hashtags, gameaddress and feedback
+question, no routine technical footer, as user requested.
+
+Caption:
+Spot your rival. Swing into the fight. Let it rip. 🔥 Free browser battles. Easy to jump in. No install. Play masterblaster.se. Blaster or Machine Gun—which would you pick? 🎯 #MasterBlaster #BrowserGame #ArenaShooter #FreeGames
+
+## Recovery and validation — 30 October
+
+Direct browser connection recovered access; supported foreground/window controls
+and fresh native tab search verified actual active/focused/muted capture state.
+Original user game graphics inspected: exact saved Ultra/all19effects/35%blur,
+reducedmotionoff; menu restored without preference changes. Browseropen alone
+was not assumed to establish focus. Daily automation now carries persistent
+recovery/retry instructions, same03:00 schedule/target. Weekly outreach unchanged.
+Hard security/auth/verification stops still apply; never bypass them.
+
+Opt-in tests/socialBattleScene.js stages real reciprocal battle, records named
+shots/targets/healthdeltas/projections, preserves production camera and restores
+overrides. Tiny strafe rootcause fixed: Fighter.update normalizes every nonzero
+movement, so the old tiny strafe was fullspeed. Pulsed movement retains duel.
+East camera avoids spire obstruction; mirrored Take2 and one production-camera
+startup settle produced a clean player view. No gameplay/LCP/graphics downgrade.
+
+First new take26.865FPS failed legacy explosion-only gate despite real hits.
+Duel-only validation now requires actual reciprocal ammo-consuming aimed shots,
+matched visible damage, plus attached moving airborne ownfire for outside view;
+legacy explosion rule and FPS/audio/focus/picture gates remain unchanged.
+Fresh outside1/2 were rejected for occlusion/overlap. PlayerTake1 correctly
+failed17.1FPS. Accepted outside3 records30.548renderFPS and player2 36.550FPS,
+exactUltra/focusheld/noerrors/no fallback. Frame-rate difference is observed,
+not a proved universal camera-performance fix. Native source/CFR delivery differ.
+
+Independent harsh final reviewer passed exact SHA, readable battles, real normal
+player camera, grapple/ownfire, motion, no stuck/debris-only filler and neon text
+safeareas. FullAVdecode0; no black>=100ms or silence>=250ms. One266.7ms lowmotion
+freezedetect flag8.866–9.133s was reviewed at30FPS:17/17 distinct rawframehashes,
+real flinch/blood/spark movement, natural betweenburst pause; not stale capture.
+Audiopeak−1.453dBFS/RMS−18.073. Subjective listening not claimed.
+Evidence independent-final-review.json retains diagnostics and source proofs.
+Empty wallStuckEvents is explicitly NOT an automated detector pass.
+
+Validated targeted checks: socialBattleScene, socialCombatValidation,
+directCanvasCapture, marketingGraphics; node syntax and git diff --check.
+New checks registered in scripts/test.mjs. Production sources/defaults unchanged;
+no unchanged PSI rerun. Related files: tests/socialBattleScene.js plus test,
+tests/socialCombatValidation.test.mjs, tests/socialVideoCapture.js,
+tests/graphics.browser.html, scripts/test.mjs, marketing capture guidance,
+this checkpoint and publication register. Preserve unrelated %SystemDrive%/.
+
+Campaign Page26 and outreach tracker27 record exact final media/copy/link/status;
+older outreach check dates preserved. Next:31October03:00 fresh scenes/theme,
+current graphics and direct publication after independent review; first check
+register to avoid duplicate. Continue supported retry paths after transient
+failures. Task-only capture tab closed; existing Studio retained for uploads.
 
 ## Future video direction — 29 October user feedback
 
@@ -34,7 +93,8 @@ The next videos must tell a readable real fight, beyond the technical checks:
 
 - Include an outside in-game/showcase shot framing the featured fighter AND at
   least one identifiable opposing enemy, plus a shot from the game's actual
-  supported normal player camera/HUD. Do not call spectator footage player POV.
+  supported normal player camera; HUD capture is optional. Do not call spectator
+  footage player POV.
 - Stage real opposing combatants exchanging aimed attacks. Keep targets/lines of
   fire readable; show at least one traceable attack, actual impact and reaction
   or result. Maintain opponent continuity or make fighter switches clear.

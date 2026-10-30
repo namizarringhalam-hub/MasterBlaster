@@ -129,6 +129,7 @@ import { withWallImpactReview } from "./wallImpactReview.js";
 import { withSurfaceBurstRuntime } from "./surfaceBurstReview.js";
 import { withStructuralDustReview } from "./structuralDustReview.js";
 import { createSocialVideoCapture, socialVideoBotCount } from "./socialVideoCapture.js";
+import { stageSocialBattle } from "./socialBattleScene.js";
 import { MARKETING_GRAPHICS, applyMarketingGraphics, marketingGraphicsEvidence, requireMarketingGraphics } from "./marketingGraphics.js";
 document.querySelector("#view").add(new Option("lower-body-oblique", "lower-body-oblique"));
 document.querySelector("#view").add(new Option("thrusters-low", "thrusters-low"));
@@ -2094,6 +2095,11 @@ select("stress").onclick = () => {
 select("press-action").onclick = () => capturePressAction();
 async function stageSocialScene() {
   const videoParams = new URLSearchParams(location.search);
+  if (videoParams.get("videoScene") === "battle") {
+    const battle = await stageSocialBattle(game, { params: videoParams, prepareFighterWeapons, productionCamera: cameraUpdate });
+    socialSceneEvidence = battle.evidence;
+    return battle.restore;
+  }
   const grappleScene = videoParams.get("videoScene") === "grapple";
   // Opt-in compositions; keep production mechanics and earlier takes unchanged.
   const rocketShowcase = videoParams.get("videoWeapon") === "rocket_launcher";
@@ -2209,7 +2215,9 @@ async function capturePressAction(recordVideo = false) {
   for (const [control] of controls) control.disabled = true;
   try {
     select("pose").value = "aim";
-    if (select("view").value !== "player-camera") select("view").value = "effects";
+    const videoParams = new URLSearchParams(location.search);
+    if (recordVideo && videoParams.get("videoScene") === "battle") select("view").value = videoParams.get("videoView") === "player" ? "player-camera" : "effects";
+    else if (select("view").value !== "player-camera") select("view").value = "effects";
     await reset();
     const serial = sceneSerial, hero = game.players[0];
     await waitForReviewFrame(serial, () => !game.hideMatchLoadingAfterFrame && !game.preparingMatch);
@@ -2258,7 +2266,9 @@ async function capturePressAction(recordVideo = false) {
       };
       restoreSocialScene = await stageSocialScene();
     }
-    game.updateCamera(); game.scene.updateMatrixWorld(true);
+    // Match production match-start settling only for the authentic player-view take.
+    const settlePlayerCamera = recordVideo && videoParams.get("videoScene") === "battle" && videoParams.get("videoView") === "player";
+    game.updateCamera(settlePlayerCamera ? 1 : undefined); game.scene.updateMatrixWorld(true);
     game.matchStartDelay = 0; game.audioCountdown = false; game.awaitingAudioGesture = false;
     pressAction = { status: "running", stagedSetup: "Central-platform starting positions and explosive loadouts; production AI movement and combat", injectedExplosions: false,
       fighters: game.players.length, bots: game.players.filter(player => player.isBot).length, weapon: hero.weapon.id, view: select("view").value, frames: 0, durationMs: 0, started: performance.now(), initialErrors: errorCount };

@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 // Each check has its own heap and wall-time ceiling. A failed or hung check
 // stops the suite with its name; it cannot silently consume the host's memory.
 const checks = [
-  "graphicsReadiness.test", "marketingGraphics.test", "directCanvasCapture.test",
+  "graphicsReadiness.test", "marketingGraphics.test", "directCanvasCapture.test", "socialBattleScene.test", "socialCombatValidation.test",
   "skinningHistory.test",
   "worldGraphics.test", "mecha.test", "graphicsSettings.test", "effectShaders.test", "motionBlur.test", "structuralPools.test", "presentationIntegration.test", "combatPools.test", "projectileBatchSharing.test", "renderPipelineModern.test", "inputBehavior.test", "remoteSnapshots.test", "testRunner.test", "threeLifecycle.test", "playerText.test", "journeys.test", "setupEditor.test", "settingsPreferences.test", "lighting.test", "smoke", "grappleTargets.test", "cornerPillars.test", "botBrain.test", "arenaPortals.test", "trainingControls.test",
   "wallImpactReview.test", "structuralDustReview.test", "projectileContact.test", "blasterRing.test", "blasterSpark.test", "blasterSurface.test", "graphics.test",

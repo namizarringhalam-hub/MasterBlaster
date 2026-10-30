@@ -18,6 +18,46 @@ export function socialVideoBotCount(params) {
   return params.get("socialVideo") === "1" && params.get("videoBots") === "5" ? 5 : 15;
 }
 
+// Non-explosive duels prove combat with both fighters' actual shots and production health loss.
+export function socialCombatValidation(scene, explosions, durationMs, localPlayerId) {
+  if (scene?.scene !== "readable-duel") return { mode: "legacy-explosions", valid: explosions >= 1,
+    error: explosions >= 1 ? null : "Capture has no production explosion event" };
+  const reject = error => ({ mode: "readable-duel", valid: false, error });
+  const playerView = scene.perspective === "production-player-camera";
+  if (playerView ? scene.cameraSource !== "bound unmodified Game.updateCamera" || !localPlayerId
+    : scene.perspective !== "outside-duel-showcase") return reject("Readable duel has no verified camera perspective");
+  const actor = scene.featuredBotId, opponents = scene.opponentIds;
+  if (!actor || !Array.isArray(opponents) || !opponents.some(id => id && id !== actor)) return reject("Readable duel has no named opposing fighters");
+  const recorded = event => Number.isFinite(event.atMs) && event.atMs >= 0 && event.atMs <= durationMs;
+  const visiblePair = (snapshots, first, second) => [first, second].every(id =>
+    playerView && id === localPlayerId || snapshots?.some(p => p.id === id && p.alive === true && p.visible === true));
+  const shots = (scene.events || []).filter(e => recorded(e) && e.kind === "production-shot"
+    && Number.isFinite(e.ammoBefore) && Number.isFinite(e.ammoAfter) && e.ammoBefore > e.ammoAfter && e.ammoAfter >= 0
+    && typeof e.weapon === "string" && e.weapon && e.attacker?.id === e.fighterId && e.target?.id === e.targetId
+    && visiblePair([e.attacker, e.target], e.fighterId, e.targetId));
+  for (const opponent of opponents.filter(id => id && id !== actor)) {
+    const forward = shots.filter(e => e.fighterId === actor && e.targetId === opponent && e.weapon === scene.featuredWeapon);
+    const reverse = shots.filter(e => e.fighterId === opponent && e.targetId === actor);
+    if (!forward.length || !reverse.length) continue;
+    const pairShots = [...forward, ...reverse];
+    const damage = (scene.events || []).filter(e => recorded(e) && e.kind === "production-damage"
+      && Number.isFinite(e.healthBefore) && Number.isFinite(e.healthAfter) && e.healthBefore > 0 && e.healthAfter < e.healthBefore
+      && ((e.attackerId === actor && e.targetId === opponent) || (e.attackerId === opponent && e.targetId === actor))
+      && visiblePair(e.fighters, e.attackerId, e.targetId)
+      // Hitscan damage is logged inside tryFire, just before the consuming shot event.
+      && pairShots.some(shot => shot.fighterId === e.attackerId && shot.targetId === e.targetId && shot.weapon === e.weapon
+        && shot.atMs <= e.atMs + 50 && shot.atMs >= e.atMs - 2000));
+    if (!damage.length) continue;
+    const concurrent = forward.filter(e => e.grappleActive === true && e.ropeVisible === true && e.grounded === false
+      && Array.isArray(e.anchor) && e.anchor.length === 3 && e.anchor.every(Number.isFinite)
+      && Array.isArray(e.velocity) && e.velocity.length === 3 && e.velocity.every(Number.isFinite) && Math.hypot(...e.velocity) > 3);
+    if (!playerView && !concurrent.length) return reject("Readable outside duel has no visible attached-grapple own-weapon shot toward its opponent");
+    return { mode: "readable-duel", valid: true, error: null, featuredBotId: actor, opponentId: opponent,
+      featuredShots: forward.length, opponentShots: reverse.length, actualDamageEvents: damage.length, concurrentVisibleShots: concurrent.length };
+  }
+  return reject("Readable duel lacks mutually targeted visible ammo-consuming shots and matching real health loss");
+}
+
 // Decode the recorded bytes after capture; reading the live WebGPU canvas stalls its frame loop.
 export async function validateEncodedPicture(blob, recordedDurationMs) {
   const video = document.createElement("video"), canvas = document.createElement("canvas");
@@ -165,8 +205,10 @@ export function createSocialVideoCapture(game, { onRecord, getErrors, getCapture
             proof.recordingStartedPerformanceMs = s.started;
             proof.qualityWarning = proof.actualRenderFps < 24 ? "Below preferred 24 actual FPS; review motion quality" : null;
             cleanup(s); session = null;
-            if (!s.error && (durationMs < 17500 || proof.actualRenderFps < 20 || s.botTravel < .5 || explosions < 1 || s.audioPeak < .0001 || getErrors() || game.renderPipeline.direct))
+            if (!s.error && (durationMs < 17500 || proof.actualRenderFps < 20 || s.botTravel < .5 || s.audioPeak < .0001 || getErrors() || game.renderPipeline.direct))
               proof.error = "Capture failed duration, moving-frame, combat, picture or game-audio validation";
+            proof.combatValidation = socialCombatValidation(proof.sceneEvidence, explosions, durationMs, game.players[0]?.id);
+            if (!proof.combatValidation.valid) proof.error ||= proof.combatValidation.error;
             if (proof.sceneEvidence?.scene === "grapple-and-fire" && !proof.sceneEvidence.concurrentShotCount)
               proof.error = "No recorded visible airborne grapple and production shot occurred together";
             if (!proof.marketingGraphics.matches) proof.error = "Marketing graphics changed or became unavailable during recording";
@@ -188,7 +230,9 @@ export function createSocialVideoCapture(game, { onRecord, getErrors, getCapture
             if (proof.error) { status.textContent = `Capture failed: ${proof.error}`; reject(Error(proof.error)); return; }
             const videoUrl = URL.createObjectURL(blob); urls.push(videoUrl);
             videoLink.href = videoUrl; videoLink.download = `${stem}.${mime.includes("mp4") ? "mp4" : "webm"}`; videoLink.hidden = false;
-            status.textContent = `Ready: ${(durationMs / 1000).toFixed(1)} s, ${proof.actualRenderFps.toFixed(1)} actual FPS, ${explosions} spawned explosion events. Review both downloads.`;
+            const combatSummary = proof.combatValidation.mode === "readable-duel"
+              ? `${proof.combatValidation.actualDamageEvents} verified production damage events` : `${explosions} spawned explosion events`;
+            status.textContent = `Ready: ${(durationMs / 1000).toFixed(1)} s, ${proof.actualRenderFps.toFixed(1)} actual FPS, ${combatSummary}. Review both downloads.`;
             resolve(proof);
           } catch (error) {
             cleanup(s); if (session === s) session = null;
