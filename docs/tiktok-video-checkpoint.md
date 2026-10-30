@@ -9,7 +9,9 @@ because the current Windows browser URL could not be verified confidently.
 All UI work stopped immediately. No claim that the computer was locked: that
 was not established. No fresh footage, finished MP4, upload or publication.
 
-Campaign Page23 was read; current user edits and all29October battle framing,
+Campaign Page23 was read; Page24 now records the blocked30October attempt in
+the opening and daily register, with successful targeted readback. Prior
+publications preserved. Current user edits and all29October battle framing,
 real player-view, longer-shot and short promotional caption/emoji/hashtag rules
 remain authoritative. Current live game settings could not be inspected; saved
 verified Ultra profile remains the fallback, never a quality downgrade.
