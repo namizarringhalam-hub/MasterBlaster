@@ -1,5 +1,9 @@
 # Master Blaster: second outreach wave
 
+## Weekly follow-up — 30 October 2026
+
+Resources and Weekly 666 remain public. Resources now preserves a clean full ref/UTM listing link. Older directory/editorial checks and brand mail produced no additional verified outcome; no new editorial reply, bounce or Xander recording arrived. Sent messages remain distinct from delivery or coverage. See the [30 October weekly report](outreach-weekly-2026-10-30.md) and scoped reports. Existing holds and no-resend policy remain.
+
 ## Latest daily check — 16 October 2026, 09:01–09:05 CEST
 
 - Resources exact public listing verified in muted guest browser after reader failure; description/tagged game anchor intact. Weekly 666 Games feature remains public. Neither is new coverage. Three.js 95005 still original post only, one reaction, 47 views; no written replies.

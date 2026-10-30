@@ -1,5 +1,17 @@
 # Master Blaster: first player-growth experiment
 
+## Weekly follow-up — 30 October 2026
+
+Checks ran 09:04–09:12 Europe/Stockholm. See the [weekly report](outreach-weekly-2026-10-30.md), [post checks](outreach-weekly-2026-10-30-posts.md), [directory checks](outreach-weekly-2026-10-30-directories.md) and [performance review](outreach-weekly-2026-10-30-performance.md).
+
+**New publication:** [AI Vibe Coded Games](https://aivibecodedgames.com/directory/master-blaster/) lists the existing 20 October submission. First verified today around 09:06, then in the browser at 09:07:50. Its publisher records a 25 October check; exact approval time is unknown. Master Blaster credit and canonical game links are verified, with nofollow and no referral tags. The register now has 15 public placements, including four TikTok videos.
+
+VibeTopList has 29 votes (previously eight) and no reviews. Three.js has 55 views (previously 52), its original post and one existing reaction. HTML5, IndieDB’s profile and all five galleries have no new written replies. PaperCroft’s scores remain 7.9 official / 8 community, with no recording or written rationale. All four TikTok posts remain Everyone with zero comments; the Rocket Launcher video has 185 views and three likes. These counts do not establish game visits. Other readable placements have no new written feedback; GameDev.net comments and ESReality’s target body remain unreadable. Both Reddit removals persist.
+
+Brand Inbox, All mail, Spam and Trash were checked; Spam/Trash were empty, with no new Xander/editorial reply or bounce. Vibecode’s developer profile remains pending and its game form locked. Other directory/editorial outcomes remain unconfirmed within the recorded catalog limits. Glaze’s search asks for a birth year; none was entered. Free Play’s form still uses the failed mailto route. Existing Rando, reset and manual/human-final editing holds remain; Lemmy is excluded.
+
+Priority-only startup is unchanged; no unchanged PageSpeed run was repeated. Latest verified homepage LCP remains 2.102 seconds from 15 October, with reliable sub-two-second loading unproven. The next diagnostic is a raw cold-mobile paint/network trace. Existing 29 October SSL, redirect, favicon and duplicate-CI repairs are infrastructure progress, not measured LCP savings. Tracker 28 and fourth-wave Page 11 were reconciled with titles and untouched content preserved. The weekly Friday 09:00 schedule continues, next 6 November.
+
 ## Weekly follow-up — 23 October 2026
 
 Checks 08:57–09:05 Europe/Stockholm. [Full weekly report](outreach-weekly-2026-10-23.md), [post checks](outreach-weekly-2026-10-23-posts.md), [directory checks](outreach-weekly-2026-10-23-directories.md) and [performance review](outreach-weekly-2026-10-23-performance.md) hold exact evidence. PixelGamesHub approved existing submission16 by email21Oct10:27; fresh public page now says Community listing, not pending. No robots meta now present; HTTP headers/indexing unverified and outbound links remain nofollow/ugc. No editorial endorsement claimed. VibeTopList208 now eight votes and no reviews; Three.js52views/one reaction/original post only. Ten recorded placements remain, not eleven.
