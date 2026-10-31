@@ -11,14 +11,16 @@ export function battleControls(seconds, opponent = false) {
 
 export async function stageSocialBattle(game, { params, prepareFighterWeapons, productionCamera }) {
   const hero = game.players[0], actor = game.players[1], playerView = params.get("videoView") === "player";
-  const take = params.get("videoTake") === "2" ? -1 : 1;
+  const takeNumber = params.get("videoTake"), blasterSpotlight = ["3", "4"].includes(takeNumber);
+  const take = ["2", "4"].includes(takeNumber) ? -1 : 1;
   const previous = { updateBot: game.updateBot, updateHuman: game.updateHuman, tryFire: game.tryFire,
     damagePlayer: game.damagePlayer, updateCamera: game.updateCamera };
   const participantFlags = game.players.map(p => [p, p.trainingStandStill, p.trainingDontAttack, p.trainingAnchor]);
   const obstacleAt = p => game.world.nearbyObstacles(p.x - 2, p.x + 2, p.z - 2, p.z + 2)
     .some(o => !o.removed && o.active !== false && o.top > p.y + .6 && o.baseY < p.y + 1.8
       && Math.abs(p.x - o.x) < o.w / 2 + 1.2 && Math.abs(p.z - o.z) < o.d / 2 + 1.2);
-  const candidates = [[16, 9, 7, 18], [18, 12, 18, -2], [12, 18, -3, 18]];
+  const candidates = blasterSpotlight ? [[18, 12, 18, -2], [12, 18, -3, 18]]
+    : [[16, 9, 7, 18], [18, 12, 18, -2], [12, 18, -3, 18]];
   const starts = candidates.map(([ax, az, hx, hz]) => [new THREE.Vector3(take * ax, 15.01, az), new THREE.Vector3(take * hx, 15.01, hz)])
     .find(pair => pair.every(p => !obstacleAt(p) && game.world.surfaceHeightAt(p, 15.1) === 15)
       && !game.world.ropeBlocked(pair[0].clone().add(new THREE.Vector3(0, 1.3, 0)), pair[1].clone().add(new THREE.Vector3(0, 1.3, 0))));
@@ -32,7 +34,9 @@ export async function stageSocialBattle(game, { params, prepareFighterWeapons, p
   for (const fighter of [hero, actor]) {
     fighter.velocity.set(0, 0, 0); fighter.grounded = true;
     fighter.trainingStandStill = false; fighter.trainingDontAttack = false; fighter.trainingAnchor = null;
-    fighter.loadout = [fighter === actor ? "machine_gun" : "blaster", "rocket_launcher", "plasma_cannon", "grenade_launcher", "railgun"];
+    const featuredWeapon = blasterSpotlight ? "blaster" : "machine_gun";
+    const opposingWeapon = blasterSpotlight ? "machine_gun" : "blaster";
+    fighter.loadout = [fighter === actor ? featuredWeapon : opposingWeapon, "rocket_launcher", "plasma_cannon", "grenade_launcher", "railgun"];
     fighter.slotIndex = 0; fighter.ammo = Object.fromEntries(fighter.loadout.map(id => [id, WEAPONS[id].ammo]));
     await prepareFighterWeapons(fighter);
   }
@@ -48,7 +52,7 @@ export async function stageSocialBattle(game, { params, prepareFighterWeapons, p
     bot.position.copy(background[index]); bot.velocity.set(0, 0, 0); bot.grounded = true;
     bot.trainingStandStill = false; bot.trainingDontAttack = false; bot.trainingAnchor = null;
   }
-  const evidence = { scene: "readable-duel", composition: `oct30-duel-${take === 1 ? "east" : "west"}`,
+  const evidence = { scene: "readable-duel", composition: `${blasterSpotlight ? "oct31-blaster" : "oct30-duel"}-${take === 1 ? "east" : "west"}`,
     featuredBotId: actor.id, featuredWeapon: actor.weapon.id, opponentIds: [hero.id],
     perspective: playerView ? "production-player-camera" : "outside-duel-showcase",
     cameraSource: playerView ? "bound unmodified Game.updateCamera" : "staged midpoint camera",

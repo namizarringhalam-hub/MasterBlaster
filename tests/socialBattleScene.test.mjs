@@ -54,7 +54,8 @@ assert.equal(battleControls(2, true).grapple, false);
 assert.equal(battleControls(.8, true).fire, true);
 assert.equal(battleControls(.4, true).fire, false);
 
-for (const view of ["outside", "player"]) {
+for (const view of ["outside", "player"]) for (const take of ["1", "2", "3", "4"]) {
+  const side = ["2", "4"].includes(take) ? -1 : 1, spotlight = ["3", "4"].includes(take);
   const players = Array.from({ length: 6 }, (_, i) => ({
     id: `p${i + 1}`, isBot: i > 0, position: new THREE.Vector3(), velocity: new THREE.Vector3(),
     aim: new THREE.Vector3(0, 0, 1), rig: { visible: true }, alive: true, health: 100,
@@ -81,10 +82,16 @@ for (const view of ["outside", "player"]) {
   const original = { updateBot: game.updateBot, updateHuman: game.updateHuman, tryFire: game.tryFire,
     damagePlayer: game.damagePlayer, updateCamera: game.updateCamera };
   const prepared = [];
-  const battle = await stageSocialBattle(game, { params: new URLSearchParams(`videoView=${view}`),
+  const battle = await stageSocialBattle(game, { params: new URLSearchParams(`videoView=${view}&videoTake=${take}`),
     prepareFighterWeapons: async p => prepared.push(p.id),
     productionCamera(dt) { productionCameras++; assert.equal(dt, .1); game.camera.position.set(0, 20, 40); game.camera.lookAt(0, 15, 0); } });
   assert.deepEqual(prepared, ["p1", "p2"]);
+  assert.equal(players[1].weapon.id, spotlight ? "blaster" : "machine_gun");
+  assert.equal(players[0].weapon.id, spotlight ? "machine_gun" : "blaster");
+  assert.equal(battle.evidence.featuredWeapon, players[1].weapon.id);
+  assert.equal(battle.evidence.composition, `${spotlight ? "oct31-blaster" : "oct30-duel"}-${side === 1 ? "east" : "west"}`);
+  assert.deepEqual(players[1].position.toArray(), spotlight ? [side * 18, 15.01, 12] : [side * 16, 15.01, 9]);
+  assert.deepEqual(players[0].position.toArray(), spotlight ? [side * 18, 15.01, -2] : [side * 7, 15.01, 18]);
   assert.equal(battle.evidence.hudCaptured, false);
   assert.equal(players[0].health, 100); assert.equal(players[1].health, 100);
   for (const bot of players.slice(1)) {
@@ -98,8 +105,8 @@ for (const view of ["outside", "player"]) {
   assert.equal(productionCameras, view === "player" ? 1 : 0);
   if (view === "outside") {
     const midpoint = players[0].position.clone().lerp(players[1].position, .5);
-    assert.ok(game.camera.position.x > midpoint.x && game.camera.position.z > midpoint.z, "camera stays on the open east fight side");
-    assert.ok(game.camera.position.x - midpoint.x > (game.camera.position.z - midpoint.z) * 4, "east-oriented view keeps diagonal duelists laterally distinct instead of looking along their battle line");
+    assert.ok((game.camera.position.x - midpoint.x) * side > 0 && game.camera.position.z > midpoint.z, "camera stays on the selected open fight side");
+    assert.ok(Math.abs(game.camera.position.x - midpoint.x) > (game.camera.position.z - midpoint.z) * 4, "side-oriented view keeps duelists laterally distinct instead of looking along their battle line");
   }
   game.updateHuman(.016);
   assert.ok(players[0].lastMove.dot(players[1].position.clone().sub(players[0].position)) > 0, "fighter advances toward the opponent rather than orbiting off the platform");

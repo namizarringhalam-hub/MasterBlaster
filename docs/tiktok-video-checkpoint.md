@@ -1,4 +1,55 @@
-# Master Blaster daily TikTok videos — 30 October 2026
+# Master Blaster daily TikTok videos — 31 October 2026
+
+## Current attempt — 31 October Blaster showcase
+
+No finished MP4, upload or publication yet. Existing brand Studio was checked:
+only the four published 27–30 October posts are present. Today's theme is a
+Blaster weapon spotlight, with fresh north/south duel starts and mirrored
+outside/player views (videoTake 3/4). The featured bot uses the actual Blaster;
+the opposing player uses Machine Gun. All five bots are enabled for combat;
+the four background bots use production AI, and the featured bot uses staged
+production movement/fire controls.
+No old footage is reused. Planned caption/text remain drafts in ignored
+.codex-spec-render/tiktok-2026-10-31/day05-plan.json and day05-caption.txt.
+
+Current production-tab settings were read and exactly match saved Ultra,
+100% resolution, all 19 effects and 35% motion blur. Preferences were not edited;
+the original home menu was restored. Task capture tab 1966657586 in existing
+regular Edge/browser3 was muted before loading; no private/new upload window.
+
+Access recovery: direct extension/DOM connection succeeds. Supported browser
+window focus was requested, but native Windows accessibility is unavailable,
+the native window screenshot is black and native activation fails. Actual
+browser metadata reports capture tab inactive despite window focused. These
+observations do not by themselves prove the computer is locked.
+
+After initial shader/setup preparation, a direct capture attempt started with
+unchanged focus/FPS/graphics gates. Proof outside-attempt1.json records18.013s,
+20 rendered frames / 1.1103 FPS against the unchanged20FPS minimum. It also
+rejects missing visible attached-grapple/own-weapon overlap. Exact native Ultra,
+no renderer errors/fallback; picture validation not run after earlier gates fail.
+DOM timing shows1001.6ms median/1010.8ms p95; DOM focus stayed visible/true even
+though browser metadata reported the actual tab inactive. No video download was
+exposed, and no MP4/upload/publication exists. Proof was downloaded successfully.
+User handoff
+asks to unlock if needed, select the existing capture tab and leave it visible,
+then reply ready. Publishing approval remains in force; do not ask again.
+
+New capture presets modify only tests/socialBattleScene.js and its regression
+test. Takes1/2 remain unchanged. Four targeted capture/combat/graphics tests,
+syntax, diff checks and independent harsh code review pass. Production mechanics,
+health, cooldowns, graphics and all quality gates remain unchanged. New Blaster
+attached-grapple/own-fire overlap and every visible bot's activity still require
+fresh decoded footage review before publication. Independent recovery/proof and
+draft-caption review also pass; Page29 status/readback preserves all earlier
+media, titles and untouched blocks. Server56378 serves8799 while
+this handoff is active. Preserve unrelated %SystemDrive%/ and paused helpers.
+
+Next: recover actual active foreground
+with the user's desktop action, then record fresh take3 outside and take4 actual
+player views. Select three/four readable 2–5-second shots, render10–20 seconds,
+obtain independent media review and publish once through the existing brand
+Studio. Record actual file/hash/permalink/status and update campaign/register.
 
 ## Active-bot rule — 30 October user correction
 
